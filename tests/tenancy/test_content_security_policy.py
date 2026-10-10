@@ -56,8 +56,12 @@ def test_the_documents_script_loads_from_self_and_its_upload_target_is_allowed(
     body = response.content.decode()
     policy = _directives(response)
 
-    [src] = re.findall(r'<script src="([^"]+)"', body)
-    assert src.startswith(settings.STATIC_URL) and src.startswith("/")
+    # The shell adds htmx and app.js beside documents.js; every one is a
+    # same-origin static file.
+    sources = re.findall(r'<script src="([^"]+)"', body)
+    assert any(src.endswith("dashboard/documents.js") for src in sources)
+    for src in sources:
+        assert src.startswith(settings.STATIC_URL) and src.startswith("/")
     presigned = boto3.client(
         "s3", region_name="eu-central-1", aws_access_key_id="x", aws_secret_access_key="y"
     ).generate_presigned_post(Bucket=settings.EVIDENCE_BUCKET_NAME, Key="quarantine/k")["url"]

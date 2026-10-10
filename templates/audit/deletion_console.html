@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Deletion requests{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Deletion requests</h1>
+      <p>Students who asked to leave. This page is the only place you learn about them, so check it.</p>
+    </div>
+  </div>
+
+  <section class="panel" aria-labelledby="held-heading">
+    <div class="panel-head"><h2 id="held-heading">Waiting for your decision</h2><span class="pill{% if held %} pill-warn{% endif %}">{{ held|length }}</span></div>
+    <p class="muted">The student was told some records may be kept. Release starts the thirty-day erasure; deny keeps the records under your retention policy.</p>
+    {% if held %}
+      <ul class="item-list">
+        {% for record in held %}
+          <li>
+            <span><strong>{{ record.student.user.get_username }}</strong> — {{ record.get_review_reason_display|default:"held for review" }}<br><small>asked {{ record.created_at|date:"j M Y" }}{% if record.reason %} · {{ record.get_reason_display }}{% endif %}</small></span>
+            <form method="post" action="{% url 'audit-release-deletion' record.id %}">{% csrf_token %}<button type="submit">Release</button></form>
+            <form method="post" action="{% url 'audit-deny-deletion' record.id %}">{% csrf_token %}<button type="submit" class="btn-quiet">Deny</button></form>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">Nothing is waiting for you.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="countdown-heading">
+    <div class="panel-head"><h2 id="countdown-heading">Being erased</h2><span class="pill">{{ counting_down|length }}</span></div>
+    {% if counting_down %}
+      <ul class="item-list">
+        {% for record in counting_down %}
+          <li><span><strong>{{ record.student.user.get_username }}</strong><br><small>erased on {{ record.execute_after|date:"j F Y" }}</small></span></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No erasure is counting down.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="partial-heading">
+    <div class="panel-head"><h2 id="partial-heading">Erased, identity kept</h2><span class="pill{% if partially_erased %} pill-danger{% endif %}">{{ partially_erased|length }}</span></div>
+    <p class="muted">These erasures could not remove the person's identity. Names are not shown here on purpose; the reason is what you have to fix.</p>
+    {% if partially_erased %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Request</th><th scope="col">Reason identity was kept</th><th scope="col">Asked</th></tr></thead>
+          <tbody>
+            {% for row in partially_erased %}
+              <tr><th scope="row"><code>{{ row.id|stringformat:"s"|slice:":8" }}</code></th><td>{{ row.identity_retained_reason }}</td><td>{{ row.created_at|date:"j M Y" }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="muted">None.</p>
+    {% endif %}
+  </section>
+{% endblock %}

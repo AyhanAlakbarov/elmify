@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Resolution queue{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Resolution queue</h1>
+      <p>Questions the research engine could not answer alone. Each one is a single closed question.</p>
+    </div>
+    {% if waiting_for_the_applier %}<span class="pill pill-brand">{{ waiting_for_the_applier }} decided, waiting to be applied</span>{% endif %}
+  </div>
+  <section class="panel" aria-labelledby="queue-heading">
+    <div class="panel-head"><h2 id="queue-heading">Your questions today</h2><span class="pill">{{ rows|length }}</span></div>
+    {% if rows %}
+      <ul class="results">
+        {% for row in rows %}
+          <li>
+            <span class="kind pill">{{ row.item.get_kind_display }}</span>
+            <a href="{% url 'resolution-item' row.item.id %}">{{ row.item.ask }}</a><br>
+            <small>{% if row.country_code %}{{ row.country_code }} · {% endif %}{% if row.registered %}registered · {% endif %}{% if row.packs is not None %}in {{ row.packs }} pack{{ row.packs|pluralize }} · {% endif %}{% if row.item.apply_error %}sent back: {{ row.item.apply_error }} · {% endif %}filed {{ row.item.created_at|date:"j M" }}</small>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">Nothing to answer. Either the queue is empty or you reached today's limit.</p>
+    {% endif %}
+  </section>
+{% endblock %}

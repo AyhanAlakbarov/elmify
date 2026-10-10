@@ -1,21 +1,27 @@
 {% extends "base.html" %}
 {% block title %}Browser extension{% endblock %}
 {% block content %}
-  <h1>Browser extension</h1>
-  <h2>Connected browsers</h2>
-  {% for pairing in pairings %}
-    <article>
-      <p>{{ pairing.installation_id|default:"A browser" }} — connected {{ pairing.redeemed_at|date:"j M Y" }}{% if pairing.last_seen_at %}, last seen {{ pairing.last_seen_at|date:"j M Y H:i" }}{% endif %}</p>
-      <form method="post" action="{% url 'student-settings-extension-disconnect' pairing.id %}">{% csrf_token %}<button type="submit">Disconnect</button></form>
-    </article>
-  {% empty %}
-    <p>No browser is connected.</p>
-  {% endfor %}
-  <h2>How to pair</h2>
-  <ol>
-    <li>Use Chrome, Edge, Brave, Opera, Vivaldi or Arc on a computer.</li>
-    <li>Install the Tehsil extension from the Chrome Web Store.</li>
-    <li>Open this dashboard while logged in. The extension connects to your account by itself.</li>
-  </ol>
-  <p>Logging out keeps your browsers connected. Disconnect one here when you stop using it.</p>
+  <div class="page-head"><div><h1>Browser extension</h1><p><a href="/student/settings/">Settings</a> / Browser extension</p></div></div>
+  <section class="panel" aria-labelledby="browsers-heading">
+    <h2 id="browsers-heading">Connected browsers</h2>
+    <ul class="item-list">
+    {% for pairing in pairings %}
+      <li>
+        <span>{{ pairing.installation_id|default:"A browser" }} — connected {{ pairing.redeemed_at|date:"j M Y" }}{% if pairing.last_seen_at %}, last seen {{ pairing.last_seen_at|date:"j M Y H:i" }}{% endif %}</span>
+        <form method="post" action="{% url 'student-settings-extension-disconnect' pairing.id %}">{% csrf_token %}<button type="submit" class="btn-quiet">Disconnect</button></form>
+      </li>
+    {% empty %}
+      <li class="muted">No browser is connected.</li>
+    {% endfor %}
+    </ul>
+  </section>
+  <section class="panel" aria-labelledby="pair-heading">
+    <h2 id="pair-heading">How to pair</h2>
+    <ol class="steps">
+      <li>Use Chrome, Edge, Brave, Opera, Vivaldi or Arc on a computer.</li>
+      <li>Install the Elmify extension from the Chrome Web Store.</li>
+      <li>Open this dashboard while logged in. The extension connects to your account by itself.</li>
+    </ol>
+    <p class="muted">Logging out keeps your browsers connected. Disconnect one here when you stop using it.</p>
+  </section>
 {% endblock %}

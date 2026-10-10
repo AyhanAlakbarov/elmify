@@ -1,14 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Recommendations{% endblock %}
 {% block content %}
-  <h1>Recommendations, version {{ pack.version }}</h1>
+  <div class="page-head"><div><p><a href="/counselor/">Your students</a></p><h1>Recommendations, version {{ pack.version }}</h1></div></div>
+  <section class="panel">
   <h2>In the pack</h2>
-  <ul>
+  <ul class="item-list">
     {% for member in pool %}<li>{{ member.candidate.program_name }} — {{ member.candidate.evidence.claim }}</li>{% empty %}<li>Empty.</li>{% endfor %}
   </ul>
+  </section>
+  <section class="panel">
   <h2>Being checked</h2>
   {% for candidate in checking %}
-    <section>
+    <section class="candidate">
       <h3>{{ candidate.program_name }}</h3>
       <form method="post" action="{% url 'counselor-resolve-named-program' pack.run_id candidate.id %}">
         {% csrf_token %}
@@ -29,10 +32,13 @@
       </form>
     </section>
   {% empty %}
-    <p>Nothing is being checked.</p>
+    <p class="muted">Nothing is being checked.</p>
   {% endfor %}
+  </section>
+  <section class="panel">
   <h2>Programmes the student named</h2>
-  <ul>
+  <ul class="item-list">
     {% for candidate, note in named %}<li>{{ candidate.program_name }} — {{ note }}</li>{% empty %}<li>None.</li>{% endfor %}
   </ul>
+  </section>
 {% endblock %}

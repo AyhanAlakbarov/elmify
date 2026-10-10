@@ -2,49 +2,63 @@
 {% load dashboard %}
 {% block title %}Application Kit{% endblock %}
 {% block content %}
-  <h1>Application Kit</h1>
-  <p>Everything you need to apply{% if kit.portal_host %} on {{ kit.portal_host }}{% endif %}. You can copy each answer by hand on any device.</p>
-  {% if kit.deadline %}<p>Deadline: {{ kit.deadline|date:"j M Y, H:i" }}{% if kit.deadline_timezone %} ({{ kit.deadline_timezone }}){% endif %}</p>{% endif %}
-  {% if kit.apply_with_email %}<p>Register with this email address: {{ kit.apply_with_email }}</p>{% endif %}
+  <div class="page-head"><div>
+    <h1>Application Kit</h1>
+    <p>Everything you need to apply{% if kit.portal_host %} on {{ kit.portal_host }}{% endif %}. You can copy each answer by hand on any device.</p>
+  </div></div>
+  <div class="kit-head">
+    {% if kit.deadline %}<p class="pill pill-warn">Deadline: {{ kit.deadline|date:"j M Y, H:i" }}{% if kit.deadline_timezone %} ({{ kit.deadline_timezone }}){% endif %}</p>{% endif %}
+    {% if start_url %}
+      <form method="post" action="{{ start_url }}">{% csrf_token %}<button type="submit">Start application</button></form>
+    {% endif %}
+    {% with url=kit.form_url|https_only %}{% if url %}<p><a class="btn btn-quiet" href="{{ url }}" rel="noopener noreferrer">Open the portal</a></p>{% endif %}{% endwith %}
+  </div>
+  {% if kit.apply_with_email %}<p class="note note-ok">Register with this email address: {{ kit.apply_with_email }}</p>{% endif %}
   {% if not_fillable_text %}<p role="status">{{ not_fillable_text }}</p>{% endif %}
-  {% if start_url %}
-    <form method="post" action="{{ start_url }}">{% csrf_token %}<button type="submit">Start application</button></form>
-  {% endif %}
-  {% with url=kit.form_url|https_only %}{% if url %}<p><a href="{{ url }}">Open the portal</a></p>{% endif %}{% endwith %}
 
-  <h2>Questions and your answers</h2>
-  {% if kit.questions %}
-    <dl>
-      {% for question in kit.questions %}
-        <dt>{{ question.label }}</dt>
-        <dd>{% if question.missing %}missing — answer it in your profile or the gap interview{% else %}{{ question.answer }}{% endif %}</dd>
-      {% endfor %}
-    </dl>
-  {% else %}
-    <p>No answers yet. Finish your profile first.</p>
-  {% endif %}
+  <section class="panel" aria-labelledby="answers-heading">
+    <h2 id="answers-heading">Questions and your answers</h2>
+    {% if kit.questions %}
+      <dl class="kit-answers">
+        {% for question in kit.questions %}
+          <dt>{{ question.label }}</dt>
+          <dd{% if question.missing %} class="is-missing"{% endif %}>{% if question.missing %}missing — answer it in your profile or the gap interview{% else %}{{ question.answer }}{% endif %}</dd>
+        {% endfor %}
+      </dl>
+    {% else %}
+      <p class="empty">No answers yet. Finish your <a href="/student/profile/">profile</a> first.</p>
+    {% endif %}
+  </section>
 
-  <h2>What the programme requires</h2>
-  {% if kit.requirements %}
-    <ul>{% for requirement in kit.requirements %}<li>{{ requirement }}</li>{% endfor %}</ul>
-  {% else %}
-    <p>We have not read the programme's requirements yet.</p>
-  {% endif %}
+  <div class="doc-grid">
+    <section class="panel" aria-labelledby="requires-heading">
+      <h2 id="requires-heading">What the programme requires</h2>
+      {% if kit.requirements %}
+        <ul class="item-list">{% for requirement in kit.requirements %}<li>{{ requirement }}</li>{% endfor %}</ul>
+      {% else %}
+        <p class="muted">We have not read the programme's requirements yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel" aria-labelledby="kit-docs-heading">
+      <h2 id="kit-docs-heading">Documents</h2>
+      {% if kit.documents %}
+        <ul class="item-list">{% for document in kit.documents %}<li><a href="{{ document.download_path }}" hx-boost="false">{{ document.filename }}</a></li>{% endfor %}</ul>
+      {% else %}
+        <p class="muted">No approved document yet. See <a href="/student/documents/">Documents</a>.</p>
+      {% endif %}
+    </section>
+  </div>
 
   {% if kit.your_actions %}
-    <h2>Only you can do these</h2>
-    {% if kit.letter_cycle %}<p>Read for the {{ kit.letter_cycle }} cycle.</p>{% endif %}
-    <ul>
-      {% for item in kit.your_actions %}
-        <li>{{ item.text }}{% with url=item.source_url|https_only %}{% if url %} (<a href="{{ url }}">source</a>){% endif %}{% endwith %}</li>
-      {% endfor %}
-    </ul>
-  {% endif %}
-
-  <h2>Documents</h2>
-  {% if kit.documents %}
-    <ul>{% for document in kit.documents %}<li><a href="{{ document.download_path }}">{{ document.filename }}</a></li>{% endfor %}</ul>
-  {% else %}
-    <p>No approved document yet. See Documents.</p>
+    <section class="panel" aria-labelledby="yours-heading">
+      <h2 id="yours-heading">Only you can do these</h2>
+      {% if kit.letter_cycle %}<p class="muted">Read for the {{ kit.letter_cycle }} cycle.</p>{% endif %}
+      <ul class="item-list">
+        {% for item in kit.your_actions %}
+          <li>{{ item.text }}{% with url=item.source_url|https_only %}{% if url %} (<a href="{{ url }}">source</a>){% endif %}{% endwith %}</li>
+        {% endfor %}
+      </ul>
+    </section>
   {% endif %}
 {% endblock %}

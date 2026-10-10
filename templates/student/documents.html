@@ -2,7 +2,7 @@
 {% load static %}
 {% block title %}Documents{% endblock %}
 {% block content %}
-  <h1>Documents</h1>
+  <div class="page-head"><div><h1>Documents</h1><p>What each application asks for, your uploads and your CV.</p></div></div>
   {% include "student/_documents.html" %}
   <script src="{% static 'dashboard/documents.js' %}" defer></script>
 {% endblock %}

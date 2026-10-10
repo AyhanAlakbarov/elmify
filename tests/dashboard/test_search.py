@@ -36,7 +36,9 @@ def test_search_finds_programme_award_application_and_page(
     assert response.status_code == 200
     kinds = {group.kind: group for group in response.context["groups"]}
     assert set(kinds) == {"Applications", "Programmes"}
-    assert kinds["Programmes"].results[0].url == f"/student/recommendation/#candidate-{programme.id}"
+    assert (
+        kinds["Programmes"].results[0].url == f"/student/recommendation/#candidate-{programme.id}"
+    )
 
     award = client.get("/student/search/", {"q": "daad"}, HTTP_HOST=domain_a.host)
     assert [g.kind for g in award.context["groups"]] == ["Funding"]
@@ -53,9 +55,14 @@ def test_search_reads_the_counsellor_thread(
         counselor = Membership.objects.create(
             tenant=agency_a, user=counselor_user, role=Membership.Role.COUNSELOR
         )
-        CounselorAssignment.objects.create(tenant=agency_a, counselor=counselor, student=membership_a)
+        CounselorAssignment.objects.create(
+            tenant=agency_a, counselor=counselor, student=membership_a
+        )
         ConversationMessage.objects.create(
-            tenant=agency_a, student=membership_a, counselor=counselor, sender=counselor,
+            tenant=agency_a,
+            student=membership_a,
+            counselor=counselor,
+            sender=counselor,
             body="Book the IELTS for late November.",
         )
     client.force_login(user_a)
@@ -70,7 +77,9 @@ def test_search_never_shows_another_students_rows(
 ):
     programme, _award = pack
     with tenant_scope(agency_a.id):
-        other = Membership.objects.create(tenant=agency_a, user=user_b, role=Membership.Role.STUDENT)
+        other = Membership.objects.create(
+            tenant=agency_a, user=user_b, role=Membership.Role.STUDENT
+        )
         add_card(agency_a, other, programme)
     client.force_login(user_a)
     response = client.get("/student/search/", {"q": "informatics"}, HTTP_HOST=domain_a.host)
@@ -90,14 +99,18 @@ def test_a_short_or_empty_query_searches_nothing(client, domain_a, user_a, membe
 @pytest.mark.django_db
 def test_search_is_students_only(client, agency_a, domain_a, counselor_user):
     with tenant_scope(agency_a.id):
-        Membership.objects.create(tenant=agency_a, user=counselor_user, role=Membership.Role.COUNSELOR)
+        Membership.objects.create(
+            tenant=agency_a, user=counselor_user, role=Membership.Role.COUNSELOR
+        )
     client.force_login(counselor_user)
     response = client.get("/student/search/", {"q": "informatics"}, HTTP_HOST=domain_a.host)
     assert response.status_code in {302, 403}
 
 
 @pytest.mark.django_db(transaction=True)
-def test_search_runs_under_the_web_role(client, agency_a, domain_a, user_a, membership_a, pack, web_role_orm):
+def test_search_runs_under_the_web_role(
+    client, agency_a, domain_a, user_a, membership_a, pack, web_role_orm
+):
     """Through Django's connection logged in as runtime_web: a catalogue read
     would be a real `permission denied`, which no superuser test can show."""
     client.force_login(user_a)

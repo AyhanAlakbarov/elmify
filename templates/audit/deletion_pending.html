@@ -12,6 +12,6 @@
   {% if in_flight %}<p>{{ in_flight }} of your applications are with a university. Closing your account does not withdraw them.</p>{% endif %}
   <form method="post" action="{% url 'audit-restore-account' request_record.id %}">
     {% csrf_token %}
-    <button type="submit">Restore my account</button>
+    <button type="submit" class="btn-quiet">Restore my account</button>
   </form>
 {% endblock %}

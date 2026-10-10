@@ -19,9 +19,14 @@ result's text. No ranking model, no index -- the student's data is small.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
 
 from apps.tenancy.models import Membership
+
+if TYPE_CHECKING:
+    from apps.funding.models import PackCandidate, RecommendationCandidate
 
 MIN_QUERY = 2
 MAX_QUERY = 100
@@ -63,7 +68,11 @@ _PAGES = (
     ("Settings", "Profile, mailbox, browser extension and account", "/student/settings/"),
     ("Profile", "Your consultation answers", "/student/profile/"),
     ("Mailbox", "The inbox we watch for university replies", "/student/settings/mailbox/"),
-    ("Browser extension", "The browsers that fill your applications", "/student/settings/extension/"),
+    (
+        "Browser extension",
+        "The browsers that fill your applications",
+        "/student/settings/extension/",
+    ),
     ("Account", "Leave and delete your data", "/student/settings/account/"),
 )
 
@@ -72,8 +81,9 @@ def _programmes(student: Membership, words: tuple[str, ...]) -> list[Result]:
     from apps.funding.views import _pack_context
 
     context = _pack_context(student)
-    in_pack = [member.candidate for member in context["pool"]]  # type: ignore[union-attr]
-    others = list(context["considered"])  # type: ignore[arg-type]
+    pool = cast("list[PackCandidate]", context["pool"])
+    in_pack = [member.candidate for member in pool]
+    others = list(cast("Iterable[RecommendationCandidate]", context["considered"]))
     out: list[Result] = []
     for where, candidates in (("In your pack", in_pack), ("Other options", others)):
         for candidate in candidates:
@@ -99,12 +109,16 @@ def _applications(student: Membership, words: tuple[str, ...]) -> list[Result]:
 
     out = []
     for card in board_for(student).cards:
-        if matches(words, card.title, card.institution, card.country, card.column.value, *card.missing):
+        if matches(
+            words, card.title, card.institution, card.country, card.column.value, *card.missing
+        ):
             out.append(
                 Result(
                     kind="Applications",
                     title=card.title,
-                    detail=" · ".join(p for p in (card.column.value, card.institution, card.country) if p),
+                    detail=" · ".join(
+                        p for p in (card.column.value, card.institution, card.country) if p
+                    ),
                     url=f"/student/#card-{card.application_id}",
                 )
             )
@@ -132,7 +146,12 @@ def _documents(student: Membership, words: tuple[str, ...]) -> list[Result]:
         label = f"CV version {draft.version}"
         if matches(words, label, "cv", "curriculum vitae", draft.get_status_display()):
             out.append(
-                Result(kind="Documents", title=label, detail=draft.get_status_display(), url="/student/documents/")
+                Result(
+                    kind="Documents",
+                    title=label,
+                    detail=draft.get_status_display(),
+                    url="/student/documents/",
+                )
             )
     return out
 

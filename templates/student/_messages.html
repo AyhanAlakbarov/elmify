@@ -1,10 +1,10 @@
 {% load dashboard %}
-<section aria-labelledby="mail-heading" id="messages">
+<section class="panel" aria-labelledby="mail-heading" id="messages">
   <h2 id="mail-heading">Mail from universities and funders</h2>
   {% for title, rows in mail_groups %}
-    <section>
+    <section class="mail-group">
       <h3>{{ title }}</h3>
-      <ul>
+      <ul class="mail-list">
         {% for row in rows %}
           {% with signal=row.signal %}
           <li>
@@ -21,14 +21,16 @@
       </ul>
     </section>
   {% empty %}
-    <p>No mail recognised yet.{% if not has_mailbox %} Connect your inbox in Settings.{% endif %}</p>
+    <p class="empty">No mail recognised yet.{% if not has_mailbox %} Connect your inbox in Settings.{% if viewer_role == "STUDENT" %} <a href="/student/settings/mailbox/">Open mailbox settings</a>{% endif %}{% endif %}</p>
   {% endfor %}
 </section>
-<section aria-labelledby="conversation-heading">
+<section class="panel" aria-labelledby="conversation-heading" id="conversation">
   <h2 id="conversation-heading">Your counsellor</h2>
+  <div class="thread">
   {% for message in conversation %}
-    <p>{% if message.sender_id == message.student_id %}Student{% else %}Counsellor{% endif %}, {{ message.created_at|date:"j M H:i" }}: {{ message.body|linebreaksbr }}</p>
+    <p class="bubble{% if message.sender_id == message.student_id %} from-student{% else %} from-counsellor{% endif %}"><span class="who">{% if message.sender_id == message.student_id %}Student{% else %}Counsellor{% endif %}, {{ message.created_at|date:"j M H:i" }}:</span> {{ message.body|linebreaksbr }}</p>
   {% empty %}
-    <p>No messages yet.</p>
+    <p class="empty">No messages yet.</p>
   {% endfor %}
+  </div>
 </section>

@@ -1,8 +1,9 @@
 {% csrf_token %}
-<section aria-labelledby="table-heading" id="documents">
+<section class="panel" aria-labelledby="table-heading" id="documents">
   <h2 id="table-heading">What each application needs</h2>
   {% if table.columns %}
-    <table>
+    <div class="table-wrap">
+    <table class="doc-table">
       <thead>
         <tr>
           <th scope="col">Document</th>
@@ -15,7 +16,7 @@
             <th scope="row">{{ line.row.label }}{% if line.row.expires_on %} (expires {{ line.row.expires_on|date:"j M Y" }}){% endif %}</th>
             {% for cell in line.cells %}
               <td>
-                {{ cell.state }}
+                <span class="cell cell-{{ cell.state|slugify }}">{{ cell.state }}</span>
                 {% if cell.held and not counselor_view %}
                   <form method="post" action="{% url 'student-document-submit' %}">
                     {% csrf_token %}
@@ -31,8 +32,9 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   {% else %}
-    <p>No applications yet, so nothing is required.</p>
+    <p class="empty">No applications yet, so nothing is required.</p>
   {% endif %}
   {% if unverified %}
     <ul>
@@ -41,8 +43,9 @@
   {% endif %}
 </section>
 
+<div class="doc-grid">
 {% if not read_only %}
-<section aria-labelledby="upload-heading">
+<section class="panel" aria-labelledby="upload-heading">
   <h2 id="upload-heading">Upload a document</h2>
   <form data-upload="{{ upload_endpoint }}">
     <p>
@@ -56,9 +59,9 @@
 </section>
 {% endif %}
 
-<section aria-labelledby="uploads-heading">
+<section class="panel" aria-labelledby="uploads-heading">
   <h2 id="uploads-heading">Your uploads</h2>
-  <ul>
+  <ul class="item-list">
     {% for upload in uploads %}
       <li>
         {{ upload.get_kind_display }} — {% if upload.rejection_message %}{{ upload.rejection_message }}{% elif upload.state == "CHECKING" %}checking…{% else %}{{ upload.state|lower }}{% endif %}{% if upload.expires_on %}, expires {{ upload.expires_on|date:"j M Y" }}{% endif %}
@@ -77,40 +80,41 @@
   </ul>
 </section>
 
-<section aria-labelledby="facts-heading" id="facts">
+<section class="panel" aria-labelledby="facts-heading" id="facts">
   <h2 id="facts-heading">Facts read from your CV</h2>
   {% if facts %}
-    <ul>{% for fact in facts %}<li>{{ fact.category|lower }}: {% for key, value in fact.payload.items %}{{ key }} {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}</ul>
+    <ul class="item-list">{% for fact in facts %}<li>{{ fact.category|lower }}: {% for key, value in fact.payload.items %}{{ key }} {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}</ul>
     {% if not counselor_view %}
       <p><button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ confirm_body }}">These are right — confirm them</button> <span role="status"></span></p>
     {% endif %}
   {% else %}
-    <p>Nothing to confirm.</p>
+    <p class="muted">Nothing to confirm.</p>
   {% endif %}
 </section>
 
-<section aria-labelledby="drafts-heading" id="drafts">
+<section class="panel" aria-labelledby="drafts-heading" id="drafts">
   <h2 id="drafts-heading">Your CV</h2>
   {% if not counselor_view %}
     <p><button type="button" data-api-post="/api/documents/generate" data-body='{"kind": "CV"}'>Write my CV</button> <span role="status"></span></p>
   {% endif %}
-  <ul>
+  <ul class="item-list">
     {% for draft in drafts %}
       <li>
         Version {{ draft.version }} — {{ draft.status|lower }}
         {% if draft.status == "DRAFT" and not counselor_view %}
           <button type="button" data-api-post="/api/documents/drafts/{{ draft.id }}/approve">Approve</button> <span role="status"></span>
         {% endif %}
-        {% if draft.status == "APPROVED" and draft.rendered_filename %}<a href="{% url 'documents-download' draft.id draft.rendered_filename %}">Download</a>{% endif %}
+        {% if draft.status == "APPROVED" and draft.rendered_filename %}<a class="btn btn-quiet" hx-boost="false" href="{% url 'documents-download' draft.id draft.rendered_filename %}">Download</a>{% endif %}
       </li>
     {% empty %}
       <li>No CV yet.</li>
     {% endfor %}
   </ul>
 </section>
+</div>
 
 {% if unnamed and not counselor_view %}
-  <section aria-labelledby="unread-heading">
+  <section class="panel" aria-labelledby="unread-heading">
     <h2 id="unread-heading">Messages we could not read</h2>
     {% for signal in unnamed %}
       <form method="post" action="{% url 'student-document-request' signal.id %}">

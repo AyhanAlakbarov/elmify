@@ -1,21 +1,24 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>Gold check</title></head>
-<body>
-<h1>Facts to check</h1>
-<table>{% for key, c in counts %}<tr><td>{{ key.0 }}</td><td>{{ key.1 }}</td>
-<td>{{ c.checked }} checked</td><td>{{ c.unchecked }} left</td></tr>{% endfor %}</table>
-{% for item in items %}
-<section>
-  <p><strong>{{ item.kind }}</strong> · {{ item.language }} · <a href="{{ item.page_url }}" rel="noopener noreferrer" target="_blank">page</a></p>
-  <p><em>{{ item.heading }}</em></p>
-  <blockquote>{{ item.line_text }}</blockquote>
-  <p>Claim: {{ item.claim }}</p>
-  <form method="post" action="{% url 'gold-label' item.id %}">{% csrf_token %}
-    <button name="verdict" value="correct">✓ correct</button>
-    <button name="verdict" value="not_on_page">not on page</button>
-    <input name="fix" maxlength="2000" placeholder="what the page actually says">
-    <button name="verdict" value="wrong">✗ wrong</button>
-  </form>
-</section>
-{% empty %}<p>Nothing left to check.</p>{% endfor %}
-</body></html>
+{% extends "base.html" %}
+{% block title %}Gold check{% endblock %}
+{% block content %}
+  <div class="page-head"><div><h1>Facts to check</h1><p>Read each line on its page and say whether the claim is right.</p></div></div>
+  <section class="panel" aria-labelledby="counts-heading">
+    <h2 id="counts-heading">Progress</h2>
+    <div class="table-wrap"><table>{% for key, c in counts %}<tr><td>{{ key.0 }}</td><td>{{ key.1 }}</td>
+    <td>{{ c.checked }} checked</td><td>{{ c.unchecked }} left</td></tr>{% endfor %}</table></div>
+  </section>
+  {% for item in items %}
+  <section class="panel">
+    <p><strong>{{ item.kind }}</strong> · {{ item.language }} · <a href="{{ item.page_url }}" rel="noopener noreferrer" target="_blank">page</a></p>
+    <p><em>{{ item.heading }}</em></p>
+    <blockquote class="quote">{{ item.line_text }}</blockquote>
+    <p>Claim: {{ item.claim }}</p>
+    <form method="post" action="{% url 'gold-label' item.id %}" class="gold-form">{% csrf_token %}
+      <button name="verdict" value="correct">✓ correct</button>
+      <button name="verdict" value="not_on_page" class="btn-quiet">not on page</button>
+      <input name="fix" maxlength="2000" placeholder="what the page actually says">
+      <button name="verdict" value="wrong" class="btn-quiet">✗ wrong</button>
+    </form>
+  </section>
+  {% empty %}<p class="empty">Nothing left to check.</p>{% endfor %}
+{% endblock %}

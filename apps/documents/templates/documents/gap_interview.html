@@ -14,10 +14,10 @@
   base.html carries no text input, so the exact `<input type="text"` count in
   tests/documents/test_gap_interview_view.py still counts questions only.
   {% endcomment %}
-  <h1>A few questions about your CV</h1>
+  <div class="page-head"><div><h1>A few questions about your CV</h1><p>Answer what you can. Anything you leave blank stays on the list.</p></div></div>
   {% if error %}<p role="alert">{{ error }}</p>{% endif %}
   {% if notes %}
-    <section>
+    <section class="panel">
       <h2>Worth knowing</h2>
       <p>Nothing to answer here -- these are for you and your counsellor.</p>
       <ul>
@@ -28,8 +28,7 @@
     </section>
   {% endif %}
   {% if fields %}
-    <p>Answer what you can. Anything you leave blank stays on the list.</p>
-    <form method="post">
+    <form method="post" class="panel gap-form">
       {% csrf_token %}
       {% for name, question in fields %}
         <p>

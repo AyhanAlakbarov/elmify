@@ -1,15 +1,18 @@
 <div id="pack">
   {% if pack %}
-    <p>{% if pack.published_at %}Approved v{{ pack.version }}{% else %}Version {{ pack.version }}{% endif %}</p>
+    <div class="pack-summary">
+      <p class="pill pill-brand">{% if pack.published_at %}Approved v{{ pack.version }}{% else %}Version {{ pack.version }}{% endif %}</p>
+      {% for currency, total in totals.items %}<p class="pill">Total funding gap: {{ total }} {{ currency }}</p>{% endfor %}
+    </div>
     {% if pending_line %}<p role="status">{{ pending_line }}</p>{% endif %}
-    {% for currency, total in totals.items %}<p>Total funding gap: {{ total }} {{ currency }}</p>{% endfor %}
     {% if error and not error_form %}<p role="alert">{{ error }}</p>{% endif %}
     <h2>Your pack</h2>
     {% for group in groups %}{% include "student/_funding_group.html" with in_pack=True %}{% endfor %}
     <h2>Other options</h2>
     {% for group in other_groups %}{% include "student/_funding_group.html" with in_pack=False %}{% endfor %}
-    <section aria-labelledby="named-heading">
+    <section class="panel" aria-labelledby="named-heading">
       <h2 id="named-heading">Ask us to consider a programme</h2>
+      <p class="muted">Know a programme we did not suggest? Name it and we will check it against your profile.</p>
       <form method="post" action="{% url 'student-consider-named-program' %}">
         {% csrf_token %}
         {% if error and error_form == "named-program" %}<p role="alert" id="program-name-error">{{ error }}</p>{% endif %}

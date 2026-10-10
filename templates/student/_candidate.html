@@ -1,9 +1,9 @@
 {% load dashboard %}
-<article id="candidate-{{ candidate.id }}">
+<article id="candidate-{{ candidate.id }}" class="candidate">
   {% if candidate.opportunity_id is None %}<h4>{{ candidate.program_name }}</h4>{% endif %}
   {% if candidate.institution_name or candidate.country_code %}<p>{{ candidate.institution_name }}{% if candidate.institution_name and candidate.country_code %} · {% endif %}{{ candidate.country_code }}</p>{% endif %}
-  {% if candidate.state == "CHECKING" %}<p>Under review</p>{% endif %}
-  <p>Fit: {{ candidate.eligibility_status.label }}</p>
+  {% if candidate.state == "CHECKING" %}<p class="pill pill-warn">Under review</p>{% endif %}
+  <p class="fit">Fit: {{ candidate.eligibility_status.label }}</p>
   {% if candidate.application_fee %}<p>Application fee: {{ candidate.application_fee }} {{ candidate.application_fee_currency }} — you pay this at submission</p>{% endif %}
   {% if candidate.opportunity_id is None %}
     <p>Funding gap: {% if candidate.funding_gap_is_placeholder %}not yet costed{% else %}{{ candidate.funding_gap }} {{ candidate.currency }}{% endif %}</p>
@@ -13,12 +13,12 @@
   {% if candidate.state != "CHECKING" %}
     {% if candidate.opportunity_id is None %}<p>{{ candidate.evidence.claim }}</p>{% endif %}
     {% with url=candidate.evidence.source_url|https_only %}
-      <p>{% if url %}<a href="{{ url }}">Official source</a> · {{ candidate.evidence.source_domain }}{% else %}Official source: {{ candidate.evidence.source_domain }}{% endif %} · Last checked {{ candidate.evidence.last_checked_at|date:"j M Y" }}</p>
+      <p class="source">{% if url %}<a href="{{ url }}">Official source</a> · {{ candidate.evidence.source_domain }}{% else %}Official source: {{ candidate.evidence.source_domain }}{% endif %} · Last checked {{ candidate.evidence.last_checked_at|date:"j M Y" }}</p>
     {% endwith %}
   {% endif %}
   {% if candidate.state == "VISIBLE" %}
     {% if candidate.id in applied %}
-      <p>In your applications.</p>
+      <p class="pill pill-ok">In your applications.</p>
     {% elif candidate.funding_card.route == "AUTOMATIC_ON_ADMISSION" %}
       <p>Comes with the admission: apply to the programme.</p>
     {% else %}

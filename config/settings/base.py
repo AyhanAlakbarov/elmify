@@ -68,6 +68,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "apps.tenancy.context_processors.brand_colors",
                 "apps.tenancy.context_processors.viewer_role",
+                "apps.tenancy.context_processors.app_shell",
             ]
         },
     }

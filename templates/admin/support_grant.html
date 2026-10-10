@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Support access{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Support access</h1>
+      <p>You are inside {{ request.tenant.name }} on a time-boxed grant. Every use is recorded and alarmed.</p>
+    </div>
+  </div>
+  <section class="panel" aria-labelledby="active-heading">
+    <h2 id="active-heading">Your active grant</h2>
+    <dl>
+      <dt>Reason</dt><dd>{{ active_grant.reason }}</dd>
+      <dt>From</dt><dd>{{ active_grant.starts_at|date:"j M Y, H:i" }}</dd>
+      <dt>Until</dt><dd>{{ active_grant.ends_at|date:"j M Y, H:i" }}</dd>
+    </dl>
+  </section>
+  <section class="panel" aria-labelledby="grants-heading">
+    <h2 id="grants-heading">All grants for this agency</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th scope="col">Administrator</th><th scope="col">Reason</th><th scope="col">From</th><th scope="col">Until</th><th scope="col">State</th></tr></thead>
+        <tbody>
+          {% for grant in grants %}
+            <tr>
+              <th scope="row">{{ grant.administrator.get_username }}</th>
+              <td>{{ grant.reason }}</td>
+              <td>{{ grant.starts_at|date:"j M Y H:i" }}</td>
+              <td>{{ grant.ends_at|date:"j M Y H:i" }}</td>
+              <td>{% if grant.revoked_at %}<span class="pill">Revoked</span>{% elif grant.id == active_grant.id %}<span class="pill pill-ok">Active</span>{% else %}<span class="pill">Ended or future</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

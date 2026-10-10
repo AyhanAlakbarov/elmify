@@ -8,6 +8,7 @@ copies the worker wrote (CLAUDE.md, "the catalogue boundary is a GRANT").
 
 from __future__ import annotations
 
+from collections.abc import Sized
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -60,12 +61,14 @@ def _percent(done: int, total: int) -> int:
     return round(100 * done / total) if total else 0
 
 
-def build_overview(student: Membership, board: Board, needs: list) -> Overview:
+def build_overview(student: Membership, board: Board, needs: Sized) -> Overview:
     cards = board.cards
-    upcoming = sorted(
-        (c for c in cards if c.deadline_local is not None and (c.days_left or 0) >= 0 and not c.outcome),
-        key=lambda c: c.deadline_local,
-    )
+    dated = [
+        (c.deadline_local, c)
+        for c in cards
+        if c.deadline_local is not None and (c.days_left or 0) >= 0 and not c.outcome
+    ]
+    upcoming = [card for _when, card in sorted(dated, key=lambda pair: pair[0])]
     pack = current_pack(student)
     pack_programmes = 0
     gap: dict[str, Decimal] = {}

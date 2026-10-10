@@ -1,17 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Account{% endblock %}
 {% block content %}
-  <h1>Account</h1>
-  <h2>Leave and delete my data</h2>
-  <p>Your access closes as soon as you ask. Your data is erased after thirty days; until then you can restore your account.</p>
-  <form method="post" action="{% url 'audit-request-account-deletion' %}">
-    {% csrf_token %}
-    <p>
-      <label for="deletion-reason">Why are you leaving?</label>
-      <select id="deletion-reason" name="reason" required>
-        {% for value, label in reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-      </select>
-    </p>
-    <button type="submit">Delete my account</button>
-  </form>
+  <div class="page-head"><div><h1>Account</h1><p><a href="/student/settings/">Settings</a> / Account</p></div></div>
+  <section class="panel panel-danger" aria-labelledby="leave-heading">
+    <h2 id="leave-heading">Leave and delete my data</h2>
+    <p>Your access closes as soon as you ask. Your data is erased after thirty days; until then you can restore your account.</p>
+    <form method="post" action="{% url 'audit-request-account-deletion' %}">
+      {% csrf_token %}
+      <p>
+        <label for="deletion-reason">Why are you leaving?</label>
+        <select id="deletion-reason" name="reason" required>
+          {% for value, label in reasons %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+      </p>
+      <button type="submit" class="btn-danger">Delete my account</button>
+    </form>
+  </section>
 {% endblock %}

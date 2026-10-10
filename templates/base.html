@@ -12,14 +12,14 @@
   <script src="{% static 'elmify/app.js' %}" defer></script>
   {% block head %}{% endblock %}
 </head>
-<body class="{% if user.is_authenticated and viewer_role %}has-shell{% else %}no-shell{% endif %}">
+<body class="{% if app_shell %}has-shell{% else %}no-shell{% endif %}">
   <a class="skip" href="#main">Skip to content</a>
-  {% if user.is_authenticated and viewer_role %}
-  <div class="shell">
+  {% if app_shell %}
+  <div class="shell role-{{ viewer_role|lower }}" hx-boost="true" hx-target="body" hx-swap="innerHTML show:none">
     <aside class="sidebar" id="sidebar">
       <a class="brand" href="/">
         <img class="brand-light" src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="104" height="30">
-        <img class="brand-dark" src="{% static 'elmify/elmify-wordmark-dark.svg' %}" alt="" width="104" height="30">
+        <img class="brand-dark" src="{% static 'elmify/elmify-wordmark-on-dark.svg' %}" alt="" width="104" height="30">
       </a>
       {% if request.tenant %}<p class="agency">{{ request.tenant.name }}</p>{% endif %}
       {% with p=request.path %}
@@ -52,7 +52,7 @@
       {% endif %}
       {% endwith %}
       <div class="sidebar-foot">
-        <p class="whoami"><span class="avatar" aria-hidden="true">{{ user.get_username|first|upper }}</span><span>{{ user.get_username }}<small>{{ viewer_role|lower|capfirst }}</small></span></p>
+        <p class="whoami"><span class="avatar" aria-hidden="true">{{ user.get_username|first|upper }}</span><span>{{ user.get_username }}<small>{% if viewer_role == "PLATFORM_ADMIN" %}Platform admin{% else %}{{ viewer_role|lower|capfirst }}{% endif %}</small></span></p>
         <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit" class="btn btn-quiet">Log out</button></form>
       </div>
     </aside>
@@ -80,7 +80,7 @@
     <header class="plain-head">
       <a class="brand" href="/">
         <img class="brand-light" src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="104" height="30">
-        <img class="brand-dark" src="{% static 'elmify/elmify-wordmark-dark.svg' %}" alt="" width="104" height="30">
+        <img class="brand-dark" src="{% static 'elmify/elmify-wordmark-on-dark.svg' %}" alt="" width="104" height="30">
       </a>
       {% if user.is_authenticated %}
         <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit" class="btn btn-quiet">Log out</button></form>
@@ -90,10 +90,10 @@
       <p class="note note-{% if message.level_tag == 'error' %}error{% else %}ok{% endif %}" role="{% if message.level_tag == 'error' %}alert{% else %}status{% endif %}">{{ message }}</p>
     {% endfor %}
   {% endif %}
-      <main id="main" tabindex="-1"{% if user.is_authenticated and viewer_role %} hx-boost="true" hx-target="body" hx-swap="innerHTML show:none"{% else %} class="plain-main"{% endif %}>
+      <main id="main" tabindex="-1"{% if not app_shell %} class="plain-main"{% endif %}>
         {% block content %}{% endblock %}
       </main>
-  {% if user.is_authenticated and viewer_role %}
+  {% if app_shell %}
     </div>
   </div>
   {% else %}

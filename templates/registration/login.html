@@ -2,6 +2,7 @@
 {% block title %}Log in{% endblock %}
 {% block content %}
   <h1>Log in</h1>
+  <p class="muted">Welcome back. Pick up your applications where you left them.</p>
   {% if rate_limited %}<p role="alert">Too many attempts. Try again in a few minutes.</p>{% endif %}
   {% for error in form.non_field_errors %}<p role="alert">{{ error }}</p>{% endfor %}
   <form method="post" action="{% url 'accounts-login' %}">
@@ -17,4 +18,5 @@
     <input type="hidden" name="next" value="{{ next }}">
     <button type="submit">Log in</button>
   </form>
+  <p class="muted auth-alt">New to Elmify? <a href="/signup/">Create an account</a></p>
 {% endblock %}

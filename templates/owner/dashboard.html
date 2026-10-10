@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Agency{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Agency</h1>
+      <p>Every roadmap task your counsellors and the agent are working on, for every student.</p>
+    </div>
+    <a class="btn btn-quiet" href="/owner/deletions/">Deletion requests</a>
+  </div>
+  {% regroup items|dictsort:"state" by get_state_display as by_state %}
+  <div class="stats">
+    {% for group in by_state %}
+      <div class="stat"><span class="stat-label">{{ group.grouper }}</span><span class="stat-value">{{ group.list|length }}</span></div>
+    {% empty %}
+      <div class="stat"><span class="stat-label">Tasks</span><span class="stat-value">0</span></div>
+    {% endfor %}
+  </div>
+  <section class="panel" aria-labelledby="tasks-heading">
+    <h2 id="tasks-heading">Roadmap tasks</h2>
+    {% if items %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Student</th><th scope="col">Stage</th><th scope="col">Owner</th><th scope="col">State</th><th scope="col">Due</th></tr></thead>
+          <tbody>
+            {% for item in items %}
+              <tr>
+                <th scope="row">{{ item.student.user.get_username }}</th>
+                <td>{{ item.get_stage_display }}</td>
+                <td>{% if item.owner %}{{ item.owner.user.get_username }}{% else %}{{ item.get_owner_kind_display }}{% endif %}</td>
+                <td><span class="pill{% if item.state == 'DONE' %} pill-ok{% elif item.state == 'BLOCKED' %} pill-danger{% elif item.state == 'IN_PROGRESS' %} pill-brand{% endif %}">{{ item.get_state_display }}</span></td>
+                <td>{{ item.deadline|date:"j M Y" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">No roadmap tasks yet. They appear when a counsellor plans a student's year.</p>
+    {% endif %}
+  </section>
+{% endblock %}

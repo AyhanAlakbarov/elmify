@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Messages{% endblock %}
 {% block content %}
-  <h1>Messages</h1>
+  <div class="page-head"><div><h1>Messages</h1><p>Your counsellor, and what universities and funders wrote to you.</p></div></div>
   {% include "student/_messages.html" %}
   {% if has_counselor %}
-    <form method="post" action="{% url 'concierge-send-student-message' %}">
+    <form class="panel composer" method="post" action="{% url 'concierge-send-student-message' %}">
       {% csrf_token %}
       <input type="hidden" name="return_to" value="messages">
       {% if error and error_form == "message" %}<p role="alert" id="message-error">{{ error }}</p>{% endif %}

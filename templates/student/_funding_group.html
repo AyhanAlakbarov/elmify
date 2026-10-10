@@ -1,4 +1,4 @@
-<section>
+<section class="funding-group">
   {% if group.award %}
     {% with award=group.award card=group.award.funding_card %}
       <h3>{{ award.program_name }}</h3>
@@ -12,7 +12,7 @@
       </dl>
       {% include "student/_candidate.html" with candidate=award also_under=None %}
     {% endwith %}
-    {% if group.programmes %}<p>{{ group.label }}:</p>{% endif %}
+    {% if group.programmes %}<p class="group-label">{{ group.label }}:</p>{% endif %}
   {% else %}
     <h3>{{ group.label }}</h3>
   {% endif %}
@@ -30,8 +30,8 @@
       {% endfor %}
     </ul>
   {% elif group.award %}
-    <p>No programme in this list matches this funding. Check its eligibility.</p>
+    <p class="muted">No programme in this list matches this funding. Check its eligibility.</p>
   {% else %}
-    <p>None.</p>
+    <p class="muted">None.</p>
   {% endif %}
 </section>

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Question{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <p><a href="{% url 'resolution-queue' %}">Resolution queue</a> / {{ item.get_kind_display }}</p>
+      <h1>{{ ask }}</h1>
+    </div>
+  </div>
+  {% if apply_error %}<p role="alert">Sent back: {{ apply_error }}</p>{% endif %}
+
+  <section class="panel" aria-labelledby="evidence-heading">
+    <h2 id="evidence-heading">Evidence</h2>
+    <dl>
+      {% for key, value in evidence.items %}
+        {% if key != "candidates" and key != "quotes" and key != "disputed" and key != "trail" and key != "screenshot_object_key" %}
+          <dt>{{ key|capfirst }}</dt>
+          <dd>{% if value|stringformat:"s"|slice:":8" == "https://" %}<a href="{{ value }}" rel="noopener noreferrer">{{ value }}</a>{% else %}{{ value|default:"—" }}{% endif %}</dd>
+        {% endif %}
+      {% endfor %}
+    </dl>
+    {% if evidence.quotes %}
+      <h3>What the page says</h3>
+      {% for quote in evidence.quotes %}<blockquote class="quote">{{ quote }}</blockquote>{% endfor %}
+    {% endif %}
+    {% if evidence.trail %}
+      <h3>What we tried</h3>
+      <ul class="item-list">{% for step in evidence.trail %}<li>{{ step.vendor }} (rung {{ step.rung }}): {{ step.outcome }}{% if step.reason %} — {{ step.reason }}{% endif %}<small>{{ step.at }}</small></li>{% endfor %}</ul>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="answer-heading">
+    <h2 id="answer-heading">Your answer</h2>
+    {% if item.kind == "SITE_UNKNOWN" %}
+      {% for candidate in evidence.candidates %}
+        <form method="post" action="{% url 'resolution-decide' item.id %}" class="row-form">
+          {% csrf_token %}
+          <input type="hidden" name="option" value="pick"><input type="hidden" name="url" value="{{ candidate.url }}">
+          <p>{{ candidate.title }}<br><small>{{ candidate.url }}</small></p>
+          <button type="submit">This is its site</button>
+        </form>
+      {% endfor %}
+      <form method="post" action="{% url 'resolution-decide' item.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="option" value="paste">
+        <p><label for="paste-url">Its site is somewhere else</label><input type="url" id="paste-url" name="url" required placeholder="https://"></p>
+        <button type="submit">Use this site</button>
+      </form>
+      <div class="row-actions">
+        <form method="post" action="{% url 'resolution-decide' item.id %}">{% csrf_token %}<input type="hidden" name="option" value="not_a_funder"><button type="submit" class="btn-quiet">Not a funder</button></form>
+        <form method="post" action="{% url 'resolution-decide' item.id %}">{% csrf_token %}<input type="hidden" name="option" value="does_not_exist"><button type="submit" class="btn-quiet">Does not exist</button></form>
+      </div>
+    {% elif item.kind == "AWARD_DISPUTED" %}
+      <form method="post" action="{% url 'resolution-decide' item.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="option" value="accept">
+        {% for disputed in evidence.disputed %}
+          <p>
+            <label for="field-{{ disputed.field }}">{{ disputed.field|capfirst }}</label>
+            <select id="field-{{ disputed.field }}" name="field:{{ disputed.field }}" required>{% for choice in disputed.choices %}<option value="{{ choice }}">{{ choice }}</option>{% endfor %}</select>
+          </p>
+        {% endfor %}
+        <p><label for="award-note">Note (optional)</label><input type="text" id="award-note" name="note" maxlength="200"></p>
+        <button type="submit">It is an award</button>
+      </form>
+      <div class="row-actions">
+        <form method="post" action="{% url 'resolution-decide' item.id %}">{% csrf_token %}<input type="hidden" name="option" value="not_an_award"><button type="submit" class="btn-quiet">Not an award</button></form>
+        <form method="post" action="{% url 'resolution-decide' item.id %}">{% csrf_token %}<input type="hidden" name="option" value="third_party"><button type="submit" class="btn-quiet">Someone else's award</button></form>
+      </div>
+    {% elif item.kind == "HOST_UNREACHABLE" %}
+      <form method="post" action="{% url 'resolution-decide' item.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="option" value="paste">
+        <p><label for="host-url">The page is now at</label><input type="url" id="host-url" name="url" required placeholder="https://{{ evidence.host }}/"></p>
+        <button type="submit">Use this page</button>
+      </form>
+      <form method="post" action="{% url 'resolution-decide' item.id %}">{% csrf_token %}<input type="hidden" name="option" value="closed"><button type="submit" class="btn-quiet">The site is closed</button></form>
+    {% elif item.kind == "KIND_OR_COUNTRY_UNSURE" %}
+      <form method="post" action="{% url 'resolution-decide' item.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="option" value="set">
+        <p><label for="org-kind">Kind of organisation</label><input type="text" id="org-kind" name="kind" required value="{{ evidence.guess_kind }}"></p>
+        <p><label for="org-country">Country (two letters)</label><input type="text" id="org-country" name="country_code" maxlength="2" value="{{ evidence.guess_country }}"></p>
+        <p><label for="org-funds">Does it fund students?</label><select id="org-funds" name="funds_students" required><option value="">Choose</option><option value="yes">Yes</option><option value="no">No</option></select></p>
+        <button type="submit">Save</button>
+      </form>
+      <form method="post" action="{% url 'resolution-decide' item.id %}">{% csrf_token %}<input type="hidden" name="option" value="not_an_organisation"><button type="submit" class="btn-quiet">Not an organisation</button></form>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="park-heading">
+    <h2 id="park-heading">Not sure?</h2>
+    <p class="muted">Park it and a second operator answers it instead.</p>
+    <form method="post" action="{% url 'resolution-park' item.id %}">{% csrf_token %}<button type="submit" class="btn-quiet">Park for someone else</button></form>
+  </section>
+{% endblock %}

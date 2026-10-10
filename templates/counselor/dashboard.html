@@ -1,32 +1,37 @@
 {% extends "base.html" %}
 {% block title %}Your students{% endblock %}
 {% block content %}
-  <h1>Your students</h1>
+  <div class="page-head"><div><h1>Your students</h1><p>Open a student to work on their board, documents and messages.</p></div></div>
   {% if error and not error_form %}<p role="alert">{{ error }}</p>{% endif %}
-  <ul>
-    {% for assignment in assignments %}
-      <li><a href="{% url 'counselor-student-board' assignment.student_id %}">{{ assignment.student.user.get_username }}</a></li>
-    {% empty %}
-      <li>No students assigned.</li>
-    {% endfor %}
-  </ul>
-  <h2>Tasks</h2>
-  <ul>
-    {% for item in items %}
-      <li>
-        {{ item.get_stage_display }} for {{ item.student.user.get_username }} — {{ item.get_state_display }}, due {{ item.deadline|date:"j M Y" }}
-        {% if error and error_form == item.id|stringformat:"s" %}<p role="alert">{{ error }}</p>{% endif %}
-        {% if item.owner_id == request.membership.id and item.state != "DONE" %}
-          <form method="post" action="{% url 'concierge-mark-roadmap-item-done' item.id %}">
-            {% csrf_token %}
-            <label for="done-{{ item.id }}">What you did</label>
-            <input type="text" id="done-{{ item.id }}" name="description">
-            <button type="submit">Mark done</button>
-          </form>
-        {% endif %}
-      </li>
-    {% empty %}
-      <li>No tasks.</li>
-    {% endfor %}
-  </ul>
+  <section class="panel" aria-labelledby="students-heading">
+    <div class="panel-head"><h2 id="students-heading">Students</h2><span class="pill">{{ assignments|length }}</span></div>
+    <ul class="student-grid">
+      {% for assignment in assignments %}
+        <li><a href="{% url 'counselor-student-board' assignment.student_id %}"><span class="avatar" aria-hidden="true">{{ assignment.student.user.get_username|first|upper }}</span><span>{{ assignment.student.user.get_username }}<small>Open board</small></span></a></li>
+      {% empty %}
+        <li class="empty">No students assigned.</li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section class="panel" aria-labelledby="tasks-heading">
+    <h2 id="tasks-heading">Tasks</h2>
+    <ul class="item-list">
+      {% for item in items %}
+        <li>
+          <span><strong>{{ item.get_stage_display }}</strong> for {{ item.student.user.get_username }} — {{ item.get_state_display }}, due {{ item.deadline|date:"j M Y" }}</span>
+          {% if error and error_form == item.id|stringformat:"s" %}<p role="alert">{{ error }}</p>{% endif %}
+          {% if item.owner_id == request.membership.id and item.state != "DONE" %}
+            <form method="post" action="{% url 'concierge-mark-roadmap-item-done' item.id %}">
+              {% csrf_token %}
+              <label for="done-{{ item.id }}">What you did</label>
+              <input type="text" id="done-{{ item.id }}" name="description">
+              <button type="submit">Mark done</button>
+            </form>
+          {% endif %}
+        </li>
+      {% empty %}
+        <li class="muted">No tasks.</li>
+      {% endfor %}
+    </ul>
+  </section>
 {% endblock %}

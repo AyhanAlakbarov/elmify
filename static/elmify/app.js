@@ -66,6 +66,42 @@
     if (event.key === "Escape") { document.body.classList.remove("menu-open"); }
   });
 
+  // A refusal that is a whole page (the views' inline-error re-renders) swaps
+  // in as usual. A bare-text refusal (e.g. HttpResponseBadRequest(str(err)))
+  // would replace the entire app with one line, so it is shown as an alert on
+  // the current page instead. A server error never swaps; say so.
+  function alertOnPage(text) {
+    var main = document.getElementById("main");
+    if (!main) { return; }
+    var old = main.querySelector(".js-request-alert");
+    if (old) { old.remove(); }
+    var note = document.createElement("p");
+    note.className = "note note-error js-request-alert";
+    note.setAttribute("role", "alert");
+    note.textContent = text;
+    main.insertBefore(note, main.firstChild);
+    note.scrollIntoView({ block: "nearest" });
+  }
+
+  document.addEventListener("htmx:beforeSwap", function (event) {
+    var xhr = event.detail && event.detail.xhr;
+    if (!xhr || xhr.status < 400 || xhr.status >= 500) { return; }
+    var body = xhr.responseText || "";
+    if (!/<(html|main|body)[\s>]/i.test(body)) {
+      event.detail.shouldSwap = false;
+      alertOnPage(body.trim() || "That did not work. Check the form and try again.");
+    }
+  });
+
+  document.addEventListener("htmx:responseError", function (event) {
+    var xhr = event.detail && event.detail.xhr;
+    if (xhr && xhr.status >= 500) { alertOnPage("Something went wrong on our side. Try again in a moment."); }
+  });
+
+  document.addEventListener("htmx:sendError", function () {
+    alertOnPage("You seem to be offline. Check your connection and try again.");
+  });
+
   // A button shows it is working while its form is posting.
   document.addEventListener("htmx:beforeRequest", function (event) {
     var elt = event.detail && event.detail.elt;
@@ -75,3 +111,12 @@
     }
   });
 })();
+
+// When a request ends without replacing the page (a refusal shown as an alert),
+// the button must stop looking busy.
+document.addEventListener("htmx:afterRequest", function (event) {
+  var elt = event.detail && event.detail.elt;
+  if (elt && elt.querySelectorAll) {
+    elt.querySelectorAll('[aria-busy="true"]').forEach(function (b) { b.removeAttribute("aria-busy"); });
+  }
+});

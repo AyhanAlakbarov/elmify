@@ -4,7 +4,7 @@
   <h1>Two-step verification</h1>
   {% if not confirmed %}
     <p>Scan this code with an authenticator app, or type the key into it.</p>
-    <p><img src="{{ qr_data_uri }}" alt="QR code for your authenticator app"></p>
+    <p class="qr"><img src="{{ qr_data_uri }}" alt="QR code for your authenticator app"></p>
     <p>Key: <code>{{ secret }}</code></p>
   {% endif %}
   {% if error %}<p role="alert">{{ error }}</p>{% endif %}

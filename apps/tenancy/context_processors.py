@@ -28,3 +28,25 @@ def brand_colors(request: HttpRequest) -> dict[str, str]:
     if not validate_brand_palette(primary):
         primary = PLATFORM_DEFAULT_PRIMARY
     return {"brand_primary_color": primary}
+
+
+#: Pages a signed-in user is held on until they act -- new terms, a paused or
+#: closing account, staff two-step setup. They render without the app menu,
+#: because every menu link would only bounce back here (TenantMembershipMiddleware).
+_GATE_PREFIXES = (
+    "/privacy/",
+    "/legal/",
+    "/student/account/",
+    "/mfa/setup/",
+    "/signup/",
+)
+
+
+def app_shell(request: HttpRequest) -> dict[str, bool]:
+    """Whether base.html draws the sidebar and top bar (presentation only)."""
+    membership = getattr(request, "membership", None)
+    return {
+        "app_shell": membership is not None
+        and request.user.is_authenticated
+        and not request.path.startswith(_GATE_PREFIXES)
+    }
