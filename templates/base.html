@@ -1,37 +1,103 @@
-<!doctype html>
+{% load static %}<!doctype html>
 <html lang="{% block lang %}en{% endblock %}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{% if request.tenant %}{{ request.tenant.name }}{% else %}Tehsil{% endif %}{% endblock %}</title>
+  <title>{% block title %}{% if request.tenant %}{{ request.tenant.name }}{% else %}Elmify{% endif %}{% endblock %} · Elmify</title>
+  <link rel="icon" href="{% static 'elmify/favicon.svg' %}" type="image/svg+xml">
+  <link rel="stylesheet" href="{% static 'elmify/app.css' %}">
+  {# htmx: forms inside <main> post in the background and swap the page in place #}
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"scrollIntoViewOnBoost":false,"historyCacheSize":0,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"4..","swap":true,"error":false},{"code":"...","swap":false,"error":true}]}'>
+  <script src="{% static 'elmify/htmx.min.js' %}" defer></script>
+  <script src="{% static 'elmify/app.js' %}" defer></script>
   {% block head %}{% endblock %}
 </head>
-<body>
-  <a href="#main">Skip to content</a>
-  <header>
-    {% if request.tenant %}<p>{{ request.tenant.name }}</p>{% endif %}
-    {% if viewer_role == "STUDENT" %}
-      <nav aria-label="Main">
-        <ul>
-          <li><a href="/student/">Home</a></li>
-          <li><a href="/student/recommendation/">Programmes &amp; funding</a></li>
-          <li><a href="/student/documents/">Documents</a></li>
-          <li><a href="/student/messages/">Messages</a></li>
-          <li><a href="/student/settings/">Settings</a></li>
-        </ul>
-      </nav>
-    {% elif viewer_role == "COUNSELOR" %}
-      <nav aria-label="Main"><ul><li><a href="/counselor/">Students</a></li></ul></nav>
-    {% endif %}
-    {% if user.is_authenticated %}
-      <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit">Log out</button></form>
-    {% endif %}
-  </header>
-  {% for message in messages %}
-    <p role="{% if message.level_tag == 'error' %}alert{% else %}status{% endif %}">{{ message }}</p>
-  {% endfor %}
-  <main id="main">
-    {% block content %}{% endblock %}
-  </main>
+<body class="{% if user.is_authenticated and viewer_role %}has-shell{% else %}no-shell{% endif %}">
+  <a class="skip" href="#main">Skip to content</a>
+  {% if user.is_authenticated and viewer_role %}
+  <div class="shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="/">
+        <img class="brand-light" src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="104" height="30">
+        <img class="brand-dark" src="{% static 'elmify/elmify-wordmark-dark.svg' %}" alt="" width="104" height="30">
+      </a>
+      {% if request.tenant %}<p class="agency">{{ request.tenant.name }}</p>{% endif %}
+      {% with p=request.path %}
+      {% if viewer_role == "STUDENT" %}
+        <nav aria-label="Main" class="nav">
+          <ul>
+            <li><a href="/student/"{% if p == "/student/" %} aria-current="page"{% endif %}><span class="ico ico-home" aria-hidden="true"></span>Home</a></li>
+            <li><a href="/student/recommendation/"{% if p == "/student/recommendation/" %} aria-current="page"{% endif %}><span class="ico ico-grid" aria-hidden="true"></span>Programmes &amp; funding</a></li>
+            <li><a href="/student/documents/"{% if "/student/documents/" in p or p == "/student/gap-interview/" %} aria-current="page"{% endif %}><span class="ico ico-doc" aria-hidden="true"></span>Documents</a></li>
+            <li><a href="/student/messages/"{% if p == "/student/messages/" %} aria-current="page"{% endif %}><span class="ico ico-chat" aria-hidden="true"></span>Messages</a></li>
+            <li><a href="/student/settings/"{% if "/student/settings/" in p or p == "/student/profile/" %} aria-current="page"{% endif %}><span class="ico ico-gear" aria-hidden="true"></span>Settings</a></li>
+          </ul>
+        </nav>
+      {% elif viewer_role == "COUNSELOR" %}
+        <nav aria-label="Main" class="nav"><ul><li><a href="/counselor/"{% if "/counselor/" in p %} aria-current="page"{% endif %}><span class="ico ico-people" aria-hidden="true"></span>Students</a></li></ul></nav>
+      {% elif viewer_role == "OWNER" %}
+        <nav aria-label="Main" class="nav">
+          <ul>
+            <li><a href="/owner/"{% if p == "/owner/" %} aria-current="page"{% endif %}><span class="ico ico-home" aria-hidden="true"></span>Agency</a></li>
+            <li><a href="/owner/deletions/"{% if p == "/owner/deletions/" %} aria-current="page"{% endif %}><span class="ico ico-shield" aria-hidden="true"></span>Deletion requests</a></li>
+          </ul>
+        </nav>
+      {% elif viewer_role == "PLATFORM_ADMIN" %}
+        <nav aria-label="Main" class="nav">
+          <ul>
+            <li><a href="/platform/resolution/"{% if "/platform/resolution/" in p %} aria-current="page"{% endif %}><span class="ico ico-grid" aria-hidden="true"></span>Resolution queue</a></li>
+            <li><a href="/platform/gold/"{% if "/platform/gold/" in p %} aria-current="page"{% endif %}><span class="ico ico-doc" aria-hidden="true"></span>Gold labels</a></li>
+          </ul>
+        </nav>
+      {% endif %}
+      {% endwith %}
+      <div class="sidebar-foot">
+        <p class="whoami"><span class="avatar" aria-hidden="true">{{ user.get_username|first|upper }}</span><span>{{ user.get_username }}<small>{{ viewer_role|lower|capfirst }}</small></span></p>
+        <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit" class="btn btn-quiet">Log out</button></form>
+      </div>
+    </aside>
+    <div class="workspace">
+      <div class="topbar">
+        <button type="button" class="menu-toggle" aria-controls="sidebar" aria-expanded="false"><span class="ico ico-menu" aria-hidden="true"></span><span class="sr-only">Menu</span></button>
+        {% if viewer_role == "STUDENT" %}
+          <form class="search" role="search" method="get" action="/student/search/">
+            <label for="site-search" class="sr-only">Search your programmes, applications, documents and messages</label>
+            <span class="ico ico-search" aria-hidden="true"></span>
+            <input type="search" id="site-search" name="q" placeholder="Search programmes, applications, documents, messages" value="{{ search_query|default:'' }}" autocomplete="off">
+            <kbd aria-hidden="true">/</kbd>
+          </form>
+        {% else %}
+          <span class="topbar-spacer"></span>
+        {% endif %}
+      </div>
+      <div class="flash">
+        {% for message in messages %}
+          <p class="note note-{% if message.level_tag == 'error' %}error{% else %}ok{% endif %}" role="{% if message.level_tag == 'error' %}alert{% else %}status{% endif %}">{{ message }}</p>
+        {% endfor %}
+      </div>
+  {% else %}
+  <div class="plain">
+    <header class="plain-head">
+      <a class="brand" href="/">
+        <img class="brand-light" src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="104" height="30">
+        <img class="brand-dark" src="{% static 'elmify/elmify-wordmark-dark.svg' %}" alt="" width="104" height="30">
+      </a>
+      {% if user.is_authenticated %}
+        <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit" class="btn btn-quiet">Log out</button></form>
+      {% endif %}
+    </header>
+    {% for message in messages %}
+      <p class="note note-{% if message.level_tag == 'error' %}error{% else %}ok{% endif %}" role="{% if message.level_tag == 'error' %}alert{% else %}status{% endif %}">{{ message }}</p>
+    {% endfor %}
+  {% endif %}
+      <main id="main" tabindex="-1"{% if user.is_authenticated and viewer_role %} hx-boost="true" hx-target="body" hx-swap="innerHTML show:none"{% else %} class="plain-main"{% endif %}>
+        {% block content %}{% endblock %}
+      </main>
+  {% if user.is_authenticated and viewer_role %}
+    </div>
+  </div>
+  {% else %}
+  </div>
+  {% endif %}
 </body>
 </html>

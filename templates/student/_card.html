@@ -1,39 +1,44 @@
-<article id="card-{{ card.application_id }}" aria-labelledby="card-title-{{ card.application_id }}">
+<article id="card-{{ card.application_id }}" class="app-card" aria-labelledby="card-title-{{ card.application_id }}">
   <h4 id="card-title-{{ card.application_id }}">{{ card.title }}</h4>
   {% if card.institution or card.country %}<p>{{ card.institution }}{% if card.institution and card.country %} · {% endif %}{{ card.country }}</p>{% endif %}
   {% if card.deadline_local %}
-    <p>Deadline: {{ card.deadline_local|date:"j M Y, H:i e" }} — {% if card.days_left < 0 %}passed{% else %}{{ card.days_left }} day{{ card.days_left|pluralize }} left{% endif %}</p>
+    <p class="card-deadline{% if card.days_left is not None and card.days_left >= 0 and card.days_left <= 7 %} is-soon{% endif %}">Deadline: {{ card.deadline_local|date:"j M Y, H:i e" }} — {% if card.days_left < 0 %}passed{% else %}{{ card.days_left }} day{{ card.days_left|pluralize }} left{% endif %}</p>
   {% endif %}
-  <p>Documents {{ card.documents.0 }}/{{ card.documents.1 }} · Answers {{ card.answers.0 }}/{{ card.answers.1 }}</p>
+  <div class="card-progress">
+    <p>Documents {{ card.documents.0 }}/{{ card.documents.1 }} · Answers {{ card.answers.0 }}/{{ card.answers.1 }}</p>
+    {% if card.documents.1 or card.answers.1 %}<progress value="{{ card.documents.0|add:card.answers.0 }}" max="{{ card.documents.1|add:card.answers.1 }}"></progress>{% endif %}
+  </div>
   {% for line in card.funding %}
-    <p>Funding: {{ line.name }}{% if line.covers %} — covers {{ line.covers }}{% endif %}{% if line.amounts %} — {{ line.amounts }}{% endif %}</p>
+    <p class="card-funding">Funding: {{ line.name }}{% if line.covers %} — covers {{ line.covers }}{% endif %}{% if line.amounts %} — {{ line.amounts }}{% endif %}</p>
   {% endfor %}
   {% if card.gap %}<p>Remaining gap: {{ card.gap }}</p>{% endif %}
   {% if card.funding_outcome_line %}<p>{{ card.funding_outcome_line }}</p>{% endif %}
   {% if card.funds %}<p>Funds: {{ card.funds|join:", " }}</p>{% endif %}
   {% if card.needs %}<p>Needs: {{ card.needs|join:", " }}</p>{% endif %}
   {% if card.fee %}<p>Application fee: {{ card.fee }} {{ card.fee_currency }} — you pay this at submission</p>{% endif %}
-  {% if card.badges %}<p>New mail: {{ card.badges|join:", " }}</p>{% endif %}
+  {% if card.badges %}<p class="card-badge">New mail: {{ card.badges|join:", " }}</p>{% endif %}
   {% if card.missing %}
-    <p>Missing:</p>
+    <p class="card-missing">Missing:</p>
     <ul>{% for item in card.missing %}<li>{{ item }}</li>{% endfor %}</ul>
   {% endif %}
-  {% if card.outcome_line %}<p>{{ card.outcome_line }}</p>{% endif %}
-  {% if card.offer %}<p>{{ card.offer.line }} — accept or ignore it under Needs you now.</p>{% endif %}
+  {% if card.outcome_line %}<p class="card-outcome">{{ card.outcome_line }}</p>{% endif %}
+  {% if card.offer %}<p class="card-offer">{{ card.offer.line }} — accept or ignore it under Needs you now.</p>{% endif %}
+  <div class="card-actions">
   {% if card.button %}
     {% if card.button.method == "post" %}
       {% if not read_only %}<form method="post" action="{{ card.button.url }}">{% csrf_token %}<button type="submit">{{ card.button.label }}</button></form>{% endif %}
     {% else %}
-      <p><a href="{{ card.button.url }}">{{ card.button.label }}</a></p>
+      <p><a class="btn" href="{{ card.button.url }}">{{ card.button.label }}</a></p>
     {% endif %}
   {% endif %}
   {% if card.kit_url %}<p><a href="{{ card.kit_url }}">Application Kit</a></p>{% endif %}
+  </div>
   {% if card.portal_record_url and not read_only %}
     <form method="post" action="{{ card.portal_record_url }}">
       {% csrf_token %}
       <p>
         <label for="portal-{{ card.application_id }}">Application portal address</label>
-        <input type="url" id="portal-{{ card.application_id }}" name="form_url" required>
+        <input type="url" id="portal-{{ card.application_id }}" name="form_url" required placeholder="https://">
       </p>
       <button type="submit">Record the portal</button>
     </form>

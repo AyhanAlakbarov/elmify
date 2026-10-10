@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Search</h1>
+      {% if searched %}
+        <p>{{ total }} result{{ total|pluralize }} for “{{ search_query }}”</p>
+      {% else %}
+        <p>Type at least {{ min_query }} characters in the search box above.</p>
+      {% endif %}
+    </div>
+  </div>
+  {% if searched and not groups %}
+    <p class="empty">Nothing matches “{{ search_query }}”. Try a programme, university, country, document or a word from a message.</p>
+  {% endif %}
+  {% for group in groups %}
+    <section class="panel" aria-labelledby="results-{{ forloop.counter }}">
+      <div class="panel-head">
+        <h2 id="results-{{ forloop.counter }}">{{ group.kind }}</h2>
+        <span class="pill">{{ group.results|length }}</span>
+      </div>
+      <ul class="results">
+        {% for result in group.results %}
+          <li><a href="{{ result.url }}">{{ result.title }}</a>{% if result.detail %}<br><small>{{ result.detail }}</small>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endfor %}
+{% endblock %}

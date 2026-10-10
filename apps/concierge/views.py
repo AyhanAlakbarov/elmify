@@ -11,6 +11,7 @@ from apps.accounts.models import StudentProfileVersion
 from apps.dashboard.board import board_for
 from apps.dashboard.locks import paused_reason
 from apps.dashboard.needs import items_for
+from apps.dashboard.overview import build_overview
 from apps.mailbox.models import MAX_CLASSIFY_ATTEMPTS, MailboxConnection, MailSignal
 from apps.portals.models import Application
 from apps.ratelimit import rate_limited
@@ -112,12 +113,17 @@ def _student_dashboard_page(
     form_values: dict[str, str] | None = None,
 ) -> HttpResponse:
     board = board_for(student)
+    needs = items_for(student, board=board)
     return render(
         request,
         "student/dashboard.html",
         {
             "board": board,
-            "needs": items_for(student, board=board),
+            "needs": needs,
+            "overview": build_overview(student, board, needs),
+            "has_counselor": CounselorAssignment.objects.filter(
+                student=student, active=True
+            ).exists(),
             "outcome_choices": Application.Outcome.choices,
             "error": error,
             "error_form": error_form,

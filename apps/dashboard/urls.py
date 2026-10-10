@@ -1,10 +1,12 @@
 from django.urls import path
 
 from . import views
+from .search_view import student_search
 
 _BASE = "counselor/students/<uuid:student_id>/"
 
 urlpatterns = [
+    path("student/search/", student_search, name="student-search"),
     path(_BASE, views.student_board, name="counselor-student-board"),
     path(
         _BASE + "applications/add/<uuid:candidate_id>/",

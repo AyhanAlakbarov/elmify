@@ -1,12 +1,75 @@
 {% extends "base.html" %}
 {% block title %}Home{% endblock %}
 {% block content %}
-  <h1>Home</h1>
-  {% include "student/_needs.html" %}
-  {% include "student/_board.html" %}
-  <section aria-labelledby="message-heading">
+  <div class="page-head">
+    <div>
+      <h1>Home</h1>
+      <p>Hello{% if user.first_name %}, {{ user.first_name }}{% endif %}. Here is where your applications stand today.</p>
+    </div>
+    <a class="btn" href="/student/recommendation/">Find programmes</a>
+  </div>
+
+  {% with o=overview %}
+  <div class="stats">
+    <a class="stat stat-accent" href="#board-heading">
+      <span class="stat-label">Applications</span>
+      <span class="stat-value">{{ o.applications }}</span>
+      <span class="stat-sub">{{ o.active }} in progress · {{ o.decided }} decided</span>
+    </a>
+    <div class="stat">
+      <span class="stat-label">Next deadline</span>
+      {% if o.next_deadline %}
+        <span class="stat-value">{% if o.next_deadline.days_left == 0 %}Today{% else %}{{ o.next_deadline.days_left }} day{{ o.next_deadline.days_left|pluralize }}{% endif %}</span>
+        <span class="stat-sub">{{ o.next_deadline.title }}</span>
+      {% else %}
+        <span class="stat-value">None</span>
+        <span class="stat-sub">No deadlines recorded yet</span>
+      {% endif %}
+    </div>
+    <a class="stat" href="/student/documents/">
+      <span class="stat-label">Documents ready</span>
+      <span class="stat-value">{{ o.documents_done }}<small> / {{ o.documents_total }}</small></span>
+      <span class="stat-sub"><progress value="{{ o.documents_done }}" max="{{ o.documents_total|default:1 }}">{{ o.documents_percent }}%</progress></span>
+    </a>
+    <a class="stat" href="/student/recommendation/">
+      <span class="stat-label">{% if o.funding_gap %}Funding gap in your pack{% else %}Programmes in your pack{% endif %}</span>
+      {% if o.funding_gap %}
+        {% for currency, total in o.funding_gap %}<span class="stat-value">{{ total|floatformat:"0g" }} {{ currency }}</span>{% endfor %}
+        <span class="stat-sub">{{ o.pack_programmes }} programme{{ o.pack_programmes|pluralize }} in your pack</span>
+      {% else %}
+        <span class="stat-value">{{ o.pack_programmes }}</span>
+        <span class="stat-sub">{% if o.pack_published %}Your pack is ready{% else %}Finish your profile to get a pack{% endif %}</span>
+      {% endif %}
+    </a>
+  </div>
+
+  <div class="overview-grid">
+    {% include "student/_needs.html" %}
+    <section class="panel" aria-labelledby="deadlines-heading">
+      <h2 id="deadlines-heading">Upcoming deadlines</h2>
+      {% if o.deadlines %}
+        <ul class="deadlines">
+          {% for card in o.deadlines %}
+            <li>
+              <span><a href="#card-{{ card.application_id }}">{{ card.title }}</a>{% if card.institution %}<br><small>{{ card.institution }}</small>{% endif %}</span>
+              <span class="when{% if card.days_left <= o.soon_days %} soon{% endif %}">{{ card.deadline_local|date:"j M" }} · {% if card.days_left == 0 %}today{% else %}{{ card.days_left }}d{% endif %}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">No deadlines yet. They appear once an application has one.</p>
+      {% endif %}
+    </section>
+  </div>
+  {% endwith %}
+
+  <div class="board-wrap">
+    {% include "student/_board.html" %}
+  </div>
+
+  <section class="panel" aria-labelledby="message-heading">
     <h2 id="message-heading">Write to your counsellor</h2>
-    <form method="post" action="{% url 'concierge-send-student-message' %}">
+    <form class="composer" method="post" action="{% url 'concierge-send-student-message' %}">
       {% csrf_token %}
       {% if error and error_form == "message" %}<p role="alert" id="message-error">{{ error }}</p>{% endif %}
       <p>

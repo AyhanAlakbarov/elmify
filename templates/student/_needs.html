@@ -1,4 +1,4 @@
-<section aria-labelledby="needs-heading">
+<section class="panel needs" aria-labelledby="needs-heading">
   <h2 id="needs-heading">Needs you now</h2>
   {% if needs %}
     <ul>
@@ -22,6 +22,6 @@
       {% endfor %}
     </ul>
   {% else %}
-    <p>Nothing needs you right now.</p>
+    <p class="empty">Nothing needs you right now.</p>
   {% endif %}
 </section>

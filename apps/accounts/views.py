@@ -31,7 +31,12 @@ from .profile_versions import ProfileVersionRejected
 
 
 def _is_htmx(request: HttpRequest) -> bool:
-    return request.headers.get("HX-Request", "").lower() == "true"
+    # Same rule as apps/funding/views.py: a boosted form (base.html boosts
+    # <main>) expects a whole page back, only a true fragment request gets one.
+    return (
+        request.headers.get("HX-Request", "").lower() == "true"
+        and request.headers.get("HX-Boosted", "").lower() != "true"
+    )
 
 
 def _render_question(

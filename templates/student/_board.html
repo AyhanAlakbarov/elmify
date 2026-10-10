@@ -1,6 +1,10 @@
 <section aria-labelledby="board-heading">
-  <h2 id="board-heading">Your applications</h2>
-  {% if not board.cards %}<p>No applications yet. Add one from Programmes &amp; funding.</p>{% endif %}
+  <div class="panel-head">
+    <h2 id="board-heading">Your applications</h2>
+    {% if board.cards %}<span class="pill pill-brand">{{ board.cards|length }} total</span>{% endif %}
+  </div>
+  {% if not board.cards %}<p class="empty board-empty">No applications yet. Add one from <a href="/student/recommendation/">Programmes &amp; funding</a>.</p>{% endif %}
+  <div class="board">
   {% for column, cards in board.columns %}
     <section aria-labelledby="column-{{ column.key }}">
       <h3 id="column-{{ column.key }}">{{ column }} ({{ cards|length }})</h3>
@@ -11,4 +15,5 @@
       {% endfor %}
     </section>
   {% endfor %}
+  </div>
 </section>
