@@ -6,7 +6,7 @@
 # Named stage rather than COPY --from=<image> directly: Dependabot's docker
 # updater only parses FROM lines (dependabot-core#5103), so an inline image
 # reference here would never be bumped. The alias makes it a FROM line.
-FROM ghcr.io/astral-sh/uv:0.12.18@sha256:3adc3706091ce7c2fe595e669628caedd6d951551b92b258b7e7dbe06d9440bc AS uv
+FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 
 FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS build
 
