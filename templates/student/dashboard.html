@@ -10,6 +10,27 @@
   </div>
 
   {% with o=overview %}
+  {% if not o.all_steps_done %}
+    <ol class="journey" aria-label="Your steps">
+      {% for key, state in o.steps %}
+        <li class="is-{{ state }}"{% if state == "current" %} aria-current="step"{% endif %}>
+          {% if key == "profile" %}
+            <strong>Tell us about you</strong>
+            {% if state == "done" %}Profile complete. <a href="/student/profile/">Update it</a>{% else %}14 short questions. <a href="/student/profile/">Start</a>{% endif %}
+          {% elif key == "choose" %}
+            <strong>Choose programmes</strong>
+            {% if state == "done" %}{{ o.applications }} in your list.{% elif o.pack_published %}{{ o.pack_programmes }} match{{ o.pack_programmes|pluralize:"es" }} ready. <a href="/student/recommendation/">See them</a>{% else %}Your matches appear here after your profile.{% endif %}
+          {% elif key == "documents" %}
+            <strong>Prepare documents</strong>
+            {% if state == "done" %}Everything is ready.{% elif o.documents_total %}{{ o.documents_done }} of {{ o.documents_total }} ready. <a href="/student/documents/">Open</a>{% else %}Your CV and what each application asks for.{% endif %}
+          {% else %}
+            <strong>Apply</strong>
+            {% if state == "done" %}{{ o.submitted }} sent.{% else %}Use each application's kit to apply.{% endif %}
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  {% endif %}
   <div class="stats">
     <a class="stat stat-accent" href="#board-heading">
       <span class="stat-label">Applications</span>

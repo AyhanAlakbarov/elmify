@@ -11,9 +11,9 @@
     <p>{{ form.full_name.label_tag }} {{ form.full_name }} {{ form.full_name.errors }}</p>
     <p>{{ form.email.label_tag }} {{ form.email }} {{ form.email.errors }}</p>
     <p>{{ form.password.label_tag }} {{ form.password }} <small class="muted">{{ form.password.help_text }}</small> {{ form.password.errors }}</p>
-    {# Changing language reloads the page, so the documents shown (the hidden ids
+    {% comment %}Changing language reloads the page, so the documents shown (the hidden ids
        above) are always the ones in the language submitted. A select here let a
-       student pick another language and then be told the documents "changed". #}
+       student pick another language and then be told the documents "changed".{% endcomment %}
     {% with current=form.language.value|default:'en' %}
       <input type="hidden" name="language" value="{{ current }}">
       <p class="lang-switch">Language:

@@ -77,6 +77,18 @@
         {% endfor %}
       </div>
   {% else %}
+  {% if not user.is_authenticated %}
+  <aside class="plain-aside" aria-hidden="true">
+    <div class="plain-aside-inner">
+      <p class="plain-aside-title">Find a funded master&rsquo;s.<br>Apply with a plan.</p>
+      <ul>
+        <li><span>1</span>Tell us what you studied and where you want to go.</li>
+        <li><span>2</span>See programmes grouped by the scholarship that pays for them.</li>
+        <li><span>3</span>Track every deadline, document and answer in one place.</li>
+      </ul>
+    </div>
+  </aside>
+  {% endif %}
   <div class="plain">
     <header class="plain-head">
       <a class="brand" href="/">

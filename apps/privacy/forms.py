@@ -23,6 +23,10 @@ class SignupForm(forms.Form):
     language = forms.ChoiceField(choices=[(code, code) for code in LANGUAGES], initial="en")
     consent = forms.BooleanField(required=True, label=CONSENT_TEXT)
 
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        kwargs.setdefault("label_suffix", "")
+        super().__init__(*args, **kwargs)  # type: ignore[arg-type]
+
     def clean_email(self) -> str:
         email = str(self.cleaned_data["email"]).strip().lower()
         taken = Q(username__iexact=email) | Q(email__iexact=email)

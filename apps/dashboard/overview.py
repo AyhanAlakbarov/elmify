@@ -12,6 +12,7 @@ from collections.abc import Sized
 from dataclasses import dataclass
 from decimal import Decimal
 
+from apps.accounts.models import StudentProfileVersion
 from apps.funding.models import PackCandidate
 from apps.funding.services import current_pack, pool_funding_gap_totals
 from apps.tenancy.models import Membership
@@ -39,6 +40,36 @@ class Overview:
     pack_published: bool
     funding_gap: tuple[tuple[str, Decimal], ...]
     deadlines: tuple[Card, ...]
+    #: The student has confirmed a profile (a StudentProfileVersion exists).
+    profile_done: bool = False
+    #: Applications past "In progress": submitted, confirmed or decided.
+    submitted: int = 0
+
+    @property
+    def steps(self) -> tuple[tuple[str, str], ...]:
+        """The four steps of the journey as (key, state): done, current or todo.
+        Exactly one step is current until every step is done."""
+        done = {
+            "profile": self.profile_done,
+            "choose": self.applications > 0,
+            "documents": self.documents_total > 0 and self.documents_done >= self.documents_total,
+            "apply": self.submitted > 0,
+        }
+        out = []
+        current_given = False
+        for key in ("profile", "choose", "documents", "apply"):
+            if done[key]:
+                out.append((key, "done"))
+            elif not current_given:
+                out.append((key, "current"))
+                current_given = True
+            else:
+                out.append((key, "todo"))
+        return tuple(out)
+
+    @property
+    def all_steps_done(self) -> bool:
+        return all(state == "done" for _key, state in self.steps)
 
     @property
     def documents_percent(self) -> int:
@@ -76,6 +107,10 @@ def build_overview(student: Membership, board: Board, needs: Sized) -> Overview:
         pack_programmes = PackCandidate.objects.filter(pack_version=pack).count()
         gap = dict(pool_funding_gap_totals(pack))
     decided = sum(1 for c in cards if c.column is Column.DECISION)
+    submitted = sum(
+        1 for c in cards if c.column in (Column.SUBMITTED, Column.CONFIRMED, Column.DECISION)
+    )
+    profile_done = StudentProfileVersion.objects.filter(student=student).exists()
     return Overview(
         applications=len(cards),
         active=len(cards) - decided,
@@ -90,4 +125,6 @@ def build_overview(student: Membership, board: Board, needs: Sized) -> Overview:
         pack_published=bool(pack is not None and pack.published_at),
         funding_gap=tuple(sorted(gap.items())),
         deadlines=tuple(upcoming[:DEADLINES_SHOWN]),
+        profile_done=profile_done,
+        submitted=submitted,
     )

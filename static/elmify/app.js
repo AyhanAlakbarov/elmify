@@ -102,6 +102,13 @@
     alertOnPage("You seem to be offline. Check your connection and try again.");
   });
 
+  // The page's entrance motion is for arriving somewhere. After a form posts
+  // and the same page comes back, play nothing: the reader stays put.
+  document.addEventListener("htmx:beforeRequest", function (event) {
+    var verb = ((event.detail && event.detail.requestConfig && event.detail.requestConfig.verb) || "get").toLowerCase();
+    document.body.classList.toggle("is-posting", verb !== "get");
+  });
+
   // A button shows it is working while its form is posting.
   document.addEventListener("htmx:beforeRequest", function (event) {
     var elt = event.detail && event.detail.elt;
