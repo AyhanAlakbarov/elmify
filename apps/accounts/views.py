@@ -103,12 +103,33 @@ def _render_current_state(
         return _render_validation_error(request, draft, validation_error)
 
 
+#: Why the answers, taken together, do not make a profile -- said to the
+#: student on the question they are sent back to. Without a sentence the
+#: wizard re-asks a question they already answered, silently, and they loop.
+_CORRECTION_MESSAGES = {
+    "profile_country_overlap": (
+        "A country is both on your list and ruled out. Remove it from one of the two."
+    ),
+    "profile_language_evidence_mismatch": (
+        "This certificate is for a language you did not list as one you could study in. "
+        "Change its language, or leave this question empty."
+    ),
+    "profile_self_funding_missing": "Say how much you can cover yourself each year.",
+    "profile_birth_date_future": "Your date of birth must be in the past.",
+}
+
+
 def _render_validation_error(
     request: HttpRequest, draft: ConsultationDraft, error: ValidationError
 ) -> HttpResponse:
     corrected = draft.with_correction(correction_key(error))
     write_draft(request.session, corrected)
-    return _render_question(request, corrected, status=400)
+    detail = error.errors()[0]
+    reason = detail.get("msg", "it does not fit with your other answers")
+    message = _CORRECTION_MESSAGES.get(
+        str(detail.get("type", "")), f"Please check this answer: {reason}."
+    )
+    return _render_question(request, corrected, error=message, status=400)
 
 
 @login_required

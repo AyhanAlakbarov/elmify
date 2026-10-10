@@ -227,3 +227,61 @@ def test_the_review_step_reads_structured_answers_as_text(
     assert "institution: Baku State University" in body
     assert "[" not in body.split("Check your answers", 1)[1].split("</dl>", 1)[0]
     assert "{" not in body.split("Check your answers", 1)[1].split("</dl>", 1)[0]
+
+
+@pytest.mark.django_db
+def test_a_question_sent_back_by_the_review_says_why(client, domain_a, user_a, membership_a):
+    """Every answer passes alone, but together they do not (a certificate in a
+    language the student did not list). The review sends the student back to
+    that question; it must say why, or they answer the same thing and loop."""
+    import json
+
+    client.force_login(user_a)
+    answers = (
+        ("nationality", "AZ"),
+        ("country_of_residence", "AZ"),
+        ("date_of_birth", "2002-05-01"),
+        ("target_field", "Chemistry"),
+        ("allowed_countries", "DE"),
+        ("excluded_countries", ""),
+        ("intended_intake", "2027-09-01"),
+        ("funding_dependency", "MANDATORY"),
+        ("application_budget", {"amount": "150.00", "currency": "EUR"}),
+        ("career_intent", "PHD"),
+        ("acceptable_teaching_languages", "English"),
+        (
+            "language_evidence",
+            [
+                {
+                    "language": "German",
+                    "level": "B2",
+                    "evidence_type": "TEST",
+                    "available_by": "2026-12-01",
+                }
+            ],
+        ),
+        (
+            "academic_history",
+            [
+                {
+                    "institution": "BSU",
+                    "country_code": "AZ",
+                    "qualification": "BSc",
+                    "field": "Chemistry",
+                    "grade": "90",
+                    "grading_scale": "100",
+                    "completed_on": "2026-06-30",
+                }
+            ],
+        ),
+        ("additional_notes", ""),
+    )
+    for key, value in answers:
+        response = client.post(
+            "/student/profile/",
+            {"key": key, "value": json.dumps(value) if isinstance(value, (dict, list)) else value},
+            HTTP_HOST=domain_a.host,
+        )
+    assert response.status_code == 400
+    body = response.content.decode()
+    assert "did not list as one you could study in" in body

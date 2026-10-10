@@ -1,6 +1,6 @@
-<article id="card-{{ card.application_id }}" class="app-card" aria-labelledby="card-title-{{ card.application_id }}">
+{% load cv_countries %}<article id="card-{{ card.application_id }}" class="app-card" aria-labelledby="card-title-{{ card.application_id }}">
   <h4 id="card-title-{{ card.application_id }}">{{ card.title }}</h4>
-  {% if card.institution or card.country %}<p>{{ card.institution }}{% if card.institution and card.country %} · {% endif %}{{ card.country }}</p>{% endif %}
+  {% if card.institution or card.country %}<p>{{ card.institution }}{% if card.institution and card.country %} · {% endif %}{{ card.country|country_name }}</p>{% endif %}
   {% if card.deadline_local %}
     <p class="card-deadline{% if card.days_left is not None and card.days_left >= 0 and card.days_left <= 7 %} is-soon{% endif %}">Deadline: {{ card.deadline_local|date:"j M Y, H:i e" }} — {% if card.days_left < 0 %}passed{% else %}{{ card.days_left }} day{{ card.days_left|pluralize }} left{% endif %}</p>
   {% endif %}
