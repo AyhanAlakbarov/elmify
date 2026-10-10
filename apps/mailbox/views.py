@@ -36,7 +36,13 @@ from django.views.decorators.http import require_POST
 from apps.mailbox import push
 from apps.mailbox.filter import allowed_senders
 from apps.mailbox.models import LearnedSender, MailboxConnection
-from apps.mailbox.oauth import GrantRefused, GrantUnavailable, authorize_url, exchange_code
+from apps.mailbox.oauth import (
+    GrantRefused,
+    GrantUnavailable,
+    authorize_url,
+    exchange_code,
+    is_configured,
+)
 from apps.mailbox.secrets import delete_student_mailbox_tokens, store_refresh_token
 from apps.tenancy.db import tenant_transaction
 from apps.tenancy.models import Membership
@@ -114,6 +120,13 @@ def connect(request: HttpRequest, provider: str) -> HttpResponse:
     kind = request.GET.get("kind", MailboxConnection.Kind.EVERYDAY)
     if kind not in MailboxConnection.Kind.values:
         return _answer(request, {"reason": "unknown_kind"}, status=400)
+    if not is_configured(provider):
+        return _answer(
+            request,
+            {"reason": "provider_not_configured"},
+            status=400,
+            message="Connecting an inbox is not set up on this server yet.",
+        )
     state = signing.dumps(
         {"membership": str(membership.id), "provider": provider, "tier": tier, "kind": kind}
     )

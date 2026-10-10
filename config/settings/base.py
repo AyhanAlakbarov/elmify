@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "apps.watch",
     "apps.dashboard",
     "apps.privacy",
+    "apps.leads",
 ]
 
 MIDDLEWARE = [
@@ -132,6 +133,14 @@ STORAGES = {
 }
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 RESEARCH_QUEUE_URL = os.getenv("RESEARCH_QUEUE_URL", "test-research-queue")
+
+#: Early access: a student who signs up gets this academic year's cycle free,
+#: so the search starts without a checkout (none exists yet; R13 uses
+#: `manage.py mark_cycle_paid`). On by default only on a DEBUG machine; a
+#: deployed site turns it on deliberately with EARLY_ACCESS_FREE_CYCLE=1.
+EARLY_ACCESS_FREE_CYCLE = (
+    os.getenv("EARLY_ACCESS_FREE_CYCLE", "1" if DEBUG else "0") == "1"
+)
 EUROPASS_QUEUE_URL = os.getenv("EUROPASS_QUEUE_URL", "test-europass-queue")
 DOCUMENT_QUEUE_URL = os.getenv("DOCUMENT_QUEUE_URL", "test-document-queue")
 DOCUMENT_SCAN_QUEUE_URL = os.getenv("DOCUMENT_SCAN_QUEUE_URL", "test-document-scan-queue")

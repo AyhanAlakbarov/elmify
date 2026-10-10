@@ -19,6 +19,8 @@ def index(request: HttpRequest) -> HttpResponse:
         return redirect("concierge-counselor-dashboard")
     if role == Membership.Role.OWNER:
         return redirect("concierge-owner-dashboard")
+    if role == Membership.Role.PLATFORM_ADMIN:
+        return redirect("resolution-queue")
     return redirect("accounts-login")
 
 
@@ -35,6 +37,7 @@ urlpatterns = [
     path("", include("apps.portals.urls")),
     path("", include("apps.mailbox.urls")),
     path("", include("apps.privacy.urls")),
+    path("", include("apps.leads.urls")),
     path("", include("apps.research.urls")),
     path("admin/", admin.site.urls),
 ]

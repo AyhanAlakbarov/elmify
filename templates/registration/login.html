@@ -8,7 +8,7 @@
   <form method="post" action="{% url 'accounts-login' %}">
     {% csrf_token %}
     <p>
-      <label for="id_username">Username</label>
+      <label for="id_username">Email or username</label>
       <input type="text" name="username" id="id_username" autocomplete="username" value="{{ form.username.value|default_if_none:'' }}" required>
     </p>
     <p>

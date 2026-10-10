@@ -3,7 +3,7 @@
   {% if candidate.opportunity_id is None %}<h4>{{ candidate.program_name }}</h4>{% endif %}
   {% if candidate.institution_name or candidate.country_code %}<p>{{ candidate.institution_name }}{% if candidate.institution_name and candidate.country_code %} · {% endif %}{{ candidate.country_code }}</p>{% endif %}
   {% if candidate.state == "CHECKING" %}<p class="pill pill-warn">Under review</p>{% endif %}
-  <p class="fit">Fit: {{ candidate.eligibility_status.label }}</p>
+  {% if candidate.state == "CHECKING" %}<p class="fit">Fit: we are checking this programme against your profile</p>{% else %}<p class="fit">Fit: {{ candidate.eligibility_status.label }}</p>{% endif %}
   {% if candidate.application_fee %}<p>Application fee: {{ candidate.application_fee }} {{ candidate.application_fee_currency }} — you pay this at submission</p>{% endif %}
   {% if candidate.opportunity_id is None %}
     <p>Funding gap: {% if candidate.funding_gap_is_placeholder %}not yet costed{% else %}{{ candidate.funding_gap }} {{ candidate.currency }}{% endif %}</p>

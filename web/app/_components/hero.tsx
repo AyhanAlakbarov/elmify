@@ -1,4 +1,5 @@
 import { Button } from "./button";
+import { appLinks } from "./app-links";
 
 export function Hero() {
   return (
@@ -22,11 +23,11 @@ export function Hero() {
           deadline, and fills in your applications while you stay in control.
         </p>
         <div className="hero-line mt-10 flex flex-wrap items-center justify-center gap-3 [animation-delay:400ms]">
-          <Button href="#start" size="lg">
-            Get early access
+          <Button href={appLinks.signup} size="lg">
+            Create your free account
           </Button>
-          <Button href="#features" variant="secondary" size="lg">
-            See how it works
+          <Button href={appLinks.demo} variant="secondary" size="lg">
+            Book a demo
           </Button>
         </div>
       </div>

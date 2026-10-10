@@ -1,73 +1,111 @@
+# ruff: noqa: E501  (a one-off generator script; its SVG templates are long lines)
 """Builds the four Elmify logo SVGs + a TS module of path data from Inter ExtraBold.
 Run: python3 scripts/build_logos.py   (needs fonttools; reads @fontsource/inter woff)"""
-import json, os
-from fontTools.ttLib import TTFont
+
+import json
+import os
+
+from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
-from fontTools.pens.boundsPen import BoundsPen
+from fontTools.ttLib import TTFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-font = TTFont(os.path.join(ROOT, "node_modules/@fontsource/inter/files/inter-latin-800-normal.woff"))
+font = TTFont(
+    os.path.join(ROOT, "node_modules/@fontsource/inter/files/inter-latin-800-normal.woff")
+)
 gs, cmap, hmtx = font.getGlyphSet(), font.getBestCmap(), font["hmtx"]
 upm = font["head"].unitsPerEm
-PURPLE, PURPLE_DARK_BG = "#7C3AED", "#A78BFA"   # dot on light / on dark
+PURPLE, PURPLE_DARK_BG = "#7C3AED", "#A78BFA"  # dot on light / on dark
 INK, PAPER, NIGHT = "#0B0716", "#FAF9FF", "#0B0716"
 
+
 def bounds(ch):
-    bp = BoundsPen(gs); gs[cmap[ord(ch)]].draw(bp); return bp.bounds
+    bp = BoundsPen(gs)
+    gs[cmap[ord(ch)]].draw(bp)
+    return bp.bounds
+
 
 def path_for(ch, x, y=0, s=1.0):
     p = SVGPathPen(gs)
     gs[cmap[ord(ch)]].draw(TransformPen(p, (s, 0, 0, -s, x, y)))
     return p.getCommands()
 
+
 TRACK = -0.045 * upm
+
+
 def word(text, dotless_i=True):
     x, parts, dot = 0, [], None
     for ch in text:
         g = "ı" if (ch == "i" and dotless_i) else ch
         parts.append(path_for(g, x))
         if ch == "i" and dotless_i:
-            b = bounds(g); stem = b[2] - b[0]
+            b = bounds(g)
+            stem = b[2] - b[0]
             side = stem * 1.0
-            dot = (x + b[0], -(b[3] + side * 0.32 + side), side)   # x, y(top, flipped), side
+            dot = (x + b[0], -(b[3] + side * 0.32 + side), side)  # x, y(top, flipped), side
         x += hmtx[cmap[ord(g)]][0] + TRACK
     return " ".join(parts), dot, x - TRACK
 
+
 d, dot, adv = word("elmify")
-asc, desc = 1650, -480   # viewbox top/bottom in flipped coords
+asc, desc = 1650, -480  # viewbox top/bottom in flipped coords
 pad = 200
 vb_w, vb_h = adv + pad * 2, (asc - desc) + pad * 2
 vb = f"{-pad:.0f} {-asc - pad} {vb_w:.0f} {vb_h:.0f}"
 dx, dy, ds = dot
 
 # bare mark: "e" + square full stop
-eb = bounds("e"); e_path = path_for("e", 0)
-sq = (eb[2] + 70, -0 - 0, 330)            # square sits on baseline right of e
+eb = bounds("e")
+e_path = path_for("e", 0)
+sq = (eb[2] + 70, -0 - 0, 330)  # square sits on baseline right of e
 sq_y = -330
 mark_w = eb[2] + 70 + 330
+
+
 def svg(w, h, vbox, body, bg=None, rx=0):
-    bgr = f'<rect x="{vbox[0]}" y="{vbox[1]}" width="{vbox[2]}" height="{vbox[3]}" rx="{rx}" fill="{bg}"/>' if bg else ""
+    bgr = (
+        f'<rect x="{vbox[0]}" y="{vbox[1]}" width="{vbox[2]}" height="{vbox[3]}" rx="{rx}" fill="{bg}"/>'
+        if bg
+        else ""
+    )
     return f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vbox[0]} {vbox[1]} {vbox[2]} {vbox[3]}" role="img" aria-label="Elmify">{bgr}{body}</svg>\n'
 
+
 vbw = [float(v) for v in vb.split()]
+
+
 def wm(ink, dotc):
     return f'<path fill="{ink}" d="{d}"/><rect fill="{dotc}" x="{dx:.0f}" y="{dy:.0f}" width="{ds:.0f}" height="{ds:.0f}"/>'
+
+
 out = os.path.join(ROOT, "public/brand")
 open(f"{out}/elmify-wordmark-light.svg", "w").write(svg(0, 0, vbw, wm(INK, PURPLE)))
-open(f"{out}/elmify-wordmark-dark.svg", "w").write(svg(0, 0, vbw, wm(PAPER, PURPLE_DARK_BG), bg=NIGHT, rx=60))
+open(f"{out}/elmify-wordmark-dark.svg", "w").write(
+    svg(0, 0, vbw, wm(PAPER, PURPLE_DARK_BG), bg=NIGHT, rx=60)
+)
 # icon: 1024 square, mark centred
 S = 1024
 scale = 0.52 * S / (eb[3] - eb[1])
 mw = mark_w * scale
 ox = (S - mw) / 2 - eb[0] * scale
-base = S / 2 + (eb[3]) * scale / 2 + 0     # baseline y (e is x-height tall, sits on baseline)
+base = S / 2 + (eb[3]) * scale / 2 + 0  # baseline y (e is x-height tall, sits on baseline)
+
+
 def mark(ink, dotc):
     ep = path_for("e", ox, base, scale)
-    sxx = ox + (eb[2] + 70) * scale; side = 330 * scale
+    sxx = ox + (eb[2] + 70) * scale
+    side = 330 * scale
     return f'<path fill="{ink}" d="{ep}"/><rect fill="{dotc}" x="{sxx:.0f}" y="{base - side:.0f}" width="{side:.0f}" height="{side:.0f}"/>'
-open(f"{out}/elmify-icon-paper.svg", "w").write(svg(S, S, [0, 0, S, S], mark(INK, PURPLE), bg=PAPER, rx=232))
-open(f"{out}/elmify-mark-dark.svg", "w").write(svg(S, S, [0, 0, S, S], mark(PAPER, PURPLE_DARK_BG), bg=NIGHT, rx=232))
+
+
+open(f"{out}/elmify-icon-paper.svg", "w").write(
+    svg(S, S, [0, 0, S, S], mark(INK, PURPLE), bg=PAPER, rx=232)
+)
+open(f"{out}/elmify-mark-dark.svg", "w").write(
+    svg(S, S, [0, 0, S, S], mark(PAPER, PURPLE_DARK_BG), bg=NIGHT, rx=232)
+)
 open(f"{out}/favicon.svg", "w").write(svg(S, S, [0, 0, S, S], mark(INK, PURPLE), bg=PAPER, rx=232))
 
 ts = f"""// Generated by scripts/build_logos.py. Do not edit.
@@ -78,8 +116,8 @@ export const WORDMARK = {{
 }} as const;
 export const MARK = {{
   viewBox: "0 0 {S} {S}",
-  d: {json.dumps(path_for('e', ox, base, scale))},
-  dot: {{ x: {ox + (eb[2]+70)*scale:.0f}, y: {base - 330*scale:.0f}, size: {330*scale:.0f} }},
+  d: {json.dumps(path_for("e", ox, base, scale))},
+  dot: {{ x: {ox + (eb[2] + 70) * scale:.0f}, y: {base - 330 * scale:.0f}, size: {330 * scale:.0f} }},
 }} as const;
 """
 os.makedirs(os.path.join(ROOT, "app/_components"), exist_ok=True)

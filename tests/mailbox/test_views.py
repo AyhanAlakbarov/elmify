@@ -222,3 +222,16 @@ def test_an_unknown_inbox_kind_is_refused(settings, student_client) -> None:
 
     assert response.status_code == 400
     assert response.json() == {"reason": "unknown_kind"}
+
+
+def test_connect_without_an_oauth_client_says_so_instead_of_redirecting(
+    student_client, settings
+) -> None:
+    settings.GOOGLE_OAUTH_CLIENT_ID = ""
+    client, _student = student_client
+    response = client.get(
+        reverse("mailbox-connect", args=["GOOGLE"]) + "?tier=CONTENT",
+        HTTP_ACCEPT="text/html",
+    )
+    assert response.status_code in {302, 400}
+    assert "accounts.google.com" not in response.get("Location", "")

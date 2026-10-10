@@ -18,10 +18,19 @@
     <form method="post" action="{% url 'student-profile' %}">
       {% csrf_token %}
       <input type="hidden" name="key" value="{{ question.key }}">
-      <p>
-        <label for="{{ form.value.id_for_label }}">{{ question.label }}</label><br>
-        {{ form.value }}
-      </p>
+      {% if form.value.field.widget.is_composite or form.value.field.widget.input_type == "radio" %}
+        <fieldset class="question">
+          <legend>{{ question.label }}</legend>
+          {% if form.value.help_text %}<p class="muted">{{ form.value.help_text }}</p>{% endif %}
+          {{ form.value }}
+        </fieldset>
+      {% else %}
+        <p>
+          <label for="{{ form.value.id_for_label }}">{{ question.label }}</label><br>
+          {{ form.value }}
+          {% if form.value.help_text %}<br><small class="muted">{{ form.value.help_text }}</small>{% endif %}
+        </p>
+      {% endif %}
       <button type="submit">Next</button>
     </form>
   {% endif %}

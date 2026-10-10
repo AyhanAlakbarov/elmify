@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}{{ student.user.get_username }}{% endblock %}
+{% block title %}{{ student.user.get_full_name|default:student.user.get_username }}{% endblock %}
 {% block content %}
-  <div class="page-head"><div><p><a href="/counselor/">Your students</a> / {{ student.user.get_username }}</p><h1>{{ student.user.get_username }}</h1></div>{% if not read_only %}<a class="btn btn-quiet" href="{% url 'counselor-student-gap-interview' student.id %}">Answer missing items</a>{% endif %}</div>
+  <div class="page-head"><div><p><a href="/counselor/">Your students</a> / {{ student.user.get_full_name|default:student.user.get_username }}</p><h1>{{ student.user.get_full_name|default:student.user.get_username }}</h1></div><div class="row-actions">{% if review_run_id %}<a class="btn btn-quiet" href="{% url 'counselor-review' review_run_id %}">Review programmes</a>{% endif %}{% if not read_only %}<a class="btn btn-quiet" href="{% url 'counselor-student-gap-interview' student.id %}">Answer missing items</a>{% endif %}</div></div>
   {% if read_only %}
     <p role="status">{{ read_only }}</p>
   {% else %}
@@ -41,5 +41,4 @@
     </form>
   </section>
   {% endif %}
-  <script src="{% static 'dashboard/documents.js' %}" defer></script>
 {% endblock %}

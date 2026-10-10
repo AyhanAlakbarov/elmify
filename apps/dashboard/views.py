@@ -35,7 +35,12 @@ from apps.documents.gap_intake import submit_answers
 from apps.documents.gaps import UnanswerableQuestion
 from apps.documents.transcript_pages import TranscriptRegistrationRefused, register_transcript
 from apps.documents.views import page_context, render_gap_page
-from apps.funding.models import AuditEvent, PackCandidate, RecommendationCandidate
+from apps.funding.models import (
+    AuditEvent,
+    PackCandidate,
+    RecommendationCandidate,
+    RecommendationRun,
+)
 from apps.funding.services import current_pack
 from apps.portals.applications import (
     REFUSALS,
@@ -145,6 +150,11 @@ def _board_page(
         "form_values": form_values or {},
         # A sentence when paused; the shared includes hide every form on it.
         "read_only": paused_reason(student),
+        # The pack review page (counselor/runs/<id>/approve/) for the newest run.
+        "review_run_id": RecommendationRun.objects.filter(profile_version__student=student)
+        .order_by("-created_at")
+        .values_list("id", flat=True)
+        .first(),
     }
     return render(request, "counselor/student_board.html", context, status=status)
 

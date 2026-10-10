@@ -16,6 +16,69 @@
       <div class="stat"><span class="stat-label">Tasks</span><span class="stat-value">0</span></div>
     {% endfor %}
   </div>
+  <section class="panel" aria-labelledby="students-heading">
+    <h2 id="students-heading">Students</h2>
+    {% if students %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Student</th><th scope="col">Email</th><th scope="col">Joined</th><th scope="col">Counsellor</th></tr></thead>
+          <tbody>
+            {% for student, counselor_id in students %}
+              <tr>
+                <th scope="row">{{ student.user.get_full_name|default:student.user.get_username }}</th>
+                <td>{{ student.user.email|default:"—" }}</td>
+                <td>{{ student.user.date_joined|date:"j M Y" }}</td>
+                <td>
+                  {% if counselors %}
+                    <form method="post" action="{% url 'concierge-owner-assign-counselor' student.id %}" class="inline-form">
+                      {% csrf_token %}
+                      <label for="counselor-{{ student.id }}" class="sr-only">Counsellor for {{ student.user.get_full_name|default:student.user.get_username }}</label>
+                      <select id="counselor-{{ student.id }}" name="counselor">
+                        <option value="">No counsellor</option>
+                        {% for counselor in counselors %}<option value="{{ counselor.id }}"{% if counselor.id == counselor_id %} selected{% endif %}>{{ counselor.user.get_full_name|default:counselor.user.get_username }}</option>{% endfor %}
+                      </select>
+                      <button type="submit" class="btn-quiet">Save</button>
+                    </form>
+                  {% else %}<span class="muted">No counsellors in this agency yet</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">No students yet. They appear here when they sign up.</p>
+    {% endif %}
+  </section>
+  <section class="panel" aria-labelledby="demos-heading">
+    <h2 id="demos-heading">Demo requests</h2>
+    {% if demo_requests %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Who</th><th scope="col">Organisation</th><th scope="col">Country</th><th scope="col">Received</th><th scope="col">State</th></tr></thead>
+          <tbody>
+            {% for demo in demo_requests %}
+              <tr>
+                <th scope="row">{{ demo.full_name }}{% if demo.message %}<br><small class="muted">{{ demo.message|truncatechars:120 }}</small>{% endif %}</th>
+                <td><a href="mailto:{{ demo.email }}">{{ demo.email }}</a></td>
+                <td>{{ demo.get_role_display }}</td>
+                <td>{{ demo.organisation|default:"—" }}</td>
+                <td>{{ demo.country|default:"—" }}</td>
+                <td>{{ demo.created_at|date:"j M Y H:i" }}</td>
+                <td>
+                  {% if demo.state == "NEW" %}
+                    <form method="post" action="{% url 'leads-mark-contacted' demo.id %}">{% csrf_token %}<button type="submit" class="btn-quiet">Mark contacted</button></form>
+                  {% else %}<span class="pill pill-ok">{{ demo.get_state_display }}</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="empty">No demo requests yet. They arrive from the website's "Book a demo" page.</p>
+    {% endif %}
+  </section>
   <section class="panel" aria-labelledby="tasks-heading">
     <h2 id="tasks-heading">Roadmap tasks</h2>
     {% if items %}
@@ -25,9 +88,9 @@
           <tbody>
             {% for item in items %}
               <tr>
-                <th scope="row">{{ item.student.user.get_username }}</th>
+                <th scope="row">{{ item.student.user.get_full_name|default:item.student.user.get_username }}</th>
                 <td>{{ item.get_stage_display }}</td>
-                <td>{% if item.owner %}{{ item.owner.user.get_username }}{% else %}{{ item.get_owner_kind_display }}{% endif %}</td>
+                <td>{% if item.owner %}{{ item.owner.user.get_full_name|default:item.owner.user.get_username }}{% else %}{{ item.get_owner_kind_display }}{% endif %}</td>
                 <td><span class="pill{% if item.state == 'DONE' %} pill-ok{% elif item.state == 'BLOCKED' %} pill-danger{% elif item.state == 'IN_PROGRESS' %} pill-brand{% endif %}">{{ item.get_state_display }}</span></td>
                 <td>{{ item.deadline|date:"j M Y" }}</td>
               </tr>

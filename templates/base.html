@@ -10,6 +10,7 @@
   <meta name="htmx-config" content='{"includeIndicatorStyles":false,"scrollIntoViewOnBoost":false,"historyCacheSize":0,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"4..","swap":true,"error":false},{"code":"...","swap":false,"error":true}]}'>
   <script src="{% static 'elmify/htmx.min.js' %}" defer></script>
   <script src="{% static 'elmify/app.js' %}" defer></script>
+  {% if app_shell %}<script src="{% static 'dashboard/documents.js' %}" defer></script>{% endif %}
   {% block head %}{% endblock %}
 </head>
 <body class="{% if app_shell %}has-shell{% else %}no-shell{% endif %}">
@@ -52,7 +53,7 @@
       {% endif %}
       {% endwith %}
       <div class="sidebar-foot">
-        <p class="whoami"><span class="avatar" aria-hidden="true">{{ user.get_username|first|upper }}</span><span>{{ user.get_username }}<small>{% if viewer_role == "PLATFORM_ADMIN" %}Platform admin{% else %}{{ viewer_role|lower|capfirst }}{% endif %}</small></span></p>
+        <p class="whoami"><span class="avatar" aria-hidden="true">{{ user.get_full_name|default:user.get_username|first|upper }}</span><span>{{ user.get_full_name|default:user.get_username }}<small>{% if viewer_role == "PLATFORM_ADMIN" %}Platform admin{% else %}{{ viewer_role|lower|capfirst }}{% endif %}</small></span></p>
         <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit" class="btn btn-quiet">Log out</button></form>
       </div>
     </aside>

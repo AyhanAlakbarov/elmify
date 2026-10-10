@@ -2,6 +2,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
@@ -307,6 +308,9 @@ def consider_named_program_view(request: HttpRequest) -> HttpResponse:
             status=400,
         )
     consider_named_program(pack, program_name, student)
+    messages.success(
+        request, f"We will check {program_name} for you. It is listed under Other options."
+    )
     return _render(request, student)
 
 

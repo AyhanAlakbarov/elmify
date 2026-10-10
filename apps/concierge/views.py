@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Literal
+from uuid import UUID
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import HttpRequest, HttpResponse
@@ -12,6 +14,7 @@ from apps.dashboard.board import board_for
 from apps.dashboard.locks import paused_reason
 from apps.dashboard.needs import items_for
 from apps.dashboard.overview import build_overview
+from apps.funding.models import AuditEvent
 from apps.mailbox.models import MAX_CLASSIFY_ATTEMPTS, MailboxConnection, MailSignal
 from apps.portals.models import Application
 from apps.ratelimit import rate_limited
@@ -98,8 +101,75 @@ def mark_roadmap_item_done(request: HttpRequest, item_id: str) -> HttpResponse:
 @login_required
 def owner_dashboard(request: HttpRequest) -> HttpResponse:
     current_membership(request, Membership.Role.OWNER)
+    from apps.leads.models import DemoRequest
+
     items = RoadmapItem.objects.select_related("student__user", "owner__user").all()
-    return render(request, "owner/dashboard.html", {"items": items})
+    demo_requests = DemoRequest.objects.all()[:50]
+    counselors = list(
+        Membership.objects.filter(role=Membership.Role.COUNSELOR, active=True)
+        .select_related("user")
+        .order_by("user__username")
+    )
+    assigned = dict(
+        CounselorAssignment.objects.filter(active=True).values_list("student_id", "counselor_id")
+    )
+    students = [
+        (student, assigned.get(student.id))
+        for student in Membership.objects.filter(role=Membership.Role.STUDENT, active=True)
+        .select_related("user")
+        .order_by("-user__date_joined")[:200]
+    ]
+    return render(
+        request,
+        "owner/dashboard.html",
+        {
+            "items": items,
+            "demo_requests": demo_requests,
+            "students": students,
+            "counselors": counselors,
+        },
+    )
+
+
+@login_required
+@require_POST
+def owner_assign_counselor(request: HttpRequest, student_id: UUID) -> HttpResponse:
+    """Give a student a counsellor, or take theirs away (empty choice).
+
+    One active assignment per student (the table's own constraint), so the old
+    one is closed first. Recorded as an AuditEvent: who a student's counsellor
+    is decides who reads their documents and messages.
+    """
+    owner = current_membership(request, Membership.Role.OWNER)
+    student = get_object_or_404(
+        Membership, id=student_id, role=Membership.Role.STUDENT, active=True
+    )
+    choice = request.POST.get("counselor", "")
+    counselor = None
+    if choice:
+        try:
+            counselor = Membership.objects.get(
+                id=UUID(choice), role=Membership.Role.COUNSELOR, active=True
+            )
+        except (ValueError, Membership.DoesNotExist):
+            messages.error(request, "Choose one of your counsellors.")
+            return redirect("concierge-owner-dashboard")
+    CounselorAssignment.objects.filter(student=student, active=True).update(active=False)
+    if counselor is not None:
+        CounselorAssignment.objects.create(counselor=counselor, student=student)
+    AuditEvent.objects.create(
+        actor=owner,
+        actor_kind=AuditEvent.ActorKind.HUMAN,
+        event="counselor_assignment.changed",
+        object_id=student.id,
+    )
+    who = student.user.get_full_name() or student.user.get_username()
+    if counselor is None:
+        messages.success(request, f"{who} no longer has a counsellor.")
+    else:
+        name = counselor.user.get_full_name() or counselor.user.get_username()
+        messages.success(request, f"{who} is now with {name}.")
+    return redirect("concierge-owner-dashboard")
 
 
 def _student_dashboard_page(

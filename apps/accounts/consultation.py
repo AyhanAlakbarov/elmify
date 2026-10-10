@@ -30,8 +30,8 @@ class ProfileQuestion:
 #: (design-lint-baseline defect 2). Every key in QUESTIONS must have an entry —
 #: a missing one raises KeyError at import, not silently mid-wizard.
 QUESTION_LABELS = {
-    "nationality": "Your nationality (2-letter country code)",
-    "country_of_residence": "Where do you live now? (2-letter country code)",
+    "nationality": "Your nationality",
+    "country_of_residence": "Where do you live now?",
     "date_of_birth": "Your date of birth",
     "academic_history": "Your degree so far",
     "expected_completion": "When do you expect to graduate?",

@@ -33,3 +33,14 @@ STORAGES = {
 # cast because base.py types TEMPLATES as list[dict[str, object]] -- mypy joins the
 # heterogeneous values to object, so DIRS is not iterable to it.
 cast(list[Any], TEMPLATES[0]["DIRS"]).append(BASE_DIR / "tests" / "templates")  # noqa: F405
+
+# A server with mailbox OAuth clients configured: `mailbox.oauth.is_configured`
+# refuses to send a student to a provider's sign-in page without them.
+GOOGLE_OAUTH_CLIENT_ID = "test-google-client"
+GOOGLE_OAUTH_CLIENT_SECRET = "test-google-secret"  # nosec B105 - test value
+MICROSOFT_OAUTH_CLIENT_ID = "test-microsoft-client"
+MICROSOFT_OAUTH_CLIENT_SECRET = "test-microsoft-secret"  # nosec B105 - test value
+MAILBOX_OAUTH_REDIRECT_BASE = "https://testserver"
+
+# Signup creates no cycle unless a test turns early access on itself.
+EARLY_ACCESS_FREE_CYCLE = False

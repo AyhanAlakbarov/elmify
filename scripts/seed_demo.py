@@ -74,17 +74,14 @@ def main() -> None:
             tenant=agency, user=counselor, role=Membership.Role.COUNSELOR
         )
         Membership.objects.create(tenant=agency, user=owner, role=Membership.Role.OWNER)
-        Membership.objects.create(
-            tenant=agency, user=platform, role=Membership.Role.PLATFORM_ADMIN
-        )
-        CounselorAssignment.objects.create(
-            tenant=agency, counselor=counselor_m, student=student_m
-        )
+        Membership.objects.create(tenant=agency, user=platform, role=Membership.Role.PLATFORM_ADMIN)
+        CounselorAssignment.objects.create(tenant=agency, counselor=counselor_m, student=student_m)
         StudentCycle.objects.create(
             student=student_m, academic_year="2026-2027", paid_at=timezone.now()
         )
 
-    secrets = {name: _totp(user) for name, user in (("counselor", counselor), ("owner", owner), ("platform", platform))}
+    staff = (("counselor", counselor), ("owner", owner), ("platform", platform))
+    secrets = {name: _totp(user) for name, user in staff}
     _accept_legal(student)
     _seed_catalogue()
     run_id = _consultation_and_research(student)
@@ -141,8 +138,22 @@ def _seed_catalogue() -> None:
 
     rows = [
         ("Example University", "Berlin", "MSc Chemistry", 12, Decimal("12000"), True),
-        ("Rhein Technical University", "Munich", "MSc Materials Chemistry", 12, Decimal("9000"), True),
-        ("Lyon Institute of Science", "Lyon", "MSc Analytical Chemistry", 12, Decimal("8000"), False),
+        (
+            "Rhein Technical University",
+            "Munich",
+            "MSc Materials Chemistry",
+            12,
+            Decimal("9000"),
+            True,
+        ),
+        (
+            "Lyon Institute of Science",
+            "Lyon",
+            "MSc Analytical Chemistry",
+            12,
+            Decimal("8000"),
+            False,
+        ),
     ]
     for inst_name, city, prog_name, months, tuition, funded in rows:
         country = "FR" if city == "Lyon" else "DE"
@@ -250,8 +261,9 @@ def _student_actions(student, counselor, agency) -> None:
     client.force_login(student)
     with tenant_scope(agency.id):
         candidates = list(
-            PackCandidate.objects.filter(pack_version__published_at__isnull=False)
-            .values_list("candidate_id", flat=True)
+            PackCandidate.objects.filter(pack_version__published_at__isnull=False).values_list(
+                "candidate_id", flat=True
+            )
         )
     for candidate_id in candidates[:2]:
         r = client.post(f"/student/applications/add/{candidate_id}/", HTTP_HOST=HOST)

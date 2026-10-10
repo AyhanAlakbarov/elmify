@@ -3,14 +3,14 @@
 {% block title %}Sign up{% endblock %}
 {% block content %}
   <h1>Sign up</h1>
-  <p class="muted">Create your account to get programmes and funding matched to you.</p>
+  <p class="muted">Create your free account to get master&rsquo;s programmes and funding matched to you.</p>
   <form method="post">
     {% csrf_token %}
     {{ form.non_field_errors }}
     {% for doc in docs %}<input type="hidden" name="documents" value="{{ doc.id }}">{% endfor %}
     <p>{{ form.full_name.label_tag }} {{ form.full_name }} {{ form.full_name.errors }}</p>
     <p>{{ form.email.label_tag }} {{ form.email }} {{ form.email.errors }}</p>
-    <p>{{ form.password.label_tag }} {{ form.password }} {{ form.password.errors }}</p>
+    <p>{{ form.password.label_tag }} {{ form.password }} <small class="muted">{{ form.password.help_text }}</small> {{ form.password.errors }}</p>
     <p>{{ form.language.label_tag }} {{ form.language }} {{ form.language.errors }}</p>
     <p class="consent">
       <label><input type="checkbox" name="consent" {% if form.consent.value and not stale %}checked{% endif %}>
@@ -22,5 +22,5 @@
     </p>
     <button type="submit">Create account</button>
   </form>
-  <p class="muted auth-alt">Already have an account? <a href="/accounts/login/">Log in</a></p>
+  <p class="muted auth-alt">Already have an account? <a href="/accounts/login/">Log in</a> · Agency or university? <a href="/demo/">Book a demo</a></p>
 {% endblock %}

@@ -47,7 +47,7 @@
 {% if not read_only %}
 <section class="panel" aria-labelledby="upload-heading">
   <h2 id="upload-heading">Upload a document</h2>
-  <form data-upload="{{ upload_endpoint }}">
+  <form data-upload="{{ upload_endpoint }}" hx-boost="false">
     <p>
       <label for="upload-kind">Document</label>
       <select id="upload-kind" name="kind">{% for value, label in upload_kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>

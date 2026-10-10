@@ -5,6 +5,7 @@ it -- they check the role, check that the request belongs to the caller, and
 cap the rate.
 """
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseBadRequest
@@ -22,6 +23,7 @@ from .console import (
     release_deletion,
     request_deletion,
 )
+from .deletion import DeletionBlocked
 from .models import DeletionRequest
 
 #: Requesting an erasure writes a row, an audit event, and starts an
@@ -133,6 +135,14 @@ def deletion_console(request: HttpRequest) -> HttpResponse:
     )
 
 
+_BLOCKED_MESSAGES = {
+    "no approved retention policy exists": (
+        "Not released: your agency has no approved data-retention policy yet. "
+        "Elmify must record one for your agency before an erasure can start."
+    ),
+}
+
+
 @login_required
 @require_POST
 def release_deletion_request(request: HttpRequest, request_id: str) -> HttpResponse:
@@ -142,7 +152,13 @@ def release_deletion_request(request: HttpRequest, request_id: str) -> HttpRespo
     # APPROVED one is already counting down and advance_deletion would refuse
     # it with a 500 rather than a 404.
     record = get_object_or_404(DeletionRequest, id=request_id, state="RETENTION_REVIEW")
-    release_deletion(request=record, owner=owner)
+    try:
+        with transaction.atomic():  # a savepoint: a refusal leaves nothing half-written
+            release_deletion(request=record, owner=owner)
+    except DeletionBlocked as blocked:
+        # A refusal the owner has to act on, not a server fault: say why on the
+        # console instead of a 500. The request stays held, unchanged.
+        messages.error(request, _BLOCKED_MESSAGES.get(str(blocked), f"Not released: {blocked}."))
     return redirect("audit-deletion-console")
 
 

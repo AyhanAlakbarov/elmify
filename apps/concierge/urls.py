@@ -6,6 +6,7 @@ from .views import (
     counselor_dashboard,
     mark_roadmap_item_done,
     messages_page,
+    owner_assign_counselor,
     owner_dashboard,
     send_student_message,
     settings_page,
@@ -20,6 +21,11 @@ urlpatterns = [
         name="concierge-mark-roadmap-item-done",
     ),
     path("owner/", owner_dashboard, name="concierge-owner-dashboard"),
+    path(
+        "owner/students/<uuid:student_id>/counselor/",
+        owner_assign_counselor,
+        name="concierge-owner-assign-counselor",
+    ),
     path("student/", student_dashboard, name="concierge-student-dashboard"),
     path(
         "student/notifications/<uuid:notification_id>/acknowledge/",

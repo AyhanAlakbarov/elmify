@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Button } from "./button";
 import { ThemeToggle } from "./theme-toggle";
 import { Wordmark } from "./logo";
+import { appLinks } from "./app-links";
 
 const links = [
   { href: "#dashboard", label: "Dashboard" },
@@ -25,7 +26,10 @@ export function Nav() {
         </nav>
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <Button href="#start">Get early access</Button>
+          <a href={appLinks.login} className="hidden text-body02 font-medium text-foreground-secondary transition-colors hover:text-foreground sm:inline">
+            Log in
+          </a>
+          <Button href={appLinks.signup}>Get started</Button>
         </div>
       </div>
     </header>

@@ -14,10 +14,12 @@ CONSENT_TEXT = (
 
 
 class SignupForm(forms.Form):
-    full_name = forms.CharField(max_length=150)
+    full_name = forms.CharField(max_length=150, label="Name and surname")
     #: auth_user.username is varchar(150), and the address is the username.
-    email = forms.EmailField(max_length=150)
-    password = forms.CharField(widget=forms.PasswordInput, min_length=12)
+    email = forms.EmailField(max_length=150, label="Email")
+    password = forms.CharField(
+        widget=forms.PasswordInput, min_length=12, help_text="At least 12 characters."
+    )
     language = forms.ChoiceField(choices=[(code, code) for code in LANGUAGES], initial="en")
     consent = forms.BooleanField(required=True, label=CONSENT_TEXT)
 

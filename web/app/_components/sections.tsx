@@ -1,4 +1,5 @@
 import { Button } from "./button";
+import { appLinks } from "./app-links";
 import { DashboardMock } from "./dashboard-mock";
 import { Mark, Wordmark } from "./logo";
 
@@ -314,10 +315,13 @@ export function Closing() {
         <Mark className="size-14" tile={false} />
         <h2 className="mt-8 max-w-2xl text-heading01 font-extrabold">Ready to find a funded master&rsquo;s?</h2>
         <p className="mt-4 max-w-xl text-body01 text-[#b9b1d3]">
-          Join the early-access list and be first in when we open to students.
+          Create a free account and get your first matches today. Running an agency or a university office? Book a demo.
         </p>
-        <div className="mt-8">
-          <Button href="mailto:hello@elmify.com?subject=Early%20access">Get early access</Button>
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <Button href={appLinks.signup}>Create your free account</Button>
+          <Button href={appLinks.demo} variant="secondary" className="border-[#3b2f63] text-[#f5f3ff] hover:bg-[#1d1338]">
+            Book a demo
+          </Button>
         </div>
       </div>
     </section>
@@ -325,10 +329,19 @@ export function Closing() {
 }
 
 /* ------------------------------------------------------------------ */
+function footerHref(group: string, item: string): string {
+  if (group === "Product") return `#${item.toLowerCase()}`;
+  if (item === "Terms") return appLinks.terms;
+  if (item === "Privacy") return appLinks.privacy;
+  if (item === "Book a demo") return appLinks.demo;
+  if (item === "Log in") return appLinks.login;
+  return "#";
+}
+
 export function Footer() {
   const cols = [
     ["Product", ["Dashboard", "Features", "Compare"]],
-    ["Company", ["About", "Contact"]],
+    ["Company", ["Book a demo", "Log in"]],
     ["Legal", ["Terms", "Privacy"]],
   ] as const;
   return (
@@ -344,7 +357,7 @@ export function Footer() {
             <ul className="mt-3 space-y-2 text-body02 text-foreground-secondary">
               {items.map((i) => (
                 <li key={i}>
-                  <a href={h === "Product" ? `#${i.toLowerCase()}` : "#"} className="hover:text-foreground">{i}</a>
+                  <a href={footerHref(h, i)} className="hover:text-foreground">{i}</a>
                 </li>
               ))}
             </ul>

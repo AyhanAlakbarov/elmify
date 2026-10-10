@@ -6,12 +6,14 @@ the presentation later; these pages exist so the behaviour can be tested end to 
 
 import hashlib
 
+from django.conf import settings
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
+from apps.concierge.cycles import grant_early_access_cycle
 from apps.privacy import acceptance, documents
 from apps.privacy.forms import CONSENT_TEXT, SignupForm
 from apps.privacy.models import Acceptance, LegalDocument
@@ -86,6 +88,8 @@ def signup(request: HttpRequest) -> HttpResponse:
         )
         student = Membership.objects.create(user=user, role=Membership.Role.STUDENT)
         acceptance.record(student, docs, surface="signup", language=data["language"])
+        if settings.EARLY_ACCESS_FREE_CYCLE:
+            grant_early_access_cycle(student)
         login(request, user)
         return redirect("/student/")
     return render(request, "privacy/signup.html", context)

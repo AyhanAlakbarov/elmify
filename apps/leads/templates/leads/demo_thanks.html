@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Demo requested{% endblock %}
+{% block content %}
+  <h1>Thank you</h1>
+  <p>We have your request and will email you within two working days to find a time.</p>
+  <p class="muted auth-alt">Meanwhile you can <a href="{% url 'privacy-signup' %}">create an account</a> and look around.</p>
+{% endblock %}

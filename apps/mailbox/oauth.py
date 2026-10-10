@@ -72,6 +72,16 @@ def _credentials(provider: str) -> tuple[str, str]:
     raise GrantRefused(f"no such provider: {provider}")
 
 
+def is_configured(provider: str) -> bool:
+    """Whether this server holds an OAuth client for the provider. Without one
+    the provider's sign-in page can only answer with its own error screen."""
+    try:
+        client_id, secret = _credentials(provider)
+    except GrantRefused:
+        return False
+    return bool(client_id and secret and settings.MAILBOX_OAUTH_REDIRECT_BASE)
+
+
 def redirect_uri(provider: str) -> str:
     return f"{settings.MAILBOX_OAUTH_REDIRECT_BASE.rstrip('/')}/mailbox/callback/{provider}/"
 
