@@ -13,7 +13,7 @@ export function Wordmark({ className = "h-7" }: { className?: string }) {
     >
       <path d={d} fill="currentColor" />
       <rect
-        className="elm-dot fill-brand dark:fill-brand-text"
+        className="elm-dot fill-brand"
         x={dot.x}
         y={dot.y}
         width={dot.size}
@@ -31,7 +31,7 @@ export function Mark({ className = "size-8", tile = true }: { className?: string
       {tile && <rect width="1024" height="1024" rx="232" className="fill-foreground" />}
       <path d={d} className={tile ? "fill-background" : "fill-current"} />
       <rect
-        className={`elm-dot ${tile ? "fill-[#a78bfa]" : "fill-brand dark:fill-brand-text"}`}
+        className={`elm-dot ${tile ? "fill-[#a78bfa]" : "fill-brand"}`}
         x={dot.x}
         y={dot.y}
         width={dot.size}

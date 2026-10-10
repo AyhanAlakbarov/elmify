@@ -1,22 +1,20 @@
 @import "tailwindcss";
 
-/* Dark mode is a class on <html> (set before paint by the script in layout.tsx),
-   so the toggle and the OS preference share one switch. */
-@custom-variant dark (&:where(.dark, .dark *));
+/* Light only: white paper, the logo's ink, the logo's purple as the accent. */
 
 /* ---------- Semantic tokens: the only place raw colour values live ---------- */
 :root {
-  --background: #faf9ff;
-  --background-secondary: #f2effe;
+  --background: #ffffff;
+  --background-secondary: #f7f7f9;
   --surface: #ffffff;
   --foreground: #0b0716;
-  --foreground-secondary: #4a4460;
-  --foreground-subtle: #655e7c;
-  --border: #e4dff5;
-  --border-strong: #cfc7ea;
+  --foreground-secondary: #46424f;
+  --foreground-subtle: #6b6878;
+  --border: #ececf0;
+  --border-strong: #dcdbe3;
   --brand: #7c3aed; /* fills + the dot */
   --brand-strong: #6d28d9; /* hover */
-  --brand-soft: #ede9fe; /* tints */
+  --brand-soft: #f3eeff; /* tints */
   --brand-text: #6d28d9; /* purple used as text */
   --on-brand: #ffffff;
   --success: #047857;
@@ -25,26 +23,7 @@
   --warning-soft: #fef3c7;
   color-scheme: light;
 }
-.dark {
-  --background: #0b0716;
-  --background-secondary: #120c22;
-  --surface: #170f2b;
-  --foreground: #f5f3ff;
-  --foreground-secondary: #b9b1d3;
-  --foreground-subtle: #958db0;
-  --border: #2a2145;
-  --border-strong: #3d3262;
-  --brand: #7c3aed;
-  --brand-strong: #8b5cf6;
-  --brand-soft: #2a1a57;
-  --brand-text: #a78bfa;
-  --on-brand: #ffffff;
-  --success: #34d399;
-  --success-soft: #0d2f27;
-  --warning: #fbbf24;
-  --warning-soft: #33250a;
-  color-scheme: dark;
-}
+
 
 @theme inline {
   --color-background: var(--background);
@@ -180,4 +159,27 @@ body {
   html { scroll-behavior: auto; }
   .elm-dot, .hero-line, .hero-stop, .dot-pulse { animation: none !important; }
   .elm-logo:hover .elm-dot { animation: none !important; }
+}
+
+/* ---------- Product shots: rise once on load ---------- */
+.shot-in { animation: shot-in 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 450ms both; }
+@keyframes shot-in {
+  from { opacity: 0; transform: translateY(28px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- The feature strip: one slow, continuous line of what Elmify does ---------- */
+.marquee { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
+.marquee-track { animation: marquee 38s linear infinite; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+@keyframes marquee { to { transform: translateX(-50%); } }
+
+/* ---------- FAQ: the open answer slides in ---------- */
+details.faq[open] > div { animation: hero-in 260ms ease-out both; }
+details.faq summary::-webkit-details-marker { display: none; }
+details.faq summary .plus { transition: transform 200ms ease; }
+details.faq[open] summary .plus { transform: rotate(45deg); }
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-in, .marquee-track, details.faq[open] > div { animation: none !important; }
 }

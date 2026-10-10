@@ -1,6 +1,6 @@
 import { Nav } from "./_components/nav";
 import { Hero } from "./_components/hero";
-import { Closing, Compare, DashboardSection, Features, Footer, Funders, Principles } from "./_components/sections";
+import { Agencies, Closing, Faq, FeatureStrip, Footer, HowItWorks, Product } from "./_components/sections";
 
 export default function Home() {
   return (
@@ -8,11 +8,11 @@ export default function Home() {
       <Nav />
       <main id="main">
         <Hero />
-        <Funders />
-        <DashboardSection />
-        <Features />
-        <Compare />
-        <Principles />
+        <FeatureStrip />
+        <HowItWorks />
+        <Product />
+        <Agencies />
+        <Faq />
         <Closing />
       </main>
       <Footer />

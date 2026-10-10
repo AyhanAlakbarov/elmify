@@ -2,26 +2,19 @@ import type { Metadata } from "next";
 import "@fontsource/inter/latin-400.css";
 import "@fontsource/inter/latin-500.css";
 import "@fontsource/inter/latin-600.css";
+import "@fontsource/inter/latin-700.css";
 import "@fontsource/inter/latin-800.css";
-import "@fontsource/geist-mono/latin-400.css";
-import "@fontsource/geist-mono/latin-500.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Elmify: find a funded master's and apply with confidence",
+  title: "Elmify: find a funded master's and apply with a plan",
   description:
-    "Elmify matches you with master's programmes and the scholarships that cover them, tracks every deadline, and fills in your applications while you stay in control.",
+    "Elmify shows you master's programmes together with the scholarships that pay for them, keeps every deadline and document in one place, and helps you apply.",
 };
-
-// Runs before first paint so the page never flashes the wrong theme.
-const themeScript = `try{var t=localStorage.getItem('elmify-theme');var d=t?t==='dark':matchMedia('(prefers-color-scheme: dark)').matches;document.documentElement.classList.toggle('dark',d)}catch(e){}`;
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
+    <html lang="en">
       <body className="min-h-screen bg-background text-foreground">
         <a
           href="#main"

@@ -1,18 +1,18 @@
 import Link from "next/link";
 import { Button } from "./button";
-import { ThemeToggle } from "./theme-toggle";
 import { Wordmark } from "./logo";
 import { appLinks } from "./app-links";
 
 const links = [
-  { href: "#dashboard", label: "Dashboard" },
-  { href: "#features", label: "Features" },
-  { href: "#compare", label: "Compare" },
+  { href: "#how", label: "How it works" },
+  { href: "#product", label: "The dashboard" },
+  { href: "#agencies", label: "For agencies" },
+  { href: "#faq", label: "Questions" },
 ];
 
 export function Nav() {
   return (
-    <header className="sticky top-0 z-40 border-b border-border/70 bg-background/85 backdrop-blur">
+    <header className="sticky top-0 z-40 border-b border-border/80 bg-background/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
         <Link href="/" aria-label="Elmify home" className="text-foreground">
           <Wordmark className="h-6" />
@@ -24,9 +24,8 @@ export function Nav() {
             </a>
           ))}
         </nav>
-        <div className="flex items-center gap-3">
-          <ThemeToggle />
-          <a href={appLinks.login} className="hidden text-body02 font-medium text-foreground-secondary transition-colors hover:text-foreground sm:inline">
+        <div className="flex items-center gap-5">
+          <a href={appLinks.login} className="hidden text-body02 font-medium text-foreground transition-colors hover:text-brand-text sm:inline">
             Log in
           </a>
           <Button href={appLinks.signup}>Get started</Button>
