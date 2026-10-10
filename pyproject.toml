@@ -23,7 +23,7 @@ dependencies = [
   # Was transitive via scrapling[fetchers]; declared directly now that
   # scrapling is gone. The portal Docker stage still needs the `playwright`
   # CLI (`playwright install --with-deps chromium`) for apps/portals/engine.py.
-  "playwright>=1.62,<2",
+  "playwright>=1.63.0,<2",
   "urllib3>=2.8.0,<3",
   "weasyprint>=70.0,<71",
   "whitenoise>=6.9,<7",
