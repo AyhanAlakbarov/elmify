@@ -133,7 +133,25 @@ def test_an_unknown_language_shows_english_with_english_selected(client, domain_
     response = client.get(reverse("privacy-signup") + "?lang=xx", HTTP_HOST=domain_a.host)
     assert response.status_code == 200
     assert {doc.language for doc in response.context["docs"]} == {"en"}
-    assert '<option value="en" selected>' in response.content.decode()
+    body = response.content.decode()
+    assert '<input type="hidden" name="language" value="en">' in body
+    assert '<strong aria-current="true">English</strong>' in body
+
+
+@pytest.mark.django_db
+def test_choosing_a_language_reloads_the_page_so_its_documents_are_the_ones_posted(
+    client, domain_a, published
+):
+    """The language is a link, not a select: picking Azerbaijani after the page
+    loaded used to post English document ids with language=az, and the student
+    was told the documents had changed while the page was open."""
+    for kind in ("terms", "privacy_notice_agency", "privacy_notice_direct"):
+        documents.publish(kind, "az", f"{kind} az v1", material=True)
+    page = client.get(reverse("privacy-signup") + "?lang=az", HTTP_HOST=domain_a.host)
+    shown = [str(doc.id) for doc in page.context["docs"]]
+    assert {doc.language for doc in page.context["docs"]} == {"az"}
+    response = _post(client, domain_a.host, language="az", documents=shown)
+    assert response.status_code == 302
 
 
 def test_the_consent_sentence_is_pinned():

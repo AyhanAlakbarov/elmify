@@ -22,6 +22,8 @@ from apps.tenancy.context import current_tenant_id
 from apps.tenancy.models import Agency, Membership
 from apps.tenancy.services import current_membership
 
+#: How each language names itself, for the sign-up page's language links.
+LANGUAGE_NAMES = (("en", "English"), ("az", "Azərbaycanca"), ("ru", "Русский"))
 STALE_MESSAGE = "These documents changed while the page was open. Read the current versions below."
 TOO_MANY = "Too many sign-up attempts. Try again later."
 _HOUR = 3600
@@ -60,7 +62,7 @@ def signup(request: HttpRequest) -> HttpResponse:
         # by `manage.py publish_legal_documents` at deploy (docs/runbooks/privacy.md).
         return HttpResponse("Signup is not available yet.", status=503)
     form = SignupForm(request.POST or None, initial={"language": language})
-    context = {"form": form, "docs": docs}
+    context = {"form": form, "docs": docs, "language_names": LANGUAGE_NAMES}
     if request.method == "POST":
         if rate_limited("signup", _key(_client_ip(request)), limit=10, window_seconds=_HOUR):
             return HttpResponse(TOO_MANY, status=429)
