@@ -1,0 +1,52 @@
+id,source,language,sentence,outcome,detail,strength
+daad-prime,https://www.daad.de/en/studying-in-germany/scholarships/daad-funding-programmes/prime/faq/,en,Are there any guidelines regarding the curriculum vitae? Do I have to use the “europass” CV and do I have to provide a passport photo along with my CV?The curriculum vitae should be prepared in a tabular form in accordance with EU standards. We recommend using the template provided by europass to make sure that your CV will meet the requirements. Please ensure that your CV does not contain any chronological gaps. A photograph is not required for application.,europass,,preferred
+amir,https://www.amir-em-master.com/admission/required-documentation-for-all-applications/,en,CV in the Europass CV template,europass,,required
+membiomed,https://life.univ-cotedazur.eu/international/membiomed/how-to-apply,en,"CV : Europass format mandatory. Include details on age, academic records and quality/recognition of the institution having awarded the bachelor or equivalent degree.",europass,,required
+globed,https://globed.eu/how-to-apply/,en,Upload your up-to-date Europass CV. Resumes in other formats won’t be accepted.,europass,,required
+i-mesc,https://i-mesc.eu/application/student,en,Please use the Europass model.,europass,,required
+mathmods,https://www.mathmods.eu/apply,en,CV (use the Europass template available here: https://europa.eu/europass/en);,europass,,required
+we-team,https://we-team.education/faq/12-are-there-specific-guidelines-for-preparing-my-cv-for-the-erasmus-mundus-application/,en,The CV should highlight your academic and professional experiences. The CV should be Europass format. More info about Europass format at: https://europa.eu/europass/en/create-europass-cv,europass,,required
+europubhealth,https://www.europubhealth.org/admission-requirements/,en,Curriculum Vitae (Europass format preferred).,europass,,preferred
+emship,https://emship.eu/how-to-apply/,en,(Europass) CV,europass,,preferred
+emhrpp-q,https://www.emhrpp.com/how-to-apply,en,Do you accept the Europass CV?,none,,
+emhrpp-a,https://www.emhrpp.com/how-to-apply,en,"Yes, any CV format is accepted.",none,,
+imaging-q,https://www.emjm-imaging.eu/application-and-admission/questions-and-answers/,en,What are requirements for CV? Do I need to use Europass?,none,,
+imaging-a,https://www.emjm-imaging.eu/application-and-admission/questions-and-answers/,en,The only requirement for CV is the 2-page limit. You may use Europass or any other CV template which you find suitable.,standard,,
+daad-epos,https://static.daad.de/media/daad_de/pdfs_nicht_barrierefrei/in-deutschland-studieren-forschen-lehren/epos_checkliste.pdf,en,A curriculum vitae in reverse chronological order without any unexplained gaps (please use the europass template including exact information).,europass,,required
+swiss-3rd,synthetic,en,Short CV (max. 2 pages) from this academic supervisor.,none,,
+goettingen-de,synthetic,de,Ein in deutscher oder englischer Sprache verfasster tabellarischer Lebenslauf,unapplied,,
+s1,synthetic,en,Please submit your CV in Europass format.,europass,,required
+s2,synthetic,en,A Europass CV is recommended.,europass,,preferred
+s3,synthetic,en,We prefer the Europass template.,europass,,preferred
+s4,synthetic,en,You may use a Europass CV.,standard,,
+s5,synthetic,en,The Europass format is optional.,standard,,
+s6,synthetic,en,We do not require a Europass CV.,standard,,
+s7,synthetic,en,A Europass CV is not accepted.,standard,,
+s8,synthetic,en,Applications without a Europass CV are welcome.,standard,,
+s9,synthetic,en,No CV other than a Europass one is accepted.,europass,,required
+s10,synthetic,en,"Applicants may apply without a Europass CV, which we do not require.",standard,,
+s11,synthetic,en,We do not require a Europass motivation letter.,none,,
+s12,synthetic,en,A Europass CV is mandatory.,europass,,required
+s13,synthetic,en,CV: Europass.,europass,,required
+g1,synthetic,en,We suggest using the Europass template.,europass,,preferred
+g2,synthetic,en,It is advisable to use Europass for your CV.,europass,,preferred
+g3,synthetic,en,Europass CVs are strongly encouraged.,europass,,preferred
+g4,synthetic,en,Your CV has to follow the Europass layout.,europass,,required
+g5,synthetic,en,Only Europass-formatted CVs will be considered.,europass,,required
+g6,synthetic,de,Wir empfehlen den Europass-Lebenslauf.,europass,,preferred
+g7,synthetic,de,Der Lebenslauf muss im Europass-Format eingereicht werden.,europass,,required
+g8,synthetic,fr,Le CV doit être au format Europass.,europass,,required
+g9,synthetic,es,El formato Europass no es obligatorio; se acepta cualquier formato de CV.,standard,,
+g10,synthetic,en,"Ideally, applicants provide a Europass CV.",europass,,preferred
+g11,synthetic,en,Applications are only considered with a Europass CV attached.,europass,,required
+g12,synthetic,en,Your referee should send a Europass CV to the committee.,none,,
+d1,synthetic,en,State your ECTS credits on your CV.,include,education.ects_credits,
+d2,synthetic (from MemBioMed),en,Your CV should include details on the quality/recognition of the institution having awarded the bachelor degree.,unapplied,,
+d3,https://www.daad.de/en/studying-in-germany/scholarships/daad-funding-programmes/prime/faq/,en,The curriculum vitae should be prepared in a tabular form in accordance with EU standards.,unapplied,,
+d4,https://static.daad.de/media/daad_de/pdfs_nicht_barrierefrei/in-deutschland-studieren-forschen-lehren/epos_checkliste.pdf,en,A curriculum vitae in reverse chronological order.,order,cv=reverse_chronological,
+d5,https://we-team.education/faq/12-are-there-specific-guidelines-for-preparing-my-cv-for-the-erasmus-mundus-application/,en,The CV should highlight your academic and professional experiences.,emphasise,experience,
+d6,synthetic,en,Your CV must not exceed two pages.,constraint,max_pages=2,
+d7,synthetic,en,Your CV must be in English.,constraint,language=en,
+d8,synthetic,en,"In your CV, list your education and work experience in chronological order, starting with the earliest.",order,cv=chronological,
+d9,synthetic,de,"Der Lebenslauf ist in chronologischer Reihenfolge zu verfassen, beginnend mit dem Schulabschluss.",order,cv=chronological,
+d10,synthetic,en,"In your CV, please list your work experience with the most recent position first.",order,experience=reverse_chronological,

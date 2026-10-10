@@ -1,0 +1,24 @@
+{% extends "documents/cv_base.html" %}
+
+{% block personal %}
+<h1>{{ content.personal_information.full_name }}</h1>
+<table class="personal">
+  <tr><td class="label">Email</td><td><a href="mailto:{{ content.personal_information.email }}">{{ content.personal_information.email }}</a></td></tr>
+  {% if content.personal_information.phone %}<tr><td class="label">Phone</td><td>{{ content.personal_information.phone }}</td></tr>{% endif %}
+  {% if content.personal_information.links %}<tr><td class="label">Links</td><td>{% for label, href, text in content.personal_information.links %}{% if not forloop.first %} · {% endif %}{{ label }}: <a href="{{ href }}">{{ text }}</a>{% endfor %}</td></tr>{% endif %}
+</table>
+{% endblock %}
+
+{% block education_entries %}
+{% load cv_dates cv_countries %}
+<table class="grid">
+  {% for entry in content.education %}
+  <tr>
+    <td class="when">{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</td>
+    <td><strong>{{ entry.degree_as_awarded }}</strong>{% if entry.degree_english and entry.degree_english != entry.degree_as_awarded %} <span class="gloss">({{ entry.degree_english }})</span>{% endif %}<br>
+    {{ entry.institution_original }}{% if entry.institution_english and entry.institution_english != entry.institution_original %} ({{ entry.institution_english }}){% endif %}{% if entry.city %}, {{ entry.city }}{% endif %}{% if entry.country %}, {{ entry.country|country_name }}{% endif %}
+    {% if entry.grade_native or entry.ects_credits or entry.class_rank %}<br>{% if entry.grade_native %}Grade: {{ entry.grade_native }}{% if entry.grade_scale and entry.grade_scale not in entry.grade_native %} ({{ entry.grade_scale }}){% endif %}{% if entry.grade_conversion %} ≈ {{ entry.grade_conversion }}{% endif %}{% endif %}{% if entry.grade_native and entry.ects_credits %} · {% endif %}{% if entry.ects_credits %}{{ entry.ects_credits }} ECTS{% endif %}{% if entry.class_rank %}{% if entry.grade_native or entry.ects_credits %} · {% endif %}{{ entry.class_rank }}{% endif %}{% endif %}{% if entry.thesis_title %}<br>Thesis: {{ entry.thesis_title }}{% endif %}{% if entry.supervisor %}<br>Supervisor: {{ entry.supervisor }}{% endif %}{% if entry.funding %}<br>{{ entry.funding }}{% endif %}{% if entry.relevant_coursework %}<br>Relevant coursework: {{ entry.relevant_coursework }}{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

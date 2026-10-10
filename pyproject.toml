@@ -1,0 +1,105 @@
+[project]
+name = "tehsil-agent"
+version = "0.1.0"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+  "boto3[crt]>=1.43.98,<2",
+  "defusedxml>=0.7,<1",
+  "django>=5.2,<5.3",
+  "django-otp[segno]>=1.7.3,<2",
+  "gunicorn>=26.1.0,<27",
+  # apps/research/refresh.py::readable_text imports it directly.
+  "lxml>=6.1.3,<7",
+  "openai>=3.16.2,<4",
+  "pillow>=11,<13",
+  "psycopg[binary]>=3.3.6,<4",
+  "pydantic>=2.13.5,<3",
+  "tldextract>=5.3.2,<6",
+  # apps/research/names.py: romanise every script before a name meets a
+  # domain label. ISC; unidecode (GPL) was the measured prototype's choice.
+  "anyascii>=0.3.2,<0.4",
+  "stagehand>=4.1.0,<5",
+  "pypdf>=6.19.0,<7",
+  # Was transitive via scrapling[fetchers]; declared directly now that
+  # scrapling is gone. The portal Docker stage still needs the `playwright`
+  # CLI (`playwright install --with-deps chromium`) for apps/portals/engine.py.
+  "playwright>=1.62,<2",
+  "urllib3>=2.8.0,<3",
+  "weasyprint>=70.0,<71",
+  "whitenoise>=6.9,<7",
+  "anthropic<2",
+  "typesafe-sdk==0.7.1",
+  "system-one-adapter[anthropic,openai]==0.2.1",
+  "redis>=8.1.0",
+  "babel>=2.18,<3",
+]
+
+[dependency-groups]
+dev = [
+  "bandit[toml]>=1.9.4,<2",
+  "cfn-lint>=1.56,<2",
+  "django-stubs>=6.1.1,<7",
+  "mypy>=2.3.1,<3",
+  "pip-audit>=2.7,<3",
+  "pre-commit>=4.6.2,<5",
+  "pytest>=9.0.3,<10",
+  "pytest-cov>=7.1.0,<8",
+  "pytest-django>=4.11,<5",
+  "ruff>=0.16.6,<1",
+  "types-defusedxml>=0.7,<1",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+markers = [
+  "aws: requires an explicitly configured AWS validation resource",
+  "live: hits a real external API; skipped unless selected with -m live",
+  "portal_browser: requires Chrome for Testing and an LLM credential",
+  "frontend: asserts rendered markup; skipped while templates/ is absent",
+  "extension: drives Chromium with the built extension; run with -m extension",
+]
+addopts = "-m 'not live and not extension'"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+# Vendored third-party code is kept byte-identical to upstream so its recorded
+# sha256 stays checkable (see apps/documents/vendor/__init__.py). Reformatting
+# it to satisfy our line length would break that, so it is excluded instead.
+extend-exclude = ["apps/documents/vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/migrations/*.py" = ["E501", "I001"]
+# EMJM_PAGE is a fixed synthetic scholarship page fed verbatim to the live judge;
+# reflowing its prose would change what the test actually sends to the model.
+"tests/research/test_funding_judge.py" = ["E501"]
+# Azure layout fixtures are dense JSON-shaped literals; reflowing them hides the geometry.
+"tests/documents/test_ocr.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+plugins = ["mypy_django_plugin.main"]
+
+[[tool.mypy.overrides]]
+module = ["django_otp.*", "lxml.*", "segno.*", "weasyprint.*"]
+ignore_missing_imports = true
+
+# Same reason as ruff's extend-exclude: vendored upstream code is not edited to
+# satisfy our strict settings. Its public surface is exercised by
+# tests/documents/test_hygiene.py through normalize_text.
+[[tool.mypy.overrides]]
+module = ["apps.documents.vendor.*"]
+ignore_errors = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings.test"
+
+[tool.bandit]
+exclude_dirs = ["tests", "migrations"]
+# B101: idiomatic type-narrowing asserts in this codebase, not security checks.
+skips = ["B101"]

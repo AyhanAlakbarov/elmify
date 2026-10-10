@@ -1,0 +1,14 @@
+# cfn-lint runs as a blocking CI step (.github/workflows/ci.yml). Config lives
+# here rather than in CLI flags so a bare `uv run cfn-lint` on a laptop behaves
+# exactly like CI.
+templates:
+  - infra/template.yaml
+ignore_checks:
+  # W3691: "engine version 'N' is deprecated". A known false-positive class --
+  # it fires on any bare major and is silent for major.minor, so "16", "17" and
+  # "18" are all flagged identically while "17.11" is not. The bare major is a
+  # deliberate choice; see the comment on Database.EngineVersion.
+  - W3691
+  # W1020: an Fn::Sub with no variables in it, on EuropassCanaryRule's Input.
+  # Cosmetic, and untouched by this change.
+  - W1020

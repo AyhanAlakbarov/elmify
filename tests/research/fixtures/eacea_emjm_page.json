@@ -1,0 +1,187 @@
+{
+ "total": 2,
+ "projectDocuments": [
+  {
+   "projectName": "101127959",
+   "projectTitle": "EMGS - Erasmus Mundus Master in 'Global Studies'",
+   "projectStartDate": "2023-09-30T22:00:00.000+0000",
+   "projectEndDate": "2029-11-29T23:00:00.000+0000",
+   "projectLevel3": "43690363",
+   "coordinator": {
+    "organisationName": "UNIVERSITAET LEIPZIG",
+    "organisationPIC": "999854564",
+    "organisationRole": "coordinator",
+    "organisationCountry": "DE",
+    "organisationCity": "Leipzig",
+    "organisationWebsite": "http://www.uni-leipzig.de"
+   },
+   "organisations": [
+    {
+     "organisationName": "UNIVERSITAET LEIPZIG",
+     "organisationPIC": "999854564",
+     "organisationRole": "coordinator",
+     "organisationCountry": "DE",
+     "organisationCity": "Leipzig",
+     "organisationWebsite": "http://www.uni-leipzig.de"
+    },
+    {
+     "organisationName": "UNIVERSITEIT GENT",
+     "organisationPIC": "999986096",
+     "organisationRole": "partner",
+     "organisationCountry": "BE",
+     "organisationCity": "Gent",
+     "organisationWebsite": "http://www.ugent.be"
+    },
+    {
+     "organisationName": "ROSKILDE UNIVERSITET",
+     "organisationPIC": "999901803",
+     "organisationRole": "partner",
+     "organisationCountry": "DK",
+     "organisationCity": "Roskilde",
+     "organisationWebsite": "www.ruc.dk"
+    },
+    {
+     "organisationName": "UNIWERSYTET WROCLAWSKI",
+     "organisationPIC": "999845155",
+     "organisationRole": "partner",
+     "organisationCountry": "PL",
+     "organisationCity": "WROCLAW",
+     "organisationWebsite": "www.uni.wroc.pl"
+    },
+    {
+     "organisationName": "UNIVERSITAT WIEN",
+     "organisationPIC": "999866883",
+     "organisationRole": "partner",
+     "organisationCountry": "AT",
+     "organisationCity": "Wien",
+     "organisationWebsite": "www.univie.ac.at"
+    }
+   ],
+   "partners": [
+    {
+     "organisationName": "UNIVERSITEIT GENT",
+     "organisationPIC": "999986096",
+     "organisationRole": "partner",
+     "organisationCountry": "BE",
+     "organisationCity": "Gent",
+     "organisationWebsite": "http://www.ugent.be"
+    },
+    {
+     "organisationName": "ROSKILDE UNIVERSITET",
+     "organisationPIC": "999901803",
+     "organisationRole": "partner",
+     "organisationCountry": "DK",
+     "organisationCity": "Roskilde",
+     "organisationWebsite": "www.ruc.dk"
+    },
+    {
+     "organisationName": "UNIWERSYTET WROCLAWSKI",
+     "organisationPIC": "999845155",
+     "organisationRole": "partner",
+     "organisationCountry": "PL",
+     "organisationCity": "WROCLAW",
+     "organisationWebsite": "www.uni.wroc.pl"
+    },
+    {
+     "organisationName": "UNIVERSITAT WIEN",
+     "organisationPIC": "999866883",
+     "organisationRole": "partner",
+     "organisationCountry": "AT",
+     "organisationCity": "Wien",
+     "organisationWebsite": "www.univie.ac.at"
+    }
+   ]
+  },
+  {
+   "projectName": "101177274",
+   "projectTitle": "IMQP - International Master in Quaternary and Prehistory",
+   "projectStartDate": "2024-09-30T22:00:00.000+0000",
+   "projectEndDate": "2030-11-29T23:00:00.000+0000",
+   "projectLevel3": "43690363",
+   "coordinator": {
+    "organisationName": "UNIVERSITA DEGLI STUDI DI FERRARA",
+    "organisationPIC": "999839626",
+    "organisationRole": "coordinator",
+    "organisationCountry": "IT",
+    "organisationCity": "Ferrara",
+    "organisationWebsite": "www.unife.it"
+   },
+   "organisations": [
+    {
+     "organisationName": "UNIVERSITA DEGLI STUDI DI FERRARA",
+     "organisationPIC": "999839626",
+     "organisationRole": "coordinator",
+     "organisationCountry": "IT",
+     "organisationCity": "Ferrara",
+     "organisationWebsite": "www.unife.it"
+    },
+    {
+     "organisationName": "UNIVERSITY OF THE PHILIPPINES SYSTEM",
+     "organisationPIC": "989756088",
+     "organisationRole": "partner",
+     "organisationCountry": "PH",
+     "organisationCity": "Quezon City",
+     "organisationWebsite": "http://www.upd.edu.ph/"
+    },
+    {
+     "organisationName": "MUSEUM NATIONAL D'HISTOIRE NATURELLE",
+     "organisationPIC": "999662310",
+     "organisationRole": "partner",
+     "organisationCountry": "FR",
+     "organisationCity": "Paris",
+     "organisationWebsite": "http://www.mnhn.fr"
+    },
+    {
+     "organisationName": "UNIVERSITAT ROVIRA I VIRGILI",
+     "organisationPIC": "999880560",
+     "organisationRole": "partner",
+     "organisationCountry": "ES",
+     "organisationCity": "Tarragona",
+     "organisationWebsite": "http://www.urv.cat"
+    },
+    {
+     "organisationName": "INSTITUTO POLITECNICO DE TOMAR",
+     "organisationPIC": "949034033",
+     "organisationRole": "partner",
+     "organisationCountry": "PT",
+     "organisationCity": "Tomar",
+     "organisationWebsite": "www.ipt.pt"
+    }
+   ],
+   "partners": [
+    {
+     "organisationName": "UNIVERSITY OF THE PHILIPPINES SYSTEM",
+     "organisationPIC": "989756088",
+     "organisationRole": "partner",
+     "organisationCountry": "PH",
+     "organisationCity": "Quezon City",
+     "organisationWebsite": "http://www.upd.edu.ph/"
+    },
+    {
+     "organisationName": "MUSEUM NATIONAL D'HISTOIRE NATURELLE",
+     "organisationPIC": "999662310",
+     "organisationRole": "partner",
+     "organisationCountry": "FR",
+     "organisationCity": "Paris",
+     "organisationWebsite": "http://www.mnhn.fr"
+    },
+    {
+     "organisationName": "UNIVERSITAT ROVIRA I VIRGILI",
+     "organisationPIC": "999880560",
+     "organisationRole": "partner",
+     "organisationCountry": "ES",
+     "organisationCity": "Tarragona",
+     "organisationWebsite": "http://www.urv.cat"
+    },
+    {
+     "organisationName": "INSTITUTO POLITECNICO DE TOMAR",
+     "organisationPIC": "949034033",
+     "organisationRole": "partner",
+     "organisationCountry": "PT",
+     "organisationCity": "Tomar",
+     "organisationWebsite": "www.ipt.pt"
+    }
+   ]
+  }
+ ]
+}

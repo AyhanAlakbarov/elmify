@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Mailbox{% endblock %}
+{% block content %}
+  <h1>Mailbox</h1>
+  <h2>Connected inboxes</h2>
+  {% for connection in connections %}
+    <article>
+      <h3>{{ connection.address }}</h3>
+      <p>{{ connection.get_provider_display }} · {{ connection.get_tier_display }} · {{ connection.get_kind_display }} · {{ connection.get_status_display }}{% if connection.last_sync_at %} · last checked {{ connection.last_sync_at|date:"j M H:i" }}{% endif %}</p>
+      {% if connection.status == "ACTIVE" %}
+        <form method="post" action="{% url 'mailbox-revoke' connection.id %}">{% csrf_token %}<button type="submit">Disconnect</button></form>
+        {% if connection.tier == "CONTENT" %}
+          <form method="post" action="{% url 'mailbox-tier' connection.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="tier" value="METADATA">
+            <button type="submit">Read headers only from now on</button>
+          </form>
+        {% endif %}
+      {% endif %}
+    </article>
+  {% empty %}
+    <p>No inbox connected.</p>
+  {% endfor %}
+
+  <h2>Connect an inbox</h2>
+  <p>We read only mail from these senders: {{ domains|join:", "|default:"none yet — add an application first" }}.</p>
+  {% for provider in providers %}
+    <form method="get" action="{% url 'mailbox-connect' provider %}">
+      <fieldset>
+        <legend>{{ provider|title }}</legend>
+        <p>
+          <label for="tier-{{ provider }}">What we may read</label>
+          <select id="tier-{{ provider }}" name="tier">{% for value, label in tiers %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+        </p>
+        <p>
+          <label for="kind-{{ provider }}">Which inbox</label>
+          <select id="kind-{{ provider }}" name="kind">{% for value, label in kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+        </p>
+        <button type="submit">Connect</button>
+      </fieldset>
+    </form>
+  {% endfor %}
+
+  <h2>Senders to confirm</h2>
+  {% for sender in learned %}
+    <form method="post" action="{% url 'mailbox-confirm-sender' sender.id %}">
+      {% csrf_token %}
+      <p>{{ sender.domain }} wrote to the address you use on {{ sender.portal_host }}.</p>
+      <button type="submit">Yes, this is {{ sender.portal_host }}</button>
+    </form>
+  {% empty %}
+    <p>None.</p>
+  {% endfor %}
+{% endblock %}

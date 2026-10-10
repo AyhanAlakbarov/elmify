@@ -1,0 +1,16 @@
+{% load cv_skills %}{% if content.skills %}<h2>Skills</h2>
+{% comment %}
+   Lifted out of cv_base.html so the section tuples in render.py decide where
+   this prints. While it lived in the body it rendered after the whole loop,
+   which put it below the referees the tuple deliberately ends with -- and made
+   R-027's Skills-before-Awards order unreachable by editing the tuple, which
+   is why an earlier comment there called that swap "not implemented".
+
+   by_category, not regroup: regroup groups only ADJACENT runs, so it needs
+   input already sorted by category and silently repeats a heading when it is
+   not -- a real CV rendered 22 skills under 14 headings. dictsort+regroup
+   would fix that and alphabetise the categories, reordering a real CV's own
+   grouping; by_category keeps first-appearance order on both axes. Skills with
+   no category render as one plain line, exactly as a flat list did.
+{% endcomment %}
+{% for category, group in content.skills|by_category %}<p class="skills">{% if category %}<strong>{{ category }}:</strong> {% endif %}{% for skill in group %}{{ skill.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endfor %}{% endif %}

@@ -1,0 +1,1 @@
+{% load cv_countries %}{% spaceless %}{{ entry.institution|default:"" }}{% if entry.institution and entry.city %}, {% endif %}{{ entry.city|default:"" }}{% if entry.country %}, {{ entry.country|country_name }}{% endif %}{% endspaceless %}

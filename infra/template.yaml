@@ -1,0 +1,3653 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Phase 1 one-region runtime — queue, controlled-egress validation, web/worker, RDS
+
+Parameters:
+  ProbeImage:
+    Type: String
+    Description: Immutable URI of the tehsil-agent worker image used by the one-off probe
+    AllowedPattern: "^.+@sha256:[0-9a-f]{64}$"
+
+  AppImage:
+    Type: String
+    Description: Immutable web/worker image URI shared by both services; behavior differs only by Command override
+    AllowedPattern: "^.+@sha256:[0-9a-f]{64}$"
+
+  DomainName:
+    Type: String
+    Description: Wildcard domain covered by the platform ACM certificate (e.g. *.tehsil-agent.example)
+
+  HostedZoneId:
+    Type: String
+    Description: Route53 hosted zone id used for ACM DNS validation of DomainName
+
+  AdditionalCertificateArns:
+    Type: CommaDelimitedList
+    Description: >-
+      Attachment point for extra ACM certificate ARNs (e.g. a tenant custom
+      domain) on HttpsListener. Only the first ARN is attached; leave as ""
+      until a custom domain is provisioned.
+    Default: ""
+
+  DjangoAllowedHosts:
+    Type: String
+    Description: Comma-separated DJANGO_ALLOWED_HOSTS value for the web/worker containers
+
+  WebDesiredCount:
+    Type: Number
+    Default: 1
+
+  WorkerDesiredCount:
+    Type: Number
+    Default: 1
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+
+  DBAllocatedStorage:
+    Type: Number
+    Default: 20
+
+  DBName:
+    Type: String
+    Default: tehsil
+
+  DBMasterUsername:
+    Type: String
+    Default: tehsil_admin
+
+  PortalImage:
+    Type: String
+    Description: >
+      Immutable URI of the Dockerfile `portal` stage. Separate from AppImage: that stage
+      carries Chrome for Testing and Xvfb, which no other service needs.
+    AllowedPattern: "^.+@sha256:[0-9a-f]{64}$"
+
+  AzureDocumentIntelligenceEndpoint:
+    Type: String
+    Default: ""
+    Description: https URL of the EU Document Intelligence resource (transcript reader)
+
+  OcrImage:
+    Type: String
+    Description: >
+      Immutable URI of the ocr/Dockerfile image: the transcript page inventory (text layer and
+      page classification) as an AWS Lambda function. Separate from AppImage: it carries the
+      PDF/image parsers and nothing else, and it parses untrusted uploads.
+    AllowedPattern: "^.+@sha256:[0-9a-f]{64}$"
+
+  PortalDesiredCount:
+    Type: Number
+    Default: 0
+    MinValue: 0
+    MaxValue: 1
+    Description: >
+      Ships STOPPED. §10's portal-terms blocker gates pointing this at a real portal at all,
+      and the EC2 capacity behind it is not free. MaxValue is 1 and load-bearing: browser
+      profiles are local to the instance that owns them, so a second task cannot resume an
+      application the first one paused.
+
+  LlmApiKeySecretArn:
+    Type: String
+    Description: >
+      Secrets Manager ARN holding the Anthropic API key the learn pass uses. Supplied rather
+      than created here so the key's lifecycle (rotation, access audit) is not this stack's.
+    # This value lands directly in PortalExecutionRole's Resource list.
+    # Without a pattern, a malformed or wildcarded ARN here would widen that
+    # role to every secret in the account, and it would fail closed today only by luck -- IAM
+    # happens to reject the placeholder, not because anything here checks.
+    AllowedPattern: "^arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[^*]+$"
+
+  ProvenanceGateEnforced:
+    Type: String
+    AllowedValues: ["0", "1"]
+    Default: "1"
+    Description: >
+      PROVENANCE_GATE_ENFORCED (config/settings/base.py). On by default: verified-only
+      (spec 2026-09-27 verified-catalog section 0.18) -- no unconfirmed body reaches a student.
+      Restoring an old database? Set "0", run manage.py backfill_evidence_domain and
+      manage.py provenance_check --all to completion, then "1" -- turning it on first
+      times every pre-existing programme out of its pack in silence. One parameter
+      feeds both WebTaskDefinition and WorkerTaskDefinition so the two tiers can never disagree.
+
+  MailboxPushEnabled:
+    Type: String
+    AllowedValues: ["0", "1"]
+    Default: "0"
+    Description: >
+      MAILBOX_PUSH_ENABLED (config/settings/base.py; watch spec §3a). Flip to "1" only
+      once a tenant has a verified public HTTPS host Graph can reach and
+      MailboxWorkerService is running -- before that, subscriptions point at a host
+      Graph cannot deliver to, or notifications queue with nothing draining them. One
+      parameter feeds web (webhook), worker (the sweep's subscription upkeep) and the
+      mailbox worker, so the three can never disagree.
+
+  MicrosoftOAuthClientId:
+    Type: String
+    Default: ""
+    Description: >
+      MICROSOFT_OAUTH_CLIENT_ID (config/settings/base.py): the student-mailbox app
+      registration's Application (client) ID. Not a secret. Feeds web (connect, callback)
+      plus worker and mailbox worker (token refresh) from one Ref.
+    # A GUID or empty, so the parameter files' REPLACE_WITH_ placeholder fails the
+    # deploy instead of shipping as a client ID Microsoft rejects at connect time.
+    AllowedPattern: "^$|^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$"
+
+  GoogleOAuthClientId:
+    Type: String
+    Default: ""
+    Description: >
+      GOOGLE_OAUTH_CLIENT_ID (config/settings/base.py). Not a secret. Empty until Gmail is
+      enabled; same three tiers as MicrosoftOAuthClientId.
+
+  MailboxOAuthRedirectBase:
+    Type: String
+    Default: ""
+    Description: >
+      MAILBOX_OAUTH_REDIRECT_BASE (config/settings/base.py), e.g. https://agency.example.com.
+      apps/mailbox/oauth.py appends /mailbox/callback/<PROVIDER>/, and the result must equal
+      the redirect URI registered with the provider exactly. Web tier only.
+    AllowedPattern: "^$|^https://[^\\s]+$"
+
+  MailboxOAuthClientSecretArn:
+    Type: String
+    Description: >
+      FULL Secrets Manager ARN (with its six-character suffix) of one secret whose
+      SecretString is {"microsoft": "...", "google": "..."}. Both keys must be present: ECS
+      reads each by JSON key and a missing key stops the task from starting. Supplied
+      rather than created here, like LlmApiKeySecretArn, so its rotation is not this stack's.
+    # Lands directly in WebExecutionRole's and AppExecutionRole's Resource lists, so the
+    # same no-wildcard pattern as LlmApiKeySecretArn, plus no ":" after "secret:": the task
+    # definitions append ":microsoft::" / ":google::", so an ARN already carrying a JSON
+    # key would yield a broken ValueFrom. A partial ARN (no six-character suffix) cannot be
+    # told apart by pattern -- "oauth-client" itself ends in "-" plus six characters -- so
+    # the runbook says to paste the ARN create-secret prints.
+    AllowedPattern: "^arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[^*:]+$"
+
+Conditions:
+  HasAdditionalCertificates: !Not [!Equals [!Select [0, !Ref AdditionalCertificateArns], ""]]
+
+Resources:
+  ValidationVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.50.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref ValidationVpc
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ValidationVpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.50.0.0/24
+      MapPublicIpOnLaunch: true
+
+  WorkerPrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ValidationVpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.50.10.0/24
+      MapPublicIpOnLaunch: false
+
+  WorkerPrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ValidationVpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.50.11.0/24
+      MapPublicIpOnLaunch: false
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ValidationVpc
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+
+  # Second AZ for the ALB (AWS::ElasticLoadBalancingV2::LoadBalancer requires
+  # subnets in at least two AZs); the NAT stays single-AZ per the existing
+  # pilot-availability tradeoff below.
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ValidationVpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.50.1.0/24
+      MapPublicIpOnLaunch: true
+
+  PublicRouteAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetB
+
+  NATElasticIp:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      Domain: vpc
+
+  # ponytail: one NAT is the pilot availability ceiling; add one per AZ when
+  # the production availability SLO requires it.
+  NATGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NATElasticIp.AllocationId
+      SubnetId: !Ref PublicSubnet
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ValidationVpc
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+
+  PrivateRouteAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref WorkerPrivateSubnetA
+
+  PrivateRouteAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref WorkerPrivateSubnetB
+
+  WorkerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Worker egress only; deliberately no ingress rules
+      VpcId: !Ref ValidationVpc
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  EndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTPS from private tasks to VPC endpoints
+      VpcId: !Ref ValidationVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref WorkerSecurityGroup
+        # Same reasoning as the worker rule above: reach without
+        # credentials, and it keeps the portal task's image pulls and log
+        # delivery off the NAT.
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref PortalSecurityGroup
+
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public HTTPS/HTTP ingress to the ALB; HTTP redirects to HTTPS
+      VpcId: !Ref ValidationVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Web tasks accept traffic only from the ALB
+      VpcId: !Ref ValidationVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: PostgreSQL access limited to the web, worker and portal tasks
+      VpcId: !Ref ValidationVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref WorkerSecurityGroup
+        # The portal task reads field maps and writes the §5.5 audit trail
+        # while it types, so it cannot be credential-free. What makes that
+        # acceptable is the renderer sandbox (apps/portals/engine.py refuses
+        # to run without it) and the EC2 launch type that makes the sandbox
+        # possible.
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref PortalSecurityGroup
+
+  # Same three-security-group shape as DatabaseSecurityGroup above, and for the
+  # same reason: WorkerSecurityGroup is shared by worker, europass-worker,
+  # document-worker and the migration RunTask, so this list already covers all
+  # six app task definitions. Deliberately NOT OcrSecurityGroup -- the OCR
+  # function parses untrusted uploads and has no route to anything but S3.
+  CacheSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Valkey access limited to the web, worker and portal tasks
+      VpcId: !Ref ValidationVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref WebSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref WorkerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref PortalSecurityGroup
+
+  # --- Transcript OCR: subnets with no route out -------------------------------
+  # The OCR function parses untrusted uploads (pdfium, OpenCV). Its subnets
+  # route nowhere but to S3, through a gateway endpoint of their own whose policy
+  # allows one thing: reading a quarantined upload. Code that escaped the parser
+  # can neither reach the internet nor write to any bucket, its own or anyone's.
+  # Subnets, a route table and a gateway endpoint cost nothing. The function's logs
+  # leave through the Lambda service, not these subnets.
+  OcrPrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ValidationVpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.50.20.0/24
+      MapPublicIpOnLaunch: false
+
+  OcrPrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref ValidationVpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.50.21.0/24
+      MapPublicIpOnLaunch: false
+
+  # Deliberately no default route: no NAT, no internet gateway.
+  OcrRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref ValidationVpc
+
+  OcrRouteAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref OcrRouteTable
+      SubnetId: !Ref OcrPrivateSubnetA
+
+  OcrRouteAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref OcrRouteTable
+      SubnetId: !Ref OcrPrivateSubnetB
+
+  OcrS3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref ValidationVpc
+      RouteTableIds: [!Ref OcrRouteTable]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: "*"
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+            Resource: !Sub "${EvidenceBucket.Arn}/quarantine/*"
+
+  OcrSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Transcript OCR; no ingress, HTTPS out (the route table only reaches S3)
+      VpcId: !Ref ValidationVpc
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  S3Endpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      VpcId: !Ref ValidationVpc
+      RouteTableIds: [!Ref PrivateRouteTable]
+
+  SqsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.sqs
+      VpcEndpointType: Interface
+      VpcId: !Ref ValidationVpc
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  EcrApiEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.api
+      VpcEndpointType: Interface
+      VpcId: !Ref ValidationVpc
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  EcrDockerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.ecr.dkr
+      VpcEndpointType: Interface
+      VpcId: !Ref ValidationVpc
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  LogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      VpcId: !Ref ValidationVpc
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  SecretsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
+      VpcEndpointType: Interface
+      VpcId: !Ref ValidationVpc
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+      SecurityGroupIds: [!Ref EndpointSecurityGroup]
+
+  FlowLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/flow"
+      RetentionInDays: 30
+
+  FlowLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: vpc-flow-logs.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: WriteFlowLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:DescribeLogGroups
+                  - logs:DescribeLogStreams
+                Resource: "*"
+
+  VpcFlowLog:
+    Type: AWS::EC2::FlowLog
+    Properties:
+      DeliverLogsPermissionArn: !GetAtt FlowLogRole.Arn
+      LogDestinationType: cloud-watch-logs
+      LogGroupName: !Ref FlowLogGroup
+      ResourceId: !Ref ValidationVpc
+      ResourceType: VPC
+      TrafficType: ALL
+      MaxAggregationInterval: 60
+
+  ValidationCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "${AWS::StackName}-probe"
+
+  ProbeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/probe"
+      RetentionInDays: 7
+
+  # Backs settings.EVIDENCE_BUCKET_NAME (apps/research/storage.py) and the
+  # quarantine/{tenant_id}/{document_id}/{version} document layout
+  # (apps/concierge/documents.py) — one bucket, prefix-separated, per Task 17.
+  # The quarantine/ prefix comes first (not tenants/{tenant_id}/quarantine/)
+  # so DocumentMalwareProtectionPlan's ObjectPrefixes below -- a literal
+  # string-prefix filter, not a glob -- can express "every tenant's
+  # quarantine folder" as a single precise prefix.
+  EvidenceBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      # static/dashboard/documents.js POSTs the presigned form here from the
+      # dashboard's origin; without this S3 stores the object and the browser
+      # still rejects the response. POST only, no credentials: the presigned
+      # policy pins key and size, so "*" (white-label hosts) widens nothing.
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [POST]
+            AllowedOrigins: ["*"]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # Student documents and consultation reports both live in this bucket, so
+  # refuse to serve any of it over plaintext HTTP. PublicAccessBlock stops
+  # anonymous access; this stops an authenticated caller downgrading transport.
+  EvidenceBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref EvidenceBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyNonTlsAccess
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt EvidenceBucket.Arn
+              - !Sub "${EvidenceBucket.Arn}/*"
+            Condition:
+              Bool: {"aws:SecureTransport": false}
+
+  DocumentScanRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: malware-protection-plan.guardduty.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ScanQuarantinedDocuments
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetBucketLocation
+                Resource:
+                  - !GetAtt EvidenceBucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObjectTagging
+                Resource:
+                  - !Sub "${EvidenceBucket.Arn}/quarantine/*"
+
+  # Scoped to the quarantine/ prefix only, matching DocumentScanRole's grant
+  # above; WebTaskRole/WorkerTaskRole (Task 17) get separate, broader access
+  # to the rest of the bucket.
+  DocumentMalwareProtectionPlan:
+    Type: AWS::GuardDuty::MalwareProtectionPlan
+    Properties:
+      Role: !GetAtt DocumentScanRole.Arn
+      ProtectedResource:
+        S3Bucket:
+          BucketName: !Ref EvidenceBucket
+          ObjectPrefixes:
+            - quarantine/
+      Actions:
+        Tagging:
+          Status: ENABLED
+
+  ValidationSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  ProbeExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PullImageAndWriteProbeLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "${ProbeLogGroup.Arn}:*"
+
+  ProbeTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ProbeOnlyValidationResources
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sqs:GetQueueAttributes
+                Resource: !GetAtt ResearchQueue.Arn
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt EvidenceBucket.Arn
+              - Effect: Allow
+                Action: secretsmanager:DescribeSecret
+                Resource: !Ref ValidationSecret
+
+  ProbeTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: !GetAtt ProbeExecutionRole.Arn
+      TaskRoleArn: !GetAtt ProbeTaskRole.Arn
+      ContainerDefinitions:
+        - Name: boundary-probe
+          Image: !Ref ProbeImage
+          Essential: true
+          Command:
+            - python
+            - -m
+            - scripts.validate_controlled_egress
+            - --task-probe
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref ProbeLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: boundary-probe
+
+  ResearchDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+
+  # VisibilityTimeout 900, like the other worker queues: check_provenance runs
+  # inline on the research worker, and at SQS's 30 s default a long check was
+  # redelivered mid-run -- run twice, concurrently, by a second worker -- and a
+  # message that succeeded could still reach the DLQ after maxReceiveCount 3.
+  # _CHECK_BATCH (apps/research/services.py) is sized to finish inside it.
+  # Pinned by tests/infra/test_template.py.
+  ResearchQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 900
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt ResearchDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  ResearchQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ResearchQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+
+  QuietGroupAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessageInQuietGroups
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ResearchQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 120
+      ComparisonOperator: GreaterThanThreshold
+
+  NoisyGroupsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfNoisyGroups
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ResearchQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+
+  DeadLetterDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt ResearchDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+
+  EuropassDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+
+  # Standard, not FIFO: one worker means ordering is meaningless, and a
+  # standard queue has no throughput ceiling to reason about.
+  #
+  # VisibilityTimeout 900, not 300 (Ruling F-M): the circuit-open pause in
+  # run_europass_worker.py sleeps out _FAILURE_PAUSE_SECONDS (300) in place
+  # so a restart never burns a redelivery -- but a message received right
+  # before the pause starts is already in flight, so a 300s visibility
+  # timeout equal to the pause expires at the exact instant the pause ends,
+  # burning one of the three redeliveries anyway. 900s comfortably covers
+  # the 300s failure pause plus the 120s default throttle. Residual: a
+  # maximal 3600s Retry-After can still consume redeliveries, but a
+  # throttle asking for a full hour is an outage-scale event where DLQ plus
+  # EuropassDeadLetterDepthAlarm is the correct outcome, not a bigger timeout.
+  EuropassQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 900
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EuropassDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  # Threshold is governed by the RETRY envelope, not by drain time. With
+  # VisibilityTimeout 900 and maxReceiveCount 3, a message that fails twice
+  # legitimately ages ~1800s before it reaches the DLQ, so anything tighter
+  # pages on ordinary redelivery. Drain time is not the binding constraint:
+  # at ~100 renders/day a full burst clears in about 3.5 minutes. So this
+  # fires only once a message has outlived the entire retry envelope, which
+  # is the real failure. tests/infra/test_template.py pins that relationship
+  # -- if you raise VisibilityTimeout, this has to move with it. It doubles as
+  # the worker's health check: a worker wedged on a hung HTTP call still
+  # "runs" by any naive liveness probe, but its backlog grows and this
+  # fires -- a separate ECS health check that only proves the process
+  # exists would be worse than none, because it would look like coverage.
+  EuropassQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt EuropassQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1800
+      ComparisonOperator: GreaterThanThreshold
+
+  EuropassDeadLetterDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt EuropassDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+
+  # --- Graph push for Microsoft mailboxes (watch spec §3a) --------------------
+  #
+  # The web tier answers a Graph notification within three seconds by only
+  # enqueueing a MailboxWork (identifiers only: tenant and connection id, never
+  # mail); MailboxWorkerService runs the sync. Same shape as the Europass queue:
+  # standard, SSE with the AWS-managed key, three receives then the DLQ.
+  # handle_work never raises for a provider or a rate limit, so what reaches the
+  # DLQ is a crash, not a Graph outage.
+
+  MailboxDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+
+  # VisibilityTimeout 900: one message is a subscription upkeep plus a sync, and
+  # a sync classifies each new message with one model call -- tens of seconds
+  # normally, minutes on a large backlog. Generous on purpose: a timeout shorter
+  # than a slow sync runs it twice, concurrently.
+  MailboxQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 900
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt MailboxDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  # Same retry-envelope reasoning as EuropassQueueAgeAlarm: VisibilityTimeout x
+  # (maxReceiveCount - 1). Doubles as the worker's health check -- a wedged or
+  # stopped mailbox worker shows up as a backlog that only grows.
+  MailboxQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt MailboxQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1800
+      ComparisonOperator: GreaterThanThreshold
+
+  MailboxDeadLetterDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt MailboxDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+
+  # --- The document engine's two queues --------------------------------------
+  #
+  # DocumentScanQueue receives GuardDuty's object scan verdict via EventBridge.
+  # Polling the S3 object tag instead would need a quarantine/ read grant for
+  # WebTaskRole, which this template refuses on purpose; an HTTP webhook would
+  # add a public trust boundary needing shared-secret auth and replay
+  # protection, for no gain.
+  #
+  # VisibilityTimeout 900 on both: each handler holds one model call
+  # (extraction on the scan path, generation on the work path, the latter
+  # capped at 20,000 output tokens and able to make two calls).
+
+  DocumentScanDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+
+  # SSE-SQS, not the KMS key its siblings use: EventBridge is the sender here,
+  # and delivery to a KMS-encrypted queue needs kms:Decrypt/kms:GenerateDataKey
+  # for events.amazonaws.com granted through the key POLICY -- which an
+  # AWS-managed key (alias/aws/sqs) cannot be edited to grant. A customer
+  # CMK would work but adds a key, a key policy and a rotation story for a
+  # queue whose payload is three identifiers AWS itself produced. Left as
+  # alias/aws/sqs would fail silently: sqs:SendMessage succeeds at the IAM
+  # layer and the send still drops at the KMS layer, so every upload stays
+  # QUARANTINED forever with no alarm to say why. DocumentQueue keeps the KMS
+  # key -- only our own IAM principals send to it, so it has no such problem.
+  DocumentScanQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      SqsManagedSseEnabled: true
+      VisibilityTimeout: 900
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DocumentScanDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  DocumentDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+
+  DocumentQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 900
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt DocumentDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  # detail-type and source only. The rule is account-wide, so the handler
+  # re-checks the bucket name itself (apps/documents/document_worker.py) --
+  # another bucket's scan is not ours to act on.
+  #
+  # Deliberately NOT subscribed: "GuardDuty Malware Protection Post Scan Action
+  # Failed" (tagging failed) and the three Resource Status events. The verdict
+  # is read from the event, never from the object tag, so a tagging failure
+  # does not affect this path.
+  DocumentScanRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Deliver GuardDuty object scan verdicts to the document worker
+      EventPattern:
+        detail-type: ["GuardDuty Malware Protection Object Scan Result"]
+        source: ["aws.guardduty"]
+      Targets:
+        - Id: DocumentScanQueue
+          Arn: !GetAtt DocumentScanQueue.Arn
+
+  # Without this the rule's deliveries are dropped silently and every upload
+  # stays QUARANTINED forever, with no failing alarm anywhere to say so.
+  DocumentScanQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref DocumentScanQueue]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sqs:SendMessage
+            Resource: !GetAtt DocumentScanQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt DocumentScanRule.Arn
+
+  # Threshold governed by the RETRY envelope, not drain time: with
+  # VisibilityTimeout 900 and maxReceiveCount 3, a message that fails twice
+  # legitimately ages ~1800s before it reaches the DLQ, so anything tighter
+  # pages on ordinary redelivery. tests/infra/test_template.py pins that
+  # relationship -- if you raise VisibilityTimeout, these move with it.
+  DocumentQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt DocumentQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1800
+      ComparisonOperator: GreaterThanThreshold
+
+  DocumentScanQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt DocumentScanQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 5
+      Threshold: 1800
+      ComparisonOperator: GreaterThanThreshold
+
+  DocumentDeadLetterDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt DocumentDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+
+  # The ONLY signal that EventBridge delivery itself is broken, and the reason
+  # it is needed is that every other alarm on this path reads a QUEUE. If the
+  # rule stops delivering, no message is ever enqueued, nothing ages, both age
+  # alarms and both DLQ-depth alarms stay green -- and every upload sits at
+  # QUARANTINED forever with the system reporting itself healthy. That is the
+  # exact failure DocumentScanQueuePolicy's comment says it prevents, which it
+  # does only for the policy's half of it.
+  #
+  # notBreaching: a rule with nothing to deliver publishes no datapoint at all,
+  # and no uploads is the normal state of a quiet hour, not a fault.
+  DocumentScanRuleFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - Name: RuleName
+          Value: !Ref DocumentScanRule
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  DocumentScanDeadLetterDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt DocumentScanDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+
+  # --- Certificate and ALB ---------------------------------------------------
+
+  WildcardCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !Ref DomainName
+          HostedZoneId: !Ref HostedZoneId
+
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: application
+      Subnets: [!Ref PublicSubnet, !Ref PublicSubnetB]
+      SecurityGroups: [!Ref AlbSecurityGroup]
+
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref ValidationVpc
+      Protocol: HTTP
+      Port: 8000
+      TargetType: ip
+      HealthCheckPath: /
+      # HostTenantContextMiddleware (apps/tenancy/middleware.py) rejects any
+      # Host it can't resolve to a verified tenant domain with 400, including
+      # the ALB's own DNS name — a live 400 still proves the app process and
+      # DB connectivity are up, so it counts as healthy here.
+      Matcher:
+        HttpCode: "400"
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Protocol: HTTPS
+      Port: 443
+      Certificates:
+        - CertificateArn: !Ref WildcardCertificate
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+  HttpRedirectListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Protocol: HTTP
+      Port: 80
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig:
+            Protocol: HTTPS
+            Port: "443"
+            StatusCode: HTTP_301
+
+  AdditionalCertificateAttachment:
+    Type: AWS::ElasticLoadBalancingV2::ListenerCertificate
+    Condition: HasAdditionalCertificates
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Certificates:
+        - CertificateArn: !Select [0, !Ref AdditionalCertificateArns]
+
+  # --- RDS PostgreSQL ----------------------------------------------------------
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Private subnets for the Phase 1 PostgreSQL instance
+      SubnetIds: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: postgres
+      # Bare major on purpose, matching the postgres:17 that compose.yaml and
+      # ci.yml run -- every RLS guarantee in this repo is verified against that
+      # engine. AutoMinorVersionUpgrade defaults to true, so RDS moves the minor
+      # on its own and a pinned "17.11" would start disagreeing with the running
+      # database on the next stack update. cfn-lint's W3691 objects to the
+      # shorthand (it fires on any bare major, "16" and "17" alike) and is
+      # ignored in .cfnlintrc.yaml for that reason.
+      EngineVersion: "17"
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBMasterUsername
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
+      PubliclyAccessible: false
+      StorageEncrypted: true
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      EnableCloudwatchLogsExports: [postgresql]
+      CopyTagsToSnapshot: true
+
+  # --- Valkey (node-based, cluster mode disabled): apps/ratelimit.py's shared counters
+  # DatabaseCache (Django's SQL-backed cache) was tried first and rejected on review:
+  # its incr() is a non-atomic get-then-set that resets the key's TTL to Django's 300s
+  # default, so an hourly/daily rate limit stops keeping its window the moment two
+  # increments race or the key sits idle a few minutes. Valkey's INCR is atomic and
+  # does not touch the key's TTL.
+  #
+  # ElastiCache SERVERLESS was tried next and rejected on a second review: AWS's own
+  # troubleshooting guide states "ElastiCache Serverless only supports clients that
+  # support the Valkey or Redis OSS cluster protocol ... If you want to use ... Cluster
+  # Mode Disabled, then you must create a node-based cluster"
+  # (docs.aws.amazon.com/AmazonElastiCache/latest/dg/wwe-troubleshooting.html), and
+  # Django's built-in RedisCache uses the plain non-cluster client. A node-based
+  # replication group, cluster mode disabled, is what that client actually speaks.
+  #
+  # ponytail: NumCacheClusters: 1 -- one node, no replica, no automatic failover. This
+  # is a handful of small counters for a pilot, not a workload worth the second node's
+  # cost yet; the counters are also not the source of truth for anything (a lost
+  # counter degrades to "the limit resets", never data loss). Upgrade path when this
+  # needs HA: NumCacheClusters: 2 and AutomaticFailoverEnabled: true (AWS::ElastiCache::
+  # ReplicationGroup properties, aws-resource-elasticache-replicationgroup.md --
+  # AutomaticFailoverEnabled needs at least one replica).
+  #
+  # No CacheUsageLimits here: that property belongs to ServerlessCache, not
+  # ReplicationGroup (aws-resource-elasticache-replicationgroup.md lists no such
+  # property) -- the node type (cache.t4g.micro) bounds cost instead, the same way
+  # DBInstanceClass does for the database above. cache.t4g.micro's monthly on-demand
+  # price in eu-central-1 is NOT verified here: AWS's pricing page
+  # (aws.amazon.com/elasticache/pricing) gives worked examples for other node types but
+  # no queryable per-type-per-region rate table was reachable from this build
+  # environment on 2026-09-27.
+  CacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Private subnets for the shared rate-limit cache
+      SubnetIds: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+
+  Cache:
+    Type: AWS::ElastiCache::ReplicationGroup
+    Properties:
+      Engine: valkey
+      # Bare minor, matching the RDS Engine comment above: the current Valkey release
+      # as of 2026-09-27 (AWS Database Blog, "Year One of Valkey ... ElastiCache version
+      # 8.1 for Valkey").
+      EngineVersion: "8.1"
+      CacheNodeType: cache.t4g.micro
+      NumCacheClusters: 1
+      ReplicationGroupDescription: Shared rate-limit and spend-cap counters (apps/ratelimit.py)
+      CacheSubnetGroupName: !Ref CacheSubnetGroup
+      SecurityGroupIds: [!Ref CacheSecurityGroup]
+      # rediss:// on the application side needs this; AtRestEncryptionEnabled has no
+      # client-visible effect but costs nothing extra to turn on for what is,
+      # eventually, per-actor identifiers.
+      TransitEncryptionEnabled: true
+      AtRestEncryptionEnabled: true
+
+  # Passwords for the least-privilege application-level Postgres roles
+  # created by scripts/create_runtime_role.sql (NOBYPASSRLS, per
+  # tests/tenancy/test_database_isolation.py); the master credential above
+  # is only ever used for that one-time role bootstrap.
+  #
+  # Split in two (2026-09-25 catalog-read-split): `runtime` was one role
+  # doing two jobs, and a single secret can no longer be handed to both the
+  # engine tier and the web tier -- each task definition's execution role
+  # below reads only the one it needs.
+  EngineDatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Password for the runtime_engine Postgres role (NOBYPASSRLS; catalogue read/write path)
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  WebDatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Password for the runtime_web Postgres role (NOBYPASSRLS; agency tier, no catalogue grant)
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  MigrationDatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Password for the migration Postgres role used only by the one-off migration task
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  # Deliberately has neither SecretString nor GenerateSecretString: an OpenAI
+  # key is issued by a third party, so CloudFormation can only own the empty
+  # container and a human supplies the value once per environment with
+  # `aws secretsmanager put-secret-value` -- the same out-of-band bootstrap
+  # docs/runbooks/deploy.md already prescribes for the two Postgres role
+  # passwords above. A stack update never overwrites what was put there.
+  OpenAiApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: OpenAI API key read by the tiers that call the OpenAI SDK (populate out-of-band)
+
+  # Same shape and the same reason as OpenAiApiKeySecret above: third-party
+  # keys, so the template owns empty containers and a human fills them once per
+  # environment. Every research page fetch goes through apps/research/fetch, and
+  # both providers raise "... is not set" on an empty key -- which subclasses
+  # SourceBlocked, so a sweep deployed without these blocks every lead and exits
+  # 0. Nothing in config/settings refuses to start without them.
+  FirecrawlApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Firecrawl API key, the default research page-fetch tier (populate out-of-band)
+
+  ScrapeDoApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: scrape.do API key, the residue page-fetch tier (populate out-of-band)
+
+  # Same shape again, for a different reason than the vendor keys above:
+  # Firecrawl issues this HMAC key out-of-band, so the template can neither
+  # generate it (GenerateSecretString would mint a random value that verifies
+  # nothing) nor hold it (a literal SecretString would commit the key to the
+  # repository). Reaches WebTaskDefinition, not the worker -- the receiver is
+  # the web tier.
+  FirecrawlWebhookSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Firecrawl webhook HMAC signing key, issued by Firecrawl out-of-band (populate out-of-band)
+
+  # Same shape and the same reason again: the three search indexes the roster
+  # routes by family (roster 4.13). One generic SEARCH_API_KEY cannot carry
+  # them -- Exa authenticates with x-api-key, Brave with X-Subscription-Token
+  # and Tavily with a bearer token. An empty key is not a crash: each adapter
+  # simply finds nothing, so a sweep deployed without these reports
+  # seed-catalogues-only and exits 0, which is the silent failure these
+  # entries exist to prevent.
+  ExaApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Exa API key, the primary index for the families no register covers (populate out-of-band)
+
+  BraveApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Brave Search API key, the independent second index (populate out-of-band)
+
+  TavilyApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Tavily API key, name-to-site resolution and host inventory (populate out-of-band)
+
+  # Same shape again. The transcript reader's closed questions go to TypeSafe's
+  # Jev through the decision layer (apps/research/decisions.py); on the
+  # OpenRouter route (DocumentWorkerTaskDefinition's DECISIONS_BASE_URL) this
+  # holds the OpenRouter key, delivered as OPENROUTER_API_KEY: decisions.py
+  # sends TYPESAFE_API_KEY only to api.typesafe.ai. It raises on an empty key -- a
+  # transcript then crashes to the dead-letter queue, never reads as empty.
+  TypesafeApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: TypeSafe Jev key, or the OpenRouter key on its route (populate out-of-band)
+
+  # Azure Document Intelligence, the transcript reader for scanned pages and photos
+  # (spec 2026-10-03-transcript-reader-redesign section 4). Populate out of band. Reading stays off
+  # until TRANSCRIPT_AZURE_ENABLED is set after Microsoft's data-processing terms are reviewed.
+  AzureDocumentIntelligenceKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Azure Document Intelligence key (populate out-of-band)
+
+  # --- Web/worker/migration IAM ------------------------------------------------
+
+  # Reads only the runtime_engine database secret (2026-09-25 catalog-read-
+  # split): Worker, EuropassWorker, DocumentWorker and Migration all run
+  # engine-or-narrower work, and none of them is the agency web tier -- see
+  # WebExecutionRole below for that split, and PortalExecutionRole for the
+  # portal tier's. Keeping the name is the
+  # smaller diff; every task that used to be "runtime" here still is, minus
+  # WebTaskDefinition.
+  AppExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PullImageWriteLogsReadDbSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "${WorkerLogGroup.Arn}:*"
+                  - !Sub "${MigrationLogGroup.Arn}:*"
+                  - !Sub "${EuropassWorkerLogGroup.Arn}:*"
+                  - !Sub "${DocumentWorkerLogGroup.Arn}:*"
+                  - !Sub "${MailboxWorkerLogGroup.Arn}:*"
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref EngineDatabaseSecret
+                  - !Ref MigrationDatabaseSecret
+                  - !Ref ValidationSecret
+                  - !GetAtt Database.MasterUserSecret.SecretArn
+                  - !Ref OpenAiApiKeySecret
+                  - !Ref FirecrawlApiKeySecret
+                  - !Ref ScrapeDoApiKeySecret
+                  - !Ref ExaApiKeySecret
+                  - !Ref BraveApiKeySecret
+                  - !Ref TavilyApiKeySecret
+                  - !Ref TypesafeApiKeySecret
+                  # Worker (sync_mailboxes) and MailboxWorker refresh student
+                  # mailbox tokens with the OAuth client secrets.
+                  - !Ref MailboxOAuthClientSecretArn
+                  - !Ref AzureDocumentIntelligenceKeySecret
+
+  # The agency web tier's execution role. Split out of AppExecutionRole
+  # (2026-09-25 catalog-read-split) because that role's secretsmanager grant
+  # is how ECS resolves every container's Secrets entries -- sharing it with
+  # the engine tasks would let the web task's execution role read the
+  # runtime_engine database password even though runtime_web never connects
+  # as that role. No OpenAI/Firecrawl/scrape.do/search-provider keys and no
+  # LLM key either: nothing in the web tier calls a model or a fetch vendor
+  # (CLAUDE.md, LLM/AI security).
+  WebExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PullImageWriteLogsReadWebDbSecret
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "${WebLogGroup.Arn}:*"
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref WebDatabaseSecret
+                  - !Ref ValidationSecret
+                  # Not a vendor API key: the HMAC key the webhook receiver
+                  # verifies deliveries with. WebTaskDefinition's Secrets
+                  # entry resolves through THIS role (it moved off
+                  # AppExecutionRole with the split); without the grant the
+                  # web task never starts.
+                  - !Ref FirecrawlWebhookSecret
+                  # The student-mailbox OAuth client secrets the callback's
+                  # code exchange signs with.
+                  - !Ref MailboxOAuthClientSecretArn
+
+  # The portal tier's execution role (2026-09-25 catalog-read-split, final
+  # review I3). The portal task connects as runtime_web: nothing on its code
+  # path reads the shared catalogue, and its security rests on the renderer
+  # sandbox holding against hostile pages -- as runtime_engine a sandbox
+  # escape could write the catalogue every tenant reads. So it must not be
+  # able to resolve the engine secret either. ECS resolves the task's
+  # ANTHROPIC_API_KEY Secrets entry through this role, not the task role --
+  # without that grant the task never starts.
+  PortalExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: PullImageWriteLogsReadPortalSecrets
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub "${PortalLogGroup.Arn}:*"
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref WebDatabaseSecret
+                  - !Ref ValidationSecret
+                  - !Ref LlmApiKeySecretArn
+
+  # Only WorkerTaskRole can consume the research queue and read/write the
+  # evidence bucket. WebTaskRole may only enqueue, read tenants/, and write
+  # quarantine/ (the presigned upload target -- see the PutObject statement
+  # below); S3 prefix scoping by tenant is application-enforced (Task 17
+  # brief), matching the "PostgreSQL RLS is secondary defense" pattern
+  # already used for the DB.
+  WebTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: EnqueueResearchAndReadTenantObjects
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt ResearchQueue.Arn
+              # Graph push (watch spec §3a): the notification webhook and the
+              # OAuth callback (apps/mailbox/views.py -> push.enqueue_work),
+              # and the extension's "check my mail now"
+              # (apps/portals/ext_api.py::mailbox_check), put identifiers on
+              # the mailbox queue. Send only; the mailbox worker consumes and
+              # is the only tier that reads a stored grant.
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt MailboxQueue.Arn
+              # add_application queues capture_requirements on commit, and
+              # /api/documents/generate calls enqueue_document_work, both from
+              # a web request. Send only; DocumentWorkerTaskRole consumes.
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt DocumentQueue.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub "${EvidenceBucket.Arn}/tenants/*"
+              # The presigned POST is signed with THIS role's credentials, so
+              # an upload cannot work without it. Write only, and only into
+              # quarantine/: reading an uploaded file's bytes stays worker-side
+              # (ingestion, after GuardDuty marked it clean), and tenants/ --
+              # the released artefacts -- stays unwritable from the web tier.
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${EvidenceBucket.Arn}/quarantine/*"
+              # apps/mailbox/views.py runs under THIS role (WebTaskDefinition
+              # -> WebTaskRole). callback() CREATES/WRITES a student's OAuth
+              # refresh token (store_refresh_token) and revoke() DELETES one
+              # (delete_student_mailbox_tokens) -- both web-tier code paths,
+              # both this role's job. GetSecretValue stays off this statement:
+              # only the sync jobs read a stored grant. That is also why a
+              # revoke leaves the Graph push subscription in place (deleting it
+              # needs a token): it only sends ids to a REVOKED connection, which
+              # the webhook ignores, and lapses within seven days (watch spec
+              # §3a). Never
+              # secretsmanager:ListSecrets, for the same reason as the
+              # WorkerTaskRole grant below.
+              - Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:DeleteSecret
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/mailbox/*"
+
+  WorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ConsumeResearchQueueAndOwnEvidenceBucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt ResearchQueue.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetObjectVersion
+                  # Erasure under a versioned bucket needs the version-level
+                  # delete: DeleteObject alone only writes a delete marker.
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Resource: !Sub "${EvidenceBucket.Arn}/tenants/*"
+              # Ingestion reads the scanned-clean original once, worker-side
+              # only (apps/documents/ingestion.py). Read-only, and deliberately
+              # not extended to WebTaskRole: nothing in the web tier opens a
+              # quarantined object.
+              #
+              # Delete is here because erasure is this role's, and only this
+              # role's -- and the student's uploaded CV lives under
+              # quarantine/, not under their own tenants/ prefix. Without it
+              # advance_deletion records EXECUTED while the most personal
+              # artefact in the system stays in the bucket with no credential
+              # able to remove it. DeleteObjectVersion for the same reason it
+              # appears above: the bucket is versioned, so DeleteObject alone
+              # writes a marker and leaves the bytes readable. Still one
+              # statement, so tests/infra/test_template.py's exact-set
+              # assertion on this resource keeps catching anything added.
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Resource: !Sub "${EvidenceBucket.Arn}/quarantine/*"
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:ListBucketVersions
+                Resource: !GetAtt EvidenceBucket.Arn
+              # Task 8: advance_deletion destroys a student's portal
+              # credentials (apps/portals/auth.py::SecretsManagerCredentials)
+              # on the same path that deletes their documents, and its
+              # deletion helper re-raises anything that is not
+              # ResourceNotFoundException. Without this grant every erasure
+              # fails loudly with AccessDenied and the deletion request stays
+              # APPROVED -- the correct failure direction, but erasure does
+              # not work at all until this grant exists.
+              - Effect: Allow
+                Action: secretsmanager:DeleteSecret
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/portal/*"
+              # Task 3 of the student-mailbox plan (apps/mailbox/secrets.py):
+              # the OAuth refresh token this role must be able to destroy on
+              # the same erasure path is the same secret sync_mailboxes reads
+              # every six hours (access_token_for -> refresh_token_for ->
+              # GetSecretValue), plus PutSecretValue because that same refresh
+              # stores the token Microsoft rotates in on every call
+              # (oauth.py::access_token_for -> replace_refresh_token). Never
+              # CreateSecret: only the web tier's connect creates a grant, and
+              # a worker that could recreate one could undo a revoke. Never
+              # secretsmanager:ListSecrets -- it cannot be scoped to one
+              # student's prefix in IAM, so granting it would grant every
+              # tenant's secrets to answer a question about one.
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                  - secretsmanager:DeleteSecret
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/mailbox/*"
+              # Task 17 (institution provenance gate): check_body's register
+              # load (apps/research/recognition.py::load_register, reached
+              # from provenance_job.py via Deps.load) archives a register's
+              # bytes before parsing them -- write only, nothing on this path
+              # ever reads a register snapshot back.
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${EvidenceBucket.Arn}/registers/*"
+              # check_body's content veto reads a body's archived official-source
+              # pages back (apps/research/blocking.py::body_page_texts), and
+              # persist_snapshot (apps/research/snapshot.py) writes them from
+              # discover and read_program_page, which run on this worker as
+              # runtime_engine. Without PutObject the first discovery run on a
+              # deployed stack fails with AccessDenied. Never delete.
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "${EvidenceBucket.Arn}/official-sources/*"
+
+  # Scoped to EuropassQueue and the tenants/ prefix of the evidence bucket
+  # only -- render_and_store (apps/documents/europass_render.py) both reads
+  # a cache hit and writes the rendered PDF there via store_document
+  # (apps/documents/storage.py), so this worker's own role, separate from
+  # ConsumeResearchQueueAndOwnEvidenceBucket above, still needs S3 -- just
+  # never the research queue or the quarantine/ prefix, and never delete.
+  EuropassWorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ConsumeEuropassQueueAndWriteTenantObjects
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt EuropassQueue.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "${EvidenceBucket.Arn}/tenants/*"
+
+  # The mailbox worker (run_mailbox_worker -> push.handle_work) does what the
+  # sweep does on WorkerTaskRole for one connection: keep its Graph
+  # subscription alive, then sync. Its AWS calls are exactly two: the queue,
+  # and the student's refresh token -- GetSecretValue to read it,
+  # PutSecretValue because Microsoft rotates it on every refresh
+  # (oauth.py::access_token_for -> secrets.py::replace_refresh_token). Never
+  # CreateSecret (only the web tier's connect creates a grant; a worker that
+  # could recreate one could undo a revoke), never DeleteSecret (erasure is
+  # WorkerTaskRole's), never ListSecrets (unscopable), never S3: nothing on
+  # the sync path touches the evidence bucket.
+  MailboxWorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ConsumeMailboxQueueAndRotateMailboxGrants
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt MailboxQueue.Arn
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/mailbox/*"
+
+  # One task holds both grants: quarantine/* read for the scan-and-ingest path
+  # and tenants/* write for the render path -- the shape WorkerTaskRole already
+  # has. sqs:SendMessage on EuropassQueue is the hand-off for a EUROPASS_API
+  # draft, which must go through that pinned worker rather than be rendered
+  # here.
+  #
+  # ponytail: one worker holds both grants; split the task definition if the
+  # scan path ever needs to run untrusted code.
+  DocumentWorkerTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: ecs-tasks.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ConsumeDocumentQueuesAndRenderTenantObjects
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !GetAtt DocumentQueue.Arn
+                  - !GetAtt DocumentScanQueue.Arn
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt EuropassQueue.Arn
+              # Transcript OCR runs in its own function (OcrFunction), never here.
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt OcrFunction.Arn
+              # Read only, and only the quarantined original: the upload check
+              # reads the version GuardDuty scanned (GetObjectVersion), never the
+              # key's latest, and copies it under tenants/ (document_worker.py).
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub "${EvidenceBucket.Arn}/quarantine/*"
+              # The render path stores the artefact, and store_document also
+              # reads when re-storing bytes under a draft's own key. Never
+              # delete: erasure is WorkerTaskRole's, and only its.
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "${EvidenceBucket.Arn}/tenants/*"
+
+  # --- Web/worker/migration ECS ------------------------------------------------
+
+  WebLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/web"
+      RetentionInDays: 30
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/worker"
+      RetentionInDays: 30
+
+  # apps/watch/heartbeat.py logs "JobSilent job=<name>" at ERROR when a scheduled
+  # command has not finished within its window. A task that starts and dies is
+  # a successful EventBridge invocation, so the FailedInvocations alarms cannot
+  # see it. JobSilent catches ONE job stopping -- it is logged by the job that
+  # still runs. If every job dies (both share one image and task definition),
+  # nothing logs it; JobFinishedMissingAlarm below covers that case.
+  JobSilentMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroup
+      FilterPattern: '"JobSilent"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/Jobs
+          MetricName: JobSilent
+          MetricValue: "1"
+
+  JobSilentAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/Jobs
+      MetricName: JobSilent
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # record_run logs "JobFinished job=<name>" on every finished run. Two hours
+  # with none means no job finished at all; missing data is exactly that case.
+  JobFinishedMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroup
+      FilterPattern: '"JobFinished"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/Jobs
+          MetricName: JobFinished
+          MetricValue: "1"
+
+  JobFinishedMissingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/Jobs
+      MetricName: JobFinished
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+
+  MigrationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/migration"
+      RetentionInDays: 30
+
+  WebTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt WebExecutionRole.Arn
+      TaskRoleArn: !GetAtt WebTaskRole.Arn
+      ContainerDefinitions:
+        - Name: web
+          Image: !Ref AppImage
+          Essential: true
+          Command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000"]
+          PortMappings:
+            - ContainerPort: 8000
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: config.settings.production
+            - Name: DJANGO_ALLOWED_HOSTS
+              Value: !Ref DjangoAllowedHosts
+            - Name: RESEARCH_QUEUE_URL
+              Value: !Ref ResearchQueue
+            # Ruling F-J: config.settings.production reads this via
+            # os.environ[...] unconditionally at import time, regardless of
+            # which command a task actually runs -- every task definition
+            # that sets DJANGO_SETTINGS_MODULE=config.settings.production
+            # must supply it, or the container KeyErrors before any command
+            # logic runs.
+            - Name: EUROPASS_QUEUE_URL
+              Value: !Ref EuropassQueue
+            # production.py reads every queue URL at import, so every task
+            # running Django supplies all of them -- see the identical
+            # entries on its siblings.
+            - Name: PORTAL_QUEUE_URL
+              Value: !Ref PortalQueue
+            - Name: DOCUMENT_QUEUE_URL
+              Value: !Ref DocumentQueue
+            - Name: DOCUMENT_SCAN_QUEUE_URL
+              Value: !Ref DocumentScanQueue
+            - Name: MAILBOX_QUEUE_URL
+              Value: !Ref MailboxQueue
+            # apps/ratelimit.py's shared counters; config.settings.production
+            # refuses to start without this (a shared counter is a production
+            # requirement -- see that module's docstring). rediss:// because
+            # TLS is mandatory on ElastiCache Serverless.
+            - Name: CACHE_URL
+              Value: !Sub "rediss://${Cache.PrimaryEndPoint.Address}:${Cache.PrimaryEndPoint.Port}"
+            - Name: EVIDENCE_BUCKET_NAME
+              Value: !Ref EvidenceBucket
+            - Name: POSTGRES_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: POSTGRES_DB
+              Value: !Ref DBName
+            - Name: DATABASE_ROLE
+              Value: runtime_web
+            - Name: POSTGRES_WEB_USER
+              Value: runtime_web
+            # Task 17: one Ref shared with WorkerTaskDefinition below, so the
+            # pack-writing tier (apps/funding/services.py, pool.py) and the
+            # sweep tier (apps/research/provenance_sweep.py) can never read
+            # different values of this flag.
+            - Name: PROVENANCE_GATE_ENFORCED
+              Value: !Ref ProvenanceGateEnforced
+            # One Ref for web, worker and mailbox worker (watch spec §3a).
+            - Name: MAILBOX_PUSH_ENABLED
+              Value: !Ref MailboxPushEnabled
+            # Student-mailbox OAuth (apps/mailbox/oauth.py). Client IDs are
+            # not secrets; the client secrets below are.
+            - Name: MICROSOFT_OAUTH_CLIENT_ID
+              Value: !Ref MicrosoftOAuthClientId
+            - Name: GOOGLE_OAUTH_CLIENT_ID
+              Value: !Ref GoogleOAuthClientId
+            # Web only: connect and the callback build the redirect URI from it.
+            - Name: MAILBOX_OAUTH_REDIRECT_BASE
+              Value: !Ref MailboxOAuthRedirectBase
+          Secrets:
+            - Name: POSTGRES_WEB_PASSWORD
+              ValueFrom: !Ref WebDatabaseSecret
+            - Name: DJANGO_SECRET_KEY
+              ValueFrom: !Ref ValidationSecret
+            # The receiver runs in Web, not Worker -- the fetch vendors' API
+            # keys are the worker's. A Secrets entry, never Environment: an
+            # Environment value is template text, readable by anyone with
+            # describe-task-definition.
+            - Name: FIRECRAWL_WEBHOOK_SECRET
+              ValueFrom: !Ref FirecrawlWebhookSecret
+            # One secret, two JSON keys; resolved by the execution role.
+            - Name: MICROSOFT_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${MailboxOAuthClientSecretArn}:microsoft::"
+            - Name: GOOGLE_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${MailboxOAuthClientSecretArn}:google::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WebLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: web
+
+  WorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt AppExecutionRole.Arn
+      TaskRoleArn: !GetAtt WorkerTaskRole.Arn
+      ContainerDefinitions:
+        - Name: worker
+          Image: !Ref AppImage
+          Essential: true
+          Command: ["python", "manage.py", "run_research_worker"]
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: config.settings.production
+            - Name: DJANGO_ALLOWED_HOSTS
+              Value: !Ref DjangoAllowedHosts
+            - Name: RESEARCH_QUEUE_URL
+              Value: !Ref ResearchQueue
+            # Ruling F-J: see WebTaskDefinition's identical comment above.
+            - Name: EUROPASS_QUEUE_URL
+              Value: !Ref EuropassQueue
+            # production.py reads every queue URL at import, so every task
+            # running Django supplies all of them -- see the identical
+            # entries on its siblings.
+            - Name: PORTAL_QUEUE_URL
+              Value: !Ref PortalQueue
+            - Name: DOCUMENT_QUEUE_URL
+              Value: !Ref DocumentQueue
+            - Name: DOCUMENT_SCAN_QUEUE_URL
+              Value: !Ref DocumentScanQueue
+            - Name: MAILBOX_QUEUE_URL
+              Value: !Ref MailboxQueue
+            # apps/ratelimit.py's shared counters; config.settings.production
+            # refuses to start without this (a shared counter is a production
+            # requirement -- see that module's docstring). rediss:// because
+            # TLS is mandatory on ElastiCache Serverless.
+            - Name: CACHE_URL
+              Value: !Sub "rediss://${Cache.PrimaryEndPoint.Address}:${Cache.PrimaryEndPoint.Port}"
+            - Name: EVIDENCE_BUCKET_NAME
+              Value: !Ref EvidenceBucket
+            - Name: POSTGRES_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: POSTGRES_DB
+              Value: !Ref DBName
+            - Name: DATABASE_ROLE
+              Value: runtime_engine
+            - Name: POSTGRES_ENGINE_USER
+              Value: runtime_engine
+            # Task 17: one Ref shared with WebTaskDefinition above, so the
+            # pack-writing tier (apps/funding/services.py, pool.py) and the
+            # sweep tier (apps/research/provenance_sweep.py) can never read
+            # different values of this flag.
+            - Name: PROVENANCE_GATE_ENFORCED
+              Value: !Ref ProvenanceGateEnforced
+            # One Ref for web, worker and mailbox worker (watch spec §3a).
+            - Name: MAILBOX_PUSH_ENABLED
+              Value: !Ref MailboxPushEnabled
+            # Student-mailbox OAuth (apps/mailbox/oauth.py). Client IDs are
+            # not secrets; the client secrets below are.
+            - Name: MICROSOFT_OAUTH_CLIENT_ID
+              Value: !Ref MicrosoftOAuthClientId
+            - Name: GOOGLE_OAUTH_CLIENT_ID
+              Value: !Ref GoogleOAuthClientId
+          Secrets:
+            - Name: POSTGRES_ENGINE_PASSWORD
+              ValueFrom: !Ref EngineDatabaseSecret
+            - Name: DJANGO_SECRET_KEY
+              ValueFrom: !Ref ValidationSecret
+            - Name: OPENAI_API_KEY
+              ValueFrom: !Ref OpenAiApiKeySecret
+            # Every research page fetch goes through apps/research/fetch:
+            # Firecrawl first, scrape.do on its failure. An empty key raises
+            # VendorUnavailable, which subclasses SourceBlocked, so without
+            # these a sweep blocks every lead and still exits 0.
+            - Name: FIRECRAWL_API_KEY
+              ValueFrom: !Ref FirecrawlApiKeySecret
+            - Name: SCRAPEDO_API_KEY
+              ValueFrom: !Ref ScrapeDoApiKeySecret
+            # The three search indexes, routed by family (roster 4.13). Absent,
+            # every adapter returns nothing and the sweep reports
+            # seed-catalogues-only while exiting 0 -- a feature silently off.
+            - Name: EXA_API_KEY
+              ValueFrom: !Ref ExaApiKeySecret
+            - Name: BRAVE_API_KEY
+              ValueFrom: !Ref BraveApiKeySecret
+            - Name: TAVILY_API_KEY
+              ValueFrom: !Ref TavilyApiKeySecret
+            # One secret, two JSON keys; resolved by the execution role.
+            - Name: MICROSOFT_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${MailboxOAuthClientSecretArn}:microsoft::"
+            - Name: GOOGLE_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${MailboxOAuthClientSecretArn}:google::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref WorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: worker
+
+  MigrationTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: !GetAtt AppExecutionRole.Arn
+      ContainerDefinitions:
+        - Name: migrate
+          Image: !Ref AppImage
+          Essential: true
+          Command: ["python", "manage.py", "migrate"]
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: config.settings.production
+            - Name: DJANGO_ALLOWED_HOSTS
+              Value: !Ref DjangoAllowedHosts
+            # Ruling F-J: this task was already missing both -- a pre-existing
+            # instance of the same bug, found while fixing the other three.
+            # config.settings.production reads these unconditionally at
+            # import time, regardless of which command actually runs.
+            - Name: RESEARCH_QUEUE_URL
+              Value: !Ref ResearchQueue
+            - Name: EUROPASS_QUEUE_URL
+              Value: !Ref EuropassQueue
+            # production.py reads every queue URL at import, so every task
+            # running Django supplies all of them -- see the identical
+            # entries on its siblings.
+            - Name: PORTAL_QUEUE_URL
+              Value: !Ref PortalQueue
+            - Name: DOCUMENT_QUEUE_URL
+              Value: !Ref DocumentQueue
+            - Name: DOCUMENT_SCAN_QUEUE_URL
+              Value: !Ref DocumentScanQueue
+            - Name: MAILBOX_QUEUE_URL
+              Value: !Ref MailboxQueue
+            # apps/ratelimit.py's shared counters; config.settings.production
+            # refuses to start without this (a shared counter is a production
+            # requirement -- see that module's docstring). rediss:// because
+            # TLS is mandatory on ElastiCache Serverless.
+            - Name: CACHE_URL
+              Value: !Sub "rediss://${Cache.PrimaryEndPoint.Address}:${Cache.PrimaryEndPoint.Port}"
+            - Name: POSTGRES_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: POSTGRES_DB
+              Value: !Ref DBName
+            - Name: DATABASE_ROLE
+              Value: migration
+            - Name: POSTGRES_MIGRATION_USER
+              Value: tehsil_migration
+          Secrets:
+            - Name: POSTGRES_MIGRATION_PASSWORD
+              ValueFrom: !Ref MigrationDatabaseSecret
+            - Name: DJANGO_SECRET_KEY
+              ValueFrom: !Ref ValidationSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref MigrationLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: migrate
+
+  WebService:
+    Type: AWS::ECS::Service
+    DependsOn: HttpsListener
+    Properties:
+      ServiceName: web
+      Cluster: !Ref ValidationCluster
+      LaunchType: FARGATE
+      DesiredCount: !Ref WebDesiredCount
+      TaskDefinition: !Ref WebTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+          SecurityGroups: [!Ref WebSecurityGroup]
+      LoadBalancers:
+        - ContainerName: web
+          ContainerPort: 8000
+          TargetGroupArn: !Ref WebTargetGroup
+
+  WorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: worker
+      Cluster: !Ref ValidationCluster
+      LaunchType: FARGATE
+      DesiredCount: !Ref WorkerDesiredCount
+      TaskDefinition: !Ref WorkerTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+          SecurityGroups: [!Ref WorkerSecurityGroup]
+
+  EuropassWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/europass-worker"
+      RetentionInDays: 30
+
+  DocumentWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/document-worker"
+      RetentionInDays: 30
+
+  EuropassWorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt AppExecutionRole.Arn
+      TaskRoleArn: !GetAtt EuropassWorkerTaskRole.Arn
+      ContainerDefinitions:
+        - Name: europass-worker
+          Image: !Ref AppImage
+          Essential: true
+          Command: ["python", "manage.py", "run_europass_worker"]
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: config.settings.production
+            - Name: DJANGO_ALLOWED_HOSTS
+              Value: !Ref DjangoAllowedHosts
+            - Name: EUROPASS_QUEUE_URL
+              Value: !Ref EuropassQueue
+            # Ruling F-J: see WebTaskDefinition's identical comment above.
+            - Name: RESEARCH_QUEUE_URL
+              Value: !Ref ResearchQueue
+            # production.py reads every queue URL at import, so every task
+            # running Django supplies all of them -- see the identical
+            # entries on its siblings.
+            - Name: PORTAL_QUEUE_URL
+              Value: !Ref PortalQueue
+            - Name: DOCUMENT_QUEUE_URL
+              Value: !Ref DocumentQueue
+            - Name: DOCUMENT_SCAN_QUEUE_URL
+              Value: !Ref DocumentScanQueue
+            - Name: MAILBOX_QUEUE_URL
+              Value: !Ref MailboxQueue
+            # apps/ratelimit.py's shared counters; config.settings.production
+            # refuses to start without this (a shared counter is a production
+            # requirement -- see that module's docstring). rediss:// because
+            # TLS is mandatory on ElastiCache Serverless.
+            - Name: CACHE_URL
+              Value: !Sub "rediss://${Cache.PrimaryEndPoint.Address}:${Cache.PrimaryEndPoint.Port}"
+            # Ruling F-K: render_and_store's cache-hit GET and its final PUT
+            # (apps/documents/europass_render.py, apps/documents/storage.py)
+            # both go through settings.EVIDENCE_BUCKET_NAME -- without this,
+            # it silently falls back to the "test-evidence-bucket" literal
+            # (config/settings/base.py) and every store call 403s.
+            - Name: EVIDENCE_BUCKET_NAME
+              Value: !Ref EvidenceBucket
+            - Name: POSTGRES_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: POSTGRES_DB
+              Value: !Ref DBName
+            - Name: DATABASE_ROLE
+              Value: runtime_engine
+            - Name: POSTGRES_ENGINE_USER
+              Value: runtime_engine
+          Secrets:
+            - Name: POSTGRES_ENGINE_PASSWORD
+              ValueFrom: !Ref EngineDatabaseSecret
+            - Name: DJANGO_SECRET_KEY
+              ValueFrom: !Ref ValidationSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref EuropassWorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: europass-worker
+
+  EuropassWorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: europass-worker
+      Cluster: !Ref ValidationCluster
+      LaunchType: FARGATE
+      # DesiredCount is a RATE control, not a throughput control. Outbound
+      # rate to europa.eu is tasks x (60 / _INTER_CALL_DELAY_SECONDS), so
+      # raising this multiplies traffic to a public European Commission
+      # service. It is a literal 1, never a parameter, and never autoscaled.
+      # If throughput must rise, lower the delay -- and only to a rate
+      # europa.eu has agreed to.
+      DesiredCount: 1
+      TaskDefinition: !Ref EuropassWorkerTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+          SecurityGroups: [!Ref WorkerSecurityGroup]
+
+  MailboxWorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/mailbox-worker"
+      RetentionInDays: 30
+
+  # Mirrors what sync_mailboxes needs on WorkerTaskDefinition, and nothing of
+  # the research worker's: runtime_engine (the same role the sweep syncs as),
+  # OPENAI_API_KEY for the classifier (apps/mailbox/classify.py), and none of
+  # the fetch-vendor or search keys, no evidence bucket.
+  MailboxWorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt AppExecutionRole.Arn
+      TaskRoleArn: !GetAtt MailboxWorkerTaskRole.Arn
+      ContainerDefinitions:
+        - Name: mailbox-worker
+          Image: !Ref AppImage
+          Essential: true
+          Command: ["python", "manage.py", "run_mailbox_worker"]
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: config.settings.production
+            - Name: DJANGO_ALLOWED_HOSTS
+              Value: !Ref DjangoAllowedHosts
+            - Name: MAILBOX_QUEUE_URL
+              Value: !Ref MailboxQueue
+            # production.py reads every queue URL at import, so every task
+            # running Django supplies all of them -- see the identical
+            # entries on its siblings.
+            - Name: RESEARCH_QUEUE_URL
+              Value: !Ref ResearchQueue
+            - Name: EUROPASS_QUEUE_URL
+              Value: !Ref EuropassQueue
+            - Name: PORTAL_QUEUE_URL
+              Value: !Ref PortalQueue
+            - Name: DOCUMENT_QUEUE_URL
+              Value: !Ref DocumentQueue
+            - Name: DOCUMENT_SCAN_QUEUE_URL
+              Value: !Ref DocumentScanQueue
+            # The per-student push-sync and classifier limits
+            # (apps/ratelimit.py) must be shared with the sweep and the web
+            # tier's "check now", or each process gets its own budget.
+            - Name: CACHE_URL
+              Value: !Sub "rediss://${Cache.PrimaryEndPoint.Address}:${Cache.PrimaryEndPoint.Port}"
+            - Name: POSTGRES_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: POSTGRES_DB
+              Value: !Ref DBName
+            - Name: DATABASE_ROLE
+              Value: runtime_engine
+            - Name: POSTGRES_ENGINE_USER
+              Value: runtime_engine
+            # One Ref for web, worker and mailbox worker (watch spec §3a).
+            - Name: MAILBOX_PUSH_ENABLED
+              Value: !Ref MailboxPushEnabled
+            # Student-mailbox OAuth (apps/mailbox/oauth.py). Client IDs are
+            # not secrets; the client secrets below are.
+            - Name: MICROSOFT_OAUTH_CLIENT_ID
+              Value: !Ref MicrosoftOAuthClientId
+            - Name: GOOGLE_OAUTH_CLIENT_ID
+              Value: !Ref GoogleOAuthClientId
+          Secrets:
+            - Name: POSTGRES_ENGINE_PASSWORD
+              ValueFrom: !Ref EngineDatabaseSecret
+            # Also the clientState HMAC key (apps/mailbox/push.py): it must be
+            # the web tier's, or a "subscribe" here creates subscriptions
+            # whose notifications the webhook rejects.
+            - Name: DJANGO_SECRET_KEY
+              ValueFrom: !Ref ValidationSecret
+            - Name: OPENAI_API_KEY
+              ValueFrom: !Ref OpenAiApiKeySecret
+            # One secret, two JSON keys; resolved by the execution role.
+            - Name: MICROSOFT_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${MailboxOAuthClientSecretArn}:microsoft::"
+            - Name: GOOGLE_OAUTH_CLIENT_SECRET
+              ValueFrom: !Sub "${MailboxOAuthClientSecretArn}:google::"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref MailboxWorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: mailbox-worker
+
+  # One task, per watch spec §3a. Not a rate control like the Europass worker
+  # (the per-student limits are shared counters), so a second task would be
+  # safe -- but nothing needs it until MailboxQueueAgeAlarm says so.
+  MailboxWorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: mailbox-worker
+      Cluster: !Ref ValidationCluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref MailboxWorkerTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+          SecurityGroups: [!Ref WorkerSecurityGroup]
+
+  DocumentWorkerTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: "512"
+      Memory: "1024"
+      ExecutionRoleArn: !GetAtt AppExecutionRole.Arn
+      TaskRoleArn: !GetAtt DocumentWorkerTaskRole.Arn
+      ContainerDefinitions:
+        - Name: document-worker
+          Image: !Ref AppImage
+          Essential: true
+          Command: ["python", "manage.py", "run_document_worker"]
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: config.settings.production
+            - Name: DJANGO_ALLOWED_HOSTS
+              Value: !Ref DjangoAllowedHosts
+            # production.py reads every queue URL at import, so every task
+            # running Django supplies all of them -- see the identical
+            # entries on its siblings.
+            - Name: PORTAL_QUEUE_URL
+              Value: !Ref PortalQueue
+            - Name: DOCUMENT_QUEUE_URL
+              Value: !Ref DocumentQueue
+            - Name: DOCUMENT_SCAN_QUEUE_URL
+              Value: !Ref DocumentScanQueue
+            - Name: MAILBOX_QUEUE_URL
+              Value: !Ref MailboxQueue
+            # apps/ratelimit.py's shared counters; config.settings.production
+            # refuses to start without this (a shared counter is a production
+            # requirement -- see that module's docstring). rediss:// because
+            # TLS is mandatory on ElastiCache Serverless.
+            - Name: CACHE_URL
+              Value: !Sub "rediss://${Cache.PrimaryEndPoint.Address}:${Cache.PrimaryEndPoint.Port}"
+            # The render path hands a EUROPASS_API draft to that queue.
+            - Name: EUROPASS_QUEUE_URL
+              Value: !Ref EuropassQueue
+            # Ruling F-J: see WebTaskDefinition's identical comment above.
+            - Name: RESEARCH_QUEUE_URL
+              Value: !Ref ResearchQueue
+            # Ingestion reads the quarantined original and the render path
+            # writes the artefact; both go through settings.EVIDENCE_BUCKET_NAME.
+            - Name: EVIDENCE_BUCKET_NAME
+              Value: !Ref EvidenceBucket
+            - Name: POSTGRES_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: POSTGRES_DB
+              Value: !Ref DBName
+            - Name: DATABASE_ROLE
+              Value: runtime_engine
+            - Name: POSTGRES_ENGINE_USER
+              Value: runtime_engine
+            # The page inventory is invoked, never run here (apps/documents/ocr.py).
+            - Name: OCR_FUNCTION_NAME
+              Value: !Ref OcrFunction
+            # Azure reads the pages; the worker calls it, never the Lambda. The launch gate
+            # TRANSCRIPT_AZURE_ENABLED is deliberately absent: the owner sets it after the DPA review.
+            - Name: AZURE_DI_ENDPOINT
+              Value: !Ref AzureDocumentIntelligenceEndpoint
+            # Jev through OpenRouter's native decisions route (owner,
+            # 2026-09-26); the SDK appends /v1/systemone. Configuration, not
+            # code: pointing back at api.typesafe.ai is two values here.
+            - Name: DECISIONS_BASE_URL
+              Value: https://openrouter.ai/api
+            - Name: TYPESAFE_MODEL
+              Value: typesafe/jev-1.13
+          Secrets:
+            - Name: POSTGRES_ENGINE_PASSWORD
+              ValueFrom: !Ref EngineDatabaseSecret
+            - Name: DJANGO_SECRET_KEY
+              ValueFrom: !Ref ValidationSecret
+            - Name: OPENAI_API_KEY
+              ValueFrom: !Ref OpenAiApiKeySecret
+            - Name: OPENROUTER_API_KEY
+              ValueFrom: !Ref TypesafeApiKeySecret
+            - Name: AZURE_DI_KEY
+              ValueFrom: !Ref AzureDocumentIntelligenceKeySecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref DocumentWorkerLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: document-worker
+
+  # --- Transcript OCR as an on-demand function (apps/documents/ocr.py) --------
+  # Runs only while a transcript is read, instead of an always-on worker sized for
+  # the models (owner, 2026-09-26). Measured 2026-09-26: peak RSS 6.2 GB with both
+  # scripts' pipelines loaded; 20-67 s a page at 6 cores. So 10,240 MB, which is
+  # also Lambda's ceiling and its 6-vCPU allotment. Timeout 720 s: eight pages at
+  # the slowest measured page, plus a cold start, and still under the scan queue's
+  # 900 s visibility timeout -- a read outlasting it would be redelivered to a
+  # second reader while the first still runs.
+  OcrFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: ReadClearedUploadsOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Only an object GuardDuty tagged clean (DocumentMalwareProtectionPlan's
+              # Tagging): the function never reads what the scan has not passed. The
+              # worker names the scanned version (GetObjectVersion); the tag condition
+              # is evaluated on that version.
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                Resource: !Sub "${EvidenceBucket.Arn}/quarantine/*"
+                Condition:
+                  StringEquals:
+                    s3:ExistingObjectTag/GuardDutyMalwareScanStatus: NO_THREATS_FOUND
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "${OcrLogGroup.Arn}:*"
+              # What Lambda needs to place the function in its subnets
+              # (the AWSLambdaENIManagementAccess set); ENIs have no ARN to scope to.
+              - Effect: Allow
+                Action:
+                  - ec2:CreateNetworkInterface
+                  - ec2:DescribeNetworkInterfaces
+                  - ec2:DescribeSubnets
+                  - ec2:DeleteNetworkInterface
+                  - ec2:AssignPrivateIpAddresses
+                  - ec2:UnassignPrivateIpAddresses
+                Resource: "*"
+
+  OcrLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-transcript-ocr"
+      RetentionInDays: 30
+
+  OcrFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-transcript-ocr"
+      PackageType: Image
+      Code:
+        ImageUri: !Ref OcrImage
+      Architectures: [x86_64]
+      MemorySize: 1024
+      Timeout: 60
+      EphemeralStorage:
+        Size: 512
+      Role: !GetAtt OcrFunctionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref OcrLogGroup
+      Environment:
+        Variables:
+          DOCUMENT_BUCKET: !Ref EvidenceBucket
+      VpcConfig:
+        SubnetIds: [!Ref OcrPrivateSubnetA, !Ref OcrPrivateSubnetB]
+        SecurityGroupIds: [!Ref OcrSecurityGroup]
+
+  # One task. Not a rate knob like the Europass worker's -- nothing here calls
+  # a third party on a courtesy budget -- but generation is the expensive part
+  # and ~100 documents a day drains from one task with room to spare. Raise it
+  # when the queue age alarm says so, not before.
+  DocumentWorkerService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: document-worker
+      Cluster: !Ref ValidationCluster
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref DocumentWorkerTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+          SecurityGroups: [!Ref WorkerSecurityGroup]
+
+  # --- Alarms this task adds (queue age/depth, quiet-group age, noisy
+  # groups, and DLQ depth already exist from Tasks 4/5, above) -------------
+
+  Http5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_ELB_5XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+
+  HttpLatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+      ExtendedStatistic: p99
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+
+  AuthFailuresAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/ApplicationELB
+      MetricName: HTTPCode_Target_4XX_Count
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !GetAtt ApplicationLoadBalancer.LoadBalancerFullName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+
+  FailedResearchMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WorkerLogGroup
+      FilterPattern: '"Traceback (most recent call last)"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/App
+          MetricName: FailedResearchMessages
+          MetricValue: "1"
+          DefaultValue: 0
+
+  FailedResearchRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: FailedResearchMessages
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # The one role EventBridge assumes to start a scheduled task. Two rules use
+  # it: the Europass canary -- per the spec "the entire early-warning system"
+  # for an undocumented API, so unscheduled the first sign europa.eu changed
+  # shape would be a dead-letter queue full of students' CVs -- and the fetch
+  # engine's retry queue below. Scoped to RunTask on exactly the scheduled task
+  # definitions, and to PassRole on only the roles they actually use;
+  # a `Resource: "*"` on either statement would be RunTask on the portal tier
+  # too, whose task role reaches per-tenant portal credentials. Pinned by
+  # test_the_events_role_may_run_only_the_scheduled_task_definitions.
+  EventsInvokeEcsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RunScheduledTasks
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecs:RunTask
+                Resource:
+                  - !Ref EuropassWorkerTaskDefinition
+                  # ReminderLadderRule, WatchApplicationsRule, SyncMailboxesRule,
+                  # RetryDueFetchesRule and VerifyDueCyclesRule below run this one.
+                  - !Ref WorkerTaskDefinition
+                  # TranscriptResumeRule runs this one (it alone holds the Azure key).
+                  - !Ref DocumentWorkerTaskDefinition
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource:
+                  - !GetAtt AppExecutionRole.Arn
+                  - !GetAtt EuropassWorkerTaskRole.Arn
+                  - !GetAtt WorkerTaskRole.Arn
+                  - !GetAtt DocumentWorkerTaskRole.Arn
+
+  EuropassCanaryRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Exercise the live Europass API so a shape change pages us
+      ScheduleExpression: "rate(6 hours)"
+      State: ENABLED
+      Targets:
+        - Id: europass-canary
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref EuropassWorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"europass-worker",
+             "command":["python","manage.py","europass_canary"]}]}
+
+  # Every 15 minutes, shipped ENABLED: a sweep nothing invokes leaves a reading
+  # that Azure's outage or the daily ceiling delayed "still reading" forever,
+  # with every screen saying the right thing. Runs on the document worker's
+  # task definition because only it holds the Azure key.
+  TranscriptResumeRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Resume delayed, stuck and unassembled transcript readings
+      ScheduleExpression: "rate(15 minutes)"
+      State: ENABLED
+      Targets:
+        - Id: transcript-resume
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref DocumentWorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"document-worker",
+             "command":["python","manage.py","resume_transcript_readings"]}]}
+
+  # Hourly, not daily: the ladder's last rung is 6 hours before the deadline,
+  # which a daily job cannot hit. Shipped enabled, unlike the erasure schedule
+  # that was deferred -- a sweep nothing invokes is a ladder that silently
+  # never fires, with every screen saying the right thing.
+  ReminderLadderRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Send deadline reminders whose rung has come due
+      ScheduleExpression: "rate(1 hour)"
+      State: ENABLED
+      Targets:
+        - Id: reminder-ladder
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref WorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"worker",
+             "command":["python","manage.py","send_due_reminders"]}]}
+
+  # Hourly, like the ladder it complements: an escalation's fast ladder steps
+  # at 2 and 4 hours, which a daily job cannot hit. Shipped enabled -- a watch
+  # nothing invokes watches nothing, with every screen saying the right thing.
+  WatchApplicationsRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Alert on overdue expectations and escalate unacknowledged alerts
+      ScheduleExpression: "rate(1 hour)"
+      State: ENABLED
+      Targets:
+        - Id: watch-applications
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref WorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"worker",
+             "command":["python","manage.py","watch_applications"]}]}
+
+  ReminderLadderRuleFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - Name: RuleName
+          Value: !Ref ReminderLadderRule
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  WatchApplicationsRuleFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - Name: RuleName
+          Value: !Ref WatchApplicationsRule
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # Every six hours (watch spec §3a): the backstop for every notification Graph
+  # drops -- both vendors say it does -- and the only reader for any connection
+  # push does not cover (Gmail, an agency with no verified host,
+  # MailboxPushEnabled "0"). Each run first renews every Microsoft
+  # subscription with under two days left; a subscription lasts seven days, so
+  # a failing renewal gets eight more runs before it lapses. Shipped ENABLED:
+  # a sweep nothing invokes leaves every connected student believing their
+  # inbox is watched. The heartbeat expects it within 13 h
+  # (apps/watch/heartbeat.py).
+  SyncMailboxesRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Keep mailbox push subscriptions alive and read every connected mailbox
+      ScheduleExpression: "rate(6 hours)"
+      State: ENABLED
+      Targets:
+        - Id: sync-mailboxes
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref WorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"worker",
+             "command":["python","manage.py","sync_mailboxes"]}]}
+
+  SyncMailboxesRuleFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - Name: RuleName
+          Value: !Ref SyncMailboxesRule
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # Daily, and shipped ENABLED (institution provenance gate spec §7.6): an
+  # UNCONFIRMED body nothing re-checks is a good school lost in silence, with
+  # every screen saying the right thing -- the erasure schedule's failure mode.
+  # provenance_recheck runs the due checks, then the pack sweep.
+  ProvenanceRecheckRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Re-check due provenance verdicts and carry changes into packs
+      ScheduleExpression: "rate(1 day)"
+      State: ENABLED
+      Targets:
+        - Id: provenance-recheck
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref WorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"worker",
+             "command":["python","manage.py","provenance_recheck"]}]}
+
+  # Rung 5 of the fetch ladder (apps/research/fetch): a due RETRY_SCHEDULED or
+  # BUDGET row is time-fixed, not host-fixed, so this just needs to wake up
+  # periodically and ask again. Six hours because that is the shortest window
+  # FETCH_RETRY_HOURS ever schedules (a block's first step) -- a shorter rule
+  # only wakes to find nothing due.
+  #
+  # Shipped DISABLED (2026-08-something) because WorkerTaskDefinition ran as
+  # DATABASE_ROLE=runtime, and the runtime role held no role membership
+  # (scripts/create_runtime_role.sql asserted exactly that): both tables this
+  # command touches were write-restricted to `catalog_ingestion`
+  # (apps/research/migrations/0005_fetch_engine_rls.py), so as runtime the
+  # reschedule UPDATE matched zero rows in silence -- CLAUDE.md's documented
+  # failure mode 1 -- and the first fetch_page died on "new row violates
+  # row-level security policy" writing its FetchAttempt.
+  #
+  # The login blocker is gone (2026-09-25 catalog-read-split): `runtime_engine`
+  # is `catalog_ingestion` made real -- a LOGIN role with DML on the catalogue
+  # tables (funding/0049_catalog_grants.py repoints `catalog_ingestion_write`
+  # -> `runtime_engine` and drops `catalog_ingestion`) -- and
+  # WorkerTaskDefinition now runs as DATABASE_ROLE=runtime_engine, so the RLS
+  # failure this note used to describe no longer happens.
+  #
+  # Still shipped DISABLED, for a different reason: `retry_due_fetches`'s own
+  # docstring says a successful retry warms `HostProfile` and closes the
+  # ledger row, but persists no snapshot, re-runs no reader and closes no
+  # consultant task -- so the caller that originally needed the page still
+  # fetches and pays for it again. Enabled on a six-hour schedule, this would
+  # spend vendor credits every run for a result nothing downstream receives.
+  # Enable when a retry hands its delivered page to the caller that needed it.
+  RetryDueFetchesRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Re-enter the fetch ladder for every scheduled retry now due
+      ScheduleExpression: "rate(6 hours)"
+      State: DISABLED
+      Targets:
+        - Id: retry-due-fetches
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref WorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"worker",
+             "command":["python","manage.py","retry_due_fetches"]}]}
+
+  # The cycle-verification ladder (master spec 9.2-9.3), daily: the finest
+  # cadence 9.3 asks for is daily within 14 days of a deadline, and each row's
+  # next_check_at is what makes a monthly row wait. Same task definition as
+  # RetryDueFetchesRule, so EventsInvokeEcsRole already covers it (RunTask on
+  # WorkerTaskDefinition, PassRole on its roles) and grants nothing new.
+  #
+  # Not the RLS reason RetryDueFetchesRule once had: the worker now runs as
+  # DATABASE_ROLE=runtime_engine, the catalogue's only writer, which is the role
+  # this command needs. It ships DISABLED because:
+  # - WorkerTaskDefinition carries no ANTHROPIC_API_KEY (its Secrets list has
+  #   OPENAI, FIRECRAWL, SCRAPEDO, EXA, BRAVE, TAVILY; only PortalTaskDefinition
+  #   has the Anthropic key), and verify_due_cycles refuses to start without it:
+  #   every read is judged by two model families. Enabled today, every run
+  #   would exit on that refusal.
+  # - The spec 9.3 gate (manage.py cycle_verify --truth) has not been run:
+  #   docs/superpowers/2026-09-cycle-verification-gate.md records NOT RUN. A
+  #   ladder whose precision on OPEN/UPCOMING is unmeasured should not spend
+  #   vendor credits on a schedule.
+  # - WorkerTaskRole may PutObject only under tenants/* in the evidence bucket,
+  #   and the ladder archives the bytes it reads under cycle-evidence/<sha256>;
+  #   that grant is owed with enabling the rule.
+  VerifyDueCyclesRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Run the cycle-verification ladder for every award whose check is due
+      ScheduleExpression: "rate(1 day)"
+      State: DISABLED
+      Targets:
+        - Id: verify-due-cycles
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref WorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"worker",
+             "command":["python","manage.py","verify_due_cycles"]}]}
+
+  EuropassCallsFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EuropassWorkerLogGroup
+      FilterPattern: '"EuropassCallMade"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/App
+          MetricName: EuropassCallsTotal
+          MetricValue: "1"
+          DefaultValue: 0
+
+  # "CommandError" (Ruling F-N) covers the archetypal shape-change case:
+  # europass_canary.py raises a plain CommandError -- no traceback, and not
+  # the "Europass API failed" text -- when a 200 response's body no longer
+  # carries a usable id. That is exactly what this canary exists to catch.
+  EuropassCanaryFailureFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref EuropassWorkerLogGroup
+      FilterPattern: '?"Europass API failed" ?"Traceback (most recent call last)" ?"CommandError"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/App
+          MetricName: EuropassCanaryFailures
+          MetricValue: "1"
+          DefaultValue: 0
+
+  EuropassCanaryFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: EuropassCanaryFailures
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # No service ships unmonitored. A traceback here is a message going back on
+  # the queue and, three redeliveries later, a student's CV in the DLQ.
+  DocumentWorkerCrashFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref DocumentWorkerLogGroup
+      FilterPattern: '"Traceback (most recent call last)"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/Documents
+          MetricName: DocumentWorkerCrashes
+          MetricValue: "1"
+          DefaultValue: 0
+
+  # No service ships unmonitored. run_mailbox_worker does not catch what
+  # handle_work raises, so a traceback is the task dying and the message going
+  # back on the queue -- three of those and it is in the DLQ.
+  MailboxWorkerCrashFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref MailboxWorkerLogGroup
+      FilterPattern: '"Traceback (most recent call last)"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/Mailbox
+          MetricName: MailboxWorkerCrashes
+          MetricValue: "1"
+          DefaultValue: 0
+
+  MailboxWorkerCrashAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/Mailbox
+      MetricName: MailboxWorkerCrashes
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # The OCR function's own failures: an exception, a timeout, or the runtime
+  # killed for memory. The worker's crash alarm above fires on the same
+  # transcript (OcrUnavailable is not caught); this says which side failed.
+  OcrFunctionFailureFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref OcrLogGroup
+      FilterPattern: '?"Traceback (most recent call last)" ?"Task timed out" ?"Runtime exited"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/Documents
+          MetricName: OcrFunctionFailures
+          MetricValue: "1"
+          DefaultValue: 0
+
+  # AWS documents five scanResultStatus values. A sixth is survivable --
+  # apply_scan_result puts it in REVIEW_REQUIRED -- but it means a human has to
+  # decide what the new status means, and every affected upload is waiting.
+  DocumentScanUnknownStatusFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref DocumentWorkerLogGroup
+      FilterPattern: '"DocumentScanUnknownStatus"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/Documents
+          MetricName: DocumentScanUnknownStatuses
+          MetricValue: "1"
+          DefaultValue: 0
+
+  DocumentWorkerCrashAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/Documents
+      MetricName: DocumentWorkerCrashes
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  DocumentScanUnknownStatusAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/Documents
+      MetricName: DocumentScanUnknownStatuses
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # Cross-tenant denials: apps/tenancy/context.py's TenantContextMissing and
+  # apps/funding/services.py's PublicationBlocked (which also covers
+  # approval-bypass attempts, below) surface in Django's unhandled-exception
+  # traceback logging when raised outside a caught path.
+  CrossTenantDenialMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroup
+      FilterPattern: '?"PublicationBlocked" ?"TenantContextMissing"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/App
+          MetricName: CrossTenantDenials
+          MetricValue: "1"
+          DefaultValue: 0
+
+  CrossTenantDenialAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: CrossTenantDenials
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # approve_pack/request_changes (apps/funding/services.py) raise
+  # PublicationBlocked for every bypass attempt (wrong pack version,
+  # superseded pack, non-counselor role, unassigned counselor, low-confidence
+  # candidate); same underlying signal as cross-tenant denials, tracked here
+  # as its own alarm because the two have different response runbooks.
+  ApprovalBypassMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroup
+      FilterPattern: '"PublicationBlocked"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/App
+          MetricName: ApprovalBypassAttempts
+          MetricValue: "1"
+          DefaultValue: 0
+
+  ApprovalBypassAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: ApprovalBypassAttempts
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # apps/tenancy/services.py's require_active_support_grant / SupportGrant
+  # model; every elevated-access session should be a rare, auditable event.
+  SupportGrantMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroup
+      FilterPattern: '"SupportGrant"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/App
+          MetricName: SupportGrantsUsed
+          MetricValue: "1"
+          DefaultValue: 0
+
+  SupportGrantAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: SupportGrantsUsed
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # The next four alarms expect the application to publish these as
+  # PutMetricData/EMF custom metrics under the Tehsil/App namespace; no
+  # publisher exists yet, so TreatMissingData keeps them quiet until it does.
+  StaleEvidenceAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: StaleEvidenceAgeSeconds
+      Statistic: Maximum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 86400
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  ReviewBacklogAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: ReviewBacklogCount
+      Statistic: Maximum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 25
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  ModelErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: ModelErrorCount
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  ModelCostAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: Tehsil/App
+      MetricName: ModelCostUsd
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  PortalSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Portal browser tasks; egress only, admitted to the database
+      VpcId: !Ref ValidationVpc
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+  PortalDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+
+  # Standard, not FIFO -- like every other queue here. A FIFO queue would need
+  # either ContentBasedDeduplication: true or a MessageDeduplicationId that
+  # apps/queue.py::enqueue does not send, so every publish would fail, and it
+  # buys nothing with a single consumer.
+  #
+  # VisibilityTimeout 1800: a learn pass plus a fill is minutes rather than
+  # seconds, unlike the research queue's default.
+
+  PortalQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      KmsMasterKeyId: alias/aws/sqs
+      VisibilityTimeout: 1800
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt PortalDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  PortalQueueAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt PortalQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 300
+      ComparisonOperator: GreaterThanThreshold
+
+  PortalDeadLetterDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt PortalDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+
+  PortalTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: {Service: ecs-tasks.amazonaws.com}
+      Policies:
+        - PolicyName: ConsumePortalQueueAndReadPortalCredentials
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:SendMessage
+                  - sqs:GetQueueAttributes
+                Resource: !GetAtt PortalQueue.Arn
+              # Portal logins, one secret per tenant per portal
+              # (apps/portals/auth.py::SecretsManagerCredentials). Scoped by
+              # path prefix so this role cannot read the database or Django
+              # secrets that live beside it.
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/portal/*"
+
+  # --- Portal execution: EC2 capacity, sandboxed, shipped stopped -----------
+  #
+  # Fargate cannot give Chrome's renderer sandbox the unprivileged user
+  # namespaces it needs (measured, us-east-1, 2026-08-26 -- see CLAUDE.md's
+  # Scrapling section). The sandbox is the only boundary between a hostile
+  # portal page and a process holding the database password, the LLM key and
+  # live student cookies, so this tier runs on EC2 capacity instead of
+  # joining the Fargate services above.
+
+  PortalInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal: {Service: ec2.amazonaws.com}
+      Policies:
+        # Written out rather than the AmazonEC2ContainerServiceforEC2Role
+        # managed policy: nothing else in this template uses a managed policy,
+        # and this list is what the agent actually calls.
+        - PolicyName: EcsAgentRegistrationAndTelemetry
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:DeregisterContainerInstance
+                  - ecs:DiscoverPollEndpoint
+                  - ecs:Poll
+                  - ecs:RegisterContainerInstance
+                  - ecs:StartTelemetrySession
+                  - ecs:UpdateContainerInstancesState
+                  - ecs:Submit*
+                Resource: "*"
+                # These are container-instance-agent actions with no
+                # resource-level ARN of their own; ecs:cluster is the
+                # scoping condition key AWS documents for exactly this
+                # policy, and ValidationCluster's ARN is already resolved
+                # elsewhere in this template.
+                Condition:
+                  ArnEquals: {"ecs:cluster": !GetAtt ValidationCluster.Arn}
+              # No ARN to scope to: AWS requires Resource "*" for this action.
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              # Left at "*", matching every other ECR data-plane grant this
+              # template makes (PortalExecutionRole, above): PortalImage is an
+              # image URI ("registry/repo@sha256:..."), not a repository
+              # ARN, and there is no separate repository-name parameter to
+              # build one from. Recovering a repo ARN from that URI would
+              # need nested Fn::Split/Fn::Select string surgery on a
+              # parameter never meant to be parsed -- and PortalTaskDefinition
+              # sets ExecutionRoleArn, so for EC2 launch type with awsvpc
+              # networking the container agent authenticates pulls through
+              # PortalExecutionRole, not this instance role, making this grant
+              # belt-and-suspenders rather than the actual pull path.
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchGetImage
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub "${PortalLogGroup.Arn}:*"
+
+  PortalInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref PortalInstanceRole]
+
+  PortalLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: "{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id}}"
+        InstanceType: t3.large
+        IamInstanceProfile: {Arn: !GetAtt PortalInstanceProfile.Arn}
+        SecurityGroupIds: [!Ref PortalSecurityGroup]
+        BlockDeviceMappings:
+          - DeviceName: /dev/xvda
+            Ebs:
+              VolumeSize: 40
+              VolumeType: gp3
+              # The browser profiles live here. This is the whole of
+              # "encrypted at rest" for a directory Chrome holds open --
+              # see apps/portals/profiles.py's module docstring.
+              Encrypted: true
+              DeleteOnTermination: true
+        MetadataOptions:
+          # IMDSv2 required: a hostile page that achieves SSRF through the
+          # browser must not be able to read the instance role from
+          # 169.254.169.254 with a plain GET.
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo "ECS_CLUSTER=${ValidationCluster}" >> /etc/ecs/ecs.config
+
+  PortalAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: "0"
+      MaxSize: "1"
+      DesiredCapacity: !Ref PortalDesiredCount
+      VPCZoneIdentifier: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+      LaunchTemplate:
+        LaunchTemplateId: !Ref PortalLaunchTemplate
+        Version: !GetAtt PortalLaunchTemplate.LatestVersionNumber
+
+  # ManagedScaling is deliberately DISABLED, not ENABLED. PortalService uses
+  # LaunchType: EC2 (the sandbox requires it -- see the tier comment above),
+  # so its tasks are never attributed to this capacity provider's own task
+  # count. With ManagedScaling ENABLED, ECS would see zero tasks reserved
+  # against the provider and drive the ASG back to MinSize "0" -- taking the
+  # instance out from under a running task, since ManagedTerminationProtection
+  # is DISABLED. DesiredCapacity: !Ref PortalDesiredCount on the ASG already
+  # supplies the one capacity decision this tier needs; managed scaling has
+  # nothing left to do here and only introduces this failure mode.
+
+  PortalCapacityProvider:
+    Type: AWS::ECS::CapacityProvider
+    Properties:
+      AutoScalingGroupProvider:
+        AutoScalingGroupArn: !Ref PortalAutoScalingGroup
+        ManagedScaling: {Status: DISABLED}
+        ManagedTerminationProtection: DISABLED
+
+  PortalCapacityProviderAssociation:
+    Type: AWS::ECS::ClusterCapacityProviderAssociations
+    Properties:
+      Cluster: !Ref ValidationCluster
+      CapacityProviders: [!Ref PortalCapacityProvider, FARGATE]
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  PortalLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/portal"
+      RetentionInDays: 30
+
+  PortalTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      RequiresCompatibilities: [EC2]
+      NetworkMode: awsvpc
+      Cpu: "1024"
+      Memory: "3072"
+      ExecutionRoleArn: !GetAtt PortalExecutionRole.Arn
+      TaskRoleArn: !GetAtt PortalTaskRole.Arn
+      ContainerDefinitions:
+        - Name: portal
+          Image: !Ref PortalImage
+          Essential: true
+          LinuxParameters:
+            # Chrome forks liberally and orphans processes; without an init to
+            # reap them a long-running task accumulates zombies. Same reason as
+            # the browser task.
+            InitProcessEnabled: true
+          Environment:
+            - Name: DJANGO_SETTINGS_MODULE
+              Value: config.settings.production
+            - Name: DJANGO_ALLOWED_HOSTS
+              Value: !Ref DjangoAllowedHosts
+            - Name: DOCUMENT_QUEUE_URL
+              Value: !Ref DocumentQueue
+            - Name: DOCUMENT_SCAN_QUEUE_URL
+              Value: !Ref DocumentScanQueue
+            - Name: MAILBOX_QUEUE_URL
+              Value: !Ref MailboxQueue
+            # apps/ratelimit.py's shared counters; config.settings.production
+            # refuses to start without this (a shared counter is a production
+            # requirement -- see that module's docstring). rediss:// because
+            # TLS is mandatory on ElastiCache Serverless.
+            - Name: CACHE_URL
+              Value: !Sub "rediss://${Cache.PrimaryEndPoint.Address}:${Cache.PrimaryEndPoint.Port}"
+            - Name: PORTAL_QUEUE_URL
+              Value: !Ref PortalQueue
+            - Name: RESEARCH_QUEUE_URL
+              Value: !Ref ResearchQueue
+            - Name: EUROPASS_QUEUE_URL
+              Value: !Ref EuropassQueue
+            - Name: POSTGRES_HOST
+              Value: !GetAtt Database.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: !GetAtt Database.Endpoint.Port
+            - Name: POSTGRES_DB
+              Value: !Ref DBName
+            # runtime_web, not runtime_engine: the portal tier reads no
+            # catalogue (measured 2026-09-25 over run_portal_worker's import
+            # closure), so a sandbox escape here reaches no shared table.
+            - Name: DATABASE_ROLE
+              Value: runtime_web
+            - Name: POSTGRES_WEB_USER
+              Value: runtime_web
+          Secrets:
+            - Name: POSTGRES_WEB_PASSWORD
+              ValueFrom: !Ref WebDatabaseSecret
+            - Name: DJANGO_SECRET_KEY
+              ValueFrom: !Ref ValidationSecret
+            # The learn pass calls the model from inside the browser extension,
+            # so this key is in the browser's process whatever we do. It is one
+            # more reason the renderer sandbox is non-negotiable here.
+            - Name: ANTHROPIC_API_KEY
+              ValueFrom: !Ref LlmApiKeySecretArn
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref PortalLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: portal
+
+  PortalService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: portal
+      Cluster: !Ref ValidationCluster
+      LaunchType: EC2
+      DesiredCount: !Ref PortalDesiredCount
+      TaskDefinition: !Ref PortalTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+          SecurityGroups: [!Ref PortalSecurityGroup]
+
+  PortalEscalationFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref PortalLogGroup
+      FilterPattern: '"PortalEscalation"'
+      MetricTransformations:
+        - MetricNamespace: Tehsil/Portals
+          MetricName: PortalEscalations
+          MetricValue: "1"
+
+  PortalEscalationRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      # A rate, not a count: escalations are expected -- §5.4 budgets under 10%
+      # consultant intervention -- and an alarm on any escalation would page on
+      # the system working. A spike means a portal changed shape.
+      Namespace: Tehsil/Portals
+      MetricName: PortalEscalations
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
+  # --- The browser tier, isolated from every credential ---------------------
+  #
+  # Design: docs/superpowers/specs/2026-08-26-browser-isolation-design.md.
+  # Chromium runs with --no-sandbox because Fargate refuses unprivileged user
+  # namespaces (measured, us-east-1, 2026-08-26), so a renderer compromise is
+  # assumed possible and made worthless rather than prevented.
+
+Outputs:
+  ResearchQueueUrl:
+    Value: !Ref ResearchQueue
+  ProbeClusterArn:
+    Value: !GetAtt ValidationCluster.Arn
+  ProbeTaskDefinitionArn:
+    Value: !Ref ProbeTaskDefinition
+  WorkerPrivateSubnetAId:
+    Value: !Ref WorkerPrivateSubnetA
+  WorkerPrivateSubnetBId:
+    Value: !Ref WorkerPrivateSubnetB
+  WorkerSecurityGroupId:
+    Value: !Ref WorkerSecurityGroup
+  ProbeLogGroupName:
+    Value: !Ref ProbeLogGroup
+  FlowLogGroupName:
+    Value: !Ref FlowLogGroup
+  EvidenceBucketName:
+    Value: !Ref EvidenceBucket
+  ValidationSecretArn:
+    Value: !Ref ValidationSecret
+  LoadBalancerDnsName:
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+  MigrationTaskDefinitionArn:
+    Value: !Ref MigrationTaskDefinition
+  DatabaseEndpointAddress:
+    Value: !GetAtt Database.Endpoint.Address
+
+  PortalQueueUrl:
+    Value: !Ref PortalQueue

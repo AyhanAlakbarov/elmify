@@ -1,0 +1,154 @@
+{
+  "errors": {},
+  "id": "ce173bb9-6417-4739-b629-cf474055dae0",
+  "profile": {
+    "certifications": [],
+    "conferenceSeminars": [],
+    "createdDateTime": null,
+    "creativeWorks": [],
+    "customSections": [],
+    "dateOfSectionsUpdated": {
+      "drivingLicence": null,
+      "educationsAndTraining": null,
+      "hobbiesAndInterests": null,
+      "languages": null,
+      "personalInformation": null,
+      "profilePicture": null,
+      "profileSkills": null,
+      "skillsAssessment": null,
+      "workExperience": null
+    },
+    "defaultProfile": false,
+    "drivingLicence": {
+      "licences": [],
+      "mediaAttachments": []
+    },
+    "educationTrainings": [
+      {
+        "city": "Example City",
+        "country": "az",
+        "creationDate": "2026-08-25T17:42:55.299",
+        "description": null,
+        "endDate": {
+          "date": "2021-06-30",
+          "dateType": "DAY",
+          "empty": false
+        },
+        "eqf": null,
+        "finalGrade": null,
+        "id": null,
+        "links": [],
+        "mediaAttachments": null,
+        "nationalClassification": null,
+        "numberOfCredits": null,
+        "ongoing": false,
+        "order": 0,
+        "organisationName": "Example University",
+        "postalCode": null,
+        "qualification": "BSc Computer Science",
+        "startDate": {
+          "date": "2017-09-01",
+          "dateType": "DAY",
+          "empty": false
+        },
+        "streetAddress": null,
+        "studyFields": [],
+        "thesis": null,
+        "typeOfCredits": null,
+        "validUntil": null,
+        "website": null
+      }
+    ],
+    "hobbiesInterests": [],
+    "honoursAwards": [],
+    "id": null,
+    "language": "en",
+    "languageSkills": {
+      "id": null,
+      "nativeLanguages": [
+        {
+          "language": "aze",
+          "languageCategory": "NORMAL",
+          "mediaAttachments": []
+        }
+      ],
+      "otherLanguages": [
+        {
+          "language": "eng",
+          "languageCategory": "NORMAL",
+          "listening": "C1",
+          "mediaAttachments": [],
+          "reading": "C2",
+          "spokenInteraction": "C1",
+          "spokenProduction": "C1",
+          "writing": "C1"
+        }
+      ],
+      "showGuidanceLevelSentence": null
+    },
+    "memberships": [],
+    "personalInformation": {
+      "addresses": [],
+      "birthplace": null,
+      "dateOfBirth": null,
+      "emails": [
+        "canary@example.invalid"
+      ],
+      "firstName": "Canary",
+      "homeCountryCode": null,
+      "instantMessengers": [],
+      "lastName": "Probe",
+      "legalDocuments": [],
+      "nationalities": [],
+      "personalDescription": null,
+      "personalMottoLine": null,
+      "phones": [],
+      "sex": null,
+      "socialMediaWebsites": [],
+      "websites": [],
+      "workPermits": []
+    },
+    "preference": {
+      "dateFormat": "dd/MM/yyyy",
+      "profileStructure": [
+        "personal-information",
+        "work-experience",
+        "education-training",
+        "language",
+        "profile-skills",
+        "projects",
+        "publication",
+        "honour-award",
+        "certifications"
+      ]
+    },
+    "profileSkills": {
+      "groups": [],
+      "mediaAttachments": [],
+      "other": []
+    },
+    "projects": [],
+    "publications": [],
+    "recommendations": [],
+    "skillsAssessment": {
+      "assessment": null,
+      "mediaAttachments": []
+    },
+    "socialOrPoliticalActivities": [],
+    "userId": null,
+    "volunteering": [],
+    "workExperiences": {
+      "groupedWorkExperiences": [],
+      "solidWorkExperiences": []
+    }
+  },
+  "profilePicture": null,
+  "template": {
+    "closingStatement": null,
+    "color": "none",
+    "displayLogo": "first",
+    "displayPageNumber": false,
+    "fontSize": "medium",
+    "templateName": "cv-formal"
+  }
+}

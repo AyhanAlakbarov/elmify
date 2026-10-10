@@ -1,0 +1,7 @@
+external_key,name,kind,website,page_url,country_code,home_cells,host_cells,rejected_reason,source_url,verified_on,notes
+daad,Deutscher Akademischer Austauschdienst (DAAD),NATIONAL_GOVERNMENT,https://www.daad.de,,DE,ANY,DE,,https://www.daad.de/de/,2026-09-26,"homepage title 2026-09-26: 'Deutscher Akademischer Austauschdienst - DAAD'; a registered association with no open register (spec §5.7); verify_list_origins confirms the origin"
+campus-france,Campus France,NATIONAL_GOVERNMENT,https://www.campusfrance.org,,FR,ANY,FR,,https://www.campusfrance.org/fr,2026-09-26,"homepage title 2026-09-26: 'Étudiants | Campus France : étudier en France'"
+si,Swedish Institute (Svenska institutet),NATIONAL_GOVERNMENT,https://si.se,,SE,ANY,SE,,https://si.se/,2026-09-26,"homepage title 2026-09-26 names Svenska institutet"
+chevening,Chevening Scholarships,NATIONAL_GOVERNMENT,https://www.chevening.org,,GB,ANY,GB,,https://www.chevening.org/,2026-09-26,"origin did not answer a plain client on 2026-09-26; stays unmapped_list_row until verify_list_origins reads it"
+stipendium-hungaricum,Stipendium Hungaricum,NATIONAL_GOVERNMENT,https://stipendiumhungaricum.hu,,HU,ANY,HU,,https://stipendiumhungaricum.hu/,2026-09-26,"homepage title 2026-09-26: 'Stipendium Hungaricum - Stipendium Hungaricum'"
+csc,China Scholarship Council (CampusChina),NATIONAL_GOVERNMENT,https://www.campuschina.org,,CN,ANY,CN,,https://www.campuschina.org/,2026-09-26,"HTTP 412 to a plain client on 2026-09-26; verify_list_origins reads it through the vendor ladder"

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+  <h1>Home</h1>
+  {% include "student/_needs.html" %}
+  {% include "student/_board.html" %}
+  <section aria-labelledby="message-heading">
+    <h2 id="message-heading">Write to your counsellor</h2>
+    <form method="post" action="{% url 'concierge-send-student-message' %}">
+      {% csrf_token %}
+      {% if error and error_form == "message" %}<p role="alert" id="message-error">{{ error }}</p>{% endif %}
+      <p>
+        <label for="message-body">Message</label><br>
+        <textarea id="message-body" name="body" rows="4" maxlength="4000"{% if error and error_form == "message" %} aria-describedby="message-error"{% endif %}>{{ form_values.body }}</textarea>
+      </p>
+      <button type="submit">Send</button>
+    </form>
+  </section>
+{% endblock %}

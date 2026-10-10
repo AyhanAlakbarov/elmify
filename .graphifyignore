@@ -1,0 +1,5 @@
+# Agent bookkeeping and vendored minified code obscure the product graph.
+.superpowers/
+skill-observations/
+skill-updates/
+static/vendor/

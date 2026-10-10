@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block lang %}{{ form.language.value|default:'en' }}{% endblock %}
+{% block title %}Sign up{% endblock %}
+{% block content %}
+  <h1>Sign up</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for doc in docs %}<input type="hidden" name="documents" value="{{ doc.id }}">{% endfor %}
+    <p>{{ form.full_name.label_tag }} {{ form.full_name }} {{ form.full_name.errors }}</p>
+    <p>{{ form.email.label_tag }} {{ form.email }} {{ form.email.errors }}</p>
+    <p>{{ form.password.label_tag }} {{ form.password }} {{ form.password.errors }}</p>
+    <p>{{ form.language.label_tag }} {{ form.language }} {{ form.language.errors }}</p>
+    <p>
+      <label><input type="checkbox" name="consent" {% if form.consent.value and not stale %}checked{% endif %}>
+      I agree to the <a href="{% url 'privacy-legal' 'terms' %}?lang={{ form.language.value|default:'en' }}">Terms of Service</a>
+      and consent to the processing of my personal data as described in the
+      {% for doc in docs %}{% if doc.kind != 'terms' %}<a href="{% url 'privacy-legal' doc.kind %}?lang={{ doc.language }}">Privacy Notice</a>{% endif %}{% endfor %},
+      including its transfer to the countries it lists.</label>
+      {{ form.consent.errors }}
+    </p>
+    <button type="submit">Create account</button>
+  </form>
+{% endblock %}

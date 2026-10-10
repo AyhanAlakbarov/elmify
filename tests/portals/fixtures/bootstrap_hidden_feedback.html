@@ -1,0 +1,15 @@
+<!doctype html><html><head><style>
+  /* Bootstrap's pattern: the feedback is always in the DOM, with its text,
+     and shown by CSS only once the control carries .is-invalid. */
+  .invalid-feedback { display: none; }
+  .is-invalid ~ .invalid-feedback { display: block; }
+</style></head><body><form>
+  <!-- Review I2: a hidden-by-CSS error beside the control is not an error. -->
+  <div class="mb-3">
+    <label for="em">Email address</label>
+    <input id="em" class="form-control" name="email" type="email"
+           value="leyla.apply+ab12cd@outlook.com">
+    <div class="invalid-feedback" role="alert">Please enter a valid email address.</div>
+  </div>
+  <button type="submit">Create account</button>
+</form></body></html>

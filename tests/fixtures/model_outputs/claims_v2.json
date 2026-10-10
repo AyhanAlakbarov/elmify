@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "institution_name": "Kyoto University",
+  "program_name": "Graduate School of Informatics",
+  "city": "Kyoto",
+  "country_code": "JP",
+  "funding_family": {"family": "GOVERNMENT_SCHOLARSHIP", "evidence": "The scholarship is funded by the Ministry of Education."},
+  "deadline": "2027-01-15",
+  "duration_months": 24,
+  "teaching_languages": [{"language": "English", "evidence": "Instruction is in English."}],
+  "fees": [{"label": "application", "amount": "5000.00", "currency": "JPY", "period": "one_off"}],
+  "application_fee": {"label": "application", "amount": "5000.00", "currency": "JPY", "period": "one_off"},
+  "awards_per_cycle": {"value": 200, "cycle_label": "2026 intake", "evidence": "200 scholarships are awarded each year."},
+  "applicants_per_cycle": {"value": 8000, "cycle_label": "2026 intake", "evidence": "8,000 applications were received."},
+  "published_minimum_grade": {"minimum": "3.0", "scale": "4.0 GPA", "evidence": "Applicants must hold a GPA of at least 3.0 on a 4.0 scale."},
+  "selectivity_signals": ["Awarded to exceptional candidates ranking at the top of their cohort."],
+  "grade_equivalence_rules": [{"rule_text": "Foreign grades are converted using the modified Bavarian formula.", "scope": "COUNTRY", "evidence": "Foreign grades are converted using the modified Bavarian formula."}],
+  "origin": "DESTINATION_COUNTRY",
+  "funder_name": "Ministry of Education, Culture, Sports, Science and Technology",
+  "admission_regime": {"regime": "EXAM_GATED", "evidence": "Applicants must sit the graduate school entrance examination."},
+  "eligibility_criteria": [
+    {"kind": "DEGREE", "requirement": "A bachelor's degree or sixteen years of education", "evidence": "Applicants must have completed 16 years of school education."},
+    {"kind": "AGE", "requirement": "Under 35 years of age", "evidence": "Applicants must be under 35 years of age."}
+  ],
+  "published_selection_rate": {"rate": "0.01", "cycle_label": "2026 intake", "evidence": "Approximately one per cent of applicants are selected."},
+  "commitment_payment": {"kind": "ENROLMENT_FEE", "amount": "282000.00", "currency": "JPY", "window_days": null, "refundable": false, "evidence": "The enrolment fee of 282,000 yen is payable on admission and is not refunded."},
+  "key_dates": [
+    {"kind": "APPLICATION_DEADLINE", "on": "2027-01-15", "decentralised": false, "evidence": "Applications close on 15 January 2027."},
+    {"kind": "DECISION_DATE", "on": null, "decentralised": true, "evidence": "Each embassy announces results on its own schedule."}
+  ],
+  "funding_tracks": [
+    {"name": "Embassy Recommendation", "initiation": "STUDENT_APPLIES_SEPARATELY", "satisfies_financial_proof": "YES", "covers_commitment_payment": "YES", "awards_per_cycle": 200, "dates": [], "evidence": "Apply through the Japanese embassy in your country of citizenship. The enrolment fee is paid by the ministry."},
+    {"name": "University Recommendation", "initiation": "INSTITUTION_NOMINATES", "satisfies_financial_proof": "YES", "covers_commitment_payment": null, "awards_per_cycle": null, "dates": [], "evidence": "The university nominates candidates to the ministry."}
+  ],
+  "nationality_eligibility": {"shape": "BLOC", "countries": [], "bloc_name": "designated countries", "quota": null, "evidence": "Open to nationals of designated countries."},
+  "confidence": 0.9
+}

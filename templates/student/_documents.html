@@ -1,0 +1,125 @@
+{% csrf_token %}
+<section aria-labelledby="table-heading" id="documents">
+  <h2 id="table-heading">What each application needs</h2>
+  {% if table.columns %}
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Document</th>
+          {% for column in table.columns %}<th scope="col" id="application-{{ column.application_id }}">{{ column.title }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in grid %}
+          <tr>
+            <th scope="row">{{ line.row.label }}{% if line.row.expires_on %} (expires {{ line.row.expires_on|date:"j M Y" }}){% endif %}</th>
+            {% for cell in line.cells %}
+              <td>
+                {{ cell.state }}
+                {% if cell.held and not counselor_view %}
+                  <form method="post" action="{% url 'student-document-submit' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="application_id" value="{{ cell.column.application_id }}">
+                    <input type="hidden" name="document_id" value="{{ cell.held.document_id }}">
+                    <input type="hidden" name="source" value="{{ cell.held.source }}">
+                    <button type="submit">Submit document to {{ cell.column.title }}</button>
+                  </form>
+                {% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No applications yet, so nothing is required.</p>
+  {% endif %}
+  {% if unverified %}
+    <ul>
+      {% for title, kinds in unverified %}<li>{{ title }}: {{ kinds }} (unverified)</li>{% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
+{% if not read_only %}
+<section aria-labelledby="upload-heading">
+  <h2 id="upload-heading">Upload a document</h2>
+  <form data-upload="{{ upload_endpoint }}">
+    <p>
+      <label for="upload-kind">Document</label>
+      <select id="upload-kind" name="kind">{% for value, label in upload_kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+    </p>
+    <p><label for="upload-file">File</label> <input type="file" id="upload-file" name="file" accept=".pdf,.jpg,.jpeg,.png"></p>
+    <button type="submit">Upload</button>
+    <p role="status"></p>
+  </form>
+</section>
+{% endif %}
+
+<section aria-labelledby="uploads-heading">
+  <h2 id="uploads-heading">Your uploads</h2>
+  <ul>
+    {% for upload in uploads %}
+      <li>
+        {{ upload.get_kind_display }} — {% if upload.rejection_message %}{{ upload.rejection_message }}{% elif upload.state == "CHECKING" %}checking…{% else %}{{ upload.state|lower }}{% endif %}{% if upload.expires_on %}, expires {{ upload.expires_on|date:"j M Y" }}{% endif %}
+        {% if upload.kind in expiring and not counselor_view %}
+          <form method="post" action="{% url 'student-document-expiry' upload.id %}">
+            {% csrf_token %}
+            <label for="expiry-{{ upload.id }}">Expires on</label>
+            <input type="date" id="expiry-{{ upload.id }}" name="expires_on" value="{{ upload.expires_on|date:'Y-m-d' }}">
+            <button type="submit">Save</button>
+          </form>
+        {% endif %}
+      </li>
+    {% empty %}
+      <li>Nothing uploaded yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section aria-labelledby="facts-heading" id="facts">
+  <h2 id="facts-heading">Facts read from your CV</h2>
+  {% if facts %}
+    <ul>{% for fact in facts %}<li>{{ fact.category|lower }}: {% for key, value in fact.payload.items %}{{ key }} {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}</ul>
+    {% if not counselor_view %}
+      <p><button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ confirm_body }}">These are right — confirm them</button> <span role="status"></span></p>
+    {% endif %}
+  {% else %}
+    <p>Nothing to confirm.</p>
+  {% endif %}
+</section>
+
+<section aria-labelledby="drafts-heading" id="drafts">
+  <h2 id="drafts-heading">Your CV</h2>
+  {% if not counselor_view %}
+    <p><button type="button" data-api-post="/api/documents/generate" data-body='{"kind": "CV"}'>Write my CV</button> <span role="status"></span></p>
+  {% endif %}
+  <ul>
+    {% for draft in drafts %}
+      <li>
+        Version {{ draft.version }} — {{ draft.status|lower }}
+        {% if draft.status == "DRAFT" and not counselor_view %}
+          <button type="button" data-api-post="/api/documents/drafts/{{ draft.id }}/approve">Approve</button> <span role="status"></span>
+        {% endif %}
+        {% if draft.status == "APPROVED" and draft.rendered_filename %}<a href="{% url 'documents-download' draft.id draft.rendered_filename %}">Download</a>{% endif %}
+      </li>
+    {% empty %}
+      <li>No CV yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+{% if unnamed and not counselor_view %}
+  <section aria-labelledby="unread-heading">
+    <h2 id="unread-heading">Messages we could not read</h2>
+    {% for signal in unnamed %}
+      <form method="post" action="{% url 'student-document-request' signal.id %}">
+        {% csrf_token %}
+        <p>{{ signal.sender_domain }} wrote on {{ signal.received_at|date:"j M" }} about {{ signal.application.title }}. If it asked for a document, which one?</p>
+        <label for="request-{{ signal.id }}">Document</label>
+        <select id="request-{{ signal.id }}" name="kind">{% for kind, label in row_kinds %}<option value="{{ kind }}">{{ label }}</option>{% endfor %}</select>
+        <button type="submit">Save</button>
+      </form>
+    {% endfor %}
+  </section>
+{% endif %}

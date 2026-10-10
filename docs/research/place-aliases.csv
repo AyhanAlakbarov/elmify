@@ -1,0 +1,152 @@
+code,language,name
+AZ,en,Azerbaijani
+AZ,az,azərbaycanlı
+AZ,tr,Azerbaycan
+AZ,ru,азербайджанск
+TR,en,Turkey
+TR,en,Turkish
+TR,az,türkiyəli
+TR,tr,Türk vatandaşı
+TR,tr,Türk vatandaşları
+TR,tr,T.C. vatandaşı
+TR,tr,T.C. vatandaşları
+TR,tr,T.C.
+TR,ru,Турецкой Республики
+TR,ru,турецк
+RU,en,Russian Federation
+RU,az,Rusiya Federasiyası
+RU,tr,Rusya Federasyonu
+RU,ru,РФ
+RU,ru,российск
+KZ,en,Kazakh
+KZ,en,Kazakhstani
+KZ,az,qazaxıstanlı
+KZ,ru,казахстанск
+UZ,en,Uzbek
+UZ,en,Uzbekistani
+UZ,az,özbəkistanlı
+UZ,ru,узбекистанск
+KG,en,Kyrgyz
+KG,az,qırğızıstanlı
+KG,ru,кыргызск
+KG,ru,киргизск
+TM,en,Turkmen
+TM,az,türkmənistanlı
+TM,ru,туркменск
+GE,en,Georgian
+GE,az,gürcüstanlı
+GE,ru,грузинск
+UA,en,Ukrainian
+UA,az,ukraynalı
+UA,tr,Ukraynalı
+UA,ru,украинск
+BY,en,Belarusian
+BY,az,belaruslu
+BY,tr,Belaruslu
+BY,ru,белорусск
+IR,en,Iranian
+IR,az,iranlı
+IR,tr,İranlı
+IR,ru,иранск
+PK,en,Pakistani
+PK,az,pakistanlı
+PK,tr,Pakistanlı
+PK,ru,пакистанск
+IN,en,Indian
+IN,az,hindistanlı
+IN,tr,Hintli
+IN,ru,индийск
+CN,en,Chinese
+CN,en,PRC
+CN,az,çinli
+CN,tr,Çinli
+CN,ru,КНР
+CN,ru,китайск
+KR,en,Republic of Korea
+KR,en,Korea
+KR,en,Korean
+KR,az,Koreya Respublikası
+KR,tr,Kore Cumhuriyeti
+KR,tr,Güney Kore
+KR,ru,Республика Корея
+KR,ru,Республики Корея
+KR,ru,южнокорейск
+JP,en,Japanese
+JP,az,yaponiyalı
+JP,ru,японск
+DE,en,German
+DE,az,almaniyalı
+DE,ru,германск
+FR,en,French
+FR,fr,française
+FR,fr,français
+FR,az,fransalı
+FR,ru,французск
+GB,en,UK
+GB,en,U.K.
+GB,en,Great Britain
+GB,en,Britain
+GB,en,British
+GB,az,Böyük Britaniya
+GB,tr,İngiltere
+GB,ru,Великобритания
+GB,ru,британск
+US,en,USA
+US,en,U.S.
+US,en,U.S.A.
+US,en,United States of America
+US,en,American
+US,az,ABŞ
+US,tr,ABD
+US,ru,США
+US,ru,американск
+HU,en,Hungarian
+HU,az,macarıstanlı
+HU,ru,венгерск
+IT,en,Italian
+IT,az,italiyalı
+IT,ru,итальянск
+ES,en,Spanish
+ES,az,ispaniyalı
+ES,ru,испанск
+PL,en,Polish
+PL,az,polşalı
+PL,tr,Polonyalı
+PL,ru,польск
+NL,en,Dutch
+NL,en,Holland
+NL,az,niderlandlı
+NL,tr,Hollanda
+NL,ru,нидерландск
+NL,ru,голландск
+SE,en,Swedish
+SE,az,isveçli
+SE,tr,İsveçli
+SE,ru,шведск
+FI,en,Finnish
+FI,az,finlandiyalı
+FI,tr,Finlandiyalı
+FI,ru,финляндск
+CZ,en,Czech
+CZ,en,Czech Republic
+CZ,az,çexiyalı
+CZ,ru,чешск
+AT,en,Austrian
+AT,az,avstriyalı
+AT,tr,Avusturyalı
+AT,ru,австрийск
+CH,en,Swiss
+CH,az,isveçrəli
+CH,tr,İsviçreli
+CH,ru,швейцарск
+HK,en,Hong Kong
+KP,en,Democratic People's Republic of Korea
+KP,en,DPRK
+KP,en,North Korea
+CD,en,Democratic Republic of the Congo
+CD,en,DR Congo
+CD,en,DRC
+GB,en,Northern Ireland
+GW,en,Guinea Bissau
+GW,en,Guinea-Bissau
+TW,en,Chinese Taipei

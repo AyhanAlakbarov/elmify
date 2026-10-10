@@ -1,0 +1,17 @@
+{
+  "name": "tehsil-copilot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "package": "node build.mjs && cd dist && zip -r ../tehsil-copilot.zip .",
+    "check": "npm run typecheck && npm run build"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

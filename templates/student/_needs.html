@@ -1,0 +1,27 @@
+<section aria-labelledby="needs-heading">
+  <h2 id="needs-heading">Needs you now</h2>
+  {% if needs %}
+    <ul>
+      {% for item in needs %}
+        <li>
+          {{ item.text }}{% if item.deadline %} — due {{ item.deadline|date:"j M Y" }}{% endif %}
+          {% if item.url %}
+            {% if item.method == "post" %}
+              {% if not read_only %}<form method="post" action="{{ item.url }}">{% csrf_token %}<button type="submit">{{ item.button }}</button></form>{% endif %}
+            {% else %}
+              <a href="{{ item.url }}">{{ item.button }}</a>
+            {% endif %}
+          {% endif %}
+          {% if item.ignore_url and not read_only %}
+            <form method="post" action="{{ item.ignore_url }}">{% csrf_token %}<button type="submit">Ignore</button></form>
+          {% endif %}
+          {% if item.acknowledge_url and not read_only %}
+            <form method="post" action="{{ item.acknowledge_url }}">{% csrf_token %}<button type="submit">Acknowledge</button></form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Nothing needs you right now.</p>
+  {% endif %}
+</section>

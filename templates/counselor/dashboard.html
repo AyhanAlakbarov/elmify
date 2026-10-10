@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Your students{% endblock %}
+{% block content %}
+  <h1>Your students</h1>
+  {% if error and not error_form %}<p role="alert">{{ error }}</p>{% endif %}
+  <ul>
+    {% for assignment in assignments %}
+      <li><a href="{% url 'counselor-student-board' assignment.student_id %}">{{ assignment.student.user.get_username }}</a></li>
+    {% empty %}
+      <li>No students assigned.</li>
+    {% endfor %}
+  </ul>
+  <h2>Tasks</h2>
+  <ul>
+    {% for item in items %}
+      <li>
+        {{ item.get_stage_display }} for {{ item.student.user.get_username }} — {{ item.get_state_display }}, due {{ item.deadline|date:"j M Y" }}
+        {% if error and error_form == item.id|stringformat:"s" %}<p role="alert">{{ error }}</p>{% endif %}
+        {% if item.owner_id == request.membership.id and item.state != "DONE" %}
+          <form method="post" action="{% url 'concierge-mark-roadmap-item-done' item.id %}">
+            {% csrf_token %}
+            <label for="done-{{ item.id }}">What you did</label>
+            <input type="text" id="done-{{ item.id }}" name="description">
+            <button type="submit">Mark done</button>
+          </form>
+        {% endif %}
+      </li>
+    {% empty %}
+      <li>No tasks.</li>
+    {% endfor %}
+  </ul>
+{% endblock %}

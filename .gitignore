@@ -1,0 +1,27 @@
+.env
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv/
+.worktrees/
+__pycache__/
+*.py[cod]
+staticfiles/
+graphify-out/
+node_modules/
+.superpowers/
+.playwright-cli/
+.playwright-mcp/
+review/
+
+# Built by the glass-box extension's bundler; never source.
+extension/dist/
+extension/tehsil-copilot.zip
+
+# Agent tooling installed per machine, not project source
+.agents/
+.claude/skills/
+.specify/
+skills-lock.json
+skill-observations/
+skill-updates/

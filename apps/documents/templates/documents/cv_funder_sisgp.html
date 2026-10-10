@@ -1,0 +1,72 @@
+{% load cv_dates cv_countries %}
+{% comment %}
+Same @page rule and font stack as documents/cv_base.html, so page count and
+the text layer stay predictable -- this form is not one of that base's
+variants (SISGP mandates its own five fixed sections, R-064), so it is not
+extended as a base-template child, just matched.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="{{ content.document_language }}">
+<head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 18mm 16mm; }
+  body { font-family: "Helvetica", "DejaVu Sans", sans-serif; font-size: 10.5pt; }
+  h1 { font-size: 16pt; margin-bottom: 0; }
+  h2 { font-size: 11pt; text-transform: uppercase; border-bottom: 1px solid #333; margin-top: 14pt; }
+  .entry { margin-top: 6pt; }
+  .entry-header { display: flex; justify-content: space-between; }
+  .gloss { font-style: italic; }
+  /* One indent for every list on the page: bullets, publications,
+     awards and languages sat at three different depths otherwise. */
+  ul { margin: 2pt 0 0; padding-left: 14pt; }
+  li { margin-bottom: 1pt; }
+  p.skills { margin: 2pt 0 0; }
+  table.personal { border-collapse: collapse; margin-top: 6pt; }
+  table.personal td { padding: 2pt 8pt 2pt 0; vertical-align: top; }
+  table.personal td.label { font-weight: bold; width: 40mm; }
+</style></head>
+<body>
+  <h2>Personal Information</h2>
+  <table class="personal">
+    <tr><td class="label">Full name</td><td>{{ content.personal_information.full_name }}</td></tr>
+    <tr><td class="label">Email</td><td>{{ content.personal_information.email }}</td></tr>
+    <tr><td class="label">Sex</td><td>{{ content.personal_information.sex|default:"" }}</td></tr>
+    <tr><td class="label">Date of birth</td><td>{{ content.personal_information.date_of_birth|date:"Y-m-d" }}</td></tr>
+    <tr><td class="label">Citizenship</td><td>{{ content.personal_information.citizenship|default:"" }}</td></tr>
+  </table>
+
+  <h2>Work Experience</h2>
+  {% for entry in experience %}
+  <div class="entry">
+    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    {% if entry.city or entry.country %}<div>{% include "documents/_cv_place.html" with entry=entry only %}</div>{% endif %}
+    {% include "documents/_cv_bullets.html" with entry=entry only %}
+  </div>
+  {% endfor %}
+
+  <h2>Education and Training</h2>
+  {% for entry in education %}
+  <div class="entry">
+    <div class="entry-header"><strong>{{ entry.degree_as_awarded }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    {% if entry.degree_english and entry.degree_english != entry.degree_as_awarded %}<div class="gloss">{{ entry.degree_english }}</div>{% endif %}
+    <div>{{ entry.institution_original }}{% if entry.institution_english and entry.institution_english != entry.institution_original %} ({{ entry.institution_english }}){% endif %}, {{ entry.city }}, {{ entry.country|country_name }}</div>
+    {% if entry.grade_native or entry.ects_credits %}<div>{% if entry.grade_native %}Grade: {{ entry.grade_native }}{% if entry.grade_scale %} ({{ entry.grade_scale }}){% endif %}{% if entry.grade_conversion %} ≈ {{ entry.grade_conversion }}{% endif %}{% endif %}{% if entry.grade_native and entry.ects_credits %} · {% endif %}{% if entry.ects_credits %}{{ entry.ects_credits }} ECTS{% endif %}</div>{% endif %}
+  </div>
+  {% endfor %}
+
+  <h2>Network/Civil Society Engagement</h2>
+  {% for entry in engagement %}
+  <div class="entry">
+    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    {% if entry.city or entry.country %}<div>{% include "documents/_cv_place.html" with entry=entry only %}</div>{% endif %}
+    {% include "documents/_cv_bullets.html" with entry=entry only %}
+  </div>
+  {% endfor %}
+
+  <h2>Previous Scholarships/Awards</h2>
+  <ul>
+  {% for item in content.awards %}
+    <li>{{ item.title }}{% if item.awarding_body %}, {{ item.awarding_body }}{% endif %}{% if item.date %} — {{ item.date|month_year }}{% endif %}{% if item.detail %}<br><span class="gloss">{{ item.detail }}</span>{% endif %}</li>
+  {% endfor %}
+  </ul>
+</body>
+</html>

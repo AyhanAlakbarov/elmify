@@ -1,0 +1,6 @@
+# hosts known to carry master's awards; if the reader serves nothing here, the holder axis is incomplete
+daad.de	P	DE
+tev.org.tr	P	TR
+cusanuswerk.de	P	DE
+visegradfund.org	P	HU
+bw-stipendium.de	P	DE

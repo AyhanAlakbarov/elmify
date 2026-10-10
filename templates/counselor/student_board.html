@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ student.user.get_username }}{% endblock %}
+{% block content %}
+  <h1>{{ student.user.get_username }}</h1>
+  {% if read_only %}
+    <p role="status">{{ read_only }}</p>
+  {% else %}
+    <p>You are working on this student's board. Every change you make is recorded with your name. Starting an application stays with the student.</p>
+  {% endif %}
+  {% include "student/_needs.html" %}
+  {% include "student/_board.html" %}
+  {% if not read_only %}
+  <section aria-labelledby="add-heading">
+    <h2 id="add-heading">Add an application</h2>
+    {% for candidate in addable %}
+      <form method="post" action="{% url 'counselor-student-application-add' student.id candidate.id %}">
+        {% csrf_token %}
+        <p>{{ candidate.program_name }}</p>
+        <button type="submit">Add to applications</button>
+      </form>
+    {% empty %}
+      <p>Every programme in the pack is already an application.</p>
+    {% endfor %}
+  </section>
+  {% endif %}
+  {% include "student/_documents.html" %}
+  {% if not read_only %}<p><a href="{% url 'counselor-student-gap-interview' student.id %}">Answer missing items for this student</a></p>{% endif %}
+  {% include "student/_messages.html" %}
+  {% if not read_only %}
+  <section aria-labelledby="write-heading">
+    <h2 id="write-heading">Write to the student</h2>
+    <form method="post" action="{% url 'counselor-student-message' student.id %}">
+      {% csrf_token %}
+      {% if error and error_form == "message" %}<p role="alert">{{ error }}</p>{% endif %}
+      <p>
+        <label for="message-body">Message</label><br>
+        <textarea id="message-body" name="body" rows="4" maxlength="4000">{{ form_values.body }}</textarea>
+      </p>
+      <button type="submit">Send</button>
+    </form>
+  </section>
+  {% endif %}
+  <script src="{% static 'dashboard/documents.js' %}" defer></script>
+{% endblock %}

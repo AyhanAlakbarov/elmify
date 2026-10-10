@@ -1,0 +1,14 @@
+{% if content.references %}<h2>Referees</h2>
+{% for entry in content.references %}
+<div class="entry">
+  <div><strong>{{ entry.name }}</strong>{% if entry.position %}, {{ entry.position }}{% endif %}{% if entry.institution %}, {{ entry.institution }}{% endif %}</div>
+  {% if entry.email or entry.phone %}<div>{% if entry.email %}<a href="mailto:{{ entry.email }}">{{ entry.email }}</a>{% endif %}{% if entry.email and entry.phone %} · {% endif %}{% if entry.phone %}{{ entry.phone }}{% endif %}</div>{% endif %}
+  {% comment %}
+     UCC: "For supervisor there is a 'please do not contact' option." It prints
+     beside the address it qualifies, because a reader who has already taken
+     the address down has missed it.
+  {% endcomment %}
+  {% if entry.do_not_contact %}<div class="gloss">Please do not contact without prior notice.</div>{% endif %}
+</div>
+{% endfor %}
+{% endif %}

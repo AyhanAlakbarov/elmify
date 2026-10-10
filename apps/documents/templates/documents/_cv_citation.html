@@ -1,0 +1,8 @@
+{% comment %}
+One citation, one style, everywhere (S-011). Included by the standard section
+and by both funder templates so a Rhodes CV and a standard CV cannot drift
+into two different citation styles.
+
+The applicant's own name is bolded by position, never by matching text: the
+index is exact where a name match is not.
+{% endcomment %}{% spaceless %}{% for author in entry.authors %}{% if not forloop.first %}, {% endif %}{% if forloop.counter0 == entry.self_author_index %}<strong>{{ author }}</strong>{% else %}{{ author }}{% endif %}{% endfor %}{{ entry.byline_suffix }} {{ entry.title }}.{% if entry.venue %} <em>{{ entry.venue }}</em>.{% endif %}{% if entry.doi %} <a href="https://doi.org/{{ entry.doi }}">doi.org/{{ entry.doi }}</a>{% elif entry.url %} <a href="{{ entry.url }}">{{ entry.url }}</a>{% endif %}{% if entry.status_label %} [{{ entry.status_label }}]{% endif %}{% endspaceless %}

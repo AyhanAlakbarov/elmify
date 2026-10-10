@@ -1,0 +1,226 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: tehsil
+          POSTGRES_USER: tehsil
+          POSTGRES_PASSWORD: tehsil
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tehsil"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked --group dev
+      - run: uv run python -c "import boto3, django, django_otp, openai, PIL, playwright, psycopg, weasyprint"
+      - run: uv run ruff check .
+      - run: uv run mypy apps config
+      - run: uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py
+      # Two WeasyPrint advisories are suppressed, both assessed inapplicable:
+      # PYSEC-2026-3412 needs presentational_hints=True (default False, never
+      # passed) and has NO fixed release at any version. PYSEC-2026-2034 is a
+      # bypass of a CUSTOM url_fetcher used as a security control. We DO
+      # install one (apps/documents/render.py::render_html_to_artifact passes
+      # url_fetcher=_no_fetch), but ours has nothing to bypass: _no_fetch
+      # refuses every fetch outright instead of filtering, which is stronger
+      # and holds whatever version is pinned. Re-review if that fetcher is
+      # ever removed, stops raising unconditionally, or the
+      # CV templates start loading external resources.
+      - run: uv run pip-audit --ignore-vuln PYSEC-2026-2034 --ignore-vuln PYSEC-2026-3412
+      # The OCR program's own graph (ocr/uv.lock, CPython 3.12). The step above audits
+      # the app's venv and cannot see it; --no-deps --disable-pip audits the exact
+      # pins without installing 3.12 wheels under 3.14.
+      - run: |
+          uv export --project ocr --frozen --no-hashes --no-dev -o /tmp/ocr-requirements.txt
+          uv run pip-audit -r /tmp/ocr-requirements.txt --no-deps --disable-pip
+      # The job's own uv is set up for 3.14 (this app's interpreter); ocr/pyproject.toml
+      # requires 3.12, so this step alone must ask uv for that interpreter, or `uv sync`
+      # resolves to 3.14 and errors -- silently skipping every OCR test in CI.
+      - run: uv sync --project ocr --frozen && uv run --project ocr pytest ocr -q
+        env:
+          UV_PYTHON: "3.12"
+      # Blocking: a template typo is otherwise caught by CloudFormation
+      # mid-deploy. Rule set and the two documented ignores live in
+      # .cfnlintrc.yaml, so this behaves the same run locally.
+      - run: uv run cfn-lint
+      - run: uv run python manage.py check
+      - run: uv run python manage.py makemigrations --check --dry-run
+      # CompressedManifestStaticFilesStorage only exists under production
+      # settings. collectstatic opens no database, cache or queue, so the
+      # values below are placeholders that let production settings import.
+      - name: collectstatic under production settings
+        run: uv run python manage.py collectstatic --noinput
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings.production
+          DJANGO_SECRET_KEY: collectstatic-only
+          DJANGO_ALLOWED_HOSTS: localhost
+          DATABASE_ROLE: runtime_web
+          POSTGRES_WEB_USER: collectstatic
+          POSTGRES_WEB_PASSWORD: collectstatic
+          POSTGRES_DB: tehsil
+          POSTGRES_HOST: 127.0.0.1
+          RESEARCH_QUEUE_URL: unused
+          EUROPASS_QUEUE_URL: unused
+          PORTAL_QUEUE_URL: unused
+          DOCUMENT_QUEUE_URL: unused
+          DOCUMENT_SCAN_QUEUE_URL: unused
+          MAILBOX_QUEUE_URL: unused
+          CACHE_URL: redis://127.0.0.1:6379/0
+      # test_extension_bundle.py reads the BUILT extension and, under CI, fails
+      # rather than skips when it is absent -- on purpose. The `extension` job
+      # below builds the bundle and runs that file; this job builds nothing,
+      # so running it here only ever reported the bundle missing (22 failures
+      # on every PR, 2026-10).
+      - run: uv run pytest -q --ignore=tests/portals/test_extension_bundle.py
+  secrets:
+    runs-on: ubuntu-latest
+    # gitleaks-action lists the PR's commits on pull_request events; without
+    # pull-requests: read the API call 403s and the job fails with no finding.
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  web-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build --target web -t tehsil-web:ci .
+      # Building is not the check. A missing system library does not fail
+      # `docker build` -- it fails when WeasyPrint loads Pango through cffi at
+      # import time, or when a font is absent at render time. So this renders a
+      # PDF. Without that, the job would go green having measured nothing,
+      # which is exactly the dead-container failure CLAUDE.md describes: until
+      # portal-sandbox existed, CI never built an image at all and a container
+      # that could not import Django passed every check.
+      #
+      # `web` is the image the web service AND all three worker tasks run --
+      # infra/template.yaml's AppImage, Command-overridden per task -- so it is
+      # the one that has to import apps.documents.render successfully. The
+      # worker stage exists but nothing deploys it.
+      #
+      # DJANGO_SETTINGS_MODULE is overridden because the image defaults to
+      # production, which requires POSTGRES_HOST and a DATABASE_ROLE. The base
+      # settings need no database: this renders from a string and touches no
+      # model, so it stays a check on the IMAGE rather than on a stack.
+      - run: |
+          docker run --rm -e DJANGO_SETTINGS_MODULE=config.settings.base tehsil-web:ci \
+            python -c "
+          import django; django.setup()
+          from apps.documents.render import render_html_to_artifact
+          art = render_html_to_artifact('<html><body><p>smoke</p></body></html>', variant='STANDARD')
+          assert art.pdf_bytes.startswith(b'%PDF'), 'render produced no PDF'
+          print('rendered', art.byte_size, 'bytes,', art.page_count, 'page(s)')
+          "
+
+  ocr-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Building is half the check. The run below is the other half, under the
+      # constraints Lambda imposes -- a read-only file system with /tmp the only
+      # writable place, an unprivileged user, and no network -- so a library that
+      # writes a cache beside itself, or a file only root can read, fails
+      # here and not on a student's transcript.
+      - run: docker build --platform linux/amd64 --provenance=false -t tehsil-ocr:ci ocr/
+      - run: |
+          docker run --rm --network=none --read-only --tmpfs /tmp --user 993:990 \
+            --entrypoint python tehsil-ocr:ci -c "import io, read_pages as rp; from PIL import Image; b = io.BytesIO(); Image.new('RGB', (800, 1100), 'white').save(b, format='PNG'); out = rp.inventory(b.getvalue()); assert out['pages'][0]['source'] == 'image', out; print('inventory', out)"
+          docker run --rm --network=none --read-only --tmpfs /tmp --user 993:990 \
+            -v "$PWD/ocr/fixtures:/fixtures:ro" \
+            --entrypoint python tehsil-ocr:ci -c "import read_pages as rp; out = rp.inventory(open('/fixtures/text_transcript.pdf', 'rb').read()); assert out['pages'][0]['source'] == 'text_layer', out; print('pdf ok')"
+
+  portal-sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: docker build --target portal -t tehsil-portal:ci .
+      # The runner sets CI=true, and stagehand appends --no-sandbox whenever it
+      # sees that (browser.py:589,682) -- which is the opposite of what this
+      # job measures. docker run does not pass the runner's environment into
+      # the container, so the check runs against a real sandbox. Never add
+      # `-e CI` here: the script would SKIP and the job would go green having
+      # measured nothing.
+      #
+      # --init: xvfb-run is the container's PID 1 with no override, and its
+      # SIGUSR1 ready-notification from Xvfb never arrives to PID 1 in that
+      # position, hanging forever before Chrome even launches -- reproduced
+      # locally, unrelated to sandboxing. tini (via --init) as the real PID 1
+      # fixes it.
+      #
+      # --security-opt seccomp=unconfined: without it, Chrome's own namespace
+      # sandbox setup cannot complete under Docker's default seccomp profile
+      # and the CDP connection never comes up (Stagehand times out after 60s)
+      # -- reproduced locally. This does not disable Chrome's *own*
+      # seccomp-bpf filter on renderers, which is what the script measures.
+      # CI-VALIDATION-ONLY: this flag relaxes the outer Docker/ECS seccomp
+      # boundary. Do not copy it into a production `docker run` or ECS task
+      # definition -- that container holds live credentials (see the
+      # `portal` stage comment above) and the outer boundary is part of its
+      # defense in depth, even though it cannot mask an added --no-sandbox
+      # (no Chrome process would show Seccomp: 2 in that case regardless of
+      # what Docker allows).
+      - run: |
+          docker run --rm --init --security-opt seccomp=unconfined tehsil-portal:ci \
+            xvfb-run -a --server-args="-screen 0 1280x1024x24" \
+            python scripts/validate_portal_sandbox.py
+
+  extension:
+    runs-on: ubuntu-latest
+    # The static checks import apps.portals to compare against FILL_METHODS,
+    # _EVENT_KINDS and MIN_EXTENSION_VERSION, so this job needs the same
+    # settings module -- and therefore the same database -- the test job has.
+    # Comparing the bundle against a hand-copied constant instead would be the
+    # drift this whole file of tests exists to catch.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: tehsil
+          POSTGRES_USER: tehsil
+          POSTGRES_PASSWORD: tehsil
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U tehsil"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm --prefix extension ci
+      - run: npm --prefix extension run typecheck
+      - run: npm --prefix extension run build
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          python-version: "3.14"
+      - run: uv sync --locked --group dev
+      # The static checks. CI=true is set by the runner, so a missing bundle
+      # fails here rather than skipping -- which is the whole point of the
+      # guard in bundle_text.
+      - run: uv run pytest tests/portals/test_extension_bundle.py -q
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run pytest tests/portals/test_extension_e2e.py -m extension -q

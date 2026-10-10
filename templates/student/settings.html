@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+  <h1>Settings</h1>
+  <ul>
+    <li><a href="/student/profile/">Profile</a> — {% if profile_done %}complete; you can update it{% else %}Not started{% endif %}</li>
+    <li><a href="/student/settings/mailbox/">Mailbox</a> — the inbox we watch for university replies</li>
+    <li><a href="/student/settings/extension/">Browser extension</a> — the browsers that fill your applications</li>
+    <li><a href="/student/settings/account/">Account</a> — leave and delete your data</li>
+  </ul>
+{% endblock %}

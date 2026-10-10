@@ -1,0 +1,27 @@
+{
+    "version": "0",
+    "id": "72c7d362-737a-6dce-fc78-9e27a0171419",
+    "detail-type": "GuardDuty Malware Protection Object Scan Result",
+    "source": "aws.guardduty",
+    "account": "111122223333",
+    "time": "2024-02-28T01:01:01Z",
+    "region": "us-east-1",
+    "resources": ["arn:aws:guardduty:us-east-1:111122223333:malware-protection-plan/b4c7f464ab3a4EXAMPLE"],
+    "detail": {
+        "schemaVersion": "1.0",
+        "scanStatus": "COMPLETED",
+        "resourceType": "S3_OBJECT",
+        "s3ObjectDetails": {
+            "bucketName": "test-evidence-bucket",
+            "objectKey": "quarantine/00000000-0000-0000-0000-0000000000a1/00000000-0000-0000-0000-0000000000b2",
+            "eTag": "ASIAI44QH8DHBEXAMPLE",
+            "versionId": "d41d8cd98f00b204e9800998eEXAMPLE",
+            "s3Throttled": false
+        },
+        "scanResultDetails": {
+            "scanResultStatus": "NO_THREATS_FOUND",
+            "threats": null,
+            "statusReasons": null
+        }
+    }
+}

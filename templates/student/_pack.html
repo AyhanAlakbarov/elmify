@@ -1,0 +1,24 @@
+<div id="pack">
+  {% if pack %}
+    <p>{% if pack.published_at %}Approved v{{ pack.version }}{% else %}Version {{ pack.version }}{% endif %}</p>
+    {% if pending_line %}<p role="status">{{ pending_line }}</p>{% endif %}
+    {% for currency, total in totals.items %}<p>Total funding gap: {{ total }} {{ currency }}</p>{% endfor %}
+    {% if error and not error_form %}<p role="alert">{{ error }}</p>{% endif %}
+    <h2>Your pack</h2>
+    {% for group in groups %}{% include "student/_funding_group.html" with in_pack=True %}{% endfor %}
+    <h2>Other options</h2>
+    {% for group in other_groups %}{% include "student/_funding_group.html" with in_pack=False %}{% endfor %}
+    <section aria-labelledby="named-heading">
+      <h2 id="named-heading">Ask us to consider a programme</h2>
+      <form method="post" action="{% url 'student-consider-named-program' %}">
+        {% csrf_token %}
+        {% if error and error_form == "named-program" %}<p role="alert" id="program-name-error">{{ error }}</p>{% endif %}
+        <p>
+          <label for="program-name">Programme name</label>
+          <input type="text" id="program-name" name="program_name" maxlength="150" value="{{ form_values.program_name|default:'' }}"{% if error and error_form == "named-program" %} aria-describedby="program-name-error"{% endif %}>
+        </p>
+        <button type="submit">Ask</button>
+      </form>
+    </section>
+  {% endif %}
+</div>

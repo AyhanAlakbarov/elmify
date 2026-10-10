@@ -1,0 +1,19 @@
+<!doctype html><html><body><form novalidate>
+  <!-- Review I1: an earlier empty submit left the field marked invalid, and the
+       page re-validates 250ms after each blur, accepting any well-formed
+       address. A stale error, not a refusal of the "+". -->
+  <label for="em">Email address</label>
+  <input id="em" name="email" type="email" aria-invalid="true" aria-errormessage="em-error">
+  <p id="em-error" role="alert">Email is required</p>
+  <button type="submit">Create account</button>
+</form>
+<script>
+  const input = document.getElementById("em");
+  const error = document.getElementById("em-error");
+  input.addEventListener("blur", () => setTimeout(() => {
+    const ok = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.value);
+    input.setAttribute("aria-invalid", ok ? "false" : "true");
+    error.hidden = ok;
+  }, 250));
+</script>
+</body></html>

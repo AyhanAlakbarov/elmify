@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Account closing{% endblock %}
+{% block content %}
+  <h1>Your account is closing</h1>
+  {% if request_record.state == "APPROVED" %}
+    <p>Your data will be erased on {{ request_record.execute_after|date:"j F Y" }}.</p>
+  {% elif request_record.state == "RETENTION_REVIEW" %}
+    <p>Your agency must keep some records for now; they will tell you what is kept and why.</p>
+  {% else %}
+    <p>Your request is being processed.</p>
+  {% endif %}
+  {% if in_flight %}<p>{{ in_flight }} of your applications are with a university. Closing your account does not withdraw them.</p>{% endif %}
+  <form method="post" action="{% url 'audit-restore-account' request_record.id %}">
+    {% csrf_token %}
+    <button type="submit">Restore my account</button>
+  </form>
+{% endblock %}

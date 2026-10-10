@@ -1,0 +1,28 @@
+{% load dashboard %}
+<section id="consultation" aria-labelledby="consultation-heading">
+  {% if review %}
+    <h2 id="consultation-heading">Check your answers</h2>
+    {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+    <dl>
+      {% for key, value in draft.answers.items %}<dt>{{ labels|lookup:key|default:key }}</dt><dd>{{ value|answer }}</dd>{% endfor %}
+    </dl>
+    <form method="post" action="{% url 'student-profile' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="confirm">
+      <button type="submit">Confirm and start research</button>
+    </form>
+  {% else %}
+    <h2 id="consultation-heading">Question {{ progress_answered|add:1 }} of {{ progress_total }}</h2>
+    {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+    {% for message in form.value.errors %}<p role="alert">{{ message }}</p>{% endfor %}
+    <form method="post" action="{% url 'student-profile' %}">
+      {% csrf_token %}
+      <input type="hidden" name="key" value="{{ question.key }}">
+      <p>
+        <label for="{{ form.value.id_for_label }}">{{ question.label }}</label><br>
+        {{ form.value }}
+      </p>
+      <button type="submit">Next</button>
+    </form>
+  {% endif %}
+</section>

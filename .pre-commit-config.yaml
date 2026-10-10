@@ -1,0 +1,17 @@
+repos:
+  - repo: local
+    hooks:
+      - id: bandit
+        name: bandit (security scan)
+        entry: uv run bandit -c pyproject.toml -r apps config
+        language: system
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: pip-audit
+        name: pip-audit (dependency CVE scan)
+        # Same two suppressions as .github/workflows/ci.yml -- see the comment
+        # there for the assessment. Keep the two lists identical.
+        entry: uv run pip-audit --ignore-vuln PYSEC-2026-2034 --ignore-vuln PYSEC-2026-3412
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

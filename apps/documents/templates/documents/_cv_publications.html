@@ -1,0 +1,2 @@
+{% if content.published_publications %}<h2>Publications</h2><ul>{% for item in content.published_publications %}<li>{% include "documents/_cv_citation.html" with entry=item only %}</li>{% endfor %}</ul>{% endif %}
+{% if content.pending_publications %}<h2>Manuscripts Under Review and In Preparation</h2><ul>{% for item in content.pending_publications %}<li>{% include "documents/_cv_citation.html" with entry=item only %}</li>{% endfor %}</ul>{% endif %}

@@ -1,0 +1,12 @@
+I want to build a platform where I will provide students for some charge an agentic platform where:
+
+1. Based on the desires of a student find scholarship. We need to be good at searching. Scholarships can be different: govermental, specfic to a university, specific to a program, erasmus mundus programs, etc. We need to be able to find all of them, then check the eligibility based on the student's profile
+2. For each scholarship the website, procedure, filling form are different. Agent should be able to fill the form not dependant on the website, bypassing the bot checks. (aacounting for frequently change HTML structures, button selectors, or step transitions without notice) Also, there are some scholarships where you win and only then apply not to waste money of a student before application (We should ask a student whether he aims to only scholarship and can't afford without it or can). We need to be kind of consulting (I think for consultation we might charge a little money) a student at first, ask his budget that can be spent for university applications, asnwer his questions regarding the process or scholarship. At the end showing what we composed for a student based on countires applications and then roadmap for each of the university/scholarship at which stage we are. Taking into account some specific momemnts like TUM univesity in Germany has a tuition fee which is high which is not covered by DAAD scholarship. It will be a well designed website 
+3. Think about bypassing the verification cases and whether we can be 100% autonomous
+4. After the plan is approved we will restructure the CV and write a motivation letter (CV and motivation letter shouldn't be generic and they should be very well written, it shouldn't be one shot) tailored if necessary for each scholarship/university
+5. Then we create for a student a mail and using that mail apply to universities/scholarship that we proposed to a student (fill forms and etc)
+6. When our student is called for an interview tell him real pieces of advices tailored for each specific scholarship (not generic ones)
+7. We provide a comprehensive dashboard where if a document missing for any of the applicaiton or anything else happened or call for interview, everything is done from our dashboard (centralized) and we inform about that to a user
+8. Providing a mock interview opportunity for some money
+
+If successful then as a separate service on our platform I plan the same agentic plarform for fellowships and events that can boost applicants' CV

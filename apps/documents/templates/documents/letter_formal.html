@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="{{ content.language }}">
+<head><meta charset="utf-8"><style>{% include "documents/_letter_style.html" %}
+  .sender { margin-bottom: 18pt; white-space: pre-line; }
+  .place-date { text-align: right; margin-bottom: 18pt; }
+  .addressee { margin-bottom: 18pt; white-space: pre-line; }
+  .salutation, .closing { margin: 12pt 0; }
+  .signature { margin-top: 36pt; }
+</style></head>
+<body>
+  {# The sender block M-025 puts top-left, and the one letter_gates blocks a #}
+  {# letter for omitting when the programme requires it.                     #}
+  {% if content.header_block %}<div class="sender">{{ content.header_block }}</div>{% endif %}
+  {% if formality.place_and_date and place_and_date %}<div class="place-date">{{ place_and_date }}</div>{% endif %}
+  {% if addressee %}<div class="addressee">{{ addressee }}</div>{% endif %}
+  {% if formality.salutation %}<div class="salutation">{{ formality.salutation }}</div>{% endif %}
+  {% for unit in content.units %}<p>{{ unit.text }}</p>{% endfor %}
+  {% if formality.closing %}<div class="closing">{{ formality.closing }}</div>{% endif %}
+  {% if applicant_name %}<div class="signature">{{ applicant_name }}</div>{% endif %}
+</body>
+</html>

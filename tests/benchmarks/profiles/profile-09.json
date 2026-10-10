@@ -1,0 +1,30 @@
+{
+  "_synthetic": true,
+  "profile_id": "profile-09",
+  "consultant_reviewed": true,
+  "consultant_review_note": "SYNTHETIC placeholder review \u2014 NOT a real consultant-reviewed outcome.",
+  "reason_code": "DURATION_MISMATCH_AVOIDED",
+  "language": "English",
+  "city": "pl-warsaw",
+  "strategy": "BALANCED_FIT",
+  "duration_preference": "TWO_YEAR",
+  "duration_flexibility": "NON_NEGOTIABLE",
+  "recommended_opportunity_ids": [
+    "opp-h2"
+  ],
+  "verified_funded": true,
+  "aggregator_baseline_funded": false,
+  "claims": [
+    {
+      "claim": "Tuition fully waived (SYNTHETIC placeholder claim)",
+      "funding_claim": true,
+      "official_source_verified": true
+    },
+    {
+      "claim": "Program taught in the declared language (SYNTHETIC placeholder claim)",
+      "funding_claim": false,
+      "official_source_verified": true
+    }
+  ],
+  "notes": "Research-preparation student: thesis-intensive two-year program ranked higher."
+}

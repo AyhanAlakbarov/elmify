@@ -1,0 +1,12 @@
+<!doctype html><html><body>
+  <!-- Review R2 finding 1: email is the only real control on the page and
+       "Continue" is an <a>, not a button, so nothing else on the page ever
+       counted as "another control" -- the tied-error search climbed all the
+       way to <html> and counted this banner, which the form does not own. -->
+  <div role="alert">We use cookies to improve your experience.</div>
+  <form>
+    <label for="em">Email address</label>
+    <input id="em" name="email" type="email">
+  </form>
+  <a href="#" id="continue">Continue</a>
+</body></html>

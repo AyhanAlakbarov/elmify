@@ -1,0 +1,19 @@
+{
+ "number_of_results": 1,
+ "items": [
+  {
+   "id": "https://ror.org/014weej12",
+   "names": [
+    {"value": "Middle East Technical University", "types": ["ror_display", "label"], "lang": "en"},
+    {"value": "Orta Doğu Teknik Üniversitesi", "types": ["label"], "lang": "tr"},
+    {"value": "METU", "types": ["acronym"], "lang": null}
+   ],
+   "domains": ["metu.edu.tr"],
+   "links": [
+    {"type": "website", "value": "https://www.metu.edu.tr/"},
+    {"type": "wikipedia", "value": "https://en.wikipedia.org/wiki/Middle_East_Technical_University"}
+   ],
+   "status": "active"
+  }
+ ]
+}

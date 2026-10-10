@@ -1,0 +1,23 @@
+[
+  {"ParameterKey": "ProbeImage", "ParameterValue": "REPLACE_WITH_IMAGE_DIGEST_URI"},
+  {"ParameterKey": "AppImage", "ParameterValue": "REPLACE_WITH_IMAGE_DIGEST_URI"},
+  {"ParameterKey": "DomainName", "ParameterValue": "*.test.tehsil-agent.example"},
+  {"ParameterKey": "HostedZoneId", "ParameterValue": "REPLACE_WITH_HOSTED_ZONE_ID"},
+  {"ParameterKey": "AdditionalCertificateArns", "ParameterValue": ""},
+  {"ParameterKey": "DjangoAllowedHosts", "ParameterValue": ".test.tehsil-agent.example"},
+  {"ParameterKey": "WebDesiredCount", "ParameterValue": "1"},
+  {"ParameterKey": "WorkerDesiredCount", "ParameterValue": "1"},
+  {"ParameterKey": "DBInstanceClass", "ParameterValue": "db.t4g.micro"},
+  {"ParameterKey": "DBAllocatedStorage", "ParameterValue": "20"},
+  {"ParameterKey": "DBName", "ParameterValue": "tehsil"},
+  {"ParameterKey": "DBMasterUsername", "ParameterValue": "tehsil_admin"},
+  {"ParameterKey": "PortalImage", "ParameterValue": "REPLACE_WITH_IMAGE_DIGEST_URI"},
+  {"ParameterKey": "OcrImage", "ParameterValue": "REPLACE_WITH_IMAGE_DIGEST_URI"},
+  {"ParameterKey": "PortalDesiredCount", "ParameterValue": "0"},
+  {"ParameterKey": "LlmApiKeySecretArn", "ParameterValue": "REPLACE_WITH_SECRET_ARN"},
+  {"ParameterKey": "MailboxPushEnabled", "ParameterValue": "0"},
+  {"ParameterKey": "MicrosoftOAuthClientId", "ParameterValue": "REPLACE_WITH_MICROSOFT_CLIENT_ID"},
+  {"ParameterKey": "GoogleOAuthClientId", "ParameterValue": ""},
+  {"ParameterKey": "MailboxOAuthRedirectBase", "ParameterValue": "REPLACE_WITH_HTTPS_BASE_URL"},
+  {"ParameterKey": "MailboxOAuthClientSecretArn", "ParameterValue": "REPLACE_WITH_SECRET_ARN"}
+]

@@ -1,0 +1,33 @@
+from django.urls import path
+
+from .views import (
+    acknowledge_notification_view,
+    admin_support_grant,
+    counselor_dashboard,
+    mark_roadmap_item_done,
+    messages_page,
+    owner_dashboard,
+    send_student_message,
+    settings_page,
+    student_dashboard,
+)
+
+urlpatterns = [
+    path("counselor/", counselor_dashboard, name="concierge-counselor-dashboard"),
+    path(
+        "counselor/roadmap/<uuid:item_id>/done/",
+        mark_roadmap_item_done,
+        name="concierge-mark-roadmap-item-done",
+    ),
+    path("owner/", owner_dashboard, name="concierge-owner-dashboard"),
+    path("student/", student_dashboard, name="concierge-student-dashboard"),
+    path(
+        "student/notifications/<uuid:notification_id>/acknowledge/",
+        acknowledge_notification_view,
+        name="concierge-acknowledge-notification",
+    ),
+    path("student/settings/", settings_page, name="student-settings"),
+    path("student/messages/", messages_page, name="student-messages"),
+    path("student/messages/send/", send_student_message, name="concierge-send-student-message"),
+    path("admin/support-grant/", admin_support_grant, name="concierge-admin-support-grant"),
+]

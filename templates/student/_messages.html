@@ -1,0 +1,34 @@
+{% load dashboard %}
+<section aria-labelledby="mail-heading" id="messages">
+  <h2 id="mail-heading">Mail from universities and funders</h2>
+  {% for title, rows in mail_groups %}
+    <section>
+      <h3>{{ title }}</h3>
+      <ul>
+        {% for row in rows %}
+          {% with signal=row.signal %}
+          <li>
+            {{ signal.received_at|date:"j M Y H:i" }} — {{ signal.sender_domain }}:
+            {% if signal.label %}{% if signal.sender_authenticated %}{{ signal.get_label_display }}{% else %}the email reads: {{ signal.get_label_display }} (unverified){% endif %}{% elif row.reading == "pending" %}reading…{% elif row.reading == "metadata" %}wrote to you (this inbox connection does not read mail; open the email){% else %}wrote to you (open the email to read it){% endif %}
+            {% if signal.document_name %} — {% if signal.sender_authenticated %}asks for: {{ signal.document_name }}{% else %}the email reads: asks for {{ signal.document_name }} (unverified){% endif %}{% if signal.document_due %} by {{ signal.document_due|date:"j M Y" }}{% endif %}{% endif %}
+            {% if signal.interview_at %} — {% if signal.sender_authenticated %}interview on{% else %}the email reads: interview on{% endif %} {{ signal.interview_at|date:"j M Y, H:i e" }}{% if not signal.sender_authenticated %} (unverified){% endif %}{% endif %}
+            {% if signal.offered_programme %} — {% if signal.sender_authenticated %}offers a place in: {{ signal.offered_programme }}{% else %}the email reads: offers a place in {{ signal.offered_programme }} (unverified){% endif %}{% endif %}
+            {% if signal.outcome %} — {% if signal.sender_authenticated %}says: {{ outcome_labels|lookup:signal.outcome }}{% else %}the email reads: {{ outcome_labels|lookup:signal.outcome }} (unverified){% endif %}{% endif %}
+            {% if not signal.trusted %} (sender not verified: a suggestion only){% endif %}
+          </li>
+          {% endwith %}
+        {% endfor %}
+      </ul>
+    </section>
+  {% empty %}
+    <p>No mail recognised yet.{% if not has_mailbox %} Connect your inbox in Settings.{% endif %}</p>
+  {% endfor %}
+</section>
+<section aria-labelledby="conversation-heading">
+  <h2 id="conversation-heading">Your counsellor</h2>
+  {% for message in conversation %}
+    <p>{% if message.sender_id == message.student_id %}Student{% else %}Counsellor{% endif %}, {{ message.created_at|date:"j M H:i" }}: {{ message.body|linebreaksbr }}</p>
+  {% empty %}
+    <p>No messages yet.</p>
+  {% endfor %}
+</section>

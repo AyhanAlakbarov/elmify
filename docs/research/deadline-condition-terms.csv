@@ -1,0 +1,15 @@
+language,pattern,condition,source,verified_on
+en,\bnon[- ]?eu\b,APPLICANT_CLASS:NON_EU,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\beu\b,NATIONALITY:EU,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\binternational (?:students|applicants)\b,APPLICANT_CLASS:INTERNATIONAL,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\bdomestic (?:students|applicants)\b,APPLICANT_CLASS:DOMESTIC,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\bself[- ]funded\b,FUNDING:SELF_FUNDED,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\bscholarship (?:applicants|candidates)\b,FUNDING:SCHOLARSHIP,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\bnominat\w*,ROUTE:NOMINATION,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\bdirect (?:applicants|applications)\b,ROUTE:DIRECT,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\bround\s*(\d+),ROUND:{0},docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\bresiden(?:t|ts|ce)\b,RESIDENCE:*,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\boutside\b,OTHER,"review of 1a72ace, 2026-09-26: a negated place is never mapped (plan decision 9 records vocabulary as data)",2026-09-26
+en,\bother than\b,OTHER,"review of 1a72ace, 2026-09-26: a negated place is never mapped (plan decision 9 records vocabulary as data)",2026-09-26
+en,\bexcept\b,OTHER,"review of 1a72ace, 2026-09-26: a negated place is never mapped (plan decision 9 records vocabulary as data)",2026-09-26
+en,\bexcluding\b,OTHER,"review of 1a72ace, 2026-09-26: a negated place is never mapped (plan decision 9 records vocabulary as data)",2026-09-26

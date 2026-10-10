@@ -1,0 +1,14 @@
+<section aria-labelledby="board-heading">
+  <h2 id="board-heading">Your applications</h2>
+  {% if not board.cards %}<p>No applications yet. Add one from Programmes &amp; funding.</p>{% endif %}
+  {% for column, cards in board.columns %}
+    <section aria-labelledby="column-{{ column.key }}">
+      <h3 id="column-{{ column.key }}">{{ column }} ({{ cards|length }})</h3>
+      {% for card in cards %}
+        {% include "student/_card.html" %}
+      {% empty %}
+        <p>Nothing here.</p>
+      {% endfor %}
+    </section>
+  {% endfor %}
+</section>

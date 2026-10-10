@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Programmes &amp; funding{% endblock %}
+{% block head %}{% if research_pending %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
+{% block content %}
+  <h1>Programmes &amp; funding</h1>
+  {% if research_pending %}
+    <p role="status">We are still researching your programmes. This page reloads itself every 15 seconds.</p>
+  {% elif not pack %}
+    <p>No recommendations yet. Finish your <a href="/student/profile/">profile</a> to start.</p>
+  {% endif %}
+  {% include "student/_pack.html" %}
+{% endblock %}

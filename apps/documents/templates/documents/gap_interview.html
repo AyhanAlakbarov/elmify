@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}A few questions about your CV{% endblock %}
+{% block content %}
+  {% comment %}
+  Unstyled on purpose. Two things here are load-bearing rather than unfinished:
+
+  No input carries `required`. Every question is skippable and a blank is an
+  ordinary skip -- a browser-side requirement would refuse a submission the
+  server considers entirely valid.
+
+  Ids are positional (`q1`, `q2`) rather than the field name, which carries a
+  colon: valid in an HTML id, but it breaks bare CSS and querySelector.
+
+  base.html carries no text input, so the exact `<input type="text"` count in
+  tests/documents/test_gap_interview_view.py still counts questions only.
+  {% endcomment %}
+  <h1>A few questions about your CV</h1>
+  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+  {% if notes %}
+    <section>
+      <h2>Worth knowing</h2>
+      <p>Nothing to answer here -- these are for you and your counsellor.</p>
+      <ul>
+        {% for note in notes %}
+          <li>{{ note.text }} <small>{{ note.evidence }}</small></li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+  {% if fields %}
+    <p>Answer what you can. Anything you leave blank stays on the list.</p>
+    <form method="post">
+      {% csrf_token %}
+      {% for name, question in fields %}
+        <p>
+          <label for="q{{ forloop.counter }}">{{ question.prompt }}</label>
+          <small>{{ question.evidence }}</small>
+          <input type="text" id="q{{ forloop.counter }}" name="{{ name }}"{% if question.kind == "TIMELINE_GAP" %} list="gap-statements" maxlength="300"{% endif %}>
+        </p>
+      {% endfor %}
+      <button type="submit">Save answers</button>
+      {% comment %}
+         A gap question is the one question in this interview a student may
+         not want to answer, and it is also the one that cannot be dismissed:
+         it stops firing only when a fact covers the span. So the way to make
+         it go away is to answer it, and these are the answers -- S-045's
+         Cambridge guidance is "a simple statement, with a positive slant
+         where appropriate", warning in the same breath against "too much
+         honesty: don't dwell on perceived negatives". Military service is
+         here because R-042 requires it to be accounted for.
+
+         A datalist and not a select: the student may always type their own,
+         and a browser that does not support it renders an ordinary text box,
+         which is what this was before.
+
+         Whatever is picked here is what prints on the CV, verbatim -- see
+         verification.py's TIMELINE spec, which compares the statement.
+      {% endcomment %}
+      <datalist id="gap-statements">
+        <option value="Personal reasons."></option>
+        <option value="Career break."></option>
+        <option value="Full-time job-hunting."></option>
+        <option value="Family responsibilities."></option>
+        <option value="Illness, now recovered."></option>
+        <option value="Parental leave."></option>
+        <option value="Travel."></option>
+        <option value="Military service."></option>
+      </datalist>
+    </form>
+  {% endif %}
+  {% if not fields and not notes %}<p>Nothing to ask right now.</p>{% endif %}
+{% endblock %}

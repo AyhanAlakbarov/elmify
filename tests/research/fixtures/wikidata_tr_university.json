@@ -1,0 +1,25 @@
+{
+ "head": {"vars": ["item", "website", "name", "labels"]},
+ "results": {
+  "bindings": [
+   {
+    "item": {"type": "uri", "value": "http://www.wikidata.org/entity/Q1046474"},
+    "website": {"type": "uri", "value": "https://www.metu.edu.tr/"},
+    "name": {"xml:lang": "en", "type": "literal", "value": "Middle East Technical University"},
+    "labels": {"type": "literal", "value": "Middle East Technical University\tOrta Doğu Teknik Üniversitesi"}
+   },
+   {
+    "item": {"type": "uri", "value": "http://www.wikidata.org/entity/Q1060712"},
+    "website": {"type": "uri", "value": "https://www.boun.edu.tr/"},
+    "name": {"xml:lang": "en", "type": "literal", "value": "Boğaziçi University"},
+    "labels": {"type": "literal", "value": "Boğaziçi University\tBoğaziçi Üniversitesi"}
+   },
+   {
+    "item": {"type": "uri", "value": "http://www.wikidata.org/entity/Q1149530"},
+    "website": {"type": "uri", "value": "https://www.hacettepe.edu.tr/"},
+    "name": {"xml:lang": "en", "type": "literal", "value": "Hacettepe University"},
+    "labels": {"type": "literal", "value": "Hacettepe University\tHacettepe Üniversitesi"}
+   }
+  ]
+ }
+}

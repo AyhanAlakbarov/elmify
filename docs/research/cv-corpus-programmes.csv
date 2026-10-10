@@ -1,0 +1,46 @@
+id,institution,funder,seed_url,admissions_cycle,expected_outcome,strata,split
+mathmods,"MathMods (Università degli Studi dell'Aquila)",Erasmus Mundus,https://www.mathmods.eu,2026/27,found,,dev
+emship,EMship+,Erasmus Mundus,https://emship.eu,2026/27,found,,dev
+globed,GLOBED,Erasmus Mundus,https://globed.eu,2026/27,found,,dev
+i-mesc,i-MESC,Erasmus Mundus,https://i-mesc.eu,2026/27,found,,dev
+europubhealth,Europubhealth+,Erasmus Mundus,https://www.europubhealth.org,2026/27,found,,dev
+amir,AMIR,Erasmus Mundus,https://www.amir-em-master.com,2026/27,found,,dev
+emhrpp,EMHRPP,Erasmus Mundus,https://www.emhrpp.com,2026/27,found,,dev
+emjm-imaging,EMJM IMAGING,Erasmus Mundus,https://www.emjm-imaging.eu,2026/27,found,deep,dev
+we-team,WE-TEAM,Erasmus Mundus,https://we-team.education,2026/27,found,deep,dev
+membiomed,"MemBioMed (Université Côte d'Azur)",Erasmus Mundus,https://life.univ-cotedazur.eu/international/membiomed,2026/27,found,deep,dev
+daad-prime,DAAD PRIME,DAAD,https://www.daad.de/en/studying-in-germany/scholarships/daad-funding-programmes/prime/,2026/27,found,blocked;deep,dev
+fau-ai-msc,"FAU Erlangen-Nürnberg, M.Sc. Artificial Intelligence",,https://ai.study.fau.eu/,2026/27,found,,dev
+turkiye-burslari,Türkiye Bursları,Türkiye Bursları,https://www.turkiyeburslari.gov.tr,2026/27,no_cv,js_only;no_cv,dev
+sciencespo-graduate,"Sciences Po, graduate admissions",,https://www.sciencespo.fr/admissions/en/graduate/,2026/27,found,blocked;careers_decoy,dev
+ethz-master,"ETH Zürich, Master's programmes",,https://ethz.ch/en/studies/master.html,2026/27,found,deep,dev
+stipendium-hungaricum,Stipendium Hungaricum,Tempus Public Foundation,https://stipendiumhungaricum.hu,2026/27,found,in_template;deep,dev
+tudelft-master,"TU Delft, MSc programmes",,https://www.tudelft.nl/en/education/programmes/masters,2026/27,found,careers_decoy;deep,dev
+leiden-master,"Leiden University, Master's programmes",,https://www.universiteitleiden.nl/en/education/masters,2026/27,found,careers_decoy;deep,dev
+rhodes,Rhodes Scholarship,Rhodes Trust,https://www.rhodeshouse.ox.ac.uk,2026/27,found,deep,dev
+sisgp,Swedish Institute Scholarships for Global Professionals (SISGP),Swedish Institute,https://si.se/en/apply/scholarships/swedish-institute-scholarships-for-global-professionals,2026/27,found,in_template,dev
+eiffel-paris-saclay,France Excellence Eiffel Scholarship (Université Paris-Saclay),Campus France,https://www.universite-paris-saclay.fr/en/admission/bourses-et-aides-financieres/france-excellence-eiffel-scholarship,2026/27,found,in_template;non_english,dev
+fulbright-nepal,Fulbright Nepal (USEF Nepal),Fulbright Program,https://usefnepal.org/,2026/27,found,in_template;deep,dev
+chevening,Chevening Scholarships,Chevening (UK FCDO),https://www.chevening.org,2026/27,no_cv,no_cv,dev
+aalto-master,"Aalto University, Master's programmes",,https://www.aalto.fi/en/study-at-aalto/masters-in-finland-at-aalto-university,2026/27,found,deep,dev
+jasso,JASSO Scholarships,JASSO,https://www.jasso.go.jp/en/ryugaku/scholarship_j/index.html,2026/27,found,js_only;non_english,dev
+gks-korea,Global Korea Scholarship (GKS),NIIED / Global Korea Scholarship,https://www.studyinkorea.go.kr/en/main.do,2026/27,no_cv,no_cv;in_template,dev
+sbfi-swiss,Swiss Government Excellence Scholarships,SBFI,https://www.sbfi.admin.ch/en/swiss-government-excellence-scholarships,2026/27,found,non_english,dev
+mext-japan,Study in Japan / MEXT Scholarship,MEXT (Japan),https://www.studyinjapan.go.jp/en/planning/scholarships,2026/27,found,deep;non_english,dev
+daad-epos,DAAD EPOS Programme,DAAD,https://www.daad.de/en/information-services-for-higher-education-institutions/further-information-on-daad-programmes/epos,2026/27,found,blocked;in_template,dev
+emle,EMLE (European Master in Law and Economics),Erasmus Mundus,https://emle.org,2026/27,found,,dev
+uva-master,"University of Amsterdam, Master's programmes",,https://www.uva.nl/en/education/master-s/masters.html,2026/27,found,deep,heldout
+uu-master,"Utrecht University, Master's programmes",,https://www.uu.nl/en/masters,2026/27,found,,heldout
+vu-amsterdam-master,"Vrije Universiteit Amsterdam, Master's programmes",,https://vu.nl/en/education/master,2026/27,found,careers_decoy;deep,heldout
+lund-master,"Lund University, Master's programmes",,https://www.lunduniversity.lu.se/study/study-opportunities-lund-university/masters-degree-studies,2026/27,found,,heldout
+bergen-master,"University of Bergen, Master's programmes",,https://www.uib.no/en,2026/27,found,,heldout
+gemma,GEMMA (Erasmus Mundus Master's in Women's and Gender Studies),Erasmus Mundus,https://gemmaerasmusmundus.eu,2026/27,found,blocked,heldout
+imsiss,"IMSISS (International Master in Security, Intelligence and Strategic Studies)",Erasmus Mundus,https://www.securityintelligence-erasmusmundus.eu,2026/27,found,in_template,heldout
+ares-belgium,ARES (Académie de Recherche et d'Enseignement Supérieur),ARES / Belgian Development Cooperation,https://www.ares-ac.be/fr/bourses,2026/27,found,non_english,heldout
+czech-gov-scholarship,Czech Government Scholarships,"Ministry of Education, Youth and Sports (Czech Republic)",https://msmt.gov.cz/eu-and-international-affairs/scholarships-for-the-academic-year-2026-2027,2026/27,found,js_only,heldout
+lpdp-indonesia,LPDP (Indonesia Endowment Fund for Education),"Ministry of Finance, Indonesia",https://lpdp.kemenkeu.go.id,2026/27,found,non_english,heldout
+copenhagen-master,"University of Copenhagen, Master's programmes",,https://www.ku.dk/studies/masters,2026/27,found,,heldout
+goi-ies-tcd,Trinity College Dublin (Government of Ireland IES host),Government of Ireland / HEA,https://www.tcd.ie/study/international/scholarships/postgraduate/goi,2026/27,found,,heldout
+fulbright-pakistan,Fulbright Program Pakistan (USEFP),Fulbright Program,https://usefp.org,2026/27,no_cv,no_cv,heldout
+commonwealth-scholarship,Commonwealth Scholarship Commission (UK),Commonwealth Scholarship Commission / UK FCDO,https://cscuk.fcdo.gov.uk,2026/27,no_cv,no_cv,heldout
+invest-your-talent-italy,Invest Your Talent in Italy,Italian Ministry of Foreign Affairs / Uni-Italia,https://uni-italia.it/en/institutional/invest-your-talent-in-italy-en,2026/27,found,,heldout

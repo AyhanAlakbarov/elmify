@@ -1,0 +1,19 @@
+{
+  "_synthetic": true,
+  "city_id": "de-berlin",
+  "city_name": "Berlin",
+  "country_code": "DE",
+  "currency": "EUR",
+  "frugal_monthly_living_cost": "600.00",
+  "benefits": [
+    {
+      "benefit_name": "Local public-transport subsidy (synthetic placeholder)",
+      "amount": "40.00",
+      "currency": "EUR",
+      "evidence_note": "SYNTHETIC placeholder evidence, not a real official source citation.",
+      "capacity_limited": false,
+      "emergency_support": false,
+      "transferable_to_other_city": false
+    }
+  ]
+}

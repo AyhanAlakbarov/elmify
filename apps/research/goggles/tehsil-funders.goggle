@@ -1,0 +1,37 @@
+! name: Tehsil funders
+! description: Discards commercial scholarship aggregators and boosts institutional and funder hosts. Committed to the repo because a Goggle hosted elsewhere is configuration nobody can review.
+! public: true
+! author: Tehsil
+
+! Discard: aggregators describe funding they do not administer, so they can
+! route research and can never support a claim.
+$discard,site=mastersportal.com
+$discard,site=bachelorsportal.com
+$discard,site=scholarshipportal.com
+$discard,site=studyportals.com
+$discard,site=scholars4dev.com
+$discard,site=scholarshiproar.com
+$discard,site=scholarshipdb.net
+$discard,site=findamasters.com
+$discard,site=findaphd.com
+$discard,site=educations.com
+$discard,site=topuniversities.com
+$discard,site=hotcoursesabroad.com
+$discard,site=opportunitydesk.org
+$discard,site=youthop.com
+$discard,site=edumap.az
+$discard,site=xaricdetehsil.net
+
+! Boost: the hosts that administer money or teach.
+/scholarship$boost=2
+/stipendium$boost=2
+/burs$boost=2
+/təqaüd$boost=2
+.edu.$boost=3
+.ac.$boost=3
+.gov.$boost=3
+uni-$boost=2
+universit$boost=2
+stiftung$boost=3
+vakf$boost=3
+vakif$boost=3

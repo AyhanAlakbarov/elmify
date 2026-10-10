@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Tehsil Application Co-pilot",
+  "version": "0.1.0",
+  "description": "Fills your application form in your own browser. You press Submit.",
+  "background": { "service_worker": "service_worker.js" },
+  "action": { "default_title": "Tehsil co-pilot" },
+  "side_panel": { "default_path": "panel.html" },
+  "permissions": ["storage", "scripting", "activeTab", "sidePanel", "alarms"],
+  "host_permissions": [],
+  "optional_host_permissions": ["https://*/*"],
+  "icons": { "128": "icons/icon128.png" }
+}

@@ -1,0 +1,303 @@
+rule_id,catalog,document,operation,value,bound,note
+R-001,cv-rules,cv,other,,,"not a page rule: engine design (render per funder and portal)"
+R-002,cv-rules,cv,other,,,"not a page rule: defines the cv_format_requirement switch, which is the `format` sink itself"
+R-003,cv-rules,cv,format,europass_required,,
+R-004,cv-rules,cv,format,europass_required,,
+R-004,cv-rules,cv,include,personal.date_of_birth,,"age"
+R-004,cv-rules,cv,include,education.grade_native,,"cGPA"
+R-004,cv-rules,cv,other,,,"unapplied: institution recognition has no include target (eval sheet d2 is labelled unapplied)"
+R-005,cv-rules,cv,format,europass_required,,
+R-006,cv-rules,cv,format,any,,
+R-007,cv-rules,cv,format,any,,
+R-007,cv-rules,cv,limit,pages,maximum,
+R-008,cv-rules,cv,limit,pages,maximum,
+R-008,cv-rules,cv,student_action,,,"compile the whole application as one PDF in the stated order"
+R-008,cv-rules,cv,limit,megabytes,maximum,"the bundle's 10 MB, a necessary cap on the CV inside it"
+R-009,cv-rules,cv,other,,,"not a page rule: research caveat (EACEA delegates format to consortia)"
+R-010,cv-rules,cv,format,europass_required,,
+R-010,cv-rules,cv,order,cv:reverse_chronological,,
+R-010,cv-rules,cv,style,no_gaps,,
+R-010,cv-rules,cv,style,date_of_issue_required,,
+R-010,cv-rules,cv,student_action,,,"PDF only upload"
+R-011,cv-rules,cv,format,europass_preferred,,"'We recommend' Europass: preferred, never required"
+R-011,cv-rules,cv,style,no_gaps,,
+R-012,cv-rules,cv,limit,pages,maximum,
+R-012,cv-rules,cv,format,other_template,,"tabular form: any + UNDECIDED with the quote shown (the eval sheet labels tabular sentences unapplied)"
+R-013,cv-rules,cv,student_action,,,"convert to PDF before upload"
+R-014,cv-rules,cv,other,,,"unapplied: a list of sections the CV must contain; sections render when the ledger holds them and teaching has no section"
+R-015,cv-rules,cv,student_action,,,"type employment and education into the portal's structured fields"
+R-016,cv-rules,cv,student_action,,,"upload the PDF and complete the structured fields"
+R-017,cv-rules,cv,style,no_hyperlinks,,
+R-018,cv-rules,cv,student_action,,,"upload a CV to the University's applicant portal"
+R-019,cv-rules,cv,student_action,,,"structured experiences plus a final upload that cannot be replaced"
+R-020,cv-rules,cv,student_action,,,"upload legible complete PDF scans"
+R-020,cv-rules,cv,style,no_gaps,,
+R-021,cv-rules,cv,student_action,,,"upload the CV as a Slate material"
+R-022,cv-rules,cv,student_action,,,"enter qualifications as structured fields"
+R-023,cv-rules,cv,limit,pages,maximum,"track convention, expressible as a cap"
+R-024,cv-rules,cv,limit,pages,maximum,"track convention, expressible as a cap"
+R-025,cv-rules,cv,other,,,"not a page rule: an instruction to the engine about which convention applies"
+R-026,cv-rules,cv,emphasise,education,,"the grammar holds one foregrounded section, not a full section sequence"
+R-027,cv-rules,cv,emphasise,research,,"the grammar holds one foregrounded section, not a full section sequence"
+R-028,cv-rules,cv,include,education.thesis_title,,
+R-029,cv-rules,cv,order,cv:reverse_chronological,,"the tabular layout is render.py's country-mapped variant, not a page rule"
+R-030,cv-rules,cv,other,,,"not a page rule: a customary photo that is not required"
+R-031,cv-rules,cv,style,signature_required,,"German custom; no funder verified as requiring it"
+R-032,cv-rules,cv,style,photo_forbidden,,
+R-032,cv-rules,cv,style,date_of_birth_forbidden,,
+R-033,cv-rules,cv,other,,,"not a page rule: Europass's optional fields"
+R-034,cv-rules,cv,include,education.degree_english,,
+R-035,cv-rules,cv,include,education.institution_english,,
+R-036,cv-rules,cv,include,education.grade_native,,
+R-037,cv-rules,cv,other,,,"not a page rule: the platform never converts a grade (gaps.py)"
+R-038,cv-rules,cv,include,education.ects_credits,,
+R-039,cv-rules,cv,include,education.thesis_title,,
+R-039,cv-rules,cv,include,research.supervisor,,
+R-040,cv-rules,cv,other,,,"unapplied: no include target names an expected graduation date; the entry's end date carries it when the ledger holds one"
+R-041,cv-rules,cv,other,,,"not a page rule: language-level presentation convention (S-014)"
+R-042,cv-rules,cv,style,no_gaps,,
+R-043,cv-rules,cv,other,,,"not a page rule: renderer property (text-layer PDF) satisfied by construction"
+R-044,cv-rules,cv,other,,,"not a page rule: renderer property satisfied by construction"
+R-045,cv-rules,cv,other,,,"unapplied: paper size has no slot and no sink; the renderer's page size is fixed"
+R-046,cv-rules,cv,other,,,"not a page rule: date-format convention"
+R-047,cv-rules,cv,student_action,,,"upload unencrypted and follow the portal's file naming"
+R-048,cv-rules,cv,limit,megabytes,maximum,
+R-049,cv-rules,cv,other,,,"not a page rule: renderer property (embedded fonts)"
+R-050,cv-rules,cv,student_action,,,"comply with the application's AI attestation"
+R-051,cv-rules,cv,other,,,"not a page rule: track convention on referees"
+R-052,cv-rules,cv,other,,,"writing quality: quantified outcomes"
+R-053,cv-rules,cv,other,,,"not a page rule: renderer design"
+R-054,cv-rules,cv,other,,,"not a page rule: an instruction to the engine"
+R-055,cv-rules,cv,other,,,"writing quality: no ATS keyword optimisation"
+R-056,cv-rules,cv,format,europass_required,,
+R-057,cv-rules,cv,format,europass_required,,
+R-057,cv-rules,cv,limit,pages,maximum,
+R-058,cv-rules,cv,format,europass_required,,
+R-059,cv-rules,cv,format,europass_required,,
+R-060,cv-rules,cv,format,europass_preferred,,
+R-060,cv-rules,cv,limit,megabytes,maximum,
+R-061,cv-rules,cv,include,experience.city,,
+R-061,cv-rules,cv,include,experience.country,,
+R-062,cv-rules,cv,format,europass_preferred,,
+R-063,cv-rules,cv,format,any,,
+R-064,cv-rules,cv,format,other_template,,"funder template; hand-seeded funder_template, never derived"
+R-065,cv-rules,cv,format,other_template,,"funder template; hand-seeded funder_template, never derived"
+R-066,cv-rules,cv,format,other_template,,"funder template; hand-seeded funder_template, never derived"
+R-067,cv-rules,cv,limit,megabytes,maximum,"a KB figure is `other`; read as MB it is dropped by the plausibility band"
+R-068,cv-rules,cv,other,,,"not a page rule: filename hygiene on regeneration"
+R-069,cv-rules,cv,other,,,"not a page rule: an optional header line"
+R-070,cv-rules,cv,other,,,"not a page rule: renderer capability"
+R-071,cv-rules,cv,student_action,,,"complete the structured education block"
+R-072,cv-rules,cv,language,fr/en,,
+R-072,cv-rules,cv,limit,pages,maximum,
+R-073,cv-rules,cv,student_action,,,"no CV; type the history into DreamApply's structured sections"
+R-074,cv-rules,cv,other,,,"not a page rule: a reading caution (portal photo is not a CV photo)"
+R-075,cv-rules,cv,format,any,,
+R-076,cv-rules,cv,student_action,,,"no CV; history goes into the ICT system fields"
+R-077,cv-rules,cv,other,,,"not a page rule: resolve per host university"
+R-078,cv-rules,cv,limit,pages,maximum,
+R-078,cv-rules,cv,order,cv:reverse_chronological,,
+R-078,cv-rules,cv,format,other_template,,"the per-section entry cap lives inside the SISGP template, which the hand-seeded funder renderer holds"
+R-078,cv-rules,cv,student_action,,,"export to PDF and delete the instruction page"
+R-079,cv-rules,cv,include,personal.sex,,
+R-079,cv-rules,cv,include,personal.date_of_birth,,
+R-079,cv-rules,cv,include,personal.citizenship,,
+R-080,cv-rules,cv,limit,pages,maximum,
+R-080,cv-rules,cv,format,other_template,,
+R-081,cv-rules,cv,other,,,"not a page rule: renderer design"
+R-082,cv-rules,cv,limit,megabytes,maximum,
+R-082,cv-rules,cv,student_action,,,"PDF, not encrypted"
+R-083,cv-rules,cv,other,,,"not a page rule: renderer design"
+R-084,cv-rules,cv,other,,,"not a page rule: renderer design"
+R-085,cv-rules,cv,other,,,"writing quality: objectives belong in the statement"
+R-086,cv-rules,cv,other,,,"writing quality: no job objective"
+R-087,cv-rules,cv,student_action,,,"AI must not be used: the applicant writes it unaided; the ai_use_policy class stays reference data (letter_ai_policy.py)"
+R-088,cv-rules,cv,student_action,,,"per-document AI policy; acknowledge AI use where permitted"
+R-089,cv-rules,cv,other,,,"not a page rule: inheritance inferred by the catalog, not stated on Gates' pages"
+R-090,cv-rules,cv,student_action,,,"AI may research, not generate"
+R-091,cv-rules,motivation_letter,student_action,,,"AI prohibited for the essays"
+R-092,cv-rules,cv,student_action,,,"a negative attestation on the application form"
+R-093,cv-rules,cv,other,,,"not a page rule: research record of where no policy was found"
+S-001,cv-style-rules,cv,order,cv:reverse_chronological,,
+S-001,cv-style-rules,cv,emphasise,education,,
+S-002,cv-style-rules,cv,style,font_size_minimum,,
+S-003,cv-style-rules,cv,style,margins,,"unapplied: no CV margin key; the grammar types it and nothing renders it"
+S-004,cv-style-rules,cv,style,font_family,,
+S-005,cv-style-rules,cv,other,,,"not a page rule: house style (name size)"
+S-006,cv-style-rules,cv,other,,,"not a page rule: house style (headers)"
+S-007,cv-style-rules,cv,other,,,"not a page rule: house style (entry alignment)"
+S-008,cv-style-rules,cv,format,other_template,,"tabellarischer Lebenslauf: any + UNDECIDED with the quote shown (eval sheet goettingen-de)"
+S-009,cv-style-rules,cv,limit,pages,maximum,"the fill-the-last-page half is min_final_page_fill, catalog-only"
+S-010,cv-style-rules,cv,other,,,"not a page rule: house style (bullets)"
+S-011,cv-style-rules,cv,other,,,"unapplied: a citation style has no slot (spec §6.5's own example)"
+S-012,cv-style-rules,cv,other,,,"writing quality: publications section is conditional"
+S-013,cv-style-rules,cv,include,personal.orcid,,
+S-014,cv-style-rules,cv,other,,,"not a page rule: house style (language levels)"
+S-015,cv-style-rules,cv,style,photo_forbidden,,
+S-016,cv-style-rules,cv,other,,,"not a page rule: house style (justification)"
+S-017,cv-style-rules,cv,limit,pages,maximum,"soft default, expressible as a cap"
+S-018,cv-style-rules,cv,limit,pages,maximum,"soft default, expressible as a cap"
+S-019,cv-style-rules,cv,format,any,,
+S-019,cv-style-rules,cv,student_action,,,"obey the programme's file-naming convention"
+S-020,cv-style-rules,cv,emphasise,publications,,
+S-021,cv-style-rules,cv,format,other_template,,"the narrative CV is a named form other than Europass; a watch item, not a master's default"
+S-022,cv-style-rules,cv,other,,,"not a page rule: reader evidence"
+S-023,cv-style-rules,cv,other,,,"not a page rule: house style (page furniture)"
+S-024,cv-style-rules,cv,other,,,"not a page rule: reader evidence"
+S-025,cv-style-rules,cv,other,,,"writing quality: skills section"
+S-026,cv-style-rules,cv,other,,,"writing quality: action verbs and outcome-first phrasing; the generator's prompt carries it"
+S-027,cv-style-rules,cv,include,education.grade_native,,
+S-028,cv-style-rules,cv,include,experience.supervisor,,
+S-029,cv-style-rules,cv,other,,,"writing quality: discipline-switch applicant"
+S-030,cv-style-rules,cv,other,,,"not a page rule: house structure (presentations section)"
+S-031,cv-style-rules,cv,other,,,"not a page rule: renderer property (contact in body)"
+S-032,cv-style-rules,cv,other,,,"not a page rule: resolved as not binding (see S-008)"
+S-033,cv-style-rules,cv,other,,,"not a page rule: date-format convention"
+S-034,cv-style-rules,cv,other,,,"not a page rule: house style (entry header)"
+S-035,cv-style-rules,cv,other,,,"writing quality: awarding body"
+S-036,cv-style-rules,cv,other,,,"not a page rule: a record of sections CVContent cannot hold"
+S-037,cv-style-rules,cv,include,education.thesis_title,,
+S-038,cv-style-rules,cv,include,experience.project,,
+S-038,cv-style-rules,cv,include,experience.city,,
+S-039,cv-style-rules,cv,other,,,"not a page rule: platform guidance on adding sections"
+S-040,cv-style-rules,cv,include,education.thesis_title,,"the supervisor half is research.supervisor"
+S-041,cv-style-rules,cv,other,,,"writing quality: how a gap entry is worded (the rule it serves is no_gaps)"
+S-042,cv-style-rules,cv,other,,,"not a page rule: research record"
+S-043,cv-style-rules,cv,other,,,"not a page rule: house style (Cambridge booklet)"
+S-044,cv-style-rules,cv,other,,,"writing quality: profile and personal details"
+S-045,cv-style-rules,cv,other,,,"writing quality: gap and weak-result wording"
+S-046,cv-style-rules,cv,other,,,"not a page rule: research record (discipline differences)"
+S-047,cv-style-rules,cv,style,no_gaps,,"ETH, TUM, Harvard GSD"
+S-047,cv-style-rules,cv,format,other_template,,"ETH table form / TUM tabular"
+S-047,cv-style-rules,cv,style,font_family,,"TUM Times New Roman or Arial"
+S-047,cv-style-rules,cv,style,font_size_minimum,,"TUM 12 point"
+S-047,cv-style-rules,cv,style,margins,,"unapplied: TUM 2 cm; no CV margin key"
+S-047,cv-style-rules,cv,style,line_spacing,,"unapplied: TUM 1.5; no CV line-spacing key"
+S-047,cv-style-rules,cv,include,personal.date_of_birth,,
+S-047,cv-style-rules,cv,other,,,"unapplied: history from secondary or elementary school has no field; teaching-language names no language"
+S-048,cv-style-rules,cv,other,,,"not a page rule: house style (Harvard GSAS guide)"
+S-049,cv-style-rules,cv,other,,,"writing quality: research position titles"
+S-050,cv-style-rules,cv,other,,,"not a page rule: counsellor questions"
+L-001,letter-rules,motivation_letter,form,portal_form,,
+L-002,letter-rules,motivation_letter,topic,,,"150 words per response: a section_limit figure, kept as a topic (grammar.NOTE_BOUNDS)"
+L-003,letter-rules,motivation_letter,language,en,,
+L-004,letter-rules,motivation_letter,other,,,"not a page rule: catalog risk classification"
+L-005,letter-rules,motivation_letter,other,,,"writing quality: evidence-backed claims"
+L-006,letter-rules,motivation_letter,topic,,,"home-country ties the letter must address"
+L-007,letter-rules,motivation_letter,other,,,"not a page rule: applicability date"
+L-008,letter-rules,motivation_letter,limit,words,minimum,
+L-008,letter-rules,motivation_letter,language,zh/en,,
+L-009,letter-rules,motivation_letter,other,,,"not a page rule: records the absence of headings"
+L-010,letter-rules,other,other,,,"another document: the pre-admission notice; a document=other rule binds nothing by design"
+L-011,letter-rules,motivation_letter,format,other_template,,"MEXT's prescribed form: a student action (use the form)"
+L-012,letter-rules,motivation_letter,limit,pages,maximum,
+L-012,letter-rules,motivation_letter,language,ja/en,,
+L-013,letter-rules,motivation_letter,student_action,,,"own unplagiarised work, printed on the form the applicant signs"
+L-014,letter-rules,motivation_letter,topic,,,
+L-015,letter-rules,motivation_letter,topic,,,
+L-016,letter-rules,motivation_letter,limit,characters,maximum,
+L-017,letter-rules,motivation_letter,topic,,,
+L-018,letter-rules,motivation_letter,other,,,"not a requirement: a disqualification sanction"
+L-019,letter-rules,motivation_letter,form,portal_form,,
+L-019,letter-rules,motivation_letter,topic,,,"four questions, 2,000 characters each (section_limit)"
+L-020,letter-rules,motivation_letter,form,portal_form,,
+L-020,letter-rules,motivation_letter,topic,,,
+L-020,letter-rules,motivation_letter,language,en,,
+L-021,letter-rules,motivation_letter,student_action,,,"no paid third party writes it"
+L-022,letter-rules,motivation_letter,form,portal_form,,
+L-022,letter-rules,motivation_letter,topic,,,"per-question character caps (section_limit)"
+L-023,letter-rules,motivation_letter,limit,words,maximum,
+L-023,letter-rules,motivation_letter,topic,,,"the 450-word academic statement is another_statement"
+L-024,letter-rules,motivation_letter,student_action,,,"own-work attestation and disclosure"
+L-025,letter-rules,motivation_letter,student_action,,,"AI disclosure note"
+L-025,letter-rules,motivation_letter,style,signed_declaration,,"Declaration of Authenticity"
+L-026,letter-rules,motivation_letter,limit,pages,maximum,
+L-026,letter-rules,motivation_letter,limit,pages,minimum,"unapplied: no column holds a page floor (fix round 1, finding 3)"
+L-026,letter-rules,motivation_letter,topic,,,
+L-027,letter-rules,motivation_letter,limit,pages,maximum,
+L-027,letter-rules,motivation_letter,student_action,,,"hand-signed"
+L-027,letter-rules,motivation_letter,topic,,,
+L-028,letter-rules,motivation_letter,other,,,"writing quality: DAAD craft sheet (eval E-002 is untypeable)"
+L-029,letter-rules,motivation_letter,topic,,,"four parts with section_limit caps"
+L-030,letter-rules,motivation_letter,topic,,,
+L-030,letter-rules,motivation_letter,naming,forbidden,,"do not name preferred universities or faculty (eval E-049)"
+L-031,letter-rules,motivation_letter,limit,pages,minimum,"unapplied: no column holds a page floor"
+L-031,letter-rules,motivation_letter,style,font_family,,
+L-031,letter-rules,motivation_letter,style,font_size_minimum,,
+L-031,letter-rules,motivation_letter,language,en/hu,,
+L-032,letter-rules,motivation_letter,form,portal_form,,
+L-032,letter-rules,motivation_letter,topic,,,
+L-032,letter-rules,motivation_letter,language,tr/ar/en/fr/ru/bs/fa/es,,
+L-033,letter-rules,motivation_letter,limit,pages,maximum,
+L-033,letter-rules,motivation_letter,topic,,,
+L-033,letter-rules,motivation_letter,language,en/fr/de/it,,
+L-034,letter-rules,motivation_letter,language,fr/en,,
+L-034,letter-rules,motivation_letter,limit,pages,maximum,
+L-035,letter-rules,motivation_letter,limit,characters,maximum,
+L-035,letter-rules,motivation_letter,form,portal_form,,
+L-036,letter-rules,motivation_letter,limit,words,maximum,
+L-036,letter-rules,other,other,,,"another document: the video essay; a document=other rule binds nothing by design"
+L-037,letter-rules,motivation_letter,limit,words,maximum,"per consortium (IMSISS 600 words, MAPP 500)"
+L-038,letter-rules,motivation_letter,limit,characters,maximum,
+L-038,letter-rules,motivation_letter,limit,pages,maximum,
+L-038,letter-rules,motivation_letter,style,font_size_minimum,,
+L-038,letter-rules,motivation_letter,style,line_spacing,,
+L-038,letter-rules,motivation_letter,topic,,,
+L-039,letter-rules,motivation_letter,limit,characters,maximum,
+L-039,letter-rules,motivation_letter,language,en,,
+L-039,letter-rules,motivation_letter,student_action,,,"no AI, no ghost-writing"
+L-040,letter-rules,motivation_letter,topic,,,"a sanction on exceeding the length is a tolerance-like condition, a topic by the operation criteria"
+L-040,letter-rules,motivation_letter,student_action,,,"entirely own work"
+L-041,letter-rules,motivation_letter,student_action,,,"AI prohibited: the applicant writes it unaided; ai_use_policy stays reference data (letter_ai_policy.py)"
+L-042,letter-rules,motivation_letter,other,,,"not a requirement: a fraud sanction on the whole application"
+L-043,letter-rules,motivation_letter,form,portal_form,,
+L-044,letter-rules,motivation_letter,limit,characters,maximum,
+L-044,letter-rules,motivation_letter,limit,words,minimum,
+L-044,letter-rules,motivation_letter,limit,words,maximum,
+L-045,letter-rules,motivation_letter,topic,,,
+L-046,letter-rules,motivation_letter,limit,words,maximum,
+L-046,letter-rules,motivation_letter,style,font_size_minimum,,
+L-046,letter-rules,motivation_letter,style,margins,,"1-inch: rule_sinks refuses an inch as a centimetre and keeps it as a written requirement"
+L-046,letter-rules,motivation_letter,style,line_spacing,,
+L-047,letter-rules,motivation_letter,limit,words,maximum,
+L-047,letter-rules,motivation_letter,topic,,,
+L-048,letter-rules,motivation_letter,topic,,,
+L-048,letter-rules,motivation_letter,limit,words,maximum,
+L-048,letter-rules,motivation_letter,naming,required,,
+L-049,letter-rules,motivation_letter,limit,pages,maximum,
+L-049,letter-rules,motivation_letter,limit,words,maximum,
+L-049,letter-rules,motivation_letter,style,font_family,,
+L-049,letter-rules,motivation_letter,style,font_size_minimum,,
+L-049,letter-rules,motivation_letter,style,line_spacing,,
+L-050,letter-rules,motivation_letter,topic,,,"the scoring criteria are subjects the letter addresses"
+L-051,letter-rules,motivation_letter,other,,,"not a page rule: scoring weights"
+L-052,letter-rules,motivation_letter,other,,,"not a page rule: assessment order"
+L-053,letter-rules,motivation_letter,limit,words,maximum,
+L-053,letter-rules,motivation_letter,language,en,,
+L-053,letter-rules,motivation_letter,topic,,,
+L-054,letter-rules,motivation_letter,other,,,"page fact: whether a letter is required is read_page_facts' letter_required question, not a rule operation"
+L-055,letter-rules,motivation_letter,limit,words,approximate,
+L-055,letter-rules,motivation_letter,topic,,,
+L-056,letter-rules,motivation_letter,form,portal_form,,
+L-056,letter-rules,motivation_letter,limit,words,maximum,
+L-056,letter-rules,motivation_letter,topic,,,"per-answer caps (section_limit)"
+L-057,letter-rules,motivation_letter,other,,,"unapplied: a bold header naming university and programme has no style value and no LetterShape field"
+L-058,letter-rules,other,other,,,"another document: a study-permit letter of explanation; a document=other rule binds nothing by design"
+L-059,letter-rules,motivation_letter,student_action,,,"no AI or digital editing of documents"
+L-060,letter-rules,motivation_letter,other,,,"not a page rule: research record on similarity screening"
+L-061,letter-rules,motivation_letter,other,,,"writing quality: programme-specific content"
+L-062,letter-rules,motivation_letter,other,,,"writing quality: craft guidance"
+L-063,letter-rules,motivation_letter,language,zh/en,,"a catalog summary; each funder's line is its own language rule"
+L-064,letter-rules,motivation_letter,other,,,"not a page rule: prompt classification"
+L-065,letter-rules,motivation_letter,form,portal_form,,"structural kinds map onto form: short-answer sets are portal_form, continuous letters essay"
+L-066,letter-rules,motivation_letter,form,portal_form,,
+L-066,letter-rules,motivation_letter,language,ru/en,,
+L-067,letter-rules,motivation_letter,other,,,"not a page rule: catalog summary of AI-policy classes"
+L-068,letter-rules,motivation_letter,language,en,,"the essays are typed into a form that must be in English"
+L-069,letter-rules,motivation_letter,form,essay,,
+L-069,letter-rules,motivation_letter,limit,pages,maximum,
+L-070,letter-rules,motivation_letter,form,portal_form,,
+L-070,letter-rules,motivation_letter,topic,,,"per-field character caps (section_limit)"
+L-071,letter-rules,motivation_letter,other,,,"not a page rule: guidance on how intentions are assessed"
+L-072,letter-rules,motivation_letter,other,,,"writing quality: master's statement structure"
+L-073,letter-rules,motivation_letter,other,,,"writing quality: three named failure modes"

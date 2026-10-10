@@ -1,0 +1,15 @@
+slug,role,enic_naric_page,named_by_hand_because,data_url,format,encoding,records_path,name_field,website_field,id_field,id_scheme,list_anchor,max_bytes
+az_heis,curated_list,,,,,,,,,,,,
+tr_heis,curated_list,,,,,,,,,,,,
+igo_regional_global,curated_list,,,,,,,,,,,,
+az_outbound_gov,curated_list,,,,,,,,,,,,
+az_bilateral,curated_list,,,,,,,,,,,,
+tr_bilateral,curated_list,,,,,,,,,,,,
+national_scholarship_agencies,curated_list,,,,,,,,,,,,
+eacea_emjm,funder_list,,,,,,,,,,,,
+gb_ofs_register,register,https://www.enic-naric.net/page-United-Kingdom,,https://register-api.officeforstudents.org.uk/api/Provider,json_list,utf-8,,LegalName,Website,Ukprn,UKPRN,,4000000
+gb_sfc_universities,register,,"ENIC-NARIC's UK page links gov.scot's universities policy page, not a register; SFC's list of the universities it funds is Scotland's list of degree-awarding bodies (measured 2026-09-26)",https://www.sfc.ac.uk/our-funding/university-funding/,html_list,utf-8,,,,,,We currently provide funding to,
+kr_univ_info,register,,"Korea is outside the ENIC-NARIC network; spec §5.1 names data.go.kr dataset #15107736 (university information, KOGL, compiled by 한국대학교육협의회); anonymous standard-data download, JSON served as text/html (measured 2026-09-26)",https://www.data.go.kr/download/standard.json?publicDataPk=15107736&colNmList=SCHL_NM&colNmList=SCHL_ENG_NM&colNmList=MAINBRANCH_NM&colNmList=UNIV_SE_NM&colNmList=SCHL_SE_NM&colNmList=FNDN_FORM_SE_NM&colNmList=CTPV_NM&colNmList=HMPG_ADDR&colNmList=FNDN_YMD&colNmList=CRTR_YMD&totalCount=1995&svcTableNm=tn_pubr_public_univ_info_svc&perPage=10000&page=1,json_list,utf-8,,SCHL_NM,HMPG_ADDR,SCHL_NM+MAINBRANCH_NM,,,3000000
+de_hochschulkompass,register,https://www.enic-naric.net/page-Germany,,https://hs-kompass.de/kompass/xml/download/hs_liste.txt,tsv,cp1252,,Hochschulname,Home Page,Hs-Nr.,,,500000
+tr_yok_state,register,,"ENIC-NARIC's Türkiye page links studyinturkiye, not a register; YÖK authorises every Turkish university and prints each one's website on its state-university list, one card per university (measured 2026-09-27)",https://www.yok.gov.tr/tr/university?type=1,html_records,utf-8,"//div[contains(concat(' ', normalize-space(@class), ' '), ' university-card-uni ')]",.//h3,".//div[contains(@class, 'detail-label-uni')][normalize-space() = 'Web Sitesi:']/following-sibling::*[1][contains(@class, 'detail-value-uni')]//a/@href",,,,
+tr_yok_foundation,register,,"ENIC-NARIC's Türkiye page links studyinturkiye, not a register; YÖK authorises every Turkish university and prints each one's website on its foundation-university list, one card per university (measured 2026-09-27)",https://www.yok.gov.tr/tr/university?type=2,html_records,utf-8,"//div[contains(concat(' ', normalize-space(@class), ' '), ' university-card-uni ')]",.//h3,".//div[contains(@class, 'detail-label-uni')][normalize-space() = 'Web Sitesi:']/following-sibling::*[1][contains(@class, 'detail-value-uni')]//a/@href",,,,

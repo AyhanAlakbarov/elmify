@@ -1,0 +1,24 @@
+{% extends "documents/cv_base.html" %}
+
+{% block summary %}{% if content.summary %}<h2>About Me</h2><p>{{ content.summary }}</p>{% endif %}{% endblock %}
+
+
+{% block languages %}
+{% if content.languages %}<h2>Languages</h2>
+<table class="languages">
+  <thead><tr>
+    <th>Language</th><th>Listening</th><th>Reading</th><th>Spoken interaction</th>
+    <th>Spoken production</th><th>Writing</th><th>Certificate</th>
+  </tr></thead>
+  <tbody>
+    {% for entry in content.languages %}
+    <tr>
+      <td>{{ entry.language }}{% if entry.mother_tongue %} (native){% endif %}</td>
+      {% for label, level in entry.self_assessment %}<td>{{ level|default:"" }}</td>{% endfor %}
+      <td>{% if entry.test_name %}{{ entry.test_name }}{% if entry.test_score %} {{ entry.test_score }}{% endif %}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

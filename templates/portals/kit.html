@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load dashboard %}
+{% block title %}Application Kit{% endblock %}
+{% block content %}
+  <h1>Application Kit</h1>
+  <p>Everything you need to apply{% if kit.portal_host %} on {{ kit.portal_host }}{% endif %}. You can copy each answer by hand on any device.</p>
+  {% if kit.deadline %}<p>Deadline: {{ kit.deadline|date:"j M Y, H:i" }}{% if kit.deadline_timezone %} ({{ kit.deadline_timezone }}){% endif %}</p>{% endif %}
+  {% if kit.apply_with_email %}<p>Register with this email address: {{ kit.apply_with_email }}</p>{% endif %}
+  {% if not_fillable_text %}<p role="status">{{ not_fillable_text }}</p>{% endif %}
+  {% if start_url %}
+    <form method="post" action="{{ start_url }}">{% csrf_token %}<button type="submit">Start application</button></form>
+  {% endif %}
+  {% with url=kit.form_url|https_only %}{% if url %}<p><a href="{{ url }}">Open the portal</a></p>{% endif %}{% endwith %}
+
+  <h2>Questions and your answers</h2>
+  {% if kit.questions %}
+    <dl>
+      {% for question in kit.questions %}
+        <dt>{{ question.label }}</dt>
+        <dd>{% if question.missing %}missing — answer it in your profile or the gap interview{% else %}{{ question.answer }}{% endif %}</dd>
+      {% endfor %}
+    </dl>
+  {% else %}
+    <p>No answers yet. Finish your profile first.</p>
+  {% endif %}
+
+  <h2>What the programme requires</h2>
+  {% if kit.requirements %}
+    <ul>{% for requirement in kit.requirements %}<li>{{ requirement }}</li>{% endfor %}</ul>
+  {% else %}
+    <p>We have not read the programme's requirements yet.</p>
+  {% endif %}
+
+  {% if kit.your_actions %}
+    <h2>Only you can do these</h2>
+    {% if kit.letter_cycle %}<p>Read for the {{ kit.letter_cycle }} cycle.</p>{% endif %}
+    <ul>
+      {% for item in kit.your_actions %}
+        <li>{{ item.text }}{% with url=item.source_url|https_only %}{% if url %} (<a href="{{ url }}">source</a>){% endif %}{% endwith %}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  <h2>Documents</h2>
+  {% if kit.documents %}
+    <ul>{% for document in kit.documents %}<li><a href="{{ document.download_path }}">{{ document.filename }}</a></li>{% endfor %}</ul>
+  {% else %}
+    <p>No approved document yet. See Documents.</p>
+  {% endif %}
+{% endblock %}

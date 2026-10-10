@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Recommendations{% endblock %}
+{% block content %}
+  <h1>Recommendations, version {{ pack.version }}</h1>
+  <h2>In the pack</h2>
+  <ul>
+    {% for member in pool %}<li>{{ member.candidate.program_name }} — {{ member.candidate.evidence.claim }}</li>{% empty %}<li>Empty.</li>{% endfor %}
+  </ul>
+  <h2>Being checked</h2>
+  {% for candidate in checking %}
+    <section>
+      <h3>{{ candidate.program_name }}</h3>
+      <form method="post" action="{% url 'counselor-resolve-named-program' pack.run_id candidate.id %}">
+        {% csrf_token %}
+        {% if error and error_form == candidate.id|stringformat:"s" %}<p role="alert">{{ error }}</p>{% endif %}
+        <p>
+          <label for="eligible-{{ candidate.id }}">Eligible?</label>
+          <select id="eligible-{{ candidate.id }}" name="eligible"><option value="true">Yes</option><option value="false">No</option></select>
+        </p>
+        <p>
+          <label for="reason-{{ candidate.id }}">Why</label>
+          <input type="text" id="reason-{{ candidate.id }}" name="reason" value="{% if error_form == candidate.id|stringformat:'s' %}{{ form_values.reason }}{% endif %}">
+        </p>
+        <p>
+          <label for="source-{{ candidate.id }}">Official source (https)</label>
+          <input type="url" id="source-{{ candidate.id }}" name="source_url" value="{% if error_form == candidate.id|stringformat:'s' %}{{ form_values.source_url }}{% endif %}">
+        </p>
+        <button type="submit">Record</button>
+      </form>
+    </section>
+  {% empty %}
+    <p>Nothing is being checked.</p>
+  {% endfor %}
+  <h2>Programmes the student named</h2>
+  <ul>
+    {% for candidate, note in named %}<li>{{ candidate.program_name }} — {{ note }}</li>{% empty %}<li>None.</li>{% endfor %}
+  </ul>
+{% endblock %}

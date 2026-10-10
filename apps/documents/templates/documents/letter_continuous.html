@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="{{ content.language }}">
+<head><meta charset="utf-8"><style>{% include "documents/_letter_style.html" %}
+  .header-block { font-weight: bold; margin-bottom: 12pt; }
+</style></head>
+<body>
+  {% if content.header_block %}<div class="header-block">{{ content.header_block }}</div>{% endif %}
+  {% for unit in content.units %}<p>{{ unit.text }}</p>{% endfor %}
+</body>
+</html>

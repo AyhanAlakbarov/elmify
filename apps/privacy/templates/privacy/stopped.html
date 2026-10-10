@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Account paused{% endblock %}
+{% block content %}
+  <h1>Your account is paused</h1>
+  <p>You asked us to stop processing your data, so your account is paused. To resume, or for anything else, e-mail privacy@ (the address in the Privacy Notice).</p>
+  <p><a href="{% url 'privacy-legal' notice_kind %}">Privacy Notice</a></p>
+{% endblock %}

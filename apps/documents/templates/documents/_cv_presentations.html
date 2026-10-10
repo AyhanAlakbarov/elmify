@@ -1,0 +1,1 @@
+{% if content.presentations %}<h2>Conference Presentations</h2><ul>{% for item in content.presentations %}<li>{% include "documents/_cv_citation.html" with entry=item only %}</li>{% endfor %}</ul>{% endif %}

@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Updated terms{% endblock %}
+{% block content %}
+  <h1>We updated our terms</h1>
+  <p>Please read the new versions:</p>
+  <ul>{% for doc in docs %}<li><a href="{% url 'privacy-legal' doc.kind %}?lang={{ doc.language }}">{{ doc.get_kind_display }}</a> (version {{ doc.version }})</li>{% endfor %}</ul>
+  {% if stale %}<p><strong>These documents changed while the page was open. Read the current versions above.</strong></p>{% endif %}
+  <form method="post">{% csrf_token %}
+    {% for doc in docs %}<input type="hidden" name="documents" value="{{ doc.id }}">{% endfor %}
+    <p><label><input type="checkbox" name="consent"> {{ consent_text }}</label>{% if error %} <strong>Tick the box to continue.</strong>{% endif %}</p>
+    <button type="submit">Continue</button>
+  </form>
+{% endblock %}

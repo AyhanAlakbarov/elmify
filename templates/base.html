@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="{% block lang %}en{% endblock %}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% if request.tenant %}{{ request.tenant.name }}{% else %}Tehsil{% endif %}{% endblock %}</title>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <a href="#main">Skip to content</a>
+  <header>
+    {% if request.tenant %}<p>{{ request.tenant.name }}</p>{% endif %}
+    {% if viewer_role == "STUDENT" %}
+      <nav aria-label="Main">
+        <ul>
+          <li><a href="/student/">Home</a></li>
+          <li><a href="/student/recommendation/">Programmes &amp; funding</a></li>
+          <li><a href="/student/documents/">Documents</a></li>
+          <li><a href="/student/messages/">Messages</a></li>
+          <li><a href="/student/settings/">Settings</a></li>
+        </ul>
+      </nav>
+    {% elif viewer_role == "COUNSELOR" %}
+      <nav aria-label="Main"><ul><li><a href="/counselor/">Students</a></li></ul></nav>
+    {% endif %}
+    {% if user.is_authenticated %}
+      <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit">Log out</button></form>
+    {% endif %}
+  </header>
+  {% for message in messages %}
+    <p role="{% if message.level_tag == 'error' %}alert{% else %}status{% endif %}">{{ message }}</p>
+  {% endfor %}
+  <main id="main">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

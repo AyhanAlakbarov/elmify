@@ -1,0 +1,72 @@
+{% load cv_dates cv_countries %}{% if experience_rows %}<h2>Experience</h2>
+{% if tabular %}
+<table class="grid">
+  {% for entry in experience_rows %}
+  <tr>
+    <td class="when">{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</td>
+    {% if entry.statement %}<td>{{ entry.statement }}</td>
+    {% else %}<td><strong>{{ entry.title }}</strong><br>
+    {% if entry.group %}{{ entry.group }}, {% endif %}{{ entry.employer }}{% if entry.city or entry.country %}, {% include "documents/_cv_place.html" with entry=entry only %}{% endif %}{% if entry.distinct_supervisor %} — Supervisor: {{ entry.distinct_supervisor }}{% endif %}<br>
+    {% include "documents/_cv_bullets.html" with entry=entry only %}</td>{% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+{% for entry in experience_rows %}
+{% if entry.statement %}
+<div class="entry">
+  {% comment %}
+     A GAP ROW. One line, no employer and no bullets, sitting in date order
+     among the posts -- ETH: "leave no time gaps: also list periods when you
+     did not attend school, study or work"; S-045 records Cambridge's own
+     samples, which have no employer at all. Deliberately not dressed up: a
+     gap is accounted for, not sold, and the bullet shape invites a model or a
+     student to build an achievement out of an illness.
+
+     Branching on `statement` because a Django template cannot ask a value its
+     type, and TimelineEntry is the only entry here that has one. If
+     ExperienceEntry ever gains a `statement` field, this branch is what
+     breaks -- add an explicit flag then.
+  {% endcomment %}
+  <div class="entry-header"><strong>{{ entry.statement }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+</div>
+{% else %}
+<div class="entry">
+  {% comment %}
+     TWO header lines: the ROLE, bold, dates right (S-034), then the PLACE --
+     group, employer, location, supervisor. Owner decision 2026-09-15: the
+     standalone project line is GONE, and the bullets carry what the work was.
+     Both shapes are attested -- UCC prints 'Project: "..."' on its own line in
+     all three of its research entries, while CU Boulder gives an entry only
+     "date range, organization, title ... and a brief narrative" and Toronto's
+     research sample keeps the role bare and names the work in the first
+     bullet. S-038 records that every source NAMES the project and they differ
+     only on where.
+
+     What this costs, measured on the CV it was decided against, counting the
+     project's content words that appear nowhere in that entry's bullets:
+     Groningen 0 of 7 lost (the line was pure repetition), EPFL 2 of 5,
+     Master's Thesis 3 of 7 (including "AZIMUTH", the thesis's actual name),
+     ICIQ 5 of 5. So the bullets "take over" on one entry in four; on the rest
+     the information leaves the document. `project` is still extracted, still
+     in the ledger and still an include target, so nothing is lost upstream --
+     only the printing.
+
+     R-061 IS THE REASON TO BE CAREFUL RESTORING OR KEEPING THIS OFF:
+     Europubhealth+ is BINDING and asks for "full names of institutions,
+     universities, projects" per experience, and that programme renders through
+     this partial. There is no per-programme switch for a FIELD today --
+     directives carry order and emphasise, not include -- so this is off for
+     that destination too until one exists.
+
+     The employer is never in the bold header: as "{{ title }}, {{ employer }}"
+     in one run a long title wrapped and left "organocatalyst design, EPFL"
+     burying the one fact a reader scans an experience entry for.
+  {% endcomment %}
+  <div class="entry-header"><strong>{{ entry.title }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+  <div>{% if entry.group %}{{ entry.group }}, {% endif %}{{ entry.employer }}{% if entry.city or entry.country %}, {% include "documents/_cv_place.html" with entry=entry only %}{% endif %}{% if entry.distinct_supervisor %} — Supervisor: {{ entry.distinct_supervisor }}{% endif %}</div>
+  {% include "documents/_cv_bullets.html" with entry=entry only %}
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}{% endif %}

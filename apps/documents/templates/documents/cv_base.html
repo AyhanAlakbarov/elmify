@@ -1,0 +1,138 @@
+{% load cv_dates cv_countries cv_skills %}<!DOCTYPE html>
+<html lang="{{ content.document_language }}">
+<head><meta charset="utf-8"><style>
+  @page {
+    size: A4; margin: 20mm;
+    @bottom-center { content: string(doc-name) " \00B7  " counter(page) "/" counter(pages); font-size: 8.5pt; color: #444; }
+  }
+  /* DejaVu first, Helvetica second -- the reverse of what this said until
+     2026-09-12. Helvetica is the face nobody renders in: the web image ships
+     fonts-dejavu-core and no Helvetica, so every CV a student downloads has
+     always been DejaVu, while a developer's machine resolves Helvetica to a
+     local clone (Nimbus Sans here) and renders something else. Measured: the
+     same CVContent gave Nimbus-Sans on this laptop and DejaVu-Sans in the
+     image. Naming the installed face first makes a local render match
+     production, which is the only way a sample is worth looking at. */
+  body { font-family: "DejaVu Sans", "Helvetica", sans-serif; font-size: 11pt; line-height: 1.3; }
+  h1 { font-size: 16pt; margin-bottom: 0; string-set: doc-name content(); }
+  h2 { font-size: 11pt; text-transform: uppercase; border-bottom: 1px solid #333; margin-top: 16pt; margin-bottom: 6pt; break-after: avoid; }
+  .entry { margin-top: 8pt; break-inside: avoid; }
+  ul, table.grid tr { break-inside: avoid; }
+  /* nowrap on the date: the tabular variant has it on td.when, and without
+     the same rule here a flex span breaks "Sep 2025 - Dec 2025" across two
+     lines. gap keeps a long title from colliding with the date it wraps for. */
+  .entry-header { display: flex; justify-content: space-between; gap: 4mm; }
+  .entry-header span { white-space: nowrap; }
+  /* the one entry-header cell that is prose and must wrap */
+  .entry-header span.award-title { white-space: normal; }
+  .gloss { font-style: italic; }
+  /* Name left, contacts right, as a real academic CV prints it. Flex, not
+     grid placement: the DOM order stays name -> email -> phone -> links, so
+     the PDF text layer a parser reads still comes out in that order. */
+  .contact-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8mm; margin-bottom: 6pt; }
+  /* nowrap, or flex squeezes the h1 and breaks the applicant's own name
+     across two lines -- which is exactly what it did. */
+  .contact-header h1 { white-space: nowrap; }
+  .contact-header p.contact { margin: 0; text-align: right; }
+  /* Justified, with hyphenation to close the rivers full justification opens
+     in a column this narrow. Owner decision 2026-09-15, reversing the
+     ragged-right change of 2026-09-12.
+
+     S-016 is what argued for ragged-right and it is the weakest rule in the
+     catalog: one source (WVU), Medium confidence, and its own words are
+     "Left-justify body text; do not center critical information" -- a sentence
+     whose load-bearing half is the second one. Neither Cambridge's 43-page
+     booklet nor Harvard GSAS's guide mentions justification at all, and both
+     are more specific about layout than anything behind S-016. So this is a
+     house choice with no source against it, not a rule being broken.
+
+     `hyphens: auto` is not decoration here, and it is why the earlier removal
+     measured "zero inserted hyphens": ragged-right gives hyphenation nothing
+     to do. Justification does. It needs the lang attribute on <html>, which
+     content.document_language supplies -- a CV in a language WeasyPrint has no
+     dictionary for simply justifies without hyphenating, which is the
+     degradation wanted rather than a failure.
+
+     .entry-header stays out, as before: it is a flex row, and justifying a
+     two-cell row would stretch the gap between a role and its dates. */
+  li, .entry > div:not(.entry-header), p.skills {
+    text-align: justify;
+    hyphens: auto;
+  }
+  /* One indent for every list on the page: bullets, publications,
+     awards and languages sat at three different depths otherwise. */
+  ul { margin: 2pt 0 0; padding-left: 14pt; }
+  li { margin-bottom: 1pt; }
+  p.skills { margin: 2pt 0 0; }
+  table.languages { border-collapse: collapse; width: 100%; margin-top: 4pt; }
+  table.languages th, table.languages td { border: 1px solid #999; padding: 2pt 6pt; text-align: left; }
+  table.personal { border-collapse: collapse; margin-top: 6pt; }
+  table.personal td { padding: 2pt 8pt 2pt 0; vertical-align: top; }
+  table.personal td.label { font-weight: bold; width: 30mm; }
+  table.grid { border-collapse: collapse; width: 100%; }
+  table.grid td { vertical-align: top; padding: 3pt 0; }
+  /* Wide enough, and unwrappable, so a full month-year range stays on one
+     line -- a date column that wraps is not the S-008 dates-left grid. */
+  table.grid td.when { width: 40mm; padding-right: 5mm; white-space: nowrap; }
+</style></head>
+<body>
+  {% block personal %}
+  <div class="contact-header">
+    <h1>{{ content.personal_information.full_name }}</h1>
+    <p class="contact"><a href="mailto:{{ content.personal_information.email }}">{{ content.personal_information.email }}</a>{% if content.personal_information.phone %}<br>{{ content.personal_information.phone }}{% endif %}{% if content.personal_information.links or content.personal_information.handles %}<br>{% for label, href, text in content.personal_information.links %}{% if not forloop.first %}<br>{% endif %}{{ label }}: <a href="{{ href }}">{{ text }}</a>{% endfor %}{% for label, handle in content.personal_information.handles %}{% if not forloop.first or content.personal_information.links %}<br>{% endif %}{{ label }}: {{ handle }}{% endfor %}{% endif %}</p>
+  </div>
+  {% endblock %}
+  {% block summary %}{% endblock %}
+  <h2>Education</h2>
+  {% block education_entries %}
+  {% for entry in content.education %}
+  <div class="entry">
+    <div class="entry-header"><strong>{{ entry.degree_as_awarded }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    {% if entry.degree_english and entry.degree_english != entry.degree_as_awarded %}<div class="gloss">{{ entry.degree_english }}</div>{% endif %}
+    <div>{{ entry.institution_original }}{% if entry.institution_english and entry.institution_english != entry.institution_original %} ({{ entry.institution_english }}){% endif %}{% if entry.city %}, {{ entry.city }}{% endif %}{% if entry.country %}, {{ entry.country|country_name }}{% endif %}</div>
+    {% if entry.grade_native or entry.ects_credits or entry.class_rank %}<div>{% if entry.grade_native %}{% if "GPA" not in entry.grade_native and "Grade" not in entry.grade_native and "Mark" not in entry.grade_native %}Grade: {% endif %}{{ entry.grade_native }}{% if entry.grade_scale and entry.grade_scale not in entry.grade_native %} ({{ entry.grade_scale }}){% endif %}{% if entry.grade_conversion %} ≈ {{ entry.grade_conversion }}{% endif %}{% endif %}{% if entry.grade_native and entry.ects_credits %} · {% endif %}{% if entry.ects_credits %}{{ entry.ects_credits }} ECTS{% endif %}{% if entry.class_rank %}{% if entry.grade_native or entry.ects_credits %} · {% endif %}{{ entry.class_rank }}{% endif %}</div>{% endif %}
+    {% comment %}
+       Labelled lines under the degree, in the order Toronto's worked CV prints
+       them (Dissertation, then Supervisor) with UCC's funder line beside them.
+       Labels here, unlike the experience entry's project line, because these
+       sit under a degree title that names none of them -- an unlabelled
+       "Prof. Varnek" under an MSc says nothing about what he did.
+    {% endcomment %}
+    {% if entry.thesis_title %}<div>Thesis: {{ entry.thesis_title }}</div>{% endif %}
+    {% if entry.supervisor %}<div>Supervisor: {{ entry.supervisor }}</div>{% endif %}
+    {% if entry.funding %}<div>{{ entry.funding }}</div>{% endif %}
+    {% if entry.relevant_coursework %}<div>Relevant coursework: {{ entry.relevant_coursework }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  {% endblock %}
+  {% comment %}
+     R-027 / archetype D: a research-track CV puts research and publications
+     above employment; a taught-track CV does not. section_order is computed in
+     render.py so the two orders live in one place instead of duplicated markup.
+     {# #} is single-line only in Django -- a multi-line one renders as body text.
+  {% endcomment %}
+  {% for section in section_order %}{% include section %}{% endfor %}
+  {% block languages %}
+  {% comment %}
+     S-014: a plain list, not a grid. The Europass self-assessment table is
+     Europass's own layout and stays in that variant -- guidance on every
+     other CV is a one-line list, partly because table structures are the
+     thing CV parsers most reliably scramble. The section read as empty
+     because a bare "C1" says little, not because a list was the wrong shape,
+     so the fix is S-014's own "optionally + plain word".
+  {% endcomment %}
+  {% if content.languages %}<h2>Languages</h2><ul>{% for entry in content.languages %}<li>{{ entry.language }}{% if entry.mother_tongue %} — Native{% if entry.cefr_level %} ({{ entry.cefr_level }}){% endif %}{% elif entry.cefr_level %} — {{ entry.level_word }}{% if entry.level_word != entry.cefr_level %} ({{ entry.cefr_level }}){% endif %}{% endif %}{% if entry.test_name %}, {{ entry.test_name }}{% if entry.test_score %} {{ entry.test_score }}{% endif %}{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% endblock %}
+  {% comment %}
+     Referees go last, as every source has them -- and they now do. This
+     used to be the final entry of render.py's section tuple, which put it
+     above Skills and Languages because both rendered from here, after the
+     loop. Languages cannot join the tuple: cv_europass.html overrides
+     {% templatetag openblock %} block languages {% templatetag closeblock %}
+     and a block does not survive an include. So references leaves the
+     tuple instead and anchors the end of the document.
+  {% endcomment %}
+  {% include "documents/_cv_references.html" %}
+  {% if date_of_issue %}<p class="date-of-issue">Date of issue: {{ date_of_issue|date:"Y-m-d" }}</p>{% endif %}
+</body>
+</html>

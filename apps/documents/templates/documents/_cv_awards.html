@@ -1,0 +1,22 @@
+{% load cv_dates %}{% if content.awards %}<h2>Awards</h2>
+{% if tabular %}
+<table class="grid">
+  {% for item in content.awards %}
+  <tr><td class="when">{% if item.date %}{{ item.date|month_year }}{% endif %}</td><td>{{ item.title }}{% if item.awarding_body %}, {{ item.awarding_body }}{% endif %}{% if item.detail %}<br><span class="gloss">{{ item.detail }}</span>{% endif %}</td></tr>
+  {% endfor %}
+</table>
+{% else %}
+{% comment %}
+   A bulleted list, like Publications and Languages, rather than the unmarked
+   run of lines this was. Both forms are attested inside ONE university guide
+   -- Toronto's "Creating your academic CV for Masters and PhDs" prints awards
+   unmarked in samples 1 and 2 and bulleted in sample 4 -- so the marker is a
+   house choice, not a rule, and the house already chose <ul> everywhere else.
+   The date stays right-aligned (S-007) by keeping .entry-header inside the li.
+{% endcomment %}
+<ul>
+  {% for item in content.awards %}
+  <li><div class="entry-header"><span class="award-title">{{ item.title }}{% if item.awarding_body %}, {{ item.awarding_body }}{% endif %}</span>{% if item.date %}<span>{{ item.date|month_year }}</span>{% endif %}</div>{% if item.detail %}<div class="gloss">{{ item.detail }}</div>{% endif %}</li>
+  {% endfor %}
+</ul>
+{% endif %}{% endif %}

@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: tehsil
+      POSTGRES_USER: tehsil
+      POSTGRES_PASSWORD: tehsil
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tehsil"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  # apps/ratelimit.py's real backend in production (ElastiCache Serverless for
+  # Valkey there; this container locally). Only started on demand
+  # (`docker compose up -d valkey`) for tests/valkey/ -- the rest of the suite
+  # runs against LocMemCache and never needs this service.
+  valkey:
+    image: valkey/valkey:8
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres-data:

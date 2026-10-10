@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tehsil co-pilot</title>
+  </head>
+  <body>
+    <!-- SHOULD BE DONE BY AYKHAN: this markup is a functional placeholder.
+         Every element the dock needs is present and named; the design is his. -->
+    <main id="dock">
+      <p id="status"></p>
+      <p id="message"></p>
+      <p id="application-id"></p>
+      <section><h2>Filled</h2><ul id="filled"></ul></section>
+      <section><h2>Your turn</h2><ul id="your-turn"></ul></section>
+      <section><h2>Check these</h2><ul id="mismatches"></ul></section>
+      <section id="registration" hidden>
+        <h2 id="registration-question"></h2>
+        <p>Open the email and look at the address it was sent to.</p>
+        <button id="arrived-tagged" type="button"></button>
+        <label for="sender">Who sent it?</label>
+        <input id="sender" type="email" placeholder="noreply@example.org" />
+        <button id="arrived-plain" type="button">It went to my address without the + part</button>
+        <button id="arrived-none" type="button">No email came</button>
+      </section>
+      <button id="use-plain" type="button">Use my plain address</button>
+      <button id="unpair" type="button">Disconnect this browser</button>
+    </main>
+    <script src="panel.js"></script>
+  </body>
+</html>

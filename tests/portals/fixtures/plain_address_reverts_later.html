@@ -1,0 +1,17 @@
+<!doctype html><html><body><form>
+  <!-- Review R2 finding 2: a framework that reverts a write one tick later
+       (Vue's nextTick, a plain setTimeout(0)) is invisible to a read-back that
+       runs synchronously right after the write, before the revert fires. -->
+  <label for="em">Email address</label>
+  <input id="em" name="email" type="email">
+  <button type="submit">Create account</button>
+</form>
+<script>
+  window.__revert_writes_later = () => {
+    document.getElementById("em").addEventListener("input", (event) => {
+      const target = event.target;
+      setTimeout(() => { target.value = "leyla.apply+ab12cd@outlook.com"; }, 0);
+    });
+  };
+</script>
+</body></html>

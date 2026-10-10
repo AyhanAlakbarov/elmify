@@ -1,0 +1,13 @@
+<!DOCTYPE html>
+<html lang="{{ content.language }}">
+<head><meta charset="utf-8"><style>{% include "documents/_letter_style.html" %}
+  h2 { font-size: 12pt; margin-top: 14pt; }
+</style></head>
+<body>
+  {% if content.header_block %}<div>{{ content.header_block }}</div>{% endif %}
+  <h2>1. Past and present field of study</h2>
+  {% for unit in content.units %}{% if unit.archetype == "ACADEMIC_PREPARATION" %}<p>{{ unit.text }}</p>{% endif %}{% endfor %}
+  <h2>2. Research theme and plan</h2>
+  {% for unit in content.units %}{% if unit.archetype == "RESEARCH_PLAN" %}<p>{{ unit.text }}</p>{% endif %}{% endfor %}
+</body>
+</html>

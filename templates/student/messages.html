@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Messages{% endblock %}
+{% block content %}
+  <h1>Messages</h1>
+  {% include "student/_messages.html" %}
+  {% if has_counselor %}
+    <form method="post" action="{% url 'concierge-send-student-message' %}">
+      {% csrf_token %}
+      <input type="hidden" name="return_to" value="messages">
+      {% if error and error_form == "message" %}<p role="alert" id="message-error">{{ error }}</p>{% endif %}
+      <p>
+        <label for="message-body">Write to your counsellor</label><br>
+        <textarea id="message-body" name="body" rows="4" maxlength="4000">{{ form_values.body }}</textarea>
+      </p>
+      <button type="submit">Send</button>
+    </form>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,79 @@
+cue,language,role
+application,en,application_window
+applications open,en,application_window
+application period,en,application_window
+deadline,en,deadline
+application deadline,en,deadline
+closing date,en,deadline
+due date,en,deadline
+last date,en,deadline
+selection,en,selection
+interview,en,selection
+payment,en,funding_period
+disbursement,en,funding_period
+funding period,en,funding_period
+results,en,results
+announcement,en,results
+müraciət,az,application_window
+qəbul,az,application_window
+son müraciət,az,deadline
+son tarix,az,deadline
+seçim,az,selection
+müsahibə,az,selection
+ödəniş,az,funding_period
+təqaüdün ödənilməsi,az,funding_period
+nəticə,az,results
+başvuru,tr,application_window
+son başvuru,tr,deadline
+son tarih,tr,deadline
+son,tr,deadline
+seçim,tr,selection
+mülakat,tr,selection
+ödeme,tr,funding_period
+burs ödemesi,tr,funding_period
+sonuç,tr,results
+приём заявок,ru,application_window
+прием заявок,ru,application_window
+подача заявок,ru,application_window
+срок подачи,ru,deadline
+крайний срок,ru,deadline
+до,ru,deadline
+отбор,ru,selection
+собеседование,ru,selection
+выплат,ru,funding_period
+результат,ru,results
+신청,ko,application_window
+접수,ko,application_window
+마감,ko,deadline
+선발,ko,selection
+면접,ko,selection
+지급,ko,funding_period
+발표,ko,results
+başvuru sonuç,tr,results
+application results,en,results
+müraciətin nəticə,az,results
+müraciət nəticə,az,results
+qəbul nəticə,az,results
+selection results,en,results
+interview results,en,results
+결과,ko,results
+합격,ko,results
+신청결과,ko,results
+접수결과,ko,results
+선발결과,ko,results
+son gün,az,deadline
+qəbulun sonu,az,deadline
+bitiş,tr,deadline
+başvuru bitiş,tr,deadline
+kapanış,tr,deadline
+başvuru kapanış,tr,deadline
+closes,en,deadline
+application closes,en,deadline
+last day,en,deadline
+окончание прием,ru,deadline
+신청 마감,ko,deadline
+신청마감,ko,deadline
+접수 마감,ko,deadline
+접수마감,ko,deadline
+마감일,ko,deadline
+신청 발표,ko,results

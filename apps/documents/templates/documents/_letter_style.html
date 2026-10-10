@@ -1,0 +1,6 @@
+{# The page's own typography, from LetterShape via letter_render._shape_style. #}
+  @page { margin: {{ style.margin_cm }}cm; }
+  body { font-family: "{{ style.font_family }}", {{ style.generic }};
+         font-size: {{ style.font_pt }}pt;
+         line-height: {{ style.line_height }}; }
+  p { margin: 0 0 8pt; }

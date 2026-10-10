@@ -1,0 +1,19 @@
+<!doctype html><html><body><form novalidate>
+  <!-- Review I3: the page refuses THIS tagged address because an account
+       already holds it -- the "+" is not the reason, and nothing native
+       refuses it. Account-only evidence, never the shared status. -->
+  <label for="em">Email address</label>
+  <input id="em" name="email" type="email" aria-describedby="em-error">
+  <p id="em-error" hidden>An account with this email address already exists</p>
+  <button type="submit">Create account</button>
+</form>
+<script>
+  const input = document.getElementById("em");
+  const error = document.getElementById("em-error");
+  input.addEventListener("blur", () => {
+    const taken = input.value === "leyla.apply+ab12cd@outlook.com";
+    input.setAttribute("aria-invalid", String(taken));
+    error.hidden = !taken;
+  });
+</script>
+</body></html>

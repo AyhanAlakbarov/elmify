@@ -1,0 +1,29 @@
+# Documented gitleaks false positives. One fingerprint per line, each with the
+# reason it is not a leak. This file is NOT a way to quiet the scanner: a
+# finding is either a real secret to rotate and purge, or an entry here saying
+# why it is not. Anything undocumented should fail the build.
+#
+# Fingerprint format: <commit>:<path>:<rule>:<line>
+#
+# Swecris (Swedish Research Council) publishes a single shared token in its own
+# OAS3 specification so that anyone may call the open API; the value appears in
+# a research table recording which national funding APIs are open and on what
+# terms. It is a third party's published value, not our credential -- there is
+# nothing to rotate, and the row is only meaningful with the token in it.
+8e23bbab0f9bf0fb663578054b42f6e6acb59d42:docs/superpowers/research/2026-08-28-worldwide-funding-sources-review-2.md:generic-api-key:153
+
+# `generic-api-key` fires on `api_key=` next to a high-entropy token. On all three
+# lines that token is the identifier `CRAWL_INSTRUCTIONS`, and the key itself comes
+# from the environment -- no literal, nothing to rotate. A reformat would not clear
+# them: gitleaks scans committed history, not the working tree.
+c96ac3d1f9e28c5bef61ab7b8ede3644eb6d5ae4:apps/research/management/commands/pool_cv_corpus.py:generic-api-key:167
+33a9c5c59d168353780b59423d097f60be88b265:apps/research/management/commands/pool_cv_corpus.py:generic-api-key:194
+c98dcbeb60ea9e83371f08eeddb38884b4242fdf:docs/superpowers/plans/2026-09-15-cv-requirement-corpus.md:generic-api-key:1587
+
+# tests/privacy/test_signup.py once used the literal password "a-long-enough-passphrase-42"
+# for a throwaway test user in a test database. It is test-fixture data, not a credential
+# anywhere; the literal was replaced in a later commit and this fingerprint pins the
+# historical commit gitleaks still scans in the PR range.
+5157260ce753c53e70b63bc734bedb9b4db95688:tests/privacy/test_signup.py:generic-api-key:25
+# The same literal in the implementation plan's copy of that test.
+5371aba77cc47c70cfbca024e7ee80d8ebcc56b6:docs/superpowers/plans/2026-10-03-consent-and-privacy-notice.md:generic-api-key:638

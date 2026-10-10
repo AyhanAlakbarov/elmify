@@ -1,0 +1,31 @@
+{
+  "_synthetic": true,
+  "profile_id": "profile-19",
+  "consultant_reviewed": true,
+  "consultant_review_note": "SYNTHETIC placeholder review \u2014 NOT a real consultant-reviewed outcome.",
+  "reason_code": "LANGUAGE_EVIDENCE_CONFIRMED",
+  "language": "English",
+  "city": "tr-istanbul",
+  "strategy": "FUNDING_FIRST",
+  "duration_preference": "ONE_YEAR",
+  "duration_flexibility": "PREFERRED",
+  "recommended_opportunity_ids": [
+    "opp-x19-1",
+    "opp-x19-2"
+  ],
+  "verified_funded": false,
+  "aggregator_baseline_funded": false,
+  "claims": [
+    {
+      "claim": "Tuition fully waived (SYNTHETIC placeholder claim)",
+      "funding_claim": true,
+      "official_source_verified": true
+    },
+    {
+      "claim": "Program taught in the declared language (SYNTHETIC placeholder claim)",
+      "funding_claim": false,
+      "official_source_verified": true
+    }
+  ],
+  "notes": "SYNTHETIC diverse-profile placeholder for benchmark-shape coverage."
+}

@@ -1,0 +1,54 @@
+# Both ecosystems here exist to service a deliberate tradeoff: actions are
+# pinned to commit SHAs and base images to digests, which stops a repointed
+# tag from swapping code underneath us -- and equally stops upstream security
+# patches from arriving on their own. That maintenance obligation is what
+# these updates automate.
+#
+# CI runs on pull_request, so every bump is tested before it can merge; an
+# unverified automatic digest bump would be worse than pinning by hand.
+version: 2
+updates:
+  # Bumps the SHA and rewrites the trailing "# vX.Y.Z" comment to match.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # One PR for all of them: these move together and rarely break, so
+    # separate PRs would be review noise rather than review signal.
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+
+  # Native uv ecosystem (pyproject.toml + uv.lock), not "pip": the pip updater
+  # does not understand uv.lock, and CI runs `uv sync --locked`, so a bump that
+  # touched only pyproject.toml would fail the build rather than merge.
+  #
+  # Two known updater failure modes were checked against this repo and neither
+  # applies: it skips dependencies with no version constraint (every dep here
+  # pins >=x,<y), and it errors when a name's case differs between the two
+  # files (all 104 lock entries and every declared dep are lowercase).
+  #
+  # Ungrouped on purpose -- unlike an action SHA or a base-image digest, a
+  # library bump can change runtime behaviour, and these are worth reading one
+  # at a time. Security updates are exempt from the limit below.
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps"
+
+  # Reads FROM lines in the root Dockerfile -- python:3.12-slim and the uv
+  # builder stage. Both are pinned tag@digest, and the digest is what moves.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build"

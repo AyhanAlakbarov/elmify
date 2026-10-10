@@ -1,0 +1,7 @@
+<!doctype html><html><body><form>
+  <!-- Studielink's measured behaviour (spec, 2026-09-26): the form's own
+       validation refuses a "+" and accepts the plain address. -->
+  <label for="em">Email address</label>
+  <input id="em" name="email" type="email" pattern="[^+]+@.+">
+  <button type="submit">Create account</button>
+</form></body></html>

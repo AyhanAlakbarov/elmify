@@ -1,0 +1,20 @@
+<!doctype html><html><body><form>
+  <!-- Review M3: the email control the run typed into can be replaced (a
+       single-page app re-rendering) or refuse a later write (a locked field)
+       before the student asks for the plain address. -->
+  <div id="slot">
+    <label for="em">Email address</label>
+    <input id="em" name="email" type="email">
+  </div>
+  <button type="submit">Create account</button>
+</form>
+<script>
+  window.__rerender = () => {
+    const slot = document.getElementById("slot");
+    slot.innerHTML = slot.innerHTML;
+  };
+  window.__lock = () => document.getElementById("em").addEventListener("input", (event) => {
+    event.target.value = "leyla.apply+ab12cd@outlook.com";
+  });
+</script>
+</body></html>

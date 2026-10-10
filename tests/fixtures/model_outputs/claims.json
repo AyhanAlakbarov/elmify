@@ -1,0 +1,13 @@
+{
+  "eligibility": "eligible",
+  "deadline": "2027-01-15",
+  "fees": [{"label": "application", "amount": "75.00", "currency": "EUR", "period": "one_off"}],
+  "duration_months": 24,
+  "teaching_languages": [{"language": "English", "evidence": "program page"}],
+  "required_documents": ["transcript"],
+  "benefits": [{"label": "tuition waiver", "amount": "10000.00", "currency": "EUR", "period": "annual"}],
+  "costs": [{"label": "tuition", "amount": "12000.00", "currency": "EUR", "period": "annual"}],
+  "uncertainty": ["final award depends on review"],
+  "supporting_excerpt_offsets": [{"start": 10, "end": 45}],
+  "confidence": 0.86
+}

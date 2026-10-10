@@ -1,0 +1,1 @@
+{% comment %}S-010: one <li> per achievement. Included everywhere experience renders so the six call sites cannot drift apart.{% endcomment %}{% spaceless %}<ul class="bullets">{% for bullet in entry.bullets %}<li>{{ bullet }}</li>{% endfor %}</ul>{% endspaceless %}

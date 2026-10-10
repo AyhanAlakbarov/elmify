@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% load static %}
+{% block lang %}{{ doc.language }}{% endblock %}
+{% block title %}{{ doc.get_kind_display }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'privacy/legal.css' %}">{% endblock %}
+{% block content %}
+  <p>Version {{ doc.version }}, effective {{ doc.effective_at|date:"Y-m-d" }}</p>
+  <pre class="legal">{{ body }}</pre>
+{% endblock %}

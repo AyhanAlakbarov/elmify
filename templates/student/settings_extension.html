@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Browser extension{% endblock %}
+{% block content %}
+  <h1>Browser extension</h1>
+  <h2>Connected browsers</h2>
+  {% for pairing in pairings %}
+    <article>
+      <p>{{ pairing.installation_id|default:"A browser" }} — connected {{ pairing.redeemed_at|date:"j M Y" }}{% if pairing.last_seen_at %}, last seen {{ pairing.last_seen_at|date:"j M Y H:i" }}{% endif %}</p>
+      <form method="post" action="{% url 'student-settings-extension-disconnect' pairing.id %}">{% csrf_token %}<button type="submit">Disconnect</button></form>
+    </article>
+  {% empty %}
+    <p>No browser is connected.</p>
+  {% endfor %}
+  <h2>How to pair</h2>
+  <ol>
+    <li>Use Chrome, Edge, Brave, Opera, Vivaldi or Arc on a computer.</li>
+    <li>Install the Tehsil extension from the Chrome Web Store.</li>
+    <li>Open this dashboard while logged in. The extension connects to your account by itself.</li>
+  </ol>
+  <p>Logging out keeps your browsers connected. Disconnect one here when you stop using it.</p>
+{% endblock %}

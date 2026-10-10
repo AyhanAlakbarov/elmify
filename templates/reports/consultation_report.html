@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Consultation report</title></head>
+<body>
+  <h1>Consultation report</h1>
+  <p>Prepared by {{ pack.tenant.name }} · pack version {{ pack.version }}</p>
+  {% for member in pack.pack_candidates.all %}
+    <section>
+      <h2>{{ member.candidate.program_name }}</h2>
+      <p>Funding gap: {% if member.candidate.funding_gap_is_placeholder %}not yet costed{% else %}{{ member.candidate.funding_gap }} {{ member.candidate.currency }}{% endif %}</p>
+      <p>{{ member.candidate.evidence.claim }} (last checked {{ member.candidate.evidence.last_checked_at|date:"j M Y" }})</p>
+    </section>
+  {% endfor %}
+</body>
+</html>

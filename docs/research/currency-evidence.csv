@@ -1,0 +1,77 @@
+form,currency,kind,review_status
+€,EUR,symbol,drafted
+euro,EUR,name,drafted
+euros,EUR,name,drafted
+евро,EUR,name,drafted
+еуро,EUR,name,drafted
+avro,EUR,name,drafted
+£,GBP,symbol,drafted
+pound sterling,GBP,name,drafted
+pounds sterling,GBP,name,drafted
+$,USD,symbol,drafted
+$,CAD,symbol,drafted
+$,AUD,symbol,drafted
+$,NZD,symbol,drafted
+$,SGD,symbol,drafted
+$,HKD,symbol,drafted
+$,MXN,symbol,drafted
+us$,USD,symbol,drafted
+us dollars,USD,name,drafted
+u.s. dollars,USD,name,drafted
+c$,CAD,symbol,drafted
+ca$,CAD,symbol,drafted
+a$,AUD,symbol,drafted
+au$,AUD,symbol,drafted
+₺,TRY,symbol,drafted
+tl,TRY,abbreviation,drafted
+türk lirası,TRY,name,drafted
+turkish lira,TRY,name,drafted
+₼,AZN,symbol,drafted
+manat,AZN,name,drafted
+manat,TMT,name,drafted
+azərbaycan manatı,AZN,name,drafted
+₸,KZT,symbol,drafted
+tenge,KZT,name,drafted
+теңге,KZT,name,drafted
+тенге,KZT,name,drafted
+₽,RUB,symbol,drafted
+₾,GEL,symbol,drafted
+lari,GEL,name,drafted
+ლარი,GEL,name,drafted
+֏,AMD,symbol,drafted
+դրամ,AMD,name,drafted
+₮,MNT,symbol,drafted
+төгрөг,MNT,name,drafted
+so'm,UZS,name,drafted
+soʻm,UZS,name,drafted
+сўм,UZS,name,drafted
+som,UZS,name,drafted
+som,KGS,name,drafted
+сом,KGS,name,drafted
+₹,INR,symbol,drafted
+₨,PKR,symbol,drafted
+₨,LKR,symbol,drafted
+₨,NPR,symbol,drafted
+₩,KRW,symbol,drafted
+₴,UAH,symbol,drafted
+zł,PLN,symbol,drafted
+kč,CZK,symbol,drafted
+ft,HUF,abbreviation,drafted
+forint,HUF,name,drafted
+kr,SEK,abbreviation,drafted
+kr,NOK,abbreviation,drafted
+kr,DKK,abbreviation,drafted
+kr,ISK,abbreviation,drafted
+¥,JPY,symbol,drafted
+¥,CNY,symbol,drafted
+円,JPY,symbol,drafted
+元,CNY,symbol,drafted
+yen,JPY,name,drafted
+yuan,CNY,name,drafted
+renminbi,CNY,name,drafted
+원,KRW,symbol,drafted
+руб,RUB,abbreviation,drafted
+рубль,RUB,name,drafted
+рубля,RUB,name,drafted
+рублей,RUB,name,drafted
+сум,UZS,name,drafted
