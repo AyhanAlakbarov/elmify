@@ -197,7 +197,7 @@ def test_an_unpaired_extension_asks_to_pair(agency_a, membership_a, pack) -> Non
     assert ("Pair", "/student/settings/extension/") in [(i.button, i.url) for i in items]
 
 
-@pytest.mark.parametrize("days, words", [(1, "1 day left"), (2, "2 days left"), (0, "0 days left")])
+@pytest.mark.parametrize("days, words", [(1, "1 day left"), (2, "2 days left"), (0, "Today")])
 def test_the_card_counts_days_in_english(days, words) -> None:
     from django.template.loader import render_to_string
 

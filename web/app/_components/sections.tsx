@@ -3,131 +3,132 @@ import { Button } from "./button";
 import { appLinks } from "./app-links";
 import { Wordmark } from "./logo";
 import board from "../../public/screens/board.png";
+import documents from "../../public/screens/documents.png";
 import messages from "../../public/screens/messages.png";
-import profile from "../../public/screens/profile.png";
 import programmes from "../../public/screens/programmes.png";
 
 /* ------------------------------------------------------------------ */
-const strip = [
-  "Programme matching",
-  "Scholarship finder",
-  "Funding gap in your currency",
-  "Deadline tracker",
-  "Document checklist",
-  "Application kit",
-  "Messages with your counsellor",
-  "Search across everything",
-];
-
-/** What Elmify does, as one slow line. Duplicated once so the loop is seamless. */
-export function FeatureStrip() {
-  return (
-    <section aria-label="What Elmify does" className="mt-20 border-y border-border py-6">
-      <div className="marquee overflow-hidden">
-        <ul className="marquee-track flex w-max gap-3">
-          {[...strip, ...strip].map((item, i) => (
-            <li
-              key={`${item}-${i}`}
-              aria-hidden={i >= strip.length}
-              className="flex items-center gap-2.5 whitespace-nowrap rounded-full border border-border px-4 py-2 text-body02 font-medium text-foreground"
-            >
-              <span className="size-1.5 bg-brand" aria-hidden />
-              {item}
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-const steps = [
-  ["Tell us about you", "Fourteen short questions: what you studied, your grades, where you would go and whether you need a scholarship."],
-  ["See what fits", "Programmes you are eligible for, each grouped under the scholarship that pays for it, with the gap left to cover."],
-  ["Apply with everything ready", "Pick programmes, follow each deadline, prepare the documents they ask for and use the kit to fill in the forms."],
+/* How the AI works: a real sequence, so it is drawn as one connected line. */
+const stages = [
+  {
+    title: "Reads the official pages",
+    body: "It reads each university's and scholarship's own website and keeps the exact sentence behind every requirement, with a link.",
+  },
+  {
+    title: "Matches them to you",
+    body: "Your grades, languages, budget and plans are checked against each programme's rules. You see why something fits or does not.",
+  },
+  {
+    title: "Prepares your documents",
+    body: "Your CV and letters are written only from facts you confirmed. Nothing is used until you approve it.",
+  },
 ];
 
 export function HowItWorks() {
   return (
-    <section id="how" className="scroll-mt-20 py-24">
+    <section id="how" className="scroll-mt-20 py-24 md:py-28">
       <div className="mx-auto max-w-6xl px-5">
-        <h2 className="max-w-2xl text-heading01 font-extrabold">Three steps, from &ldquo;where do I start&rdquo; to submitted</h2>
-        <ol className="mt-14 grid gap-10 md:grid-cols-3 md:gap-8">
-          {steps.map(([title, body], i) => (
-            <li key={title} className="border-t-2 border-foreground pt-6">
-              <span className="text-body02 font-semibold text-brand-text">Step {i + 1}</span>
-              <h3 className="mt-2 text-heading02 font-bold">{title}</h3>
-              <p className="mt-3 text-body01 text-foreground-secondary">{body}</p>
+        <h2 className="max-w-2xl text-heading01 font-bold">What the AI does, and what you decide</h2>
+        <p className="mt-4 max-w-xl text-body01 text-foreground-secondary">
+          The slow part of applying is reading. Elmify does the reading and shows its sources.
+        </p>
+
+        <ol className="relative mt-16 grid gap-12 md:grid-cols-3 md:gap-10">
+          <span
+            aria-hidden
+            className="pipeline-line absolute left-0 right-0 top-[15px] hidden h-px bg-brand md:block"
+          />
+          {stages.map((s, i) => (
+            <li key={s.title} className="relative">
+              <span className="relative grid size-8 place-items-center rounded-full bg-brand text-caption01 font-semibold text-on-brand ring-8 ring-background">
+                {i + 1}
+              </span>
+              <h3 className="mt-6 text-heading02 font-semibold">{s.title}</h3>
+              <p className="mt-2 max-w-[22rem] text-body01 text-foreground-secondary">{s.body}</p>
             </li>
           ))}
         </ol>
+
+        <p className="mt-14 border-t border-border pt-6 text-body01 font-medium">
+          You press submit. Elmify never applies anywhere without you.
+        </p>
       </div>
     </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-type Row = { title: string; body: string; points: string[]; shot: StaticImageData; alt: string };
+/* Product: a bento of real screens, one cell per feature. */
+/** `zoom` crops a wide screen to its top-left corner so small cells stay readable. */
+type Cell = { title: string; body: string; shot: StaticImageData; alt: string; className: string; tint?: boolean; zoom?: string };
 
-const rows: Row[] = [
+const cells: Cell[] = [
   {
-    title: "Programmes, grouped by the money that pays for them",
-    body: "Most students search for a programme, then for funding, and only then find out the two do not match. Elmify starts from the funding.",
-    points: ["Who awards it, what it covers and when it closes", "A link to the official page each fact came from", "Ask us to check a programme you found yourself"],
+    title: "Programmes grouped by the money that pays",
+    body: "Each scholarship with what it covers, when it closes and the programmes it funds.",
     shot: programmes,
-    alt: "A scholarship on the Programmes page with its holder, what it covers, and the programmes it funds",
+    alt: "Programme match cards grouped under the scholarship that funds them",
+    className: "md:col-span-2 md:row-span-2",
+    tint: true,
   },
   {
-    title: "Every application on one board",
-    body: "Each programme you choose becomes a card that moves from To start to Decision. Deadlines that are close turn red before they become a problem.",
-    points: ["Documents and answers counted per application", "An Application Kit with everything the portal will ask", "Search everything with the / key"],
+    title: "One board for every application",
+    body: "From To start to Decision, with deadlines that turn red early.",
     shot: board,
-    alt: "The application board with cards in the To start column, each showing funding, documents and actions",
+    alt: "The My applications board with columns for each stage",
+    className: "",
+    zoom: "w-[230%]",
   },
   {
-    title: "A profile that takes ten minutes, once",
-    body: "One question at a time, in plain words. Pick a country from a list, choose an answer, enter your degree the way it is written on your transcript.",
-    points: ["Answers are saved as you go", "Change any answer later; the matches update", "Check every answer before your search starts"],
-    shot: profile,
-    alt: "A profile question asking whether the student can go without a scholarship, with three answers",
+    title: "Documents in one place",
+    body: "Drop in your transcript or CV. See what each application still needs.",
+    shot: documents,
+    alt: "The documents page with an upload area and document cards",
+    className: "",
+    zoom: "w-[190%]",
   },
   {
-    title: "Your counsellor, in the same place",
-    body: "If you work with an agency, your counsellor sees the same board and talks to you beside it. No more screenshots in messaging apps.",
-    points: ["Messages next to your applications", "Mail from universities, once you connect your inbox", "Every change your counsellor makes is recorded with their name"],
+    title: "Your counsellor, beside your applications",
+    body: "If you work with an agency, messages sit next to the work, not in another app.",
     shot: messages,
-    alt: "The Messages page with a conversation between a student and their counsellor",
+    alt: "A conversation between a student and their counsellor",
+    className: "md:col-span-3",
+    tint: true,
   },
 ];
 
 export function Product() {
   return (
-    <section id="product" className="scroll-mt-20 bg-background-secondary py-24">
+    <section id="product" className="scroll-mt-20 bg-background-secondary py-24 md:py-28">
       <div className="mx-auto max-w-6xl px-5">
-        <div className="max-w-2xl">
-          <h2 className="text-heading01 font-extrabold">What you get when you sign up</h2>
-          <p className="mt-4 text-body01 text-foreground-secondary">
-            These are screens from the dashboard itself, not mock-ups.
-          </p>
-        </div>
-        <div className="mt-16 space-y-24">
-          {rows.map((r, i) => (
-            <article key={r.title} className="grid items-center gap-10 md:grid-cols-2 md:gap-14">
-              <div className={i % 2 ? "md:order-2" : ""}>
-                <h3 className="text-heading02 font-bold md:text-[1.75rem] md:leading-tight">{r.title}</h3>
-                <p className="mt-4 text-body01 text-foreground-secondary">{r.body}</p>
-                <ul className="mt-6 space-y-3">
-                  {r.points.map((p) => (
-                    <li key={p} className="flex gap-3 text-body01">
-                      <span className="mt-2.5 size-1.5 shrink-0 bg-brand" aria-hidden />
-                      {p}
-                    </li>
-                  ))}
-                </ul>
+        <h2 className="max-w-2xl text-heading01 font-bold">Everything for your applications, in one place</h2>
+        <p className="mt-4 max-w-xl text-body01 text-foreground-secondary">These are screens from the product itself.</p>
+
+        <div className="mt-14 grid gap-4 md:grid-cols-3 md:gap-5">
+          {cells.map((c) => (
+            <article
+              key={c.title}
+              className={[
+                "flex flex-col overflow-hidden rounded-3xl border border-border",
+                c.tint ? "bg-brand-soft" : "bg-surface",
+                c.className,
+              ].join(" ")}
+            >
+              <div className="p-6 pb-5 md:p-7 md:pb-5">
+                <h3 className="text-heading03 font-semibold">{c.title}</h3>
+                <p className="mt-1.5 max-w-md text-body02 text-foreground-secondary">{c.body}</p>
               </div>
-              <div className="rounded-3xl bg-surface p-3 shadow-[0_1px_2px_rgba(11,7,22,0.04),0_20px_50px_-30px_rgba(11,7,22,0.3)] ring-1 ring-border sm:p-4">
-                <Image src={r.shot} alt={r.alt} className="w-full rounded-2xl" sizes="(min-width: 768px) 540px, 100vw" />
+              <div className="relative mt-auto min-h-56 flex-1 overflow-hidden pl-6 md:pl-7">
+                <Image
+                  src={c.shot}
+                  alt={c.alt}
+                  className={[
+                    "absolute left-6 top-0 max-w-none rounded-tl-xl border-l border-t border-border md:left-7",
+                    c.zoom ?? "w-[calc(100%-1.5rem)] md:w-[calc(100%-1.75rem)]",
+                  ].join(" ")}
+                  sizes="(min-width: 768px) 720px, 100vw"
+                  loading="lazy"
+                />
               </div>
             </article>
           ))}
@@ -139,35 +140,32 @@ export function Product() {
 
 /* ------------------------------------------------------------------ */
 const agencyPoints = [
-  ["Your address", "Students sign up and log in on your agency\u2019s own web address."],
+  ["Your address", "Students sign up and log in on your agency’s own web address."],
   ["Your team", "Assign each student to a counsellor and see who is waiting on whom."],
-  ["Your leads", "Demo requests and new students land on one owner page."],
+  ["Your leads", "Demo requests and new students arrive on one owner page."],
 ];
 
 export function Agencies() {
   return (
-    <section id="agencies" className="scroll-mt-20 px-5 py-24">
-      <div className="mx-auto grid max-w-6xl gap-12 rounded-[28px] bg-foreground px-6 py-14 text-background md:grid-cols-[1.1fr_1fr] md:px-14 md:py-16">
+    <section id="agencies" className="scroll-mt-20 py-24 md:py-28">
+      <div className="mx-auto grid max-w-6xl gap-12 px-5 md:grid-cols-[1fr_1fr] md:gap-16">
         <div>
-          <h2 className="text-heading01 font-extrabold">Run your agency on Elmify</h2>
-          <p className="mt-4 max-w-md text-body01 text-[#c9c5d4]">
-            The same dashboard, under your name. Your counsellors work on each student&rsquo;s board; your students always know
-            what is next.
+          <h2 className="text-heading01 font-bold">Run your agency on Elmify</h2>
+          <p className="mt-4 max-w-md text-body01 text-foreground-secondary">
+            The same product under your name. Counsellors work on each student&rsquo;s board, and students always
+            know what is next.
           </p>
           <div className="mt-8">
-            <Button href={appLinks.demo} variant="light" size="lg">
+            <Button href={appLinks.demo} size="lg">
               Book a demo
             </Button>
           </div>
         </div>
-        <dl className="grid gap-7 self-center">
+        <dl className="divide-y divide-border self-center border-y border-border">
           {agencyPoints.map(([t, b]) => (
-            <div key={t} className="flex gap-4">
-              <span className="mt-2 size-2 shrink-0 bg-brand" aria-hidden />
-              <div>
-                <dt className="text-heading03 font-semibold">{t}</dt>
-                <dd className="mt-1 text-body01 text-[#c9c5d4]">{b}</dd>
-              </div>
+            <div key={t} className="grid gap-1 py-5 sm:grid-cols-[9rem_1fr] sm:gap-6">
+              <dt className="text-heading03 font-semibold">{t}</dt>
+              <dd className="text-body01 text-foreground-secondary">{b}</dd>
             </div>
           ))}
         </dl>
@@ -178,23 +176,47 @@ export function Agencies() {
 
 /* ------------------------------------------------------------------ */
 const faqs = [
-  ["Is it free?", "Creating an account and getting your matches is free during early access. We will tell you before anything costs money."],
-  ["Which countries and programmes do you cover?", "We start with master's programmes in Europe and the scholarships open to students from Central and South Asia. The list grows as we add funders."],
-  ["Do you submit applications for me?", "No. You stay in your own browser and press submit yourself. Elmify prepares the answers and documents and tracks what is left."],
-  ["What happens to my data?", "It is used to find programmes for you and nothing else. You can delete your account from Settings at any time."],
+  [
+    "Is it free?",
+    "Creating an account and getting your matches is free during early access. We will tell you before anything costs money.",
+  ],
+  [
+    "Which countries and programmes do you cover?",
+    "We start with master’s programmes in Europe and the scholarships open to students from Central and South Asia. The list grows as we add funders.",
+  ],
+  [
+    "Does the AI make things up?",
+    "Every requirement links to the official page it was read from, and your documents use only facts you confirmed. If the AI is unsure, it says so instead of guessing.",
+  ],
+  [
+    "Do you submit applications for me?",
+    "No. You stay in your own browser and press submit yourself. Elmify prepares the answers and documents and tracks what is left.",
+  ],
+  [
+    "What happens to my data?",
+    "It is used to find programmes for you and nothing else. You can delete your account from Settings at any time.",
+  ],
 ];
 
 export function Faq() {
   return (
-    <section id="faq" className="scroll-mt-20 pb-24">
-      <div className="mx-auto max-w-3xl px-5">
-        <h2 className="text-heading01 font-extrabold">Questions</h2>
-        <div className="mt-10 divide-y divide-border border-y border-border">
+    <section id="faq" className="scroll-mt-20 border-t border-border py-24 md:py-28">
+      <div className="mx-auto grid max-w-6xl gap-10 px-5 md:grid-cols-[1fr_1.6fr] md:gap-16">
+        <div>
+          <h2 className="text-heading01 font-bold">Questions</h2>
+          <p className="mt-4 max-w-xs text-body01 text-foreground-secondary">
+            Anything else? Ask us during a demo.
+          </p>
+        </div>
+        <div className="divide-y divide-border border-y border-border">
           {faqs.map(([q, a]) => (
             <details key={q} className="faq group">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-heading03 font-semibold">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-heading03 font-semibold transition-colors duration-200 hover:text-brand-text">
                 {q}
-                <span className="plus grid size-7 shrink-0 place-items-center rounded-full border border-border-strong text-foreground-secondary" aria-hidden>
+                <span
+                  className="plus grid size-7 shrink-0 place-items-center rounded-full border border-border-strong text-foreground-secondary"
+                  aria-hidden
+                >
                   +
                 </span>
               </summary>
@@ -210,13 +232,15 @@ export function Faq() {
 /* ------------------------------------------------------------------ */
 export function Closing() {
   return (
-    <section id="start" className="scroll-mt-20 border-t border-border bg-brand-soft px-5 py-24">
+    <section id="start" className="scroll-mt-20 bg-brand-soft px-5 py-24">
       <div className="mx-auto flex max-w-3xl flex-col items-center text-center">
-        <h2 className="text-heading01 font-extrabold">Start with your profile. It takes ten minutes.</h2>
-        <p className="mt-4 max-w-xl text-body01 text-foreground-secondary">Your matches are ready as soon as you finish.</p>
+        <h2 className="text-heading01 font-bold">Your profile takes ten minutes</h2>
+        <p className="mt-4 max-w-xl text-body01 text-foreground-secondary">
+          Your first matches are ready as soon as you finish.
+        </p>
         <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
           <Button href={appLinks.signup} size="lg">
-            Create your free account
+            Sign up free
           </Button>
           <Button href={appLinks.login} variant="secondary" size="lg">
             Log in
@@ -229,32 +253,33 @@ export function Closing() {
 
 /* ------------------------------------------------------------------ */
 export function Footer() {
-  const cols = [
-    ["Product", [["How it works", "#how"], ["The dashboard", "#product"], ["Questions", "#faq"]]],
-    ["Company", [["For agencies", "#agencies"], ["Book a demo", appLinks.demo], ["Log in", appLinks.login]]],
-    ["Legal", [["Terms", appLinks.terms], ["Privacy", appLinks.privacy]]],
+  const links = [
+    ["How it works", "#how"],
+    ["For agencies", "#agencies"],
+    ["Book a demo", appLinks.demo],
+    ["Log in", appLinks.login],
+    ["Terms", appLinks.terms],
+    ["Privacy", appLinks.privacy],
   ] as const;
   return (
-    <footer className="border-t border-border py-14">
-      <div className="mx-auto grid max-w-6xl gap-10 px-5 md:grid-cols-[1.4fr_repeat(3,1fr)]">
-        <div>
+    <footer className="border-t border-border py-12">
+      <div className="mx-auto flex max-w-6xl flex-col gap-8 px-5 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-center gap-4">
           <Wordmark className="h-6" />
-          <p className="mt-4 max-w-xs text-body02 text-foreground-secondary">Find a funded master&rsquo;s and apply with a plan.</p>
+          <span className="text-caption01 text-foreground-subtle">&copy; 2026</span>
         </div>
-        {cols.map(([h, items]) => (
-          <div key={h}>
-            <p className="text-body02 font-semibold">{h}</p>
-            <ul className="mt-3 space-y-2 text-body02 text-foreground-secondary">
-              {items.map(([label, href]) => (
-                <li key={label}>
-                  <a href={href} className="hover:text-foreground">{label}</a>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+        <nav aria-label="Footer">
+          <ul className="flex flex-wrap gap-x-6 gap-y-2 text-body02 text-foreground-secondary">
+            {links.map(([label, href]) => (
+              <li key={label}>
+                <a href={href} className="transition-colors duration-200 hover:text-foreground">
+                  {label}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </nav>
       </div>
-      <p className="mx-auto mt-12 max-w-6xl px-5 text-caption01 text-foreground-subtle">© 2026 Elmify</p>
     </footer>
   );
 }

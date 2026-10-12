@@ -7,7 +7,7 @@
     <ul class="item-list">
     {% for pairing in pairings %}
       <li>
-        <span>{{ pairing.installation_id|default:"A browser" }} — connected {{ pairing.redeemed_at|date:"j M Y" }}{% if pairing.last_seen_at %}, last seen {{ pairing.last_seen_at|date:"j M Y H:i" }}{% endif %}</span>
+        <span>{{ pairing.installation_id|default:"A browser" }}, connected {{ pairing.redeemed_at|date:"j M Y" }}{% if pairing.last_seen_at %}, last seen {{ pairing.last_seen_at|date:"j M Y H:i" }}{% endif %}</span>
         <form method="post" action="{% url 'student-settings-extension-disconnect' pairing.id %}">{% csrf_token %}<button type="submit" class="btn-quiet">Disconnect</button></form>
       </li>
     {% empty %}

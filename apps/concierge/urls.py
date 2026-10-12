@@ -10,6 +10,7 @@ from .views import (
     owner_dashboard,
     send_student_message,
     settings_page,
+    student_applications,
     student_dashboard,
 )
 
@@ -27,6 +28,7 @@ urlpatterns = [
         name="concierge-owner-assign-counselor",
     ),
     path("student/", student_dashboard, name="concierge-student-dashboard"),
+    path("student/applications/", student_applications, name="student-applications"),
     path(
         "student/notifications/<uuid:notification_id>/acknowledge/",
         acknowledge_notification_view,

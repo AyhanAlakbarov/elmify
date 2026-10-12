@@ -1,51 +1,56 @@
 {% load cv_countries %}<article id="card-{{ card.application_id }}" class="app-card" aria-labelledby="card-title-{{ card.application_id }}">
   <h4 id="card-title-{{ card.application_id }}">{{ card.title }}</h4>
-  {% if card.institution or card.country %}<p>{{ card.institution }}{% if card.institution and card.country %} · {% endif %}{{ card.country|country_name }}</p>{% endif %}
+  {% if card.institution or card.country %}<p class="card-meta">{{ card.institution }}{% if card.institution and card.country %}, {% endif %}{{ card.country|country_name }}</p>{% endif %}
   {% if card.deadline_local %}
-    <p class="card-deadline{% if card.days_left is not None and card.days_left >= 0 and card.days_left <= 7 %} is-soon{% endif %}">Deadline: {{ card.deadline_local|date:"j M Y, H:i e" }} — {% if card.days_left < 0 %}passed{% else %}{{ card.days_left }} day{{ card.days_left|pluralize }} left{% endif %}</p>
+    <p class="card-deadline{% if card.days_left is not None and card.days_left >= 0 and card.days_left <= 7 %} is-soon{% endif %}">
+      <time datetime="{{ card.deadline_local|date:'c' }}">{{ card.deadline_local|date:"j M Y, H:i e" }}</time>
+      <span>{% if card.days_left < 0 %}Passed{% elif card.days_left == 0 %}Today{% else %}{{ card.days_left }} day{{ card.days_left|pluralize }} left{% endif %}</span>
+    </p>
   {% endif %}
+  {% if card.documents.1 or card.answers.1 %}
   <div class="card-progress">
-    <p>Documents {{ card.documents.0 }}/{{ card.documents.1 }} · Answers {{ card.answers.0 }}/{{ card.answers.1 }}</p>
-    {% if card.documents.1 or card.answers.1 %}<progress value="{{ card.documents.0|add:card.answers.0 }}" max="{{ card.documents.1|add:card.answers.1 }}"></progress>{% endif %}
+    <p><span>Documents {{ card.documents.0 }}/{{ card.documents.1 }}</span><span>Answers {{ card.answers.0 }}/{{ card.answers.1 }}</span></p>
+    <progress value="{{ card.documents.0|add:card.answers.0 }}" max="{{ card.documents.1|add:card.answers.1 }}">{{ card.documents.0|add:card.answers.0 }} of {{ card.documents.1|add:card.answers.1 }} ready</progress>
   </div>
+  {% endif %}
   {% for line in card.funding %}
-    <p class="card-funding">Funding: {{ line.name }}{% if line.covers %} — covers {{ line.covers }}{% endif %}{% if line.amounts %} — {{ line.amounts }}{% endif %}</p>
+    <p class="card-funding"><strong>{{ line.name }}</strong>{% if line.covers %}<span>Covers {{ line.covers }}</span>{% endif %}{% if line.amounts %}<span>{{ line.amounts }}</span>{% endif %}</p>
   {% endfor %}
-  {% if card.gap %}<p>Remaining gap: {{ card.gap }}</p>{% endif %}
-  {% if card.funding_outcome_line %}<p>{{ card.funding_outcome_line }}</p>{% endif %}
-  {% if card.funds %}<p>Funds: {{ card.funds|join:", " }}</p>{% endif %}
-  {% if card.needs %}<p>Needs: {{ card.needs|join:", " }}</p>{% endif %}
-  {% if card.fee %}<p>Application fee: {{ card.fee }} {{ card.fee_currency }} — you pay this at submission</p>{% endif %}
+  {% if card.gap %}<p class="card-line">Still to cover: <strong>{{ card.gap }}</strong></p>{% endif %}
+  {% if card.funding_outcome_line %}<p class="card-line">{{ card.funding_outcome_line }}</p>{% endif %}
+  {% if card.funds %}<p class="card-line">Funds: {{ card.funds|join:", " }}</p>{% endif %}
+  {% if card.needs %}<p class="card-line">Needs: {{ card.needs|join:", " }}</p>{% endif %}
+  {% if card.fee %}<p class="card-line">Application fee: {{ card.fee }} {{ card.fee_currency }}, paid at submission</p>{% endif %}
   {% if card.badges %}<p class="card-badge">New mail: {{ card.badges|join:", " }}</p>{% endif %}
   {% if card.missing %}
-    <p class="card-missing">Missing:</p>
-    <ul>{% for item in card.missing %}<li>{{ item }}</li>{% endfor %}</ul>
+    <p class="card-missing">Missing</p>
+    <ul class="card-missing-list">{% for item in card.missing %}<li>{{ item }}</li>{% endfor %}</ul>
   {% endif %}
   {% if card.outcome_line %}<p class="card-outcome">{{ card.outcome_line }}</p>{% endif %}
-  {% if card.offer %}<p class="card-offer">{{ card.offer.line }} — accept or ignore it under Needs you now.</p>{% endif %}
+  {% if card.offer %}<p class="card-offer">{{ card.offer.line }}. Accept or ignore it on your home page.</p>{% endif %}
   <div class="card-actions">
   {% if card.button %}
     {% if card.button.method == "post" %}
       {% if not read_only %}<form method="post" action="{{ card.button.url }}">{% csrf_token %}<button type="submit">{{ card.button.label }}</button></form>{% endif %}
     {% else %}
-      <p><a class="btn" href="{{ card.button.url }}">{{ card.button.label }}</a></p>
+      <a class="btn btn-small" href="{{ card.button.url }}">{{ card.button.label }}</a>
     {% endif %}
   {% endif %}
-  {% if card.kit_url %}<p><a href="{{ card.kit_url }}">Application Kit</a></p>{% endif %}
+  {% if card.kit_url %}<a class="text-link" href="{{ card.kit_url }}">Application kit</a>{% endif %}
   </div>
   {% if card.portal_record_url and not read_only %}
-    <form method="post" action="{{ card.portal_record_url }}">
+    <form class="card-form" method="post" action="{{ card.portal_record_url }}">
       {% csrf_token %}
       <p>
         <label for="portal-{{ card.application_id }}">Application portal address</label>
-        <input type="url" id="portal-{{ card.application_id }}" name="form_url" required placeholder="https://">
+        <input type="url" id="portal-{{ card.application_id }}" name="form_url" required placeholder="https://apply.example.edu…" inputmode="url" spellcheck="false">
       </p>
-      <button type="submit">Record the portal</button>
+      <button type="submit" class="btn-quiet">Save the portal</button>
     </form>
   {% endif %}
   {% if card.outcome_url and card.column.key != "to_start" and not read_only %}
-    <details>
-      <summary>{% if card.outcome_line %}Not right?{% else %}Record a decision{% endif %}</summary>
+    <details class="card-more">
+      <summary>{% if card.outcome_line %}Change the decision{% else %}Record a decision{% endif %}</summary>
       <form method="post" action="{{ card.outcome_url }}">
         {% csrf_token %}
         <p>
@@ -55,11 +60,14 @@
             {% for value, label in outcome_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
           </select>
         </p>
-        <button type="submit">Save</button>
+        <button type="submit">Save decision</button>
       </form>
     </details>
   {% endif %}
   {% if card.remove_url and card.column.key == "to_start" and not read_only %}
-    <form method="post" action="{{ card.remove_url }}">{% csrf_token %}<button type="submit">Remove from my applications</button></form>
+    <details class="card-remove">
+      <summary>Remove</summary>
+      <form method="post" action="{{ card.remove_url }}">{% csrf_token %}<p>Take this programme off your list?</p><button type="submit" class="btn-danger">Remove from my applications</button></form>
+    </details>
   {% endif %}
 </article>

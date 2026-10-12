@@ -18,7 +18,7 @@
     <ul class="item-list">
       {% for item in items %}
         <li>
-          <span><strong>{{ item.get_stage_display }}</strong> for {{ item.student.user.get_full_name|default:item.student.user.get_username }} — {{ item.get_state_display }}, due {{ item.deadline|date:"j M Y" }}</span>
+          <span><strong>{{ item.get_stage_display }}</strong> for {{ item.student.user.get_full_name|default:item.student.user.get_username }}: {{ item.get_state_display|lower }}, due {{ item.deadline|date:"j M Y" }}</span>
           {% if error and error_form == item.id|stringformat:"s" %}<p role="alert">{{ error }}</p>{% endif %}
           {% if item.owner_id == request.membership.id and item.state != "DONE" %}
             <form method="post" action="{% url 'concierge-mark-roadmap-item-done' item.id %}">

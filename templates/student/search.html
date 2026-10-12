@@ -5,26 +5,28 @@
     <div>
       <h1>Search</h1>
       {% if searched %}
-        <p>{{ total }} result{{ total|pluralize }} for “{{ search_query }}”</p>
+        <p>{{ total }} result{{ total|pluralize }} for &ldquo;{{ search_query }}&rdquo;</p>
       {% else %}
-        <p>Type at least {{ min_query }} characters in the search box above.</p>
+        <p>Type at least {{ min_query }} characters. Tip: press Ctrl&nbsp;K on any page to search.</p>
       {% endif %}
     </div>
   </div>
-  {% if searched and not groups %}
-    <p class="empty">Nothing matches “{{ search_query }}”. Try a programme, university, country, document or a word from a message.</p>
-  {% endif %}
-  {% for group in groups %}
-    <section class="panel" aria-labelledby="results-{{ forloop.counter }}">
-      <div class="panel-head">
-        <h2 id="results-{{ forloop.counter }}">{{ group.kind }}</h2>
-        <span class="pill">{{ group.results|length }}</span>
-      </div>
-      <ul class="results">
-        {% for result in group.results %}
-          <li><a href="{{ result.url }}">{{ result.title }}</a>{% if result.detail %}<br><small>{{ result.detail }}</small>{% endif %}</li>
-        {% endfor %}
-      </ul>
-    </section>
-  {% endfor %}
+  {# #search-results is also what the Ctrl K search box reads, live, from this page. #}
+  <div id="search-results">
+    {% if searched and not groups %}
+      <p class="empty">Nothing matches &ldquo;{{ search_query }}&rdquo;. Try a programme, university, country, document or a word from a message.</p>
+    {% elif not searched and search_query %}
+      <p class="palette-hint">Keep typing: at least {{ min_query }} characters.</p>
+    {% endif %}
+    {% for group in groups %}
+      <section class="results-group" aria-labelledby="results-{{ forloop.counter }}">
+        <h2 id="results-{{ forloop.counter }}" class="results-kind">{{ group.kind }} <span class="count">{{ group.results|length }}</span></h2>
+        <ul class="results">
+          {% for result in group.results %}
+            <li><a href="{{ result.url }}"><strong>{{ result.title }}</strong>{% if result.detail %}<small>{{ result.detail }}</small>{% endif %}</a></li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  </div>
 {% endblock %}

@@ -123,7 +123,7 @@ def application_add(request: HttpRequest, candidate_id: UUID) -> HttpResponse:
         messages.error(request, REFUSALS[refused.reason])
         return redirect("student-recommendation")
     messages.success(request, "Added to your applications.")
-    return redirect("concierge-student-dashboard")
+    return redirect("student-recommendation")
 
 
 @login_required
@@ -136,7 +136,7 @@ def application_start(request: HttpRequest, application_id: UUID) -> HttpRespons
         messages.error(request, REFUSALS[refused.reason])
     else:
         messages.success(request, f"Your browser extension is opening {application.where}.")
-    return redirect("concierge-student-dashboard")
+    return redirect("student-applications")
 
 
 @login_required
@@ -149,7 +149,7 @@ def application_outcome(request: HttpRequest, application_id: UUID) -> HttpRespo
         messages.error(request, "Choose an outcome from the list.")
     else:
         messages.success(request, "Saved.")
-    return redirect("concierge-student-dashboard")
+    return redirect("student-applications")
 
 
 @login_required
@@ -162,7 +162,7 @@ def application_remove(request: HttpRequest, application_id: UUID) -> HttpRespon
         messages.error(request, REFUSALS[refused.reason])
     else:
         messages.success(request, "Removed from your applications.")
-    return redirect("concierge-student-dashboard")
+    return redirect("student-applications")
 
 
 @login_required

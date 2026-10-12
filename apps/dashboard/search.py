@@ -119,7 +119,7 @@ def _applications(student: Membership, words: tuple[str, ...]) -> list[Result]:
                     detail=" · ".join(
                         p for p in (card.column.value, card.institution, card.country) if p
                     ),
-                    url=f"/student/#card-{card.application_id}",
+                    url=f"/student/applications/#card-{card.application_id}",
                 )
             )
     return out

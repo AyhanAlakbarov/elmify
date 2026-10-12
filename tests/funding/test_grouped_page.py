@@ -22,13 +22,13 @@ def test_programmes_are_grouped_under_the_funding_that_pays_for_them(
     with reads_no_catalogue():
         response = client.get(PAGE, HTTP_HOST=domain_a.host)
     body = response.content.decode()
-    assert "<h1>Programmes &amp; funding</h1>" in body
+    assert "<h1>Programmes &amp; scholarships</h1>" in body
     heading = body.index("<h3>DAAD Study Scholarship</h3>")
     assert body.index("M.Sc. Informatics", heading) > heading
-    assert "Holder" in body and "DAAD" in body
+    assert "Awarded by" in body and "DAAD" in body
     assert "934 EUR a month" in body
-    assert "(unstructured)" in body
-    assert "Programmes without separate funding" in body
+    assert "Who can apply" in body
+    assert "Programmes without separate funding" not in body  # an empty group is not drawn
 
 
 def test_add_to_my_applications_and_already_added(
@@ -41,7 +41,7 @@ def test_add_to_my_applications_and_already_added(
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     assert f'action="/student/applications/add/{programme.id}/"' in body
     assert f'action="/student/applications/add/{award.id}/"' not in body
-    assert "In your applications." in body
+    assert "In your applications" in body
 
 
 def test_funding_that_comes_with_admission_offers_no_add(
@@ -55,7 +55,7 @@ def test_funding_that_comes_with_admission_offers_no_add(
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     assert f'action="/student/applications/add/{award.id}/"' not in body
-    assert "Comes with the admission" in body
+    assert "Comes with admission" in body
 
 
 def test_a_javascript_source_url_is_never_a_link(
@@ -80,7 +80,7 @@ def test_a_checking_candidate_never_links_its_placeholder_source(
         RecommendationCandidate.objects.filter(id=programme.id).update(state="CHECKING")
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
-    assert "Under review" in body
+    assert "Being checked" in body
     assert source not in body
 
 
@@ -111,9 +111,9 @@ def test_an_open_award_heads_every_eligible_programme_in_its_country(
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     heading = body.index("<h3>DAAD Study Scholarship</h3>")
-    label = body.index("Eligible programmes in DE:", heading)
+    label = body.index("Eligible programmes in Germany", heading)
     assert body.index("M.Sc. Informatics", label) > label
-    assert body.index("(in Other options)", label) < body.index("<h4>LMU M.Sc. Physics", label)
+    assert body.index("In Other options", label) < body.index("<h4>LMU M.Sc. Physics", label)
 
 
 def test_an_award_with_no_programme_renders_no_empty_list(
@@ -124,7 +124,7 @@ def test_an_award_with_no_programme_renders_no_empty_list(
         RecommendationCandidate.objects.filter(id=award.id).update(funds_program_ids=[])
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
-    assert "No programme in this list matches this funding." in body
+    assert "No programme in your list matches this scholarship yet." in body
     assert "Programmes it can pay for:" not in body
 
 
@@ -184,4 +184,4 @@ def test_a_rerun_after_the_pack_still_reloads_the_page(
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     assert '<meta http-equiv="refresh" content="15">' in body
-    assert "<h2>Your pack</h2>" in body
+    assert '<h2 class="section-title">Your matches</h2>' in body

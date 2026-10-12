@@ -42,12 +42,12 @@ def test_dashboard_renders_complete_evidence_for_every_visible_candidate(
     body = response.content.decode()
     assert "MSc Chemistry" in body
     assert "Official source" in body
-    assert "Last checked" in body
+    assert ", checked " in body
     assert "Eligible" in body
-    assert "Funding gap" in body
+    assert "Still to cover" in body
     assert "500.00 EUR" in body
-    assert "Approved v" in body  # approval badge
-    assert "Total funding gap" in body
+    assert "Your list, version" in body  # published-list badge
+    assert "Total still to cover" in body
     assert "800.00 EUR" in body
 
 
@@ -136,7 +136,7 @@ def test_consider_named_program_requires_a_name_and_queues_review(
 
     dashboard = client.get("/student/recommendation/", HTTP_HOST=domain_a.host)
     body = dashboard.content.decode()
-    assert "Under review" in body
+    assert "Being checked" in body
     assert "Named Erasmus Mundus Program" in body
 
 
@@ -517,7 +517,7 @@ def test_named_program_failures_re_render_the_page_with_inline_errors(
     assert 'role="alert"' in body
     assert "A program name is required." in body
     # The real page came back, not a bare error body.
-    assert "<h1>Programmes &amp; funding</h1>" in body
+    assert "<h1>Programmes &amp; scholarships</h1>" in body
 
     overlong = client.post(
         "/student/recommendation/named-program/",

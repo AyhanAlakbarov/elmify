@@ -1,26 +1,33 @@
 <div id="pack">
   {% if pack %}
     <div class="pack-summary">
-      <p class="pill pill-brand">{% if pack.published_at %}Approved v{{ pack.version }}{% else %}Version {{ pack.version }}{% endif %}</p>
-      {% for currency, total in totals.items %}<p class="pill">Total funding gap: {{ total }} {{ currency }}</p>{% endfor %}
+      <span class="badge badge-brand">{% if pack.published_at %}Your list, version {{ pack.version }}{% else %}Version {{ pack.version }}{% endif %}</span>
+      {% for currency, total in totals.items %}<span class="pack-gap">Total still to cover: <strong>{{ total }} {{ currency }}</strong></span>{% endfor %}
     </div>
     {% if pending_line %}<p role="status">{{ pending_line }}</p>{% endif %}
     {% if error and not error_form %}<p role="alert">{{ error }}</p>{% endif %}
-    <h2>Your pack</h2>
-    {% for group in groups %}{% include "student/_funding_group.html" with in_pack=True %}{% endfor %}
-    <h2>Other options</h2>
-    {% for group in other_groups %}{% include "student/_funding_group.html" with in_pack=False %}{% endfor %}
-    <section class="panel" aria-labelledby="named-heading">
-      <h2 id="named-heading">Ask us to consider a programme</h2>
-      <p class="muted">Know a programme we did not suggest? Name it and we will check it against your profile.</p>
-      <form method="post" action="{% url 'student-consider-named-program' %}">
+
+    <h2 class="section-title">Your matches</h2>
+    {% for group in groups %}{% include "student/_funding_group.html" with in_pack=True %}{% empty %}<p class="quiet-line">No matches in your list yet.</p>{% endfor %}
+
+    {% if other_groups %}
+      <h2 class="section-title">Other options</h2>
+      {% for group in other_groups %}{% include "student/_funding_group.html" with in_pack=False %}{% endfor %}
+    {% endif %}
+
+    <section class="panel ask-panel" aria-labelledby="named-heading">
+      <div>
+        <h2 id="named-heading">Ask us to check a programme</h2>
+        <p class="muted">Found a programme yourself? Name it and our AI checks it against your profile.</p>
+      </div>
+      <form method="post" action="{% url 'student-consider-named-program' %}" class="inline-ask">
         {% csrf_token %}
-        {% if error and error_form == "named-program" %}<p role="alert" id="program-name-error">{{ error }}</p>{% endif %}
         <p>
           <label for="program-name">Programme name</label>
-          <input type="text" id="program-name" name="program_name" maxlength="150" value="{{ form_values.program_name|default:'' }}"{% if error and error_form == "named-program" %} aria-describedby="program-name-error"{% endif %}>
+          <input type="text" id="program-name" name="program_name" maxlength="150" autocomplete="off" placeholder="MSc Data Science, University of Tartu…" value="{{ form_values.program_name|default:'' }}"{% if error and error_form == "named-program" %} aria-describedby="program-name-error" aria-invalid="true"{% endif %}>
+          {% if error and error_form == "named-program" %}<span class="field-error" role="alert" id="program-name-error">{{ error }}</span>{% endif %}
         </p>
-        <button type="submit">Ask</button>
+        <button type="submit">Check this programme</button>
       </form>
     </section>
   {% endif %}

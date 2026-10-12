@@ -56,3 +56,21 @@ def answer(value: object) -> str:
     if isinstance(value, list):
         return "; ".join(answer(item) for item in value) if value else "none"
     return "" if value is None else str(value)
+
+
+_COVERAGE = {
+    "FULL": "Fully covered",
+    "PARTIAL": "Partly covered",
+    "HALF": "Half covered",
+    "NONE": "Not covered",
+    "UNSTATED": "Not stated",
+}
+
+
+@register.filter
+def coverage(value: object) -> str:
+    """An award card's tuition or living-cost field as a student reads it."""
+    raw = str(value or "").strip().upper()
+    if not raw:
+        return "Not stated"
+    return _COVERAGE.get(raw, raw.replace("_", " ").lower().capitalize())

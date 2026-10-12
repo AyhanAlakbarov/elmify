@@ -14,10 +14,12 @@ from .conftest import add_card
 pytestmark = pytest.mark.django_db
 
 
-def test_home_shows_needs_then_the_board(client, agency_a, domain_a, user_a, membership_a, pack):
+def test_home_shows_milestones_then_next_actions(
+    client, agency_a, domain_a, user_a, membership_a, pack
+):
     programme, _award = pack
     with tenant_scope(agency_a.id):
-        application = add_card(
+        add_card(
             agency_a, membership_a, programme, deadline=timezone.now() + timedelta(days=5),
             kit_requirements=["Transcript of records"],
         )
@@ -26,13 +28,30 @@ def test_home_shows_needs_then_the_board(client, agency_a, domain_a, user_a, mem
         response = client.get("/student/", HTTP_HOST=domain_a.host)
     body = response.content.decode()
     assert response.status_code == 200
-    assert body.index("Needs you now") < body.index("Your applications")
+    assert body.index('aria-label="Your progress"') < body.index("Next actions")
+    assert "Transcript — needed for M.Sc. Informatics" in body
+    assert "M.Sc. Informatics" in body  # the upcoming deadline
+    # The board lives on My applications now, not on the home page.
+    assert "To start" not in body
+
+
+def test_my_applications_shows_the_board(client, agency_a, domain_a, user_a, membership_a, pack):
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        application = add_card(
+            agency_a, membership_a, programme, deadline=timezone.now() + timedelta(days=5),
+            kit_requirements=["Transcript of records"],
+        )
+    client.force_login(user_a)
+    with reads_no_catalogue():
+        response = client.get("/student/applications/", HTTP_HOST=domain_a.host)
+    body = response.content.decode()
+    assert response.status_code == 200
     for heading in ("To start", "In progress", "Submitted", "Confirmed", "Decision"):
         assert heading in body
     assert "M.Sc. Informatics" in body
-    assert "Transcript — needed for M.Sc. Informatics" in body
     assert f'action="/student/applications/{application.id}/start/"' in body
-    assert "Application fee: 75.00 EUR — you pay this at submission" in body
+    assert "Application fee: 75.00 EUR, paid at submission" in body
 
 
 def test_home_never_shows_another_students_card(
@@ -45,11 +64,12 @@ def test_home_never_shows_another_students_card(
         )
         add_card(agency_a, other, programme)
     client.force_login(user_a)
-    body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
-    assert "M.Sc. Informatics" not in body
+    for page in ("/student/", "/student/applications/"):
+        body = client.get(page, HTTP_HOST=domain_a.host).content.decode()
+        assert "M.Sc. Informatics" not in body
 
 
-def test_a_decision_card_offers_not_right(client, agency_a, domain_a, user_a, membership_a, pack):
+def test_a_decision_card_offers_a_change(client, agency_a, domain_a, user_a, membership_a, pack):
     programme, _award = pack
     with tenant_scope(agency_a.id):
         application = add_card(
@@ -57,8 +77,8 @@ def test_a_decision_card_offers_not_right(client, agency_a, domain_a, user_a, me
             outcome_source="MAIL", outcome_recorded_at=timezone.now(),
         )
     client.force_login(user_a)
-    body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
-    assert "Not right?" in body
+    body = client.get("/student/applications/", HTTP_HOST=domain_a.host).content.decode()
+    assert "Change the decision" in body
     assert f'action="/student/applications/{application.id}/outcome/"' in body
     assert '<label for="outcome-' in body
 
@@ -111,7 +131,7 @@ def test_each_column_renders_its_own_key_dependent_markup(
             candidate.program_id = uuid4()
             ids[key] = add_card(agency_a, membership_a, candidate, **fields)
     client.force_login(user_a)
-    body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+    body = client.get("/student/applications/", HTTP_HOST=domain_a.host).content.decode()
     for key, application in ids.items():
         start = body.index(f'<article id="card-{application.id}"')
         card = body[start : body.index("</article>", start)]

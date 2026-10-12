@@ -47,17 +47,18 @@ class Overview:
 
     @property
     def steps(self) -> tuple[tuple[str, str], ...]:
-        """The four steps of the journey as (key, state): done, current or todo.
-        Exactly one step is current until every step is done."""
+        """The five milestones of the journey as (key, state): done, current or
+        todo. Exactly one is current until every one is done."""
         done = {
             "profile": self.profile_done,
+            "matches": self.pack_published or self.applications > 0,
             "choose": self.applications > 0,
             "documents": self.documents_total > 0 and self.documents_done >= self.documents_total,
             "apply": self.submitted > 0,
         }
         out = []
         current_given = False
-        for key in ("profile", "choose", "documents", "apply"):
+        for key in ("profile", "matches", "choose", "documents", "apply"):
             if done[key]:
                 out.append((key, "done"))
             elif not current_given:

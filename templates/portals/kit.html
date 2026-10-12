@@ -22,7 +22,7 @@
       <dl class="kit-answers">
         {% for question in kit.questions %}
           <dt>{{ question.label }}</dt>
-          <dd{% if question.missing %} class="is-missing"{% endif %}>{% if question.missing %}missing — answer it in your profile or the gap interview{% else %}{{ question.answer }}{% endif %}</dd>
+          <dd{% if question.missing %} class="is-missing"{% endif %}>{% if question.missing %}Missing. Answer it in your profile or the gap interview.{% else %}{{ question.answer }}{% endif %}</dd>
         {% endfor %}
       </dl>
     {% else %}

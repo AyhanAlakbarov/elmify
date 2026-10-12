@@ -80,7 +80,8 @@ def test_the_table_has_a_column_per_application_and_a_row_per_document(
     assert '<th scope="row">Passport' in body
     assert "Submit document to M.Sc. Informatics" in body
     assert "dashboard/documents.js" in body
-    assert '<label for="upload-kind">' in body
+    assert 'type="radio" name="kind" value="CV" checked' in body
+    assert 'id="upload-file"' in body
 
 
 def test_submit_document_queues_the_upload_page_for_that_application(

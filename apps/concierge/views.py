@@ -172,35 +172,13 @@ def owner_assign_counselor(request: HttpRequest, student_id: UUID) -> HttpRespon
     return redirect("concierge-owner-dashboard")
 
 
-def _student_dashboard_page(
-    request: HttpRequest,
-    student: Membership,
-    *,
-    status: int = 200,
-    error: str | None = None,
-    error_form: str | None = None,
-    error_field: str | None = None,
-    form_values: dict[str, str] | None = None,
-) -> HttpResponse:
+def _student_dashboard_page(request: HttpRequest, student: Membership) -> HttpResponse:
     board = board_for(student)
     needs = items_for(student, board=board)
     return render(
         request,
         "student/dashboard.html",
-        {
-            "board": board,
-            "needs": needs,
-            "overview": build_overview(student, board, needs),
-            "has_counselor": CounselorAssignment.objects.filter(
-                student=student, active=True
-            ).exists(),
-            "outcome_choices": Application.Outcome.choices,
-            "error": error,
-            "error_form": error_form,
-            "error_field": error_field,
-            "form_values": form_values or {},
-        },
-        status=status,
+        {"needs": needs, "overview": build_overview(student, board, needs)},
     )
 
 
@@ -208,6 +186,18 @@ def _student_dashboard_page(
 def student_dashboard(request: HttpRequest) -> HttpResponse:
     student = current_membership(request, Membership.Role.STUDENT)
     return _student_dashboard_page(request, student)
+
+
+@login_required
+def student_applications(request: HttpRequest) -> HttpResponse:
+    """The application board on its own page; the home page keeps only the
+    milestones and what needs doing next."""
+    student = current_membership(request, Membership.Role.STUDENT)
+    return render(
+        request,
+        "student/applications.html",
+        {"board": board_for(student), "outcome_choices": Application.Outcome.choices},
+    )
 
 
 @login_required
@@ -298,25 +288,14 @@ def messages_page(request: HttpRequest) -> HttpResponse:
 def send_student_message(request: HttpRequest) -> HttpResponse:
     student = current_membership(request, Membership.Role.STUDENT)
     raw = request.POST.get("body", "")
-    # Only the named route; any other value (or a URL) is ignored.
-    back_to_messages = request.POST.get("return_to") == "messages"
+    # The composer lives on the Messages page only, so errors re-render there.
 
     def _message_error(message: str, *, status: int) -> HttpResponse:
         # Same inline-error contract as the counselor dashboard (design-lint
         # baseline defect 5, student side): keep the status code, re-render
         # the page with the alert, and preserve the typed message.
-        if back_to_messages:
-            return _messages_page(
-                request, student, status=status, error=message, form_values={"body": raw.strip()}
-            )
-        return _student_dashboard_page(
-            request,
-            student,
-            status=status,
-            error=message,
-            error_form="message",
-            error_field="body",
-            form_values={"body": raw.strip()},
+        return _messages_page(
+            request, student, status=status, error=message, form_values={"body": raw.strip()}
         )
 
     if rate_limited(
@@ -332,7 +311,7 @@ def send_student_message(request: HttpRequest) -> HttpResponse:
     except MessageBodyError as error:
         return _message_error(str(error), status=error.status)
     send_message(student=student, counselor=assignment.counselor, sender=student, body=body)
-    return redirect("student-messages" if back_to_messages else "concierge-student-dashboard")
+    return redirect("student-messages")
 
 
 @login_required

@@ -1,4 +1,84 @@
 {% csrf_token %}
+<div class="doc-hub">
+{% if not read_only %}
+<section class="panel uploader-panel" aria-labelledby="upload-heading">
+  <h2 id="upload-heading">Add a document</h2>
+  <form class="uploader" data-upload="{{ upload_endpoint }}" hx-boost="false">
+    <fieldset class="kind-picker">
+      <legend>What is it?</legend>
+      <div class="chips">
+        {% for value, label in upload_kinds %}
+          <label class="chip"><input type="radio" name="kind" value="{{ value }}"{% if forloop.first %} checked{% endif %}><span>{{ label }}</span></label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <label class="dropzone" for="upload-file" data-dropzone>
+      <span class="dz-icon" aria-hidden="true"></span>
+      <span class="dz-title">Drop a file here, or <u>choose one</u></span>
+      <span class="dz-hint">PDF, JPG or PNG. A Word CV: save it as PDF first.</span>
+      <input type="file" id="upload-file" name="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+    </label>
+    <div class="dz-file" data-file hidden>
+      <span class="file-type" data-file-type>PDF</span>
+      <span class="dz-file-name"><strong data-file-name></strong><small data-file-size></small></span>
+      <progress data-progress max="100" value="0" hidden>0%</progress>
+    </div>
+    <div class="uploader-foot">
+      <button type="submit">Upload</button>
+      <p role="status" aria-live="polite"></p>
+    </div>
+  </form>
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="uploads-heading">
+  <div class="panel-head">
+    <h2 id="uploads-heading">Your documents</h2>
+    {% if uploads %}<span class="count">{{ uploads|length }}</span>{% endif %}
+  </div>
+  {% if uploads %}
+  <ul class="doc-cards">
+    {% for upload in uploads %}
+      <li class="doc-card">
+        <span class="file-type">{% if "pdf" in upload.content_type %}PDF{% elif "png" in upload.content_type %}PNG{% elif "jpeg" in upload.content_type or "jpg" in upload.content_type %}JPG{% else %}FILE{% endif %}</span>
+        <div class="doc-card-body">
+          <h3>{{ upload.get_kind_display }}</h3>
+          <p class="muted">Uploaded <time datetime="{{ upload.created_at|date:'c' }}">{{ upload.created_at|date:"j M Y" }}</time>{% if upload.expires_on %}. Expires {{ upload.expires_on|date:"j M Y" }}{% endif %}</p>
+          {% if upload.rejection_message %}
+            <span class="badge badge-danger">Not accepted</span>
+            <p class="doc-problem">{{ upload.rejection_message }}.</p>
+          {% elif upload.state == "AVAILABLE" %}
+            <span class="badge badge-ok">Ready</span>
+          {% elif upload.state == "QUARANTINED" or upload.state == "CHECKING" %}
+            <span class="badge badge-brand">Checking…</span>
+          {% elif upload.state == "REVIEW_REQUIRED" %}
+            <span class="badge badge-warn">Needs a look</span>
+          {% elif upload.state == "READ_FAILED" %}
+            <span class="badge badge-danger">Could not be read</span>
+          {% else %}
+            <span class="badge">{{ upload.state|lower|capfirst }}</span>
+          {% endif %}
+          {% if upload.kind in expiring and not counselor_view %}
+            <details class="doc-expiry">
+              <summary>{% if upload.expires_on %}Change expiry date{% else %}Add expiry date{% endif %}</summary>
+              <form method="post" action="{% url 'student-document-expiry' upload.id %}">
+                {% csrf_token %}
+                <label for="expiry-{{ upload.id }}">Expires on</label>
+                <input type="date" id="expiry-{{ upload.id }}" name="expires_on" value="{{ upload.expires_on|date:'Y-m-d' }}">
+                <button type="submit" class="btn-quiet">Save date</button>
+              </form>
+            </details>
+          {% endif %}
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    <p class="quiet-line">Nothing uploaded yet. Start with your CV: we read your details from it.</p>
+  {% endif %}
+</section>
+</div>
+
 <section class="panel" aria-labelledby="table-heading" id="documents">
   <h2 id="table-heading">What each application needs</h2>
   {% if table.columns %}
@@ -13,7 +93,7 @@
       <tbody>
         {% for line in grid %}
           <tr>
-            <th scope="row">{{ line.row.label }}{% if line.row.expires_on %} (expires {{ line.row.expires_on|date:"j M Y" }}){% endif %}</th>
+            <th scope="row">{{ line.row.label }}{% if line.row.expires_on %}<small>Expires {{ line.row.expires_on|date:"j M Y" }}</small>{% endif %}</th>
             {% for cell in line.cells %}
               <td>
                 <span class="cell cell-{{ cell.state|slugify }}">{{ cell.state }}</span>
@@ -23,7 +103,7 @@
                     <input type="hidden" name="application_id" value="{{ cell.column.application_id }}">
                     <input type="hidden" name="document_id" value="{{ cell.held.document_id }}">
                     <input type="hidden" name="source" value="{{ cell.held.source }}">
-                    <button type="submit">Submit document to {{ cell.column.title }}</button>
+                    <button type="submit" class="btn-quiet">Submit document to {{ cell.column.title }}</button>
                   </form>
                 {% endif %}
               </td>
@@ -34,82 +114,51 @@
     </table>
     </div>
   {% else %}
-    <p class="empty">No applications yet, so nothing is required.</p>
+    <p class="quiet-line">No applications yet, so nothing is required. Add programmes from your matches first.</p>
   {% endif %}
   {% if unverified %}
-    <ul>
+    <ul class="plain-list">
       {% for title, kinds in unverified %}<li>{{ title }}: {{ kinds }} (unverified)</li>{% endfor %}
     </ul>
   {% endif %}
 </section>
 
 <div class="doc-grid">
-{% if not read_only %}
-<section class="panel" aria-labelledby="upload-heading">
-  <h2 id="upload-heading">Upload a document</h2>
-  <form data-upload="{{ upload_endpoint }}" hx-boost="false">
-    <p>
-      <label for="upload-kind">Document</label>
-      <select id="upload-kind" name="kind">{% for value, label in upload_kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
-    </p>
-    <p><label for="upload-file">File</label> <input type="file" id="upload-file" name="file" accept=".pdf,.jpg,.jpeg,.png"></p>
-    <button type="submit">Upload</button>
-    <p role="status"></p>
-  </form>
-</section>
-{% endif %}
-
-<section class="panel" aria-labelledby="uploads-heading">
-  <h2 id="uploads-heading">Your uploads</h2>
-  <ul class="item-list">
-    {% for upload in uploads %}
-      <li>
-        {{ upload.get_kind_display }} — {% if upload.rejection_message %}{{ upload.rejection_message }}{% elif upload.state == "CHECKING" %}checking…{% else %}{{ upload.state|lower }}{% endif %}{% if upload.expires_on %}, expires {{ upload.expires_on|date:"j M Y" }}{% endif %}
-        {% if upload.kind in expiring and not counselor_view %}
-          <form method="post" action="{% url 'student-document-expiry' upload.id %}">
-            {% csrf_token %}
-            <label for="expiry-{{ upload.id }}">Expires on</label>
-            <input type="date" id="expiry-{{ upload.id }}" name="expires_on" value="{{ upload.expires_on|date:'Y-m-d' }}">
-            <button type="submit">Save</button>
-          </form>
-        {% endif %}
-      </li>
-    {% empty %}
-      <li>Nothing uploaded yet.</li>
-    {% endfor %}
-  </ul>
-</section>
-
 <section class="panel" aria-labelledby="facts-heading" id="facts">
-  <h2 id="facts-heading">Facts read from your CV</h2>
+  <h2 id="facts-heading">Details read from your CV</h2>
   {% if facts %}
-    <ul class="item-list">{% for fact in facts %}<li>{{ fact.category|lower }}: {% for key, value in fact.payload.items %}{{ key }} {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}</ul>
+    <p class="muted">Check these. Only details you confirm are ever used in your documents.</p>
+    <ul class="item-list">{% for fact in facts %}<li><span class="fact-kind">{{ fact.category|lower|capfirst }}</span>{% for key, value in fact.payload.items %}{{ key }} {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}</ul>
     {% if not counselor_view %}
-      <p><button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ confirm_body }}">These are right — confirm them</button> <span role="status"></span></p>
+      <p class="row-actions"><button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ confirm_body }}">These are right, confirm them</button> <span role="status" aria-live="polite"></span></p>
     {% endif %}
   {% else %}
-    <p class="muted">Nothing to confirm.</p>
+    <p class="quiet-line">Nothing to confirm.</p>
   {% endif %}
 </section>
 
 <section class="panel" aria-labelledby="drafts-heading" id="drafts">
-  <h2 id="drafts-heading">Your CV</h2>
-  {% if not counselor_view %}
-    <p><button type="button" data-api-post="/api/documents/generate" data-body='{"kind": "CV"}'>Write my CV</button> <span role="status"></span></p>
-  {% endif %}
+  <div class="panel-head">
+    <h2 id="drafts-heading">Your CV</h2>
+    {% if not counselor_view %}
+      <p class="row-actions"><button type="button" data-api-post="/api/documents/generate" data-body='{"kind": "CV"}'>Write my CV</button> <span role="status" aria-live="polite"></span></p>
+    {% endif %}
+  </div>
+  {% if drafts %}
   <ul class="item-list">
     {% for draft in drafts %}
       <li>
-        Version {{ draft.version }} — {{ draft.status|lower }}
+        <span><strong>Version {{ draft.version }}</strong> <span class="badge{% if draft.status == 'APPROVED' %} badge-ok{% else %} badge-brand{% endif %}">{{ draft.status|lower|capfirst }}</span></span>
         {% if draft.status == "DRAFT" and not counselor_view %}
-          <button type="button" data-api-post="/api/documents/drafts/{{ draft.id }}/approve">Approve</button> <span role="status"></span>
+          <button type="button" data-api-post="/api/documents/drafts/{{ draft.id }}/approve">Approve</button> <span role="status" aria-live="polite"></span>
         {% endif %}
         {% if draft.status == "APPROVED" and draft.rendered_filename %}<a class="btn btn-quiet" hx-boost="false" href="{% url 'documents-download' draft.id draft.rendered_filename %}">Download</a>{% endif %}
       </li>
-    {% empty %}
-      <li>No CV yet.</li>
     {% endfor %}
   </ul>
+  {% else %}
+    <p class="quiet-line">No CV yet. Our AI writes it from the details you confirmed.</p>
+  {% endif %}
 </section>
 </div>
 
@@ -117,12 +166,12 @@
   <section class="panel" aria-labelledby="unread-heading">
     <h2 id="unread-heading">Messages we could not read</h2>
     {% for signal in unnamed %}
-      <form method="post" action="{% url 'student-document-request' signal.id %}">
+      <form class="row-form" method="post" action="{% url 'student-document-request' signal.id %}">
         {% csrf_token %}
         <p>{{ signal.sender_domain }} wrote on {{ signal.received_at|date:"j M" }} about {{ signal.application.title }}. If it asked for a document, which one?</p>
-        <label for="request-{{ signal.id }}">Document</label>
+        <label for="request-{{ signal.id }}" class="sr-only">Document</label>
         <select id="request-{{ signal.id }}" name="kind">{% for kind, label in row_kinds %}<option value="{{ kind }}">{{ label }}</option>{% endfor %}</select>
-        <button type="submit">Save</button>
+        <button type="submit" class="btn-quiet">Save</button>
       </form>
     {% endfor %}
   </section>

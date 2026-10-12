@@ -3,11 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
   <title>{% block title %}{% if request.tenant %}{{ request.tenant.name }}{% else %}Elmify{% endif %}{% endblock %} · Elmify</title>
   <link rel="icon" href="{% static 'elmify/favicon.svg' %}" type="image/svg+xml">
+  <link rel="preload" href="{% static 'elmify/fonts/Geist-Variable.woff2' %}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{% static 'elmify/app.css' %}">
   {# htmx: forms inside <main> post in the background and swap the page in place #}
-  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"scrollIntoViewOnBoost":false,"historyCacheSize":0,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"4..","swap":true,"error":false},{"code":"...","swap":false,"error":true}]}'>
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"attributesToSettle":["class","width","height"],"scrollIntoViewOnBoost":false,"historyCacheSize":0,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"4..","swap":true,"error":false},{"code":"...","swap":false,"error":true}]}'>
   <script src="{% static 'elmify/htmx.min.js' %}" defer></script>
   <script src="{% static 'elmify/app.js' %}" defer></script>
   {% if app_shell %}<script src="{% static 'dashboard/documents.js' %}" defer></script>{% endif %}
@@ -18,18 +20,22 @@
   {% if app_shell %}
   <div class="shell role-{{ viewer_role|lower }}" hx-boost="true" hx-target="body" hx-swap="innerHTML show:none">
     <aside class="sidebar" id="sidebar">
-      <a class="brand" href="/">
-        <img class="brand-light" src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="104" height="30">
-        <img class="brand-dark" src="{% static 'elmify/elmify-wordmark-on-dark.svg' %}" alt="" width="104" height="30">
+      <a class="brand" href="/" aria-label="Elmify home">
+        <img src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="94" height="29">
       </a>
-      {% if request.tenant %}<p class="agency">{{ request.tenant.name }}</p>{% endif %}
+      {% if request.tenant %}<p class="agency" translate="no">{{ request.tenant.name }}</p>{% endif %}
       {% with p=request.path %}
       {% if viewer_role == "STUDENT" %}
         <nav aria-label="Main" class="nav">
           <ul>
             <li><a href="/student/"{% if p == "/student/" %} aria-current="page"{% endif %}><span class="ico ico-home" aria-hidden="true"></span>Home</a></li>
-            <li><a href="/student/recommendation/"{% if p == "/student/recommendation/" %} aria-current="page"{% endif %}><span class="ico ico-grid" aria-hidden="true"></span>Programmes &amp; funding</a></li>
+            <li><a href="/student/recommendation/"{% if p == "/student/recommendation/" %} aria-current="page"{% endif %}><span class="ico ico-compass" aria-hidden="true"></span>Programmes</a></li>
+            <li><a href="/student/applications/"{% if p == "/student/applications/" or "/kit" in p %} aria-current="page"{% endif %}><span class="ico ico-board" aria-hidden="true"></span>My applications</a></li>
             <li><a href="/student/documents/"{% if "/student/documents/" in p or p == "/student/gap-interview/" %} aria-current="page"{% endif %}><span class="ico ico-doc" aria-hidden="true"></span>Documents</a></li>
+          </ul>
+        </nav>
+        <nav aria-label="More" class="nav nav-more">
+          <ul>
             <li><a href="/student/messages/"{% if p == "/student/messages/" %} aria-current="page"{% endif %}><span class="ico ico-chat" aria-hidden="true"></span>Messages</a></li>
             <li><a href="/student/settings/"{% if "/student/settings/" in p or p == "/student/profile/" %} aria-current="page"{% endif %}><span class="ico ico-gear" aria-hidden="true"></span>Settings</a></li>
           </ul>
@@ -46,7 +52,7 @@
       {% elif viewer_role == "PLATFORM_ADMIN" %}
         <nav aria-label="Main" class="nav">
           <ul>
-            <li><a href="/platform/resolution/"{% if "/platform/resolution/" in p %} aria-current="page"{% endif %}><span class="ico ico-grid" aria-hidden="true"></span>Resolution queue</a></li>
+            <li><a href="/platform/resolution/"{% if "/platform/resolution/" in p %} aria-current="page"{% endif %}><span class="ico ico-board" aria-hidden="true"></span>Resolution queue</a></li>
             <li><a href="/platform/gold/"{% if "/platform/gold/" in p %} aria-current="page"{% endif %}><span class="ico ico-doc" aria-hidden="true"></span>Gold labels</a></li>
           </ul>
         </nav>
@@ -60,18 +66,16 @@
     <div class="workspace">
       <div class="topbar">
         <button type="button" class="menu-toggle" aria-controls="sidebar" aria-expanded="false"><span class="ico ico-menu" aria-hidden="true"></span><span class="sr-only">Menu</span></button>
+        <a class="topbar-brand" href="/" aria-label="Elmify home"><img src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="" width="78" height="24"></a>
         {% if viewer_role == "STUDENT" %}
-          <form class="search" role="search" method="get" action="/student/search/">
-            <label for="site-search" class="sr-only">Search your programmes, applications, documents and messages</label>
+          <button type="button" class="palette-open" aria-haspopup="dialog" aria-controls="palette">
             <span class="ico ico-search" aria-hidden="true"></span>
-            <input type="search" id="site-search" name="q" placeholder="Search programmes, applications, documents, messages" value="{{ search_query|default:'' }}" autocomplete="off">
-            <kbd aria-hidden="true">/</kbd>
-          </form>
-        {% else %}
-          <span class="topbar-spacer"></span>
+            <span>Search</span>
+            <kbd aria-hidden="true"><span class="kbd-mod">Ctrl</span>&nbsp;K</kbd>
+          </button>
         {% endif %}
       </div>
-      <div class="flash">
+      <div class="flash" aria-live="polite">
         {% for message in messages %}
           <p class="note note-{% if message.level_tag == 'error' %}error{% else %}ok{% endif %}" role="{% if message.level_tag == 'error' %}alert{% else %}status{% endif %}">{{ message }}</p>
         {% endfor %}
@@ -80,20 +84,19 @@
   {% if not user.is_authenticated %}
   <aside class="plain-aside" aria-hidden="true">
     <div class="plain-aside-inner">
-      <p class="plain-aside-title">Find a funded master&rsquo;s.<br>Apply with a plan.</p>
+      <p class="plain-aside-title">Get into a funded master&rsquo;s abroad.</p>
       <ul>
         <li><span>1</span>Tell us what you studied and where you want to go.</li>
-        <li><span>2</span>See programmes grouped by the scholarship that pays for them.</li>
-        <li><span>3</span>Track every deadline, document and answer in one place.</li>
+        <li><span>2</span>Our AI reads official pages and matches programmes and scholarships to you.</li>
+        <li><span>3</span>Prepare documents and track every deadline in one place.</li>
       </ul>
     </div>
   </aside>
   {% endif %}
   <div class="plain">
     <header class="plain-head">
-      <a class="brand" href="/">
-        <img class="brand-light" src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="104" height="30">
-        <img class="brand-dark" src="{% static 'elmify/elmify-wordmark-on-dark.svg' %}" alt="" width="104" height="30">
+      <a class="brand" href="/" aria-label="Elmify home">
+        <img src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="94" height="29">
       </a>
       {% if user.is_authenticated %}
         <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit" class="btn btn-quiet">Log out</button></form>
@@ -108,6 +111,29 @@
       </main>
   {% if app_shell %}
     </div>
+    {% if viewer_role == "STUDENT" %}
+    <dialog class="palette" id="palette" aria-labelledby="palette-title">
+      <h2 id="palette-title" class="sr-only">Search</h2>
+      <form class="palette-form" role="search" method="get" action="/student/search/">
+        <span class="ico ico-search" aria-hidden="true"></span>
+        <label for="palette-q" class="sr-only">Search programmes, applications, documents and messages</label>
+        <input type="search" id="palette-q" name="q" placeholder="Search programmes, applications, documents…" autocomplete="off" spellcheck="false"
+               hx-get="/student/search/" hx-trigger="input changed delay:250ms, search" hx-target="#palette-results" hx-select="#search-results" hx-swap="innerHTML" hx-sync="this:replace">
+        <kbd aria-hidden="true">Esc</kbd>
+      </form>
+      <div id="palette-results" class="palette-results" aria-live="polite">
+        <p class="palette-label">Go to</p>
+        <ul class="palette-list">
+          <li><a href="/student/"><span class="ico ico-home" aria-hidden="true"></span>Home</a></li>
+          <li><a href="/student/recommendation/"><span class="ico ico-compass" aria-hidden="true"></span>Programmes &amp; scholarships</a></li>
+          <li><a href="/student/applications/"><span class="ico ico-board" aria-hidden="true"></span>My applications</a></li>
+          <li><a href="/student/documents/"><span class="ico ico-doc" aria-hidden="true"></span>Documents</a></li>
+          <li><a href="/student/messages/"><span class="ico ico-chat" aria-hidden="true"></span>Messages</a></li>
+          <li><a href="/student/profile/"><span class="ico ico-person" aria-hidden="true"></span>Your profile</a></li>
+        </ul>
+      </div>
+    </dialog>
+    {% endif %}
   </div>
   {% else %}
   </div>

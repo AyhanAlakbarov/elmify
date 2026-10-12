@@ -1,4 +1,4 @@
-"""The four steps on the student's home page: one current until all are done."""
+"""The five milestones on the student's home page: one current until all are done."""
 
 from apps.dashboard.overview import Overview
 
@@ -25,6 +25,7 @@ def _overview(**over):
 def test_a_new_student_starts_at_the_profile():
     assert _overview().steps == (
         ("profile", "current"),
+        ("matches", "todo"),
         ("choose", "todo"),
         ("documents", "todo"),
         ("apply", "todo"),
@@ -33,7 +34,19 @@ def test_a_new_student_starts_at_the_profile():
 
 def test_the_current_step_moves_on_as_steps_are_done():
     steps = dict(_overview(profile_done=True, applications=2, documents_total=3).steps)
-    assert steps == {"profile": "done", "choose": "done", "documents": "current", "apply": "todo"}
+    assert steps == {
+        "profile": "done",
+        "matches": "done",
+        "choose": "done",
+        "documents": "current",
+        "apply": "todo",
+    }
+
+
+def test_a_published_pack_moves_the_student_to_choosing():
+    steps = dict(_overview(profile_done=True, pack_published=True, pack_programmes=4).steps)
+    assert steps["matches"] == "done"
+    assert steps["choose"] == "current"
 
 
 def test_everything_done_hides_the_steps():

@@ -3,9 +3,9 @@
 {% block content %}
   <div class="page-head"><div><h1>Settings</h1><p>Your profile, the inbox we watch, your browsers and your account.</p></div></div>
   <ul class="link-list">
-    <li><a href="/student/profile/">Profile</a> — {% if profile_done %}complete; you can update it{% else %}Not started{% endif %}</li>
-    <li><a href="/student/settings/mailbox/">Mailbox</a> — the inbox we watch for university replies</li>
-    <li><a href="/student/settings/extension/">Browser extension</a> — the browsers that fill your applications</li>
-    <li><a href="/student/settings/account/">Account</a> — leave and delete your data</li>
+    <li><a href="/student/profile/">Profile</a> {% if profile_done %}Complete. You can update it any time.{% else %}Not started yet.{% endif %}</li>
+    <li><a href="/student/settings/mailbox/">Mailbox</a> The inbox we watch for replies from universities.</li>
+    <li><a href="/student/settings/extension/">Browser extension</a> The browsers that fill in your applications.</li>
+    <li><a href="/student/settings/account/">Account</a> Leave Elmify and delete your data.</li>
   </ul>
 {% endblock %}

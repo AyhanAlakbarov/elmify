@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}My applications{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>My applications</h1>
+      <p>Every programme you chose, by stage. A card moves on by itself when you start, submit or record a decision.</p>
+    </div>
+    <a class="btn btn-quiet" href="/student/recommendation/">Add programmes</a>
+  </div>
+  {% include "student/_board.html" %}
+{% endblock %}

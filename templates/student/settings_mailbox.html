@@ -28,7 +28,7 @@
 
   <section class="panel" aria-labelledby="connect-heading">
     <h2 id="connect-heading">Connect an inbox</h2>
-    <p>We read only mail from these senders: {{ domains|join:", "|default:"none yet — add an application first" }}.</p>
+    <p>We read only mail from these senders: {{ domains|join:", "|default:"none yet; add an application first" }}.</p>
     <div class="provider-grid">
     {% for provider in providers %}
       <form method="get" action="{% url 'mailbox-connect' provider %}" hx-boost="false">

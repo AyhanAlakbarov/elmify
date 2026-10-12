@@ -1,12 +1,28 @@
 {% extends "base.html" %}
-{% block title %}Programmes &amp; funding{% endblock %}
+{% block title %}Programmes &amp; scholarships{% endblock %}
 {% block head %}{% if research_pending %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
 {% block content %}
-  <div class="page-head"><div><h1>Programmes &amp; funding</h1><p>Programmes matched to your profile, grouped by the funding that pays for them.</p></div></div>
+  <div class="page-head">
+    <div>
+      <h1>Programmes &amp; scholarships</h1>
+      <p>Programmes our AI matched to your profile, grouped by the scholarship that can pay for them. Every fact links to the official page it came from.</p>
+    </div>
+  </div>
   {% if research_pending %}
-    <p role="status">We are still researching your programmes. This page reloads itself every 15 seconds.</p>
+    <div class="researching" aria-busy="true">
+      <p role="status">Our AI is reading official programme and scholarship pages for you. This page refreshes every 15 seconds.</p>
+      <div class="match-grid" aria-hidden="true">
+        <div class="skeleton"><span></span><span></span><span></span><span></span></div>
+        <div class="skeleton"><span></span><span></span><span></span><span></span></div>
+        <div class="skeleton"><span></span><span></span><span></span><span></span></div>
+      </div>
+    </div>
   {% elif not pack %}
-    <p>No recommendations yet. Finish your <a href="/student/profile/">profile</a> to start.</p>
+    <div class="empty-state">
+      <h3>No matches yet</h3>
+      <p>Finish your profile and our AI starts looking for programmes and scholarships that fit you.</p>
+      <a class="btn" href="/student/profile/">Finish your profile</a>
+    </div>
   {% endif %}
   {% include "student/_pack.html" %}
 {% endblock %}

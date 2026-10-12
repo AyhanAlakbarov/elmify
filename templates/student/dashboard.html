@@ -1,107 +1,90 @@
 {% extends "base.html" %}
 {% block title %}Home{% endblock %}
 {% block content %}
+  {% with o=overview %}
   <div class="page-head">
     <div>
-      <h1>Home</h1>
-      <p>Hello{% if user.first_name %}, {{ user.first_name }}{% endif %}. Here is where your applications stand today.</p>
+      <h1>Hello{% if user.first_name %}, {{ user.first_name }}{% endif %}</h1>
+      <p>{% if o.all_steps_done %}Every milestone is done. Record decisions as they arrive.{% else %}Here is where you are, and what to do next.{% endif %}</p>
     </div>
-    <a class="btn" href="/student/recommendation/">Find programmes</a>
   </div>
 
-  {% with o=overview %}
-  {% if not o.all_steps_done %}
-    <ol class="journey" aria-label="Your steps">
-      {% for key, state in o.steps %}
-        <li class="is-{{ state }}"{% if state == "current" %} aria-current="step"{% endif %}>
+  {# Milestones: a real sequence, so a line that fills as each one is done. #}
+  <ol class="timeline" aria-label="Your progress">
+    {% for key, state in o.steps %}
+      <li class="is-{{ state }}"{% if state == "current" %} aria-current="step"{% endif %}>
+        <span class="tl-node" aria-hidden="true"></span>
+        {% if key == "profile" %}
+          <strong>Profile</strong>
+          <span>{% if state == "done" %}Complete{% else %}14 short questions{% endif %}</span>
+        {% elif key == "matches" %}
+          <strong>AI matches</strong>
+          <span>{% if state == "done" %}{{ o.pack_programmes }} programme{{ o.pack_programmes|pluralize }}{% elif o.profile_done %}Being prepared{% else %}After your profile{% endif %}</span>
+        {% elif key == "choose" %}
+          <strong>Programmes chosen</strong>
+          <span>{% if state == "done" %}{{ o.applications }} chosen{% else %}Pick from your matches{% endif %}</span>
+        {% elif key == "documents" %}
+          <strong>Documents ready</strong>
+          <span>{% if o.documents_total %}{{ o.documents_done }} of {{ o.documents_total }} ready{% else %}What each one asks for{% endif %}</span>
+        {% else %}
+          <strong>Applications sent</strong>
+          <span>{% if o.submitted %}{{ o.submitted }} sent{% else %}Use each application&rsquo;s kit{% endif %}</span>
+        {% endif %}
+        <span class="sr-only">({% if state == "done" %}done{% elif state == "current" %}you are here{% else %}not started{% endif %})</span>
+      </li>
+    {% endfor %}
+  </ol>
+
+  <div class="home-grid">
+    <section class="action-center" aria-labelledby="next-heading">
+      <h2 id="next-heading">Next actions</h2>
+
+      {% for key, state in o.steps %}{% if state == "current" %}
+        <div class="next-step">
           {% if key == "profile" %}
-            <strong>Tell us about you</strong>
-            {% if state == "done" %}Profile complete. <a href="/student/profile/">Update it</a>{% else %}14 short questions. <a href="/student/profile/">Start</a>{% endif %}
+            <div><h3>Finish your profile</h3><p>Fourteen short questions about your studies, languages and plans. About ten minutes.</p></div>
+            <a class="btn" href="/student/profile/">Continue profile</a>
+          {% elif key == "matches" %}
+            <div><h3>Your matches are being prepared</h3><p>Our AI is reading official programme and scholarship pages for you. This usually takes a few minutes.</p></div>
+            <a class="btn btn-quiet" href="/student/recommendation/">See progress</a>
           {% elif key == "choose" %}
-            <strong>Choose programmes</strong>
-            {% if state == "done" %}{{ o.applications }} in your list.{% elif o.pack_published %}{{ o.pack_programmes }} match{{ o.pack_programmes|pluralize:"es" }} ready. <a href="/student/recommendation/">See them</a>{% else %}Your matches appear here after your profile.{% endif %}
+            <div><h3>Review your {{ o.pack_programmes }} match{{ o.pack_programmes|pluralize:"es" }}</h3><p>Add the programmes you want to apply to. Each shows the scholarship that can pay for it.</p></div>
+            <a class="btn" href="/student/recommendation/">Review matches</a>
           {% elif key == "documents" %}
-            <strong>Prepare documents</strong>
-            {% if state == "done" %}Everything is ready.{% elif o.documents_total %}{{ o.documents_done }} of {{ o.documents_total }} ready. <a href="/student/documents/">Open</a>{% else %}Your CV and what each application asks for.{% endif %}
+            <div><h3>Prepare your documents</h3><p>{% if o.documents_total %}{{ o.documents_done }} of {{ o.documents_total }} ready. {% endif %}Upload your CV and what each application asks for.</p></div>
+            <a class="btn" href="/student/documents/">Open documents</a>
           {% else %}
-            <strong>Apply</strong>
-            {% if state == "done" %}{{ o.submitted }} sent.{% else %}Use each application's kit to apply.{% endif %}
+            <div><h3>Apply to your programmes</h3><p>Each application has a kit with every answer the portal will ask for.</p></div>
+            <a class="btn" href="/student/applications/">My applications</a>
           {% endif %}
-        </li>
-      {% endfor %}
-    </ol>
-  {% endif %}
-  <div class="stats">
-    <a class="stat stat-accent" href="#board-heading">
-      <span class="stat-label">Applications</span>
-      <span class="stat-value">{{ o.applications }}</span>
-      <span class="stat-sub">{{ o.active }} in progress · {{ o.decided }} decided</span>
-    </a>
-    <div class="stat">
-      <span class="stat-label">Next deadline</span>
-      {% if o.next_deadline %}
-        <span class="stat-value">{% if o.next_deadline.days_left == 0 %}Today{% else %}{{ o.next_deadline.days_left }} day{{ o.next_deadline.days_left|pluralize }}{% endif %}</span>
-        <span class="stat-sub">{{ o.next_deadline.title }}</span>
-      {% else %}
-        <span class="stat-value">None</span>
-        <span class="stat-sub">No deadlines recorded yet</span>
-      {% endif %}
-    </div>
-    <a class="stat" href="/student/documents/">
-      <span class="stat-label">Documents ready</span>
-      <span class="stat-value">{{ o.documents_done }}<small> / {{ o.documents_total }}</small></span>
-      <span class="stat-sub"><progress value="{{ o.documents_done }}" max="{{ o.documents_total|default:1 }}">{{ o.documents_percent }}%</progress></span>
-    </a>
-    <a class="stat" href="/student/recommendation/">
-      <span class="stat-label">{% if o.funding_gap %}Funding gap in your pack{% else %}Programmes in your pack{% endif %}</span>
-      {% if o.funding_gap %}
-        {% for currency, total in o.funding_gap %}<span class="stat-value">{{ total|floatformat:"0g" }} {{ currency }}</span>{% endfor %}
-        <span class="stat-sub">{{ o.pack_programmes }} programme{{ o.pack_programmes|pluralize }} in your pack</span>
-      {% else %}
-        <span class="stat-value">{{ o.pack_programmes }}</span>
-        <span class="stat-sub">{% if o.pack_published %}Your pack is ready{% else %}Finish your profile to get a pack{% endif %}</span>
-      {% endif %}
-    </a>
-  </div>
+        </div>
+      {% endif %}{% endfor %}
 
-  <div class="overview-grid">
-    {% include "student/_needs.html" %}
-    <section class="panel" aria-labelledby="deadlines-heading">
+      {% if needs %}
+        {% include "student/_needs_list.html" %}
+      {% elif o.all_steps_done %}
+        <p class="quiet-line">Nothing needs you right now.</p>
+      {% endif %}
+    </section>
+
+    <section class="side-panel" aria-labelledby="deadlines-heading">
       <h2 id="deadlines-heading">Upcoming deadlines</h2>
       {% if o.deadlines %}
         <ul class="deadlines">
           {% for card in o.deadlines %}
             <li>
-              <span><a href="#card-{{ card.application_id }}">{{ card.title }}</a>{% if card.institution %}<br><small>{{ card.institution }}</small>{% endif %}</span>
-              <span class="when{% if card.days_left <= o.soon_days %} soon{% endif %}">{{ card.deadline_local|date:"j M" }} · {% if card.days_left == 0 %}today{% else %}{{ card.days_left }}d{% endif %}</span>
+              <a href="/student/applications/#card-{{ card.application_id }}">{{ card.title }}{% if card.institution %}<small>{{ card.institution }}</small>{% endif %}</a>
+              <span class="when{% if card.days_left <= o.soon_days %} soon{% endif %}"><time datetime="{{ card.deadline_local|date:'c' }}">{{ card.deadline_local|date:"j M" }}</time><small>{% if card.days_left == 0 %}today{% else %}in {{ card.days_left }} day{{ card.days_left|pluralize }}{% endif %}</small></span>
             </li>
           {% endfor %}
         </ul>
       {% else %}
-        <p class="empty">No deadlines yet. They appear once an application has one.</p>
+        <p class="quiet-line">No deadlines yet. They appear when you add a programme.</p>
+      {% endif %}
+      {% if o.applications %}
+        <a class="side-link" href="/student/applications/">See all {{ o.applications }} application{{ o.applications|pluralize }}</a>
       {% endif %}
     </section>
   </div>
   {% endwith %}
-
-  <div class="board-wrap">
-    {% include "student/_board.html" %}
-  </div>
-
-  <section class="panel" aria-labelledby="message-heading">
-    <h2 id="message-heading">Write to your counsellor</h2>
-    {% if not has_counselor %}
-      <p class="empty">You do not have a counsellor yet. Once one is assigned to you, you can write to them here.</p>
-    {% else %}
-    <form class="composer" method="post" action="{% url 'concierge-send-student-message' %}">
-      {% csrf_token %}
-      {% if error and error_form == "message" %}<p role="alert" id="message-error">{{ error }}</p>{% endif %}
-      <p>
-        <label for="message-body">Message</label><br>
-        <textarea id="message-body" name="body" rows="4" maxlength="4000"{% if error and error_form == "message" %} aria-describedby="message-error"{% endif %}>{{ form_values.body }}</textarea>
-      </p>
-      <button type="submit">Send</button>
-    </form>
-    {% endif %}
-  </section>
 {% endblock %}

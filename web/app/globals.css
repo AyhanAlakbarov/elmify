@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
-/* Light only: white paper, the logo's ink, the logo's purple as the accent. */
+/* Light only. Colours come from the logo: slate ink, white, one indigo accent. */
 
 /* ---------- Semantic tokens: the only place raw colour values live ---------- */
 :root {
   --background: #ffffff;
-  --background-secondary: #f7f7f9;
+  --background-secondary: #f8fafc;
   --surface: #ffffff;
-  --foreground: #0b0716;
-  --foreground-secondary: #46424f;
-  --foreground-subtle: #6b6878;
-  --border: #ececf0;
-  --border-strong: #dcdbe3;
-  --brand: #7c3aed; /* fills + the dot */
-  --brand-strong: #6d28d9; /* hover */
-  --brand-soft: #f3eeff; /* tints */
-  --brand-text: #6d28d9; /* purple used as text */
+  --foreground: #0f172a; /* logo ink */
+  --foreground-secondary: #475569;
+  --foreground-subtle: #64748b;
+  --border: #e2e8f0; /* logo tile outline */
+  --border-strong: #cbd5e1;
+  --brand: #4f46e5; /* logo dot */
+  --brand-strong: #4338ca;
+  --brand-soft: #eef2ff;
+  --brand-text: #4338ca;
   --on-brand: #ffffff;
   --success: #047857;
   --success-soft: #d1fae5;
@@ -23,7 +23,6 @@
   --warning-soft: #fef3c7;
   color-scheme: light;
 }
-
 
 @theme inline {
   --color-background: var(--background);
@@ -44,57 +43,60 @@
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, monospace;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 
   /* Type scale: 01 = largest. Size / line-height / tracking travel together. */
-  --text-hero01: clamp(2.75rem, 7.2vw, 5.75rem);
-  --text-hero01--line-height: 1;
-  --text-hero01--letter-spacing: -0.045em;
-  --text-heading01: clamp(2rem, 4.4vw, 3.25rem);
-  --text-heading01--line-height: 1.05;
-  --text-heading01--letter-spacing: -0.035em;
+  --text-hero01: clamp(2.5rem, 4.3vw, 4rem);
+  --text-hero01--line-height: 1.02;
+  --text-hero01--letter-spacing: -0.04em;
+  --text-heading01: clamp(1.875rem, 3.6vw, 2.75rem);
+  --text-heading01--line-height: 1.08;
+  --text-heading01--letter-spacing: -0.03em;
   --text-heading02: 1.375rem;
   --text-heading02--line-height: 1.25;
   --text-heading02--letter-spacing: -0.02em;
   --text-heading03: 1.0625rem;
-  --text-heading03--line-height: 1.35;
+  --text-heading03--line-height: 1.4;
   --text-heading03--letter-spacing: -0.01em;
   --text-body01: 1.0625rem;
-  --text-body01--line-height: 1.6;
-  --text-body02: 0.875rem; /* dashboard base: 14/20 */
-  --text-body02--line-height: 1.25rem;
-  --text-caption01: 0.75rem;
-  --text-caption01--line-height: 1rem;
-  --text-caption02: 0.6875rem;
-  --text-caption02--line-height: 0.875rem;
+  --text-body01--line-height: 1.65;
+  --text-body02: 0.9375rem;
+  --text-body02--line-height: 1.5rem;
+  --text-caption01: 0.8125rem;
+  --text-caption01--line-height: 1.125rem;
 }
 
 html {
   scroll-behavior: smooth;
+  -webkit-tap-highlight-color: transparent;
 }
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
-  font-feature-settings: "cv11", "ss03";
   -webkit-font-smoothing: antialiased;
+  touch-action: manipulation;
 }
-.tabular {
-  font-variant-numeric: tabular-nums;
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
 }
 :focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 3px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 ::selection {
   background: var(--brand);
-  color: #fff;
+  color: var(--on-brand);
 }
 
-/* ---------- The purple dot: the one animated idea on the site ---------- */
-/* 1) Logo dot: drops in on load, hops when the logo is hovered or focused. */
+/* ---------- The square dot: the one animated idea on the site ---------- */
+/* Logo dot drops in on load and hops when the logo is hovered or focused. */
 .elm-dot {
   transform-box: fill-box;
   transform-origin: 50% 100%;
@@ -117,15 +119,15 @@ body {
   100% { transform: translateY(0); }
 }
 
-/* 2) Hero full stop: the headline types out, then the square lands as its period. */
+/* Hero: lines rise once, then the square lands as the headline's full stop. */
 .hero-line {
   animation: hero-in 700ms cubic-bezier(0.2, 0.7, 0.2, 1) 100ms both;
 }
 .hero-stop {
   display: inline-block;
-  width: 0.17em;
-  height: 0.17em;
-  margin-left: 0.07em;
+  width: 0.16em;
+  height: 0.16em;
+  margin-left: 0.06em;
   background: var(--brand);
   transform-origin: 50% 100%;
   animation: stop-land 1000ms cubic-bezier(0.3, 1.5, 0.5, 1) 750ms both;
@@ -141,45 +143,44 @@ body {
   100% { transform: translateY(0) scale(1, 1); }
 }
 
-/* 3) Faint dot-grid field behind the hero; one brand square pulses in it. */
-.dot-grid {
-  background-image: radial-gradient(var(--border-strong) 1px, transparent 1.2px);
-  background-size: 28px 28px;
-  mask-image: radial-gradient(ellipse 60% 70% at 50% 40%, #000 30%, transparent 75%);
+/* Product shot rises once on load. */
+.shot-in {
+  animation: shot-in 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 400ms both;
 }
-.dot-pulse {
-  animation: dot-pulse 3.2s ease-in-out 2.2s infinite;
-}
-@keyframes dot-pulse {
-  0%, 100% { opacity: 0.25; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.35); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
-  .elm-dot, .hero-line, .hero-stop, .dot-pulse { animation: none !important; }
-  .elm-logo:hover .elm-dot { animation: none !important; }
-}
-
-/* ---------- Product shots: rise once on load ---------- */
-.shot-in { animation: shot-in 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 450ms both; }
 @keyframes shot-in {
-  from { opacity: 0; transform: translateY(28px) scale(0.985); }
+  from { opacity: 0; transform: translateY(24px); }
   to { opacity: 1; transform: none; }
 }
 
-/* ---------- The feature strip: one slow, continuous line of what Elmify does ---------- */
-.marquee { mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent); }
-.marquee-track { animation: marquee 38s linear infinite; }
-.marquee:hover .marquee-track { animation-play-state: paused; }
-@keyframes marquee { to { transform: translateX(-50%); } }
+/* The AI pipeline: the connecting line draws itself when the section scrolls in. */
+@supports (animation-timeline: view()) {
+  .pipeline-line {
+    transform-origin: 0 50%;
+    animation: line-draw linear both;
+    animation-timeline: view();
+    animation-range: entry 10% cover 45%;
+  }
+}
+@keyframes line-draw {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
 
-/* ---------- FAQ: the open answer slides in ---------- */
-details.faq[open] > div { animation: hero-in 260ms ease-out both; }
+/* FAQ: the open answer fades in. */
+details.faq[open] > div { animation: hero-in 240ms ease-out both; }
 details.faq summary::-webkit-details-marker { display: none; }
 details.faq summary .plus { transition: transform 200ms ease; }
 details.faq[open] summary .plus { transform: rotate(45deg); }
 
 @media (prefers-reduced-motion: reduce) {
-  .shot-in, .marquee-track, details.faq[open] > div { animation: none !important; }
+  html { scroll-behavior: auto; }
+  .elm-dot,
+  .elm-logo:hover .elm-dot,
+  .hero-line,
+  .hero-stop,
+  .shot-in,
+  .pipeline-line,
+  details.faq[open] > div {
+    animation: none !important;
+  }
 }

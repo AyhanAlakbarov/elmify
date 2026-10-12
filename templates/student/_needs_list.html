@@ -1,0 +1,22 @@
+<ul class="needs-list">
+  {% for item in needs %}
+    <li>
+      <p>{{ item.text }}{% if item.deadline %} <span class="due">Due {{ item.deadline|date:"j M Y" }}</span>{% endif %}</p>
+      <div class="row-actions">
+        {% if item.url %}
+          {% if item.method == "post" %}
+            {% if not read_only %}<form method="post" action="{{ item.url }}">{% csrf_token %}<button type="submit">{{ item.button }}</button></form>{% endif %}
+          {% else %}
+            <a class="btn btn-small" href="{{ item.url }}">{{ item.button }}</a>
+          {% endif %}
+        {% endif %}
+        {% if item.ignore_url and not read_only %}
+          <form method="post" action="{{ item.ignore_url }}">{% csrf_token %}<button type="submit" class="btn-quiet">Ignore</button></form>
+        {% endif %}
+        {% if item.acknowledge_url and not read_only %}
+          <form method="post" action="{{ item.acknowledge_url }}">{% csrf_token %}<button type="submit" class="btn-quiet">Acknowledge</button></form>
+        {% endif %}
+      </div>
+    </li>
+  {% endfor %}
+</ul>

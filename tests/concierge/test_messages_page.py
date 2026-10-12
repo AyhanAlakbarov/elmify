@@ -145,7 +145,7 @@ def test_messages_context_exposes_no_student_only_action(
     }
 
 
-def test_a_hostile_return_to_falls_back_to_the_dashboard(
+def test_a_hostile_return_to_is_ignored(
     client, agency_a, domain_a, user_a, membership_a, counselor_membership
 ) -> None:
     with tenant_scope(agency_a.id):
@@ -157,7 +157,7 @@ def test_a_hostile_return_to_falls_back_to_the_dashboard(
         "/student/messages/send/", {"body": "Hi", "return_to": "https://evil.test/"},
         HTTP_HOST=domain_a.host,
     )
-    assert sent["Location"] == "/student/"
+    assert sent["Location"] == "/student/messages/"
 
 
 def test_clean_message_body_is_the_one_rule() -> None:

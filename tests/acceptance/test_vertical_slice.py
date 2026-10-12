@@ -26,8 +26,8 @@ def test_thin_slice_publishes_automatically_after_research(slice_driver) -> None
     # pack, and the funded programme renders as a programme row.
     assert page.contains("Foundation Stipend")
     assert page.contains("<h4>MSc Chemistry</h4>")
-    assert page.contains("Funding gap")
-    assert page.contains("Approved v")
+    assert page.contains("Still to cover")
+    assert page.contains("Your list, version")
     assert not page.contains('http-equiv="refresh"')
 
 

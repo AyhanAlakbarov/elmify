@@ -2,21 +2,22 @@ import Link from "next/link";
 
 type Props = {
   href: string;
-  variant?: "primary" | "secondary" | "light";
+  variant?: "primary" | "secondary";
   size?: "md" | "lg";
   children: React.ReactNode;
   className?: string;
 };
 
-/** Ink is the main action (the logo's black); purple shows on hover. */
+/** Indigo is the main action; the secondary button is an outline in the same ink. */
 export function Button({ href, variant = "primary", size = "md", children, className = "" }: Props) {
-  const base =
-    "inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-[background-color,border-color,color,transform] duration-150 active:scale-[0.97]";
-  const sizes = size === "lg" ? "h-12 px-7 text-body01" : "h-10 px-5 text-body02";
+  const base = [
+    "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold",
+    "transition-[background-color,border-color,color,transform] duration-200 active:scale-[0.98]",
+  ].join(" ");
+  const sizes = size === "lg" ? "h-12 px-6 text-body01" : "h-10 px-5 text-body02";
   const looks = {
-    primary: "bg-foreground text-background hover:bg-brand",
+    primary: "bg-brand text-on-brand hover:bg-brand-strong",
     secondary: "border border-border-strong bg-surface text-foreground hover:border-foreground",
-    light: "bg-background text-foreground hover:bg-brand hover:text-on-brand",
   }[variant];
   return (
     <Link href={href} className={[base, sizes, looks, className].join(" ")}>

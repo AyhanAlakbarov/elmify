@@ -36,6 +36,8 @@
   // A followed link starts at the top of the new page; a posted form keeps the
   // reader where they were, so the card they just changed stays in view.
   document.addEventListener("htmx:afterSettle", function (event) {
+    // Live search results land inside the open dialog: not a page change.
+    if (event.detail && event.detail.target && event.detail.target.id === "palette-results") { return; }
     document.body.classList.remove("menu-open");
     var config = (event.detail && event.detail.requestConfig) || {};
     if ((config.verb || "get").toLowerCase() === "get") { window.scrollTo(0, 0); }
@@ -55,15 +57,73 @@
     }
   });
 
-  // "/" focuses the search box, Escape closes the menu.
+  // ---------- search: a dialog opened with Ctrl K / ⌘ K, "/" or the top-bar button ----------
+  var isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || "");
+  function markShortcut() {
+    if (!isMac) { return; }
+    document.querySelectorAll(".kbd-mod").forEach(function (el) { el.textContent = "⌘"; });
+  }
+  document.addEventListener("DOMContentLoaded", markShortcut);
+  document.addEventListener("htmx:afterSettle", markShortcut);
+
+  var paletteDefault = null;
+  function openPalette() {
+    var dialog = document.getElementById("palette");
+    if (!dialog || dialog.open || typeof dialog.showModal !== "function") { return false; }
+    var results = document.getElementById("palette-results");
+    if (results && paletteDefault === null) { paletteDefault = results.innerHTML; }
+    dialog.showModal();
+    var box = document.getElementById("palette-q");
+    if (box) { box.focus(); box.select(); }
+    return true;
+  }
+  function closePalette() {
+    var dialog = document.getElementById("palette");
+    if (dialog && dialog.open) { dialog.close(); }
+  }
+
+  document.addEventListener("click", function (event) {
+    if (event.target.closest(".palette-open")) { openPalette(); return; }
+    var dialog = document.getElementById("palette");
+    // A click on the backdrop (the dialog itself, outside its content) closes it.
+    if (dialog && event.target === dialog) { closePalette(); }
+    // A followed result closes the dialog; the link then loads in place.
+    if (dialog && dialog.open && event.target.closest("#palette-results a")) { closePalette(); }
+  });
+
+  // Empty box: show the "Go to" shortcuts again instead of an empty result.
+  document.addEventListener("input", function (event) {
+    if (event.target.id !== "palette-q" || event.target.value.trim()) { return; }
+    var results = document.getElementById("palette-results");
+    if (results && paletteDefault !== null) { results.innerHTML = paletteDefault; }
+  });
+
+  // Arrow keys move through the results; Enter on the box opens the full search page.
+  document.addEventListener("keydown", function (event) {
+    var dialog = document.getElementById("palette");
+    if (!dialog || !dialog.open || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) { return; }
+    var links = Array.prototype.slice.call(dialog.querySelectorAll("#palette-results a"));
+    if (!links.length) { return; }
+    event.preventDefault();
+    var at = links.indexOf(document.activeElement);
+    var next = event.key === "ArrowDown" ? at + 1 : at - 1;
+    if (next < 0) { document.getElementById("palette-q").focus(); return; }
+    links[Math.min(next, links.length - 1)].focus();
+  });
+
   document.addEventListener("keydown", function (event) {
     var tag = (event.target.tagName || "").toLowerCase();
     var typing = tag === "input" || tag === "textarea" || tag === "select" || event.target.isContentEditable;
-    if (event.key === "/" && !typing) {
-      var box = document.getElementById("site-search");
-      if (box) { event.preventDefault(); box.focus(); box.select(); }
+    var combo = (event.ctrlKey || event.metaKey) && (event.key === "k" || event.key === "K");
+    if (combo || (event.key === "/" && !typing)) {
+      if (openPalette()) { event.preventDefault(); }
     }
-    if (event.key === "Escape") { document.body.classList.remove("menu-open"); }
+    if (event.key === "Escape") {
+      document.body.classList.remove("menu-open");
+      // In a search box the browser's first Escape only clears the text; close the dialog at once.
+      var dialog = document.getElementById("palette");
+      if (dialog && dialog.open) { event.preventDefault(); closePalette(); }
+    }
   });
 
   // A refusal that is a whole page (the views' inline-error re-renders) swaps
