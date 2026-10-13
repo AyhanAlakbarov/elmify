@@ -25,3 +25,5 @@ extension/tehsil-copilot.zip
 skills-lock.json
 skill-observations/
 skill-updates/
+.local-queue/
+.local-store/

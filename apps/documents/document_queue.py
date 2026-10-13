@@ -65,13 +65,14 @@ class DocumentWorkMessage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[1] = 1
-    action: Literal["generate", "render", "capture_requirements"]
+    action: Literal["generate", "render", "capture_requirements", "approve_letter"]
     kind: str
     tenant_id: UUID
     student_id: UUID
     draft_id: UUID | None = None
     programme_id: UUID | None = None
-    #: capture_requirements only: the Application whose kit copy to write.
+    #: capture_requirements, and a MOTIVATION_LETTER generate/approve_letter:
+    #: the Application the work is for.
     application_id: UUID | None = None
 
 

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="page-head"><div><h1>Reports</h1><p>Your consultation report sums up your matches, what each one costs and how it is funded. Download it to read offline or share with your family.</p></div></div>
+
+<section class="panel" aria-labelledby="reports-heading">
+  <div class="panel-head"><h2 id="reports-heading">Your reports</h2>{% if reports %}<span class="count">{{ reports|length }}</span>{% endif %}</div>
+  {% if reports %}
+    <ul class="doc-cards">
+      {% for report in reports %}
+        <li class="doc-card">
+          <span class="file-type">HTML</span>
+          <div class="doc-card-body">
+            <h3>Consultation report</h3>
+            <p class="muted">Made <time datetime="{{ report.generated_at|date:'c' }}">{{ report.generated_at|date:"j M Y" }}</time> from your list, version {{ report.pack_version.version }}</p>
+            <a class="btn btn-quiet" hx-boost="false" href="{% url 'report-download' report.id %}">Download</a>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty-state">
+      <span class="ico ico-report" aria-hidden="true"></span>
+      <h3>No report yet</h3>
+      <p class="muted">A report is made after a paid consultation. Ask your counsellor in <a href="{% url 'student-messages' %}">Messages</a> if you would like one.</p>
+    </div>
+  {% endif %}
+</section>
+
+{% if payments %}
+<section class="panel" aria-labelledby="payments-heading">
+  <h2 id="payments-heading">Payments</h2>
+  <ul class="item-list">
+    {% for payment in payments %}
+      <li><span>Consultation, {{ payment.created_at|date:"j M Y" }}</span><span><strong>{{ payment.amount }} {{ payment.currency }}</strong> <span class="badge{% if payment.status == 'PAID' %} badge-ok{% elif payment.status == 'FAILED' %} badge-danger{% else %} badge-brand{% endif %}">{{ payment.status|lower|capfirst }}</span></span></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

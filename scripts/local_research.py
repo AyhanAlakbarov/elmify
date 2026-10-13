@@ -95,15 +95,63 @@ def process_pending() -> int:
     return done
 
 
+def process_documents() -> int:
+    """Run queued document work (CV and letter writing, approvals, kit capture).
+
+    The web tier spools these to .local-queue/ on a DEBUG machine
+    (apps/queue.is_local_queue); this runs each one through the worker's own
+    handler. Writing needs OPENAI_API_KEY; approving and rendering do not.
+    """
+    from apps.documents.document_queue import DocumentWorkMessage
+    from apps.documents.document_worker import handle_document_work
+    from apps.queue import drain_local
+
+    done = 0
+    for body in drain_local(settings.DOCUMENT_QUEUE_URL):
+        message = DocumentWorkMessage.model_validate_json(body)
+        try:
+            handle_document_work(message)
+        except Exception as error:  # a local helper: report and carry on
+            name = type(error).__name__
+            print(f"document {message.action} {message.kind}: failed: {name}: {error}")
+            _settle_failed_letter(message)
+            continue
+        done += 1
+        print(f"document {message.action} {message.kind}: done")
+    # Research runs are found in the database by process_pending, not read
+    # from the spool; drop what the web tier spooled so it cannot pile up.
+    drain_local(settings.RESEARCH_QUEUE_URL)
+    return done
+
+
+def _settle_failed_letter(message) -> None:  # type: ignore[no-untyped-def]
+    """A letter whose work crashed (no API key, say) must not say "Writing…" forever."""
+    if message.application_id is None or message.kind != "MOTIVATION_LETTER":
+        return
+    from django.db import transaction
+
+    from apps.portals.models import Application
+    from apps.tenancy.context import tenant_scope
+    from apps.tenancy.db import set_local_tenant
+
+    with transaction.atomic(), tenant_scope(message.tenant_id):
+        set_local_tenant(message.tenant_id)
+        Application.objects.filter(id=message.application_id).update(
+            letter_state="", letter_note="engine_refused"
+        )
+
+
 def main() -> None:
     watch = "--watch" in sys.argv
     if not watch:
         print(f"{process_pending()} run(s) processed.")
+        print(f"{process_documents()} document job(s) processed.")
         return
-    print(f"Watching for new research runs every {POLL_SECONDS}s. Ctrl+C to stop.")
+    print(f"Watching for research runs and document work every {POLL_SECONDS}s. Ctrl+C to stop.")
     try:
         while True:
             process_pending()
+            process_documents()
             time.sleep(POLL_SECONDS)
     except KeyboardInterrupt:
         print("Stopped.")

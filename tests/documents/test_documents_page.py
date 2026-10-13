@@ -370,9 +370,12 @@ def test_the_counselor_view_carries_no_student_only_action(
             "student/_documents.html", page_context(membership_a, counselor_view=True),
             request=rf.get("/"),
         )
-    for action in ("/student/documents/", "data-api-post", "Submit document to"):
+    for action in ("/student/documents/", "Submit document to"):
         assert action in student_html
         assert action not in html
+    # Writing and approving the CV moved to the student's CV & letters page.
+    assert "/student/writing/" in student_html
+    assert "data-api-post" not in html
     assert f"/counselor/students/{membership_a.id}/uploads/" in html
 
 

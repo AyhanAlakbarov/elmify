@@ -33,7 +33,7 @@ from apps.tenancy.context import tenant_scope
 from apps.tenancy.db import tenant_transaction
 from apps.tenancy.models import Membership
 
-from . import storage
+from . import letter_worker, storage
 from .document_queue import DocumentWorkMessage, ScanResultEvent
 from .drafts import create_draft
 from .europass_queue import EuropassRenderMessage, enqueue_europass_render
@@ -266,7 +266,11 @@ def _object_store() -> S3ObjectStore:
 
 
 def handle_document_work(message: DocumentWorkMessage) -> None:
-    if message.action == "generate":
+    if message.action == "generate" and message.kind == DocumentDraft.Kind.MOTIVATION_LETTER:
+        letter_worker.generate_letter_for(message)
+    elif message.action == "approve_letter":
+        letter_worker.approve_letter_for(message)
+    elif message.action == "generate":
         _generate(message)
     elif message.action == "capture_requirements":
         _capture(message)
@@ -324,9 +328,9 @@ def _generate(message: DocumentWorkMessage) -> None:
     SkillMatchRateLimited -- rare, and the DLQ alarm is the right place for it.
     """
     if message.kind != DocumentDraft.Kind.CV:
-        # The letter engine adds its branch here. Until it does, widening
-        # api._SUPPORTED_KINDS alone would file a motivation letter as a CV --
-        # silently, since create_draft stores whatever kind it is handed.
+        # Letters take their own branch (letter_worker, dispatched above), so
+        # anything else reaching here would be filed as a CV -- silently,
+        # since create_draft stores whatever kind it is handed.
         raise ValueError(f"no generator for kind {message.kind!r}")
     tenant_id = message.tenant_id
     with tenant_scope(tenant_id), tenant_transaction(tenant_id):

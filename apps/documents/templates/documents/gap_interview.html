@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}A few questions about your CV{% endblock %}
+{% block title %}Questions for you{% endblock %}
 {% block content %}
   {% comment %}
   Unstyled on purpose. Two things here are load-bearing rather than unfinished:
@@ -14,7 +14,7 @@
   base.html carries no text input, so the exact `<input type="text"` count in
   tests/documents/test_gap_interview_view.py still counts questions only.
   {% endcomment %}
-  <div class="page-head"><div><h1>A few questions about your CV</h1><p>Answer what you can. Anything you leave blank stays on the list.</p></div></div>
+  <div class="page-head"><div><h1>Questions for you</h1><p>Things the AI could not find in your files but your CV or applications need. Answer what you can; anything you leave blank stays on the list.</p></div></div>
   {% if error %}<p role="alert">{{ error }}</p>{% endif %}
   {% if notes %}
     <section class="panel">
@@ -67,5 +67,12 @@
       </datalist>
     </form>
   {% endif %}
-  {% if not fields and not notes %}<p>Nothing to ask right now.</p>{% endif %}
+  {% if not fields and not notes %}
+    <div class="empty-state">
+      <span class="ico ico-question" aria-hidden="true"></span>
+      <h3>Nothing to ask right now</h3>
+      <p>When the AI reads a file and something is missing, such as a date or a grade scale, the question appears here.</p>
+      <a class="btn btn-quiet" href="{% url 'student-writing' %}">Go to CV &amp; letters</a>
+    </div>
+  {% endif %}
 {% endblock %}

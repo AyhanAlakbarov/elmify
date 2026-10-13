@@ -193,6 +193,16 @@ class DocumentDraft(TenantScopedModel):
     )
     approved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    #: MOTIVATION_LETTER only, written by the worker that generated the letter
+    #: (document_worker._generate_letter): the gate violations and retry flag
+    #: generate_letter returned. letter_approval.mark_letter_ready trusts its
+    #: caller for these, so the approve path reads the generator's own record
+    #: of them, never anything a request sends. Codes and archetypes only: the
+    #: `detail` text is not kept, it can quote the letter.
+    letter_gates = models.JSONField(default=list, blank=True)
+    letter_retried = models.BooleanField(default=False)
+    #: The admissions cycle of the ApplicationPrompt the letter was written to.
+    letter_cycle = models.CharField(max_length=20, blank=True, default="")
 
     class ApprovalMode(models.TextChoices):
         PER_DOCUMENT = "PER_DOCUMENT"

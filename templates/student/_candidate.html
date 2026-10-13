@@ -11,7 +11,7 @@
       {% else %}
         <span class="badge badge-danger">Not eligible</span>
       {% endif %}
-      {% if candidate.country_code %}<span class="match-country">{{ candidate.country_code|country_name }}</span>{% endif %}
+      {% if candidate.country_code %}<span class="match-country">{{ candidate.country_code|flag }}{{ candidate.country_code|country_name }}</span>{% endif %}
     </div>
     {% if elsewhere %}<p class="match-note">{{ elsewhere|capfirst }}</p>{% endif %}
     <h4>{{ candidate.program_name }}</h4>
@@ -24,7 +24,7 @@
     {% if candidate.opportunity_id is None or candidate.application_fee %}
     <dl class="match-facts">
       {% if candidate.opportunity_id is None %}
-        <div><dt>Still to cover</dt><dd>{% if candidate.funding_gap_is_placeholder %}Not costed yet{% else %}{{ candidate.funding_gap }} {{ candidate.currency }}{% endif %}</dd></div>
+        <div><dt>Still to cover</dt><dd{% if not candidate.funding_gap_is_placeholder and candidate.funding_gap == 0 %} class="gap-zero"{% endif %}>{% if candidate.funding_gap_is_placeholder %}Not costed yet{% else %}{{ candidate.funding_gap }} {{ candidate.currency }}{% endif %}</dd></div>
       {% endif %}
       {% if candidate.application_fee %}<div><dt>Application fee</dt><dd>{{ candidate.application_fee }} {{ candidate.application_fee_currency }}</dd></div>{% endif %}
     </dl>

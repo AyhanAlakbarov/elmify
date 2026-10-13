@@ -267,6 +267,11 @@ KEEP: dict[str, tuple[str, ...]] = {
         "approved_at",
         "created_at",
         "approval_mode",
+        # Gate codes and archetypes, a retry flag and a cycle year: what the
+        # letter engine checked, never what the letter said (detail is dropped).
+        "letter_gates",
+        "letter_retried",
+        "letter_cycle",
     ),
     "documents.DocumentDraftFact": ("created_at",),
     "documents.NarrativeInput": ("kind", "proposed_by", "confirmed_at", "created_at"),
@@ -350,6 +355,9 @@ KEEP: dict[str, tuple[str, ...]] = {
         "route_snapshot",
         # when Start application was pressed: operational, like created_at.
         "started_at",
+        # a work state and a fixed refusal code (writing.LETTER_NOTES), never text.
+        "letter_state",
+        "letter_note",
     ),
     # a link between two of the student's own cards. The cards are redacted in
     # place, so the row survives erasure; nothing in it is personal.

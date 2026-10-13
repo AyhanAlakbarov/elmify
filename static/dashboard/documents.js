@@ -32,7 +32,9 @@
     rate_limited: "Too many tries. Wait a few minutes and try again.",
     invalid_kind: "Choose what kind of document this is.",
     unsupported_kind: "That kind of document cannot be uploaded here.",
-    not_found: "That item no longer exists. Reload the page."
+    not_found: "That item no longer exists. Reload the page.",
+    approval_blocked: "Some lines are not in your confirmed details (listed on the right). Confirm those details or write a new version.",
+    fact_ids_required: "There is nothing to confirm."
   };
   function reason(data, status) {
     var code = data && data.error;

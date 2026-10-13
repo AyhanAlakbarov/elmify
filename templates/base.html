@@ -31,13 +31,17 @@
             <li><a href="/student/"{% if p == "/student/" %} aria-current="page"{% endif %}><span class="ico ico-home" aria-hidden="true"></span>Home</a></li>
             <li><a href="/student/recommendation/"{% if p == "/student/recommendation/" %} aria-current="page"{% endif %}><span class="ico ico-compass" aria-hidden="true"></span>Programmes</a></li>
             <li><a href="/student/applications/"{% if p == "/student/applications/" or "/kit" in p %} aria-current="page"{% endif %}><span class="ico ico-board" aria-hidden="true"></span>My applications</a></li>
-            <li><a href="/student/documents/"{% if "/student/documents/" in p or p == "/student/gap-interview/" %} aria-current="page"{% endif %}><span class="ico ico-doc" aria-hidden="true"></span>Documents</a></li>
+            <li><a href="/student/documents/"{% if "/student/documents/" in p %} aria-current="page"{% endif %}><span class="ico ico-doc" aria-hidden="true"></span>Documents</a></li>
+            <li><a href="/student/writing/"{% if "/student/writing/" in p %} aria-current="page"{% endif %}><span class="ico ico-pen" aria-hidden="true"></span>CV &amp; letters</a></li>
+            <li><a href="/student/gap-interview/"{% if p == "/student/gap-interview/" %} aria-current="page"{% endif %}><span class="ico ico-question" aria-hidden="true"></span>Questions</a></li>
+            <li><a href="/student/messages/"{% if p == "/student/messages/" %} aria-current="page"{% endif %}><span class="ico ico-chat" aria-hidden="true"></span>Messages</a></li>
           </ul>
         </nav>
         <nav aria-label="More" class="nav nav-more">
           <ul>
-            <li><a href="/student/messages/"{% if p == "/student/messages/" %} aria-current="page"{% endif %}><span class="ico ico-chat" aria-hidden="true"></span>Messages</a></li>
-            <li><a href="/student/settings/"{% if "/student/settings/" in p or p == "/student/profile/" %} aria-current="page"{% endif %}><span class="ico ico-gear" aria-hidden="true"></span>Settings</a></li>
+            <li><a href="/student/profile/"{% if p == "/student/profile/" %} aria-current="page"{% endif %}><span class="ico ico-person" aria-hidden="true"></span>Profile</a></li>
+            <li><a href="/student/reports/"{% if p == "/student/reports/" %} aria-current="page"{% endif %}><span class="ico ico-report" aria-hidden="true"></span>Reports</a></li>
+            <li><a href="/student/settings/"{% if "/student/settings/" in p %} aria-current="page"{% endif %}><span class="ico ico-gear" aria-hidden="true"></span>Settings</a></li>
           </ul>
         </nav>
       {% elif viewer_role == "COUNSELOR" %}
@@ -128,6 +132,8 @@
           <li><a href="/student/recommendation/"><span class="ico ico-compass" aria-hidden="true"></span>Programmes &amp; scholarships</a></li>
           <li><a href="/student/applications/"><span class="ico ico-board" aria-hidden="true"></span>My applications</a></li>
           <li><a href="/student/documents/"><span class="ico ico-doc" aria-hidden="true"></span>Documents</a></li>
+          <li><a href="/student/writing/"><span class="ico ico-pen" aria-hidden="true"></span>CV &amp; letters</a></li>
+          <li><a href="/student/gap-interview/"><span class="ico ico-question" aria-hidden="true"></span>Questions for you</a></li>
           <li><a href="/student/messages/"><span class="ico ico-chat" aria-hidden="true"></span>Messages</a></li>
           <li><a href="/student/profile/"><span class="ico ico-person" aria-hidden="true"></span>Your profile</a></li>
         </ul>

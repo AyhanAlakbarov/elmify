@@ -123,6 +123,7 @@
   {% endif %}
 </section>
 
+{% if counselor_view %}
 <div class="doc-grid">
 <section class="panel" aria-labelledby="facts-heading" id="facts">
   <h2 id="facts-heading">Details read from your CV</h2>
@@ -161,6 +162,9 @@
   {% endif %}
 </section>
 </div>
+{% else %}
+<a class="write-callout" href="{% url 'student-writing' %}"><span class="ico ico-pen" aria-hidden="true"></span><span><strong>Your CV and motivation letters</strong><small>Confirm the details the AI read from your files, then let it write your CV and a letter for each application.</small></span><span class="write-callout-go">Open CV &amp; letters</span></a>
+{% endif %}
 
 {% if unnamed and not counselor_view %}
   <section class="panel" aria-labelledby="unread-heading">

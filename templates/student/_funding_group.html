@@ -1,15 +1,15 @@
-{% load dashboard cv_countries %}{% if group.award or group.programmes %}<section class="funding-group">
+{% load dashboard cv_countries %}{% if group.award or group.programmes %}<section class="funding-group tone-{% if group.award %}{{ group.award.program_name|tone }}{% else %}plain{% endif %}">
   {% if group.award %}
     {% with award=group.award card=group.award.funding_card %}
       <header class="funding-head">
         <div class="funding-title">
-          <span class="badge badge-ok">Scholarship</span>
+          <p class="funding-kicker"><span class="badge badge-tone">Scholarship</span>{% if award.country_code %}<span class="match-country">{{ award.country_code|flag }}{{ award.country_code|country_name }}</span>{% endif %}</p>
           <h3>{{ award.program_name }}</h3>
           {% if card.holder %}<p class="muted">Awarded by {{ card.holder }}</p>{% endif %}
         </div>
         <dl class="funding-facts">
-          <div><dt>Tuition</dt><dd>{{ card.tuition|coverage }}</dd></div>
-          <div><dt>Living costs</dt><dd>{{ card.living|coverage }}</dd></div>
+          <div><dt>Tuition</dt><dd><span class="cov cov-{{ card.tuition|coverage_tone }}">{{ card.tuition|coverage }}</span></dd></div>
+          <div><dt>Living costs</dt><dd><span class="cov cov-{{ card.living|coverage_tone }}">{{ card.living|coverage }}</span></dd></div>
           {% if card.amounts %}<div><dt>Amount</dt><dd>{{ card.amounts|join:"; " }}</dd></div>{% endif %}
           <div><dt>Deadline</dt><dd>{{ card.deadline|default:"Not stated" }}</dd></div>
         </dl>
@@ -21,7 +21,7 @@
         {% include "student/_candidate.html" with candidate=award also_under=None as_banner=True %}
       </header>
     {% endwith %}
-    {% if group.programmes %}<p class="group-label">{% if group.award.country_code and group.label == "Eligible programmes in "|add:group.award.country_code %}Eligible programmes in {{ group.award.country_code|country_name }}{% else %}{{ group.label }}{% endif %}</p>{% endif %}
+    {% if group.programmes %}<p class="group-label">{% if group.award.country_code and group.label == "Eligible programmes in "|add:group.award.country_code %}{{ group.award.country_code|flag }}Eligible programmes in {{ group.award.country_code|country_name }}{% else %}{{ group.label }}{% endif %}</p>{% endif %}
   {% else %}
     <h3 class="group-plain">{{ group.label }}</h3>
   {% endif %}

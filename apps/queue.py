@@ -10,9 +10,11 @@ queue deliberately sends no group id.
 """
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, Protocol
 
 import boto3  # type: ignore[import-untyped]
+from django.conf import settings
 from pydantic import BaseModel
 
 
@@ -31,6 +33,9 @@ def enqueue(
     queue_url: str,
     group_id: str | None = None,
 ) -> None:
+    if client is None and is_local_queue(queue_url):
+        _spool(queue_url, message.model_dump_json())
+        return
     sqs = client or boto3.client("sqs")
     kwargs: dict[str, Any] = {"QueueUrl": queue_url, "MessageBody": message.model_dump_json()}
     # Omitted rather than sent empty. MessageGroupId is a FIFO-queue
@@ -105,3 +110,40 @@ def _receives(raw: dict[str, object]) -> int:
     attributes = raw.get("Attributes")
     count = attributes.get("ApproximateReceiveCount") if isinstance(attributes, dict) else None
     return int(count) if isinstance(count, str) and count.isdigit() else 1
+
+
+# ---------------------------------------------------------------------------
+# A developer machine has no SQS. With DEBUG on and a queue still named by its
+# "test-..." placeholder (config/settings/base.py), a message is appended to a
+# file under .local-queue/ instead, and scripts/local_research.py --watch
+# drains it through the same handler the worker runs. Production settings name
+# every real queue (config/settings/production.py), so this branch cannot be
+# reached there; the test suite runs with DEBUG off.
+# ---------------------------------------------------------------------------
+
+
+def is_local_queue(queue_url: str) -> bool:
+    return bool(settings.DEBUG) and queue_url.startswith("test-")
+
+
+def _spool_path(queue_url: str) -> Path:
+    return Path(settings.BASE_DIR) / ".local-queue" / f"{queue_url}.jsonl"
+
+
+def _spool(queue_url: str, body: str) -> None:
+    path = _spool_path(queue_url)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(body + "\n")
+
+
+def drain_local(queue_url: str) -> list[str]:
+    """Every spooled message body for ``queue_url``, removed from the spool."""
+    path = _spool_path(queue_url)
+    if not path.exists():
+        return []
+    taken = path.with_suffix(".taking")
+    path.replace(taken)
+    lines = [line for line in taken.read_text(encoding="utf-8").splitlines() if line.strip()]
+    taken.unlink()
+    return lines

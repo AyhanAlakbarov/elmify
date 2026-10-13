@@ -125,7 +125,7 @@ def items_for(
     base = f"/counselor/students/{student.id}/"
     messages_url = f"{base}#messages" if counselor_view else "/student/messages/"
     answer_url = f"{base}gap-interview/" if counselor_view else "/student/gap-interview/"
-    review_url = f"{base}#documents" if counselor_view else "/student/documents/#drafts"
+    review_url = f"{base}#documents" if counselor_view else "/student/writing/#drafts"
     items = items_from_cards(board.cards, now=now, answer_url=answer_url)
     for note in (
         Notification.objects.filter(recipient=student, acknowledged_at__isnull=True)

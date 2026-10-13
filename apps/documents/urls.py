@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import api, views
+from . import api, views, writing
 
 urlpatterns = [
     path(
@@ -10,6 +10,17 @@ urlpatterns = [
     ),
     path("student/gap-interview/", views.gap_interview, name="student-gap-interview"),
     path("student/documents/", views.documents_page, name="student-documents"),
+    path("student/writing/", writing.writing_page, name="student-writing"),
+    path(
+        "student/writing/letters/<uuid:application_id>/write/",
+        writing.letter_write,
+        name="student-letter-write",
+    ),
+    path(
+        "student/writing/letters/<uuid:draft_id>/approve/",
+        writing.letter_approve,
+        name="student-letter-approve",
+    ),
     path("student/documents/submit/", views.submit_document, name="student-document-submit"),
     path(
         "student/documents/<uuid:document_id>/expiry/",

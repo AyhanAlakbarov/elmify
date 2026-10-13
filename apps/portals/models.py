@@ -338,6 +338,13 @@ class Application(TenantScopedModel):
     outcome_evidence = models.ForeignKey(
         "mailbox.MailSignal", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    #: The motivation letter for this application, while one is being worked on
+    #: by the document worker: "" (nothing pending), QUEUED (being written),
+    #: CHECKING (approval being checked) or REFUSED (the engine declined; the
+    #: reason is `letter_note`, one of documents.writing.LETTER_NOTES -- a code,
+    #: never text from the letter or the page).
+    letter_state = models.CharField(max_length=10, blank=True, default="")
+    letter_note = models.CharField(max_length=40, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property

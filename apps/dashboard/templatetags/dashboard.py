@@ -6,11 +6,15 @@ inside href (apps/funding/requirements.py says so of RequirementItem.source_url)
 Every template that renders a URL it did not build passes it through here.
 """
 
+from functools import cache
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from django import template
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
+from django.templatetags.static import static
+from django.utils.html import format_html
 
 register = template.Library()
 _validate = URLValidator(schemes=["https"])
@@ -74,3 +78,61 @@ def coverage(value: object) -> str:
     if not raw:
         return "Not stated"
     return _COVERAGE.get(raw, raw.replace("_", " ").lower().capitalize())
+
+
+_FLAG_DIR = Path(__file__).resolve().parents[3] / "static" / "elmify" / "flags"
+
+
+@cache
+def _flag_codes() -> frozenset[str]:
+    return frozenset(path.stem for path in _FLAG_DIR.glob("??.svg"))
+
+
+@register.filter
+def flag(code: object) -> str:
+    """A country's flag as an image, from a two-letter ISO code.
+
+    An SVG file, not an emoji: Windows renders flag emoji as two letters. The
+    image is decorative -- the country is always named in text beside it -- so
+    alt is empty. An unknown or malformed code renders nothing.
+    """
+    raw = str(code or "").strip().lower()
+    if len(raw) != 2 or raw not in _flag_codes():
+        return ""
+    return format_html(
+        '<img class="flag" src="{}" alt="" width="20" height="15" loading="lazy">',
+        static(f"elmify/flags/{raw}.svg"),
+    )
+
+
+#: Coverage, as a tone the page colours by: good, part, none or unknown.
+_COVERAGE_TONE = {"FULL": "good", "PARTIAL": "part", "HALF": "part", "NONE": "none"}
+
+
+@register.filter
+def coverage_tone(value: object) -> str:
+    return _COVERAGE_TONE.get(str(value or "").strip().upper(), "unknown")
+
+
+#: Accent colours a funding group can wear, picked by a stable hash of its
+#: name, so one scholarship keeps its colour across visits and pages.
+_GROUP_TONES = ("indigo", "teal", "amber", "rose", "sky", "violet", "emerald")
+
+
+@register.filter
+def tone(value: object) -> str:
+    text = str(value or "")
+    return _GROUP_TONES[sum(text.encode()) % len(_GROUP_TONES)]
+
+
+_MONTH_NAMES = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+@register.filter
+def month_year(value: object) -> str:
+    """A stored CV date ('2021-09-01', '2021-09' or '2021') as 'Sep 2021'."""
+    text = str(value or "")
+    parts = text.split("-")
+    if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit() and 1 <= int(parts[1]) <= 12:
+        return f"{_MONTH_NAMES[int(parts[1]) - 1]} {parts[0]}"
+    return text

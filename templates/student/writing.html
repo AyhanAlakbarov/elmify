@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% load dashboard %}
+{% block title %}CV & letters{% endblock %}
+{% block content %}
+{% csrf_token %}
+<div class="page-head"><div><h1>CV &amp; letters</h1><p>Our AI writes your CV and motivation letters from details you confirmed. You read every word before anything is used.</p></div></div>
+
+<ol class="write-steps" aria-label="How it works">
+  <li class="{% if confirmed_count %}is-done{% else %}is-current{% endif %}"><span class="ws-num" aria-hidden="true">1</span><span><strong>Confirm your details</strong><small>{% if confirmed_count %}{{ confirmed_count }} confirmed{% else %}Nothing confirmed yet{% endif %}</small></span></li>
+  <li class="{% if latest_cv and latest_cv.status == 'APPROVED' %}is-done{% elif confirmed_count %}is-current{% endif %}"><span class="ws-num" aria-hidden="true">2</span><span><strong>Write and approve your CV</strong><small>{% if latest_cv %}Version {{ latest_cv.version }}, {{ latest_cv.get_status_display|lower }}{% else %}Not written yet{% endif %}</small></span></li>
+  <li class="{% if latest_cv and latest_cv.status == 'APPROVED' %}is-current{% endif %}"><span class="ws-num" aria-hidden="true">3</span><span><strong>Write a letter per application</strong><small>{{ letter_rows|length }} application{{ letter_rows|length|pluralize }}</small></span></li>
+</ol>
+
+<section class="panel" aria-labelledby="facts-heading" id="facts">
+  <div class="panel-head">
+    <h2 id="facts-heading">Your details</h2>
+    <a class="text-link" href="{% url 'student-gap-interview' %}">Answer open questions</a>
+  </div>
+  {% if facts %}
+    <p class="muted">The AI read these from your uploads. Only details you confirm are ever used in your documents.</p>
+    <ul class="fact-list">
+      {% for fact in fact_views %}
+        <li><span class="fact-kind fact-{{ fact.category|lower }}">{{ fact.category|lower|capfirst }}</span><span class="fact-body"><strong>{{ fact.label }}</strong>{% if fact.detail %}<small>{{ fact.detail|capfirst }}</small>{% endif %}{% if fact.bullets %}<ul>{% for b in fact.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    <p class="row-actions"><button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ confirm_body }}">These are right, confirm them</button> <span role="status" aria-live="polite"></span></p>
+  {% elif confirmed_count %}
+    <p class="quiet-line">All {{ confirmed_count }} details are confirmed. Upload a new CV or transcript on <a href="{% url 'student-documents' %}">Documents</a> to add more.</p>
+  {% else %}
+    <p class="quiet-line">Nothing to confirm yet. Upload your current CV on <a href="{% url 'student-documents' %}">Documents</a> and the AI will read it.</p>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="cv-heading" id="drafts">
+  <div class="panel-head">
+    <h2 id="cv-heading">Your CV</h2>
+    {% if identity_confirmed and has_email %}
+      <p class="row-actions"><button type="button" data-api-post="/api/documents/generate" data-body='{"kind": "CV"}'>{% if latest_cv %}Write a new version{% else %}Write my CV{% endif %}</button> <span role="status" aria-live="polite"></span></p>
+    {% endif %}
+  </div>
+  {% if not identity_confirmed %}
+    <p class="note">Confirm your name and contact details above first. The AI never writes a CV from details you have not confirmed.</p>
+  {% elif not has_email %}
+    <p class="note">Add the email address you apply with in <a href="{% url 'student-settings' %}">Settings</a> first. It goes at the top of your CV.</p>
+  {% endif %}
+
+  {% if latest_cv %}
+    <div class="version-row">
+      {% for draft in cv_drafts %}
+        <span class="badge{% if draft.status == 'APPROVED' %} badge-ok{% elif draft.status == 'DRAFT' %} badge-brand{% endif %}">Version {{ draft.version }}: {{ draft.get_status_display|lower }}</span>
+      {% endfor %}
+    </div>
+    <div class="writing-grid">
+      <article class="paper" aria-label="CV version {{ latest_cv.version }}">
+        {% with p=cv.personal_information %}
+          <header class="paper-head">
+            <h3>{{ p.full_name }}</h3>
+            <p>{{ p.email }}{% if p.phone %}, {{ p.phone }}{% endif %}{% if p.citizenship %}, {{ p.citizenship }}{% endif %}</p>
+          </header>
+        {% endwith %}
+        {% if cv.summary %}<p class="paper-summary">{{ cv.summary }}</p>{% endif %}
+        {% if cv.education %}
+          <h4>Education</h4>
+          <ul>{% for e in cv.education %}<li><strong>{{ e.degree_english|default:e.degree_as_awarded }}</strong>, {{ e.institution_english|default:e.institution_original }}{% if e.start_date or e.end_date %} <span class="paper-date">{{ e.start_date|month_year }}{% if e.end_date %} to {{ e.end_date|month_year }}{% endif %}</span>{% endif %}{% if e.grade_native %}<br><span class="muted">Grade {{ e.grade_native }}{% if e.grade_scale %} ({{ e.grade_scale }}){% endif %}</span>{% endif %}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if cv.experience %}
+          <h4>Experience</h4>
+          <ul>{% for x in cv.experience %}<li><strong>{{ x.title }}</strong>, {{ x.employer }}{% if x.start_date or x.end_date %} <span class="paper-date">{{ x.start_date|month_year }}{% if x.end_date %} to {{ x.end_date|month_year }}{% endif %}</span>{% endif %}{% if x.bullets %}<ul class="paper-bullets">{% for b in x.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if cv.research %}
+          <h4>Research</h4>
+          <ul>{% for r in cv.research %}<li><strong>{{ r.thesis_title }}</strong>{% if r.institution %}, {{ r.institution }}{% endif %}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if cv.awards %}
+          <h4>Awards</h4>
+          <ul>{% for a in cv.awards %}<li>{{ a.title }}{% if a.awarding_body %}, {{ a.awarding_body }}{% endif %}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if cv.skills %}
+          <h4>Skills</h4>
+          <p class="paper-tags">{% for s in cv.skills %}<span>{{ s.name }}</span>{% endfor %}</p>
+        {% endif %}
+        {% if cv.languages %}
+          <h4>Languages</h4>
+          <p class="paper-tags">{% for l in cv.languages %}<span>{{ l.language }}{% if l.cefr_level %} {{ l.cefr_level }}{% endif %}</span>{% endfor %}</p>
+        {% endif %}
+      </article>
+      <aside class="side-panel cv-side">
+        {% if cv_checks %}
+          <h3>Check {{ cv_checks|length }} line{{ cv_checks|length|pluralize }}</h3>
+          <p class="muted">We could not match these to a detail you confirmed.</p>
+          <ul class="check-list">{% for c in cv_checks %}<li><span class="badge {% if c.verdict == 'UNSUPPORTED' or c.verdict == 'CONFLICTING' %}badge-danger{% else %}badge-warn{% endif %}">{% if c.verdict == "UNSUPPORTED" %}Not in your details{% elif c.verdict == "CONFLICTING" %}Disagrees with your details{% else %}Not sure{% endif %}</span>{{ c.text }}</li>{% endfor %}</ul>
+        {% else %}
+          <h3>Every line checks out</h3>
+          <p class="muted">Each line matches a detail you confirmed.</p>
+        {% endif %}
+        {% if latest_cv.status == "DRAFT" %}
+          <p class="row-actions"><button type="button" data-api-post="/api/documents/drafts/{{ latest_cv.id }}/approve">Approve this CV</button> <span role="status" aria-live="polite"></span></p>
+          <p class="muted small">Approving makes the PDF. Lines that are not in your details stop the approval.</p>
+        {% elif latest_cv.status == "APPROVED" %}
+          {% if latest_cv.rendered_filename %}
+            <a class="btn" hx-boost="false" href="{% url 'documents-download' latest_cv.id latest_cv.rendered_filename %}">Download PDF</a>
+          {% else %}
+            <p class="muted">Approved. The PDF is being made.</p>
+          {% endif %}
+        {% endif %}
+      </aside>
+    </div>
+  {% elif identity_confirmed and has_email %}
+    <p class="quiet-line">No CV yet. Press “Write my CV” and it appears here in about a minute.</p>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="letters-heading" id="letters">
+  <div class="panel-head"><h2 id="letters-heading">Motivation letters</h2>{% if letter_rows %}<span class="count">{{ letter_rows|length }}</span>{% endif %}</div>
+  {% if letter_rows %}
+    <p class="muted">One letter per application, written for that programme and its own rules.{% if not identity_confirmed %} Confirm your details above first.{% endif %}</p>
+    <ul class="letter-list">
+      {% for row in letter_rows %}
+        {% with app=row.application latest=row.latest %}
+        <li class="letter-card" id="letter-{{ app.id }}">
+          <div class="letter-head">
+            <div>
+              <h3>{% if app.candidate.country_code %}{{ app.candidate.country_code|flag }}{% endif %}{{ app.title }}</h3>
+              {% if app.candidate.institution_name %}<p class="muted">{{ app.candidate.institution_name }}</p>{% endif %}
+            </div>
+            {% if app.letter_state == "QUEUED" %}<span class="badge badge-brand">Writing…</span>
+            {% elif app.letter_state == "CHECKING" %}<span class="badge badge-brand">Checking…</span>
+            {% elif latest and latest.status == "APPROVED" %}<span class="badge badge-ok">Approved</span>
+            {% elif latest %}<span class="badge badge-warn">Draft {{ latest.version }}</span>
+            {% elif row.writable %}<span class="badge">Not written</span>
+            {% else %}<span class="badge">Scholarship</span>{% endif %}
+          </div>
+          {% if row.note %}<p class="note{% if app.letter_note == 'flagged' %}{% else %} note-error{% endif %}">{{ row.note }}</p>{% endif %}
+          {% if row.paragraphs %}
+            <details class="letter-preview">
+              <summary>Read the letter</summary>
+              <div class="paper paper-letter" id="letter-text-{{ latest.id }}">
+                {% if row.header %}<p class="paper-date">{{ row.header|linebreaksbr }}</p>{% endif %}
+                {% for paragraph in row.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+              </div>
+              <p class="row-actions"><button type="button" class="btn-quiet" data-copy="letter-text-{{ latest.id }}">Copy text</button> <span role="status" aria-live="polite"></span></p>
+            </details>
+          {% endif %}
+          <div class="card-actions">
+            {% if app.letter_state != "QUEUED" and app.letter_state != "CHECKING" %}
+              {% if latest and latest.status == "DRAFT" and app.letter_note != "blocked" and app.letter_note != "flagged" %}
+                <form method="post" action="{% url 'student-letter-approve' latest.id %}">{% csrf_token %}<button type="submit">Approve</button></form>
+              {% endif %}
+              {% if latest and latest.status == "APPROVED" and latest.rendered_filename %}
+                <a class="btn" hx-boost="false" href="{% url 'documents-download' latest.id latest.rendered_filename %}">Download PDF</a>
+              {% endif %}
+              {% if row.writable %}
+              <form method="post" action="{% url 'student-letter-write' app.id %}">{% csrf_token %}<button type="submit" class="{% if latest %}btn-quiet{% endif %}"{% if not identity_confirmed %} disabled{% endif %}>{% if latest %}Write a new version{% else %}Write this letter{% endif %}</button></form>
+              {% else %}
+                <p class="muted">A scholarship usually reads the letter you send to the programme. Write that one; if this scholarship asks for its own, your counsellor will help.</p>
+              {% endif %}
+            {% else %}
+              <p class="muted">This takes about a minute. Refresh the page to see it.</p>
+            {% endif %}
+          </div>
+        </li>
+        {% endwith %}
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="quiet-line">Letters are written per application. Add a programme to <a href="{% url 'student-applications' %}">My applications</a> first.</p>
+  {% endif %}
+</section>
+
+{% if transcript %}
+<section class="panel" aria-labelledby="transcript-heading">
+  <div class="panel-head"><h2 id="transcript-heading">Your transcript</h2><span class="count">{{ transcript.pages_left }} page{{ transcript.pages_left|pluralize }} left</span></div>
+  {% if transcript.pages %}
+    <ul class="item-list">{% for page in transcript.pages %}<li><span>Page {{ page.slot }}</span><span class="badge{% if page.state == 'READ' %} badge-ok{% elif page.refusal %} badge-danger{% else %} badge-brand{% endif %}">{{ page.state|lower|capfirst }}</span></li>{% endfor %}</ul>
+  {% else %}
+    <p class="quiet-line">No transcript pages yet. Upload them on <a href="{% url 'student-documents' %}">Documents</a>.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

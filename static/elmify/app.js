@@ -187,3 +187,17 @@ document.addEventListener("htmx:afterRequest", function (event) {
     elt.querySelectorAll('[aria-busy="true"]').forEach(function (b) { b.removeAttribute("aria-busy"); });
   }
 });
+
+// "Copy text": copies the element named by data-copy, and says so.
+document.addEventListener("click", function (event) {
+  var button = event.target.closest && event.target.closest("button[data-copy]");
+  if (!button) { return; }
+  var source = document.getElementById(button.dataset.copy);
+  var status = button.parentElement && button.parentElement.querySelector('[role="status"]');
+  if (!source || !navigator.clipboard) { return; }
+  navigator.clipboard.writeText(source.innerText.trim()).then(function () {
+    if (status) { status.textContent = "Copied."; }
+  }, function () {
+    if (status) { status.textContent = "Could not copy. Select the text instead."; }
+  });
+});
