@@ -44,7 +44,7 @@ def test_my_applications_shows_the_board(client, agency_a, domain_a, user_a, mem
         )
     client.force_login(user_a)
     with reads_no_catalogue():
-        response = client.get("/student/applications/", HTTP_HOST=domain_a.host)
+        response = client.get("/student/applications/?view=stage", HTTP_HOST=domain_a.host)
     body = response.content.decode()
     assert response.status_code == 200
     for heading in ("To start", "In progress", "Submitted", "Confirmed", "Decision"):
@@ -77,7 +77,7 @@ def test_a_decision_card_offers_a_change(client, agency_a, domain_a, user_a, mem
             outcome_source="MAIL", outcome_recorded_at=timezone.now(),
         )
     client.force_login(user_a)
-    body = client.get("/student/applications/", HTTP_HOST=domain_a.host).content.decode()
+    body = client.get("/student/applications/?view=stage", HTTP_HOST=domain_a.host).content.decode()
     assert "Change the decision" in body
     assert f'action="/student/applications/{application.id}/outcome/"' in body
     assert '<label for="outcome-' in body
@@ -131,7 +131,7 @@ def test_each_column_renders_its_own_key_dependent_markup(
             candidate.program_id = uuid4()
             ids[key] = add_card(agency_a, membership_a, candidate, **fields)
     client.force_login(user_a)
-    body = client.get("/student/applications/", HTTP_HOST=domain_a.host).content.decode()
+    body = client.get("/student/applications/?view=stage", HTTP_HOST=domain_a.host).content.decode()
     for key, application in ids.items():
         start = body.index(f'<article id="card-{application.id}"')
         card = body[start : body.index("</article>", start)]

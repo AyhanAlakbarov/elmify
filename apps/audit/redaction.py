@@ -181,6 +181,9 @@ REDACT: dict[str, RedactSpec] = {
     # and residence (copied at build time so the web tier renders it without
     # the catalogue).
     "funding.PackVersion": RedactSpec("run__profile_version__student_id", ("coverage",)),
+    # Each condition decided against the student: the reasons quote their own
+    # grade, language level and nationality, and the budget is theirs.
+    "funding.RecommendationCandidate": RedactSpec("run__profile_version__student_id", ("fit",)),
 }
 
 KEEP: dict[str, tuple[str, ...]] = {
@@ -335,6 +338,8 @@ KEEP: dict[str, tuple[str, ...]] = {
         "application_fee_currency",
         "funds_program_ids",
         "funding_card",
+        # the scholarship page's facts (city, costs, cover): about the award.
+        "details",
     ),
     # pending_bodies: catalogue organisation ids, not about the student.
     "funding.RecommendationRun": ("state", "created_at", "dispatched_at", "pending_bodies"),

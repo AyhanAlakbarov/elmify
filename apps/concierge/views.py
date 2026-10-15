@@ -5,13 +5,14 @@ from uuid import UUID
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.accounts.models import StudentProfileVersion
 from apps.dashboard.board import board_for
 from apps.dashboard.locks import paused_reason
+from apps.dashboard.mylist import country_groups, missing_links, option_page
 from apps.dashboard.needs import items_for
 from apps.dashboard.overview import build_overview
 from apps.funding.models import AuditEvent
@@ -190,13 +191,50 @@ def student_dashboard(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def student_applications(request: HttpRequest) -> HttpResponse:
-    """The application board on its own page; the home page keeps only the
-    milestones and what needs doing next."""
+    """My list: grouped by country (default) or by stage (the board).
+
+    The home page keeps only the milestones and what needs doing next."""
     student = current_membership(request, Membership.Role.STUDENT)
+    board = board_for(student)
+    by_stage = request.GET.get("view") == "stage"
     return render(
         request,
         "student/applications.html",
-        {"board": board_for(student), "outcome_choices": Application.Outcome.choices},
+        {
+            "board": board,
+            "by_stage": by_stage,
+            "groups": () if by_stage else country_groups(student.id, board),
+            "outcome_choices": Application.Outcome.choices,
+        },
+    )
+
+
+@login_required
+def student_option(request: HttpRequest, application_id: UUID) -> HttpResponse:
+    """One option on the list: everything about it, why the student fits, and
+    where their application stands. Tenant copies only (dashboard.mylist)."""
+    student = current_membership(request, Membership.Role.STUDENT)
+    application = get_object_or_404(
+        Application.objects.select_related("candidate__evidence"),
+        id=application_id,
+        student=student,
+    )
+    if application.candidate is None:
+        raise Http404
+    card = next(
+        (c for c in board_for(student).cards if c.application_id == application.id), None
+    )
+    if card is None:
+        raise Http404
+    return render(
+        request,
+        "student/option.html",
+        {
+            "card": card,
+            "page": option_page(application.candidate),
+            "missing": missing_links(card),
+            "outcome_choices": Application.Outcome.choices,
+        },
     )
 
 

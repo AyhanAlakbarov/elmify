@@ -1,12 +1,60 @@
 {% extends "base.html" %}
+{% load cv_countries dashboard %}
 {% block title %}My applications{% endblock %}
 {% block content %}
   <div class="page-head">
     <div>
       <h1>My applications</h1>
-      <p>Every programme you chose, by stage. A card moves on by itself when you start, submit or record a decision.</p>
+      <p>Everything you chose, by country. Open one to see its details, why you fit, and what is still missing.</p>
     </div>
     <a class="btn btn-quiet" href="/student/recommendation/">Add programmes</a>
   </div>
-  {% include "student/_board.html" %}
+  <nav class="view-switch" aria-label="How to show your list">
+    <a href="/student/applications/"{% if not by_stage %} aria-current="page"{% endif %}>By country</a>
+    <a href="/student/applications/?view=stage"{% if by_stage %} aria-current="page"{% endif %}>By stage</a>
+  </nav>
+  {% if by_stage %}
+    {% include "student/_board.html" %}
+  {% elif not groups %}
+    <div class="empty-state">
+      <h3>No applications yet</h3>
+      <p>Choose programmes and scholarships from your matches and they appear here, grouped by country.</p>
+      <a class="btn" href="/student/recommendation/">Review matches</a>
+    </div>
+  {% else %}
+    {% for group in groups %}
+      <section class="country-group" aria-labelledby="country-{{ forloop.counter }}">
+        <h2 id="country-{{ forloop.counter }}" class="country-head">{% if group.code %}{{ group.code|flag }}{% endif %}{{ group.name }}<span class="count">{{ group.entries|length }}</span></h2>
+        <ul class="option-list">
+          {% for entry in group.entries %}
+            {% with card=entry.card %}
+            <li class="option-row">
+              <div class="option-main">
+                <p class="option-kind kind-{% if entry.is_award %}award{% else %}programme{% endif %}">{% if entry.is_award %}Scholarship{% else %}Programme{% endif %}</p>
+                <h3><a href="{{ entry.detail_url }}">{{ card.title }}</a></h3>
+                {% if card.institution %}<p class="option-inst">{{ card.institution }}</p>{% endif %}
+                {% for line in card.funding %}<p class="option-funding tone-{{ line.name|tone }}">{{ line.name }}{% if line.covers %}: {{ line.covers }}{% endif %}</p>{% endfor %}
+              </div>
+              <div class="option-status">
+                <p class="stage stage-{{ card.column.key }}">{% if card.outcome_line %}{{ card.outcome_line }}{% elif card.column.key == "to_start" %}Not applied yet{% elif card.column.key == "in_progress" %}Applying{% elif card.column.key == "submitted" %}Submitted{% elif card.column.key == "confirmed" %}Received by the university{% else %}{{ card.column }}{% endif %}</p>
+                {% if card.deadline_local %}
+                  <p class="option-deadline{% if card.days_left is not None and card.days_left >= 0 and card.days_left <= 7 %} is-soon{% endif %}">Deadline <time datetime="{{ card.deadline_local|date:'c' }}">{{ card.deadline_local|date:"j M Y" }}</time>, {% if card.days_left < 0 %}passed{% elif card.days_left == 0 %}today{% else %}{{ card.days_left }} day{{ card.days_left|pluralize }} left{% endif %}</p>
+                {% else %}
+                  <p class="option-deadline">No deadline found yet</p>
+                {% endif %}
+                {% if entry.missing %}
+                  <p class="option-missing-label">Still missing</p>
+                  <ul class="option-missing">{% for item in entry.missing %}<li><a href="{{ item.url }}">{{ item.label }}</a></li>{% endfor %}</ul>
+                {% elif card.documents.1 %}
+                  <p class="option-ready">All {{ card.documents.1 }} documents ready</p>
+                {% endif %}
+              </div>
+              <a class="option-open" href="{{ entry.detail_url }}" aria-label="Open {{ card.title }}">Details</a>
+            </li>
+            {% endwith %}
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  {% endif %}
 {% endblock %}

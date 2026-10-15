@@ -1,8 +1,10 @@
 import logging
+from collections.abc import Callable
 from datetime import timedelta
 from decimal import Decimal
 from functools import partial
 from itertools import batched
+from typing import Any
 from uuid import UUID
 
 from django.conf import settings
@@ -12,6 +14,7 @@ from pydantic import ValidationError
 
 from apps.accounts.models import StudentProfileVersion
 from apps.accounts.schemas import StudentProfileSnapshot
+from apps.funding.evaluation import AwardCandidateFacts, CandidateFacts
 from apps.funding.fx import RateTable
 from apps.funding.models import (
     EvidenceClaim,
@@ -25,6 +28,7 @@ from apps.funding.models import (
 from apps.funding.pack import PackedApplication, PackedAward
 from apps.funding.services import auto_publish_pack
 
+from .candidate_details import award_details, budget_line, fit_for, program_details
 from .coverage import pack_coverage, refresh_cell_coverage
 from .models import ConsultantResearchTask, DomainLease
 from .provenance import provenance_of_award, provenance_of_program
@@ -235,6 +239,23 @@ def _award_copy(award: FundingOpportunity, packed: PackedAward) -> dict[str, obj
     }
 
 
+def _page_copy(
+    describe: Callable[[Any], dict[str, object]],
+    facts: CandidateFacts | AwardCandidateFacts | None,
+    profile: StudentProfileSnapshot | None,
+) -> dict[str, object]:
+    """``details`` and ``fit`` for the scholarship page, or neither."""
+    if facts is None:
+        return {}
+    return {
+        "details": describe(facts),
+        "fit": {
+            "conditions": fit_for(facts.applicant_conditions, profile),
+            "budget": budget_line(profile),
+        },
+    }
+
+
 def _publish(
     run: RecommendationRun,
     *,
@@ -286,6 +307,9 @@ def _publish(
             provenance_reason_code=code,
             provenance_body_id=body_id,
             **_program_copy(program, application),
+            **_page_copy(
+                program_details, result.program_facts.get(application.program_id), profile
+            ),
         )
         if _is_publishable_confidence(candidate.evidence_confidence):
             PackCandidate.objects.create(pack_version=pack, candidate=candidate)
@@ -326,6 +350,9 @@ def _publish(
             provenance_reason_code=code,
             provenance_body_id=body_id,
             **_award_copy(award, award_application),
+            **_page_copy(
+                award_details, result.award_facts.get(award_application.award_id), profile
+            ),
         )
         if _is_publishable_confidence(candidate.evidence_confidence):
             PackCandidate.objects.create(pack_version=pack, candidate=candidate)

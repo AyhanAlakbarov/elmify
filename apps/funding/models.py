@@ -132,6 +132,14 @@ class RecommendationCandidate(TenantScopedModel):
     #: An award's heading: holder, deadline, scope, route, tuition, living,
     #: amounts, unconfirmed. {} for a programme.
     funding_card = models.JSONField(default=dict, blank=True)
+    #: The scholarship page's facts (research.candidate_details): city, length,
+    #: languages, costs, what it covers, a return-home bond. About the
+    #: programme or award, never the student.
+    details = models.JSONField(default=dict, blank=True)
+    #: Each published condition decided against THIS student (outcome, the
+    #: funder's sentence, the reason) plus their stated yearly budget. Derived
+    #: from the student's profile, so erasure redacts it (audit.redaction).
+    fit = models.JSONField(default=dict, blank=True)
 
     class EligibilityStatus(models.TextChoices):
         ELIGIBLE = "ELIGIBLE", "Eligible"

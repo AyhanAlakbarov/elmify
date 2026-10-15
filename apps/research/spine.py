@@ -74,6 +74,10 @@ class SpineResult:
     review: tuple[str, ...] = ()
     #: Bodies the pool left out while their verdict is computed (spec §7.1).
     pending_bodies: tuple[UUID, ...] = ()
+    #: program_id / award_id -> the facts the evaluator decided on, so the
+    #: publisher can copy what the scholarship page shows (candidate_details).
+    program_facts: dict[str, CandidateFacts] = field(default_factory=dict)
+    award_facts: dict[str, AwardCandidateFacts] = field(default_factory=dict)
 
 
 def _empty(reason: str) -> SpineResult:
@@ -254,6 +258,8 @@ def build_student_pack(
         degraded=tuple(degraded),
         review=tuple(review),
         pending_bodies=pool.pending_bodies,
+        program_facts={facts.program_id: facts for facts in program_candidates},
+        award_facts={facts.award_id: facts for facts in award_candidates},
     )
 
 

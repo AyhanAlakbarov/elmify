@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% load cv_countries dashboard %}
+{% block title %}{{ card.title }}{% endblock %}
+{% block content %}
+{% with c=page.candidate %}
+  <p class="crumb"><a href="/student/applications/">My applications</a></p>
+  <div class="option-head">
+    {% if c.country_code %}<p class="option-country">{{ c.country_code|flag }}{{ c.country_code|country_name }}{% if page.facts %}{% for line in page.facts %}{% if line.label == "City" %}, {{ line.value }}{% endif %}{% endfor %}{% endif %}</p>{% endif %}
+    <h1>{{ card.title }}</h1>
+    <p class="option-sub"><span class="option-kind kind-{% if page.is_award %}award{% else %}programme{% endif %}">{% if page.is_award %}Scholarship{% else %}Programme{% endif %}</span>{% if card.institution %} {{ card.institution }}{% endif %}</p>
+  </div>
+
+  <div class="option-layout">
+    <div class="option-body">
+      <section class="panel fit-panel" aria-labelledby="fit-heading">
+        <h2 id="fit-heading">Why you fit</h2>
+        {% if page.fits %}
+          <ul class="fit-list">{% for line in page.fits %}<li>{{ line }}</li>{% endfor %}</ul>
+        {% elif page.requirements %}
+          <p>We checked every condition the official page states. The list below shows where you stand on each.</p>
+        {% else %}
+          <p>{% if page.is_award %}The scholarship’s official page states no conditions for applicants{% else %}The programme’s official page states no conditions beyond its own admission rules{% endif %}, so nothing on it rules you out. Elmify found it by your field of study{% if not page.is_award %} and checked its costs against your budget{% endif %}.</p>
+        {% endif %}
+        {% if c.eligibility_status == "POSSIBLY_ELIGIBLE" %}<p class="fit-note">Some details on the official page are uncertain, so a person double-checks this match.</p>{% endif %}
+      </section>
+
+      {% if page.facts %}
+      <section class="panel" aria-labelledby="facts-heading">
+        <h2 id="facts-heading">At a glance</h2>
+        <dl class="fact-grid">
+          {% for line in page.facts %}<div><dt>{{ line.label }}</dt><dd>{{ line.value }}</dd></div>{% endfor %}
+        </dl>
+      </section>
+      {% endif %}
+
+      <section class="panel" aria-labelledby="money-heading">
+        <h2 id="money-heading">Money</h2>
+        <div class="money-grid">
+          <div>
+            <h3>{% if page.is_award %}What it pays{% else %}Funding attached{% endif %}</h3>
+            {% if page.covers %}
+              <dl class="money-list">{% for line in page.covers %}<div><dt>{{ line.label }}</dt><dd>{{ line.value }}</dd></div>{% endfor %}</dl>
+            {% else %}
+              <p class="quiet-line">The official page states no amount.</p>
+            {% endif %}
+          </div>
+          <div>
+            <h3>What it costs</h3>
+            {% if page.costs %}
+              <dl class="money-list">{% for line in page.costs %}<div><dt>{{ line.label }}</dt><dd>{{ line.value }}</dd></div>{% endfor %}</dl>
+            {% elif page.is_award %}
+              <p class="quiet-line">A scholarship has no cost of its own. See the programmes it pays for.</p>
+            {% else %}
+              <p class="quiet-line">No costs published yet.</p>
+            {% endif %}
+            {% if page.budget %}<p class="budget-line">Your budget: <strong>{{ page.budget }}</strong></p>{% endif %}
+            {% if not page.is_award and not c.funding_gap_is_placeholder %}<p class="budget-line">Still to cover after funding: <strong>{{ c.funding_gap }} {{ c.currency }}</strong></p>{% endif %}
+          </div>
+        </div>
+        {% for bond in page.bonds %}<p class="bond-note"><strong>After you graduate:</strong> {{ bond }}</p>{% endfor %}
+      </section>
+
+      <section class="panel" aria-labelledby="req-heading">
+        <h2 id="req-heading">Requirements</h2>
+        {% if page.requirements %}
+          <ul class="req-list">
+            {% for req in page.requirements %}
+              <li class="req req-{{ req.tone }}">
+                <div class="req-top"><h3>{{ req.label }}</h3><span class="req-verdict">{{ req.verdict }}</span></div>
+                {% if req.quote %}<blockquote>{{ req.quote }}</blockquote>{% endif %}
+                {% if req.reason %}<p class="req-reason">{{ req.reason }}</p>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+          {% if not page.states_grade %}<p class="quiet-line">The official page states no minimum GPA.</p>{% endif %}
+        {% elif page.has_details %}
+          <p class="quiet-line">The official page lists no grade, language or other conditions for applicants.</p>
+        {% else %}
+          <p class="quiet-line">Detailed requirements appear the next time your list is refreshed.</p>
+        {% endif %}
+        {% if page.required_documents %}
+          <h3 class="sub-head">Documents it asks for</h3>
+          <ul class="plain-list">{% for doc in page.required_documents %}<li>{{ doc }}</li>{% endfor %}</ul>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="option-side" aria-labelledby="status-heading">
+      <section class="panel status-panel">
+        <h2 id="status-heading">Your application</h2>
+        <p class="stage stage-{{ card.column.key }}">{% if card.outcome_line %}{{ card.outcome_line }}{% elif card.column.key == "to_start" %}Not applied yet{% elif card.column.key == "in_progress" %}Applying{% elif card.column.key == "submitted" %}Submitted{% elif card.column.key == "confirmed" %}Received by the university{% else %}{{ card.column }}{% endif %}</p>
+        {% if card.deadline_local %}
+          <p class="option-deadline{% if card.days_left is not None and card.days_left >= 0 and card.days_left <= 7 %} is-soon{% endif %}">Deadline <time datetime="{{ card.deadline_local|date:'c' }}">{{ card.deadline_local|date:"j M Y, H:i" }}</time><br>{% if card.days_left < 0 %}Passed{% elif card.days_left == 0 %}Today{% else %}{{ card.days_left }} day{{ card.days_left|pluralize }} left{% endif %}</p>
+        {% endif %}
+        {% if card.documents.1 %}
+          <p class="status-count">Documents {{ card.documents.0 }} of {{ card.documents.1 }} ready</p>
+          <progress value="{{ card.documents.0 }}" max="{{ card.documents.1 }}">{{ card.documents.0 }} of {{ card.documents.1 }}</progress>
+        {% endif %}
+        {% if missing %}
+          <h3 class="sub-head">Still missing</h3>
+          <ul class="option-missing">{% for item in missing %}<li><a href="{{ item.url }}">{{ item.label }}</a></li>{% endfor %}</ul>
+        {% endif %}
+        {% if card.fee %}<p class="status-line">Application fee: {{ card.fee }} {{ card.fee_currency }}</p>{% endif %}
+        <div class="status-actions">
+          {% if card.button %}
+            {% if card.button.method == "post" %}<form method="post" action="{{ card.button.url }}">{% csrf_token %}<button type="submit">{{ card.button.label }}</button></form>
+            {% else %}<a class="btn" href="{{ card.button.url }}">{{ card.button.label }}</a>{% endif %}
+          {% endif %}
+          {% if card.kit_url %}<a class="btn btn-quiet" href="{{ card.kit_url }}">Application kit</a>{% endif %}
+        </div>
+        {% if card.portal_record_url %}
+          <form class="card-form" method="post" action="{{ card.portal_record_url }}">
+            {% csrf_token %}
+            <p><label for="portal-{{ card.application_id }}">Application portal address</label>
+            <input type="url" id="portal-{{ card.application_id }}" name="form_url" required placeholder="https://apply.example.edu…" inputmode="url" spellcheck="false"></p>
+            <button type="submit" class="btn-quiet">Save the portal</button>
+          </form>
+        {% endif %}
+        {% if card.outcome_url and card.column.key != "to_start" %}
+          <details class="card-more">
+            <summary>{% if card.outcome_line %}Change the decision{% else %}Record a decision{% endif %}</summary>
+            <form method="post" action="{{ card.outcome_url }}">
+              {% csrf_token %}
+              <p><label for="outcome-{{ card.application_id }}">Decision</label>
+              <select id="outcome-{{ card.application_id }}" name="outcome">
+                <option value="">No decision yet</option>
+                {% for value, label in outcome_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+              </select></p>
+              <button type="submit">Save decision</button>
+            </form>
+          </details>
+        {% endif %}
+        {% if card.remove_url and card.column.key == "to_start" %}
+          <details class="card-remove">
+            <summary>Remove from my list</summary>
+            <form method="post" action="{{ card.remove_url }}">{% csrf_token %}<p>Take this off your list?</p><button type="submit" class="btn-danger">Remove</button></form>
+          </details>
+        {% endif %}
+        {% with url=c.evidence.source_url|https_only %}
+          <p class="source">{% if url %}<a href="{{ url }}" rel="noopener" target="_blank">Official page</a>{% else %}Official page{% endif %}: <span translate="no">{{ c.evidence.source_domain }}</span>, checked {{ c.evidence.last_checked_at|date:"j M Y" }}</p>
+        {% endwith %}
+      </section>
+    </aside>
+  </div>
+{% endwith %}
+{% endblock %}
