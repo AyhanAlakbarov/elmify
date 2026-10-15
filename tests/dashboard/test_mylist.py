@@ -87,7 +87,7 @@ def test_the_option_page_shows_its_facts_and_why_the_student_fits(
         response = client.get(f"{LIST}{application.id}/", HTTP_HOST=domain_a.host)
     body = response.content.decode()
     assert response.status_code == 200
-    assert "Grades (GPA): 3.8 on 4.0 GPA against 3.0" in body
+    assert "Your grade of 3.8 on a 4.0 GPA scale meets the 3 required" in body
     assert "We can’t tell yet" in body
     assert "934 EUR a month" in body
     assert "Return home for two years." in body

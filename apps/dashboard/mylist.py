@@ -7,6 +7,7 @@ copies the worker wrote onto RecommendationCandidate (``details``, ``fit``,
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -201,9 +202,46 @@ def _reason(text: str) -> str:
     return rest if sep and head.isupper() else text
 
 
+_PLAIN = (
+    # (key, pattern over the engine's reason, sentence) -- the reason strings
+    # are apps.funding.eligibility.decide's; an unmatched one is shown as is.
+    ("GRADE", re.compile(r"^GRADE: (?P<held>\S+) on (?P<scale>.+) against (?P<bar>\S+)$"),
+     "Your grade of {held} on a {scale} scale meets the {bar_int} required"),
+    ("LANGUAGE", re.compile(r"^LANGUAGE: (?P<lang>\S+) at (?P<held>\S+) against (?P<bar>\S+)$"),
+     "Your {lang} at {held} meets the {bar} level required"),
+    ("CITIZENSHIP", re.compile(r"^nationality (?P<held>[A-Z]{2}) against "),
+     "Your citizenship ({country}) is on the list of countries it accepts"),
+    ("RESIDENCE", re.compile(r"^country of residence (?P<held>[A-Z]{2}) against "),
+     "You live in a country it accepts ({country})"),
+    ("AGE", re.compile(r"^AGE: (?P<held>\d+) against (?P<op>\w+) (?P<bar>[\d.]+)$"),
+     "Your age ({held}) is within its limit of {bar_int}"),
+    ("PRIOR_DEGREE", re.compile(r"^PRIOR_DEGREE: holds (?P<held>\w+)$"),
+     "You hold the {held_lower}'s degree it asks for"),
+    ("WORK_EXPERIENCE", re.compile(r"^WORK_EXPERIENCE: (?P<held>\d+) months against (?P<bar>\S+)$"),
+     "Your {held} months of experience meet the {bar} required"),
+)
+
+
+def plain_reason(key: str, reason: str) -> str:
+    """The engine's reason as a sentence a student reads, or the reason unchanged."""
+    for rule_key, pattern, sentence in _PLAIN:
+        match = pattern.match(reason) if key == rule_key else None
+        if match is None:
+            continue
+        found = match.groupdict()
+        held = found.get("held", "")
+        bar = found.get("bar", "")
+        return sentence.format(
+            **found,
+            country=country_name(held) if len(held) == 2 else held,
+            bar_int=bar.removesuffix(".0"),
+            held_lower=held.lower(),
+        )
+    return _reason(reason)
+
+
 def _fit_sentence(key: str, reason: str) -> str:
-    label = KEY_LABELS.get(key, "This condition")
-    return f"{label}: {_reason(reason)}" if reason else label
+    return plain_reason(key, reason) if reason else KEY_LABELS.get(key, "This condition")
 
 
 def option_page(candidate: RecommendationCandidate) -> OptionPage:
@@ -274,7 +312,7 @@ def option_page(candidate: RecommendationCandidate) -> OptionPage:
             tone=VERDICTS.get(str(row.get("outcome")), ("unsure", ""))[0],
             verdict=VERDICTS.get(str(row.get("outcome")), ("unsure", "We can’t tell yet"))[1],
             quote=str(row.get("quote", "")),
-            reason=_reason(str(row.get("reason", ""))),
+            reason=plain_reason(str(row.get("key")), str(row.get("reason", ""))),
         )
         for row in fit.get("conditions", [])
         if isinstance(row, dict)
