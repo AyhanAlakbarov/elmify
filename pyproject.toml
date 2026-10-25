@@ -28,7 +28,7 @@ dependencies = [
   "weasyprint>=70.0,<71",
   "whitenoise>=6.9,<7",
   "anthropic<2",
-  "typesafe-sdk==0.7.1",
+  "typesafe-sdk==0.7.2",
   "system-one-adapter[anthropic,openai]==0.2.1",
   "redis>=8.1.0",
   "babel>=2.18,<3",
