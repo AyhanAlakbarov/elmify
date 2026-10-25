@@ -3,7 +3,7 @@ name = "tehsil-agent"
 version = "0.1.0"
 requires-python = ">=3.14,<3.15"
 dependencies = [
-  "boto3[crt]>=1.43.98,<2",
+  "boto3[crt]>=1.43.108,<2",
   "defusedxml>=0.7,<1",
   "django>=5.2,<5.3",
   "django-otp[segno]>=1.7.3,<2",
