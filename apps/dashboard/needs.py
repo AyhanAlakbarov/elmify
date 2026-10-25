@@ -57,12 +57,42 @@ def sort_items(items: Iterable[NeedItem]) -> list[NeedItem]:
     return [*dated, *undated]
 
 
-def items_from_cards(cards: Iterable[Card], *, now: datetime, answer_url: str) -> list[NeedItem]:
+#: The documents table's label for a motivation letter (documents.table.ROWS).
+LETTER_LABEL = "Motivation letter"
+LETTERS_URL = "/student/writing/#letters"
+
+
+def _letters_item(cards: list[Card]) -> NeedItem:
+    """Every missing motivation letter as one row: a letter is written, not
+    submitted, and thirteen near-identical rows buried everything else on Home."""
+    dated = [card.deadline for card in cards if card.deadline is not None]
+    first = min(dated) if dated else None
+    if len(cards) == 1:
+        card = cards[0]
+        return NeedItem(
+            f"{LETTER_LABEL} — needed for {card.title}", "Write letter",
+            f"/student/writing/letters/{card.application_id}/", "get", first, card.created_at,
+        )
+    return NeedItem(
+        f"Motivation letters still needed for {len(cards)} applications", "Write letters",
+        LETTERS_URL, "get", first, min(card.created_at for card in cards),
+    )
+
+
+def items_from_cards(
+    cards: Iterable[Card], *, now: datetime, answer_url: str, group_letters: bool = False
+) -> list[NeedItem]:
+    """`group_letters` is the student's Home: missing letters become one row that
+    opens the writer. A counsellor keeps one row per application."""
     items: list[NeedItem] = []
+    letters: list[Card] = []
     for card in cards:
         # Decided (withdrawn and refused included): nothing sent now changes
         # it, so only a conditional offer's conditions are still asked for.
         for label in card.conditions if card.outcome else card.missing:
+            if group_letters and label == LETTER_LABEL and not card.outcome:
+                letters.append(card)
+                continue
             items.append(NeedItem(
                 f"{label} — needed for {card.title}", "Submit document", card.documents_url,
                 "get", card.deadline, card.created_at,
@@ -97,6 +127,8 @@ def items_from_cards(cards: Iterable[Card], *, now: datetime, answer_url: str) -
                 "Accept", card.offer.accept_url, "post", None, card.created_at,
                 ignore_url=card.offer.ignore_url,
             ))
+    if letters:
+        items.append(_letters_item(letters))
     return items
 
 
@@ -126,7 +158,9 @@ def items_for(
     messages_url = f"{base}#messages" if counselor_view else "/student/messages/"
     answer_url = f"{base}gap-interview/" if counselor_view else "/student/gap-interview/"
     review_url = f"{base}#documents" if counselor_view else "/student/writing/#drafts"
-    items = items_from_cards(board.cards, now=now, answer_url=answer_url)
+    items = items_from_cards(
+        board.cards, now=now, answer_url=answer_url, group_letters=not counselor_view
+    )
     for note in (
         Notification.objects.filter(recipient=student, acknowledged_at__isnull=True)
         .select_related("roadmap_item", "application__portal_form")

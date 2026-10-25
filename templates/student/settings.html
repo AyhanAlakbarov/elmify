@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Settings{% endblock %}
 {% block content %}
-  <div class="page-head"><div><h1>Settings</h1><p>Your profile, the inbox we watch, your browsers and your account.</p></div></div>
+  <div class="page-head"><div><h1>Settings</h1><p>Your profile, your plan, the inbox we watch, your browsers and your account.</p></div></div>
   <ul class="link-list">
     <li><a href="/student/profile/">Profile</a> {% if profile_done %}Complete. You can update it any time.{% else %}Not started yet.{% endif %}</li>
+    <li><a href="/student/settings/plan/">Plan and payment</a> Your plan, and whether this application year is paid.</li>
     <li><a href="/student/settings/mailbox/">Mailbox</a> The inbox we watch for replies from universities.</li>
     <li><a href="/student/settings/extension/">Browser extension</a> The browsers that fill in your applications.</li>
     <li><a href="/student/settings/account/">Account</a> Leave Elmify and delete your data.</li>

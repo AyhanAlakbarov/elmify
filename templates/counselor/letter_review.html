@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load cv_countries dashboard %}
+{% block title %}Letters to review{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Letters to review</h1>
+    <p>Letters the AI could not approve on its own. Your students see “Your counsellor needs to read this letter” until you do.</p>
+  </div>
+</div>
+<p class="note note-ok">Reading is live. Approving and sending back are not switched on yet; until they are, tell the student in Messages what to change.</p>
+
+{% if letters %}
+  <ul class="review-list">
+    {% for item in letters %}
+      {% with app=item.application %}
+      <li class="panel review-item">
+        <div class="review-head">
+          <div>
+            <h2>{% if app.candidate.country_code %}{{ app.candidate.country_code|flag }}{% endif %}{{ app.title }}</h2>
+            <p class="muted">{{ app.student.display_name }}{% if app.candidate.institution_name %}, for {{ app.candidate.institution_name }}{% endif %}{% if item.draft %}. Version {{ item.draft.version }}{% endif %}</p>
+          </div>
+          <a class="btn-quiet btn" href="{% url 'counselor-student-board' app.student_id %}">Open student</a>
+        </div>
+        {% if item.paragraphs %}
+          <details class="letter-preview">
+            <summary>Read the letter</summary>
+            <div class="paper paper-letter">{% for paragraph in item.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}</div>
+          </details>
+        {% else %}
+          <p class="muted">The flagged draft is no longer there. The student may have written a new version.</p>
+        {% endif %}
+        <div class="card-actions">
+          <button type="button" disabled>Approve</button>
+          <button type="button" class="btn-quiet" disabled>Send back with a note</button>
+          <span class="soon">Coming soon</span>
+        </div>
+      </li>
+      {% endwith %}
+    {% endfor %}
+  </ul>
+{% else %}
+  <div class="empty-state">
+    <h3>Nothing to review</h3>
+    <p>When the AI flags a letter for one of your students, it appears here.</p>
+  </div>
+{% endif %}
+{% endblock %}

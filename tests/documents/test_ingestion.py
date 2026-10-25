@@ -215,11 +215,14 @@ def test_pdf_corruption_pins_which_exceptions_pypdf_actually_raises():
     directly against the reader, so a pypdf upgrade that changes these
     exception types fails loudly here instead of silently reopening the gap.
     """
-    with pytest.raises(ValueError) as value_excinfo:
+    # Re-measured on pypdf 6.21.2 (2026-10-25): BOTH blobs are now wrapped in
+    # pypdf's own PdfReadError ("startxref not found", "Invalid object in
+    # /Pages"). The wider catch in _PDF_READ_ERRORS stays as defence: only these
+    # two of the 300 measured blobs are pinned, and the others were not re-run.
+    with pytest.raises(PyPdfError):
         PdfReader(io.BytesIO(_VALUE_ERROR_PDF)).pages[0].extract_text()
-    assert not isinstance(value_excinfo.value, PyPdfError)
 
-    with pytest.raises(AttributeError):
+    with pytest.raises(PyPdfError):
         PdfReader(io.BytesIO(_ATTRIBUTE_ERROR_PDF)).pages[0].extract_text()
 
 

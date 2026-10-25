@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% load cv_countries dashboard %}
+{% block title %}Recommendation letters{% endblock %}
+{% block content %}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-writing' %}">CV &amp; letters</a><span aria-hidden="true">/</span><span aria-current="page">Recommendation letters</span></nav>
+<div class="page-head">
+  <div>
+    <h1>Recommendation letters</h1>
+    <p>Ask a teacher or manager once, and send their letter to every application that needs one.</p>
+  </div>
+  <span class="soon soon-lg">Coming soon</span>
+</div>
+
+<p class="note note-ok">Requests are not sent yet. You can see how this will work, but nothing on this page is saved or emailed.</p>
+
+<div class="ref-layout">
+  <section class="panel" aria-labelledby="ask-heading">
+    <h2 id="ask-heading">Ask someone</h2>
+    <form class="referee-form">
+      <fieldset disabled>
+        <div class="field-row">
+          <p><label for="r-name">Referee's name</label><input type="text" id="r-name" name="name"></p>
+          <p><label for="r-email">Their email</label><input type="email" id="r-email" name="email"></p>
+        </div>
+        <div class="field-row">
+          <p><label for="r-role">Their role</label><select id="r-role" name="role"><option>Professor or teacher</option><option>Thesis supervisor</option><option>Manager at work</option><option>Other</option></select></p>
+          <p><label for="r-since">Known you since</label><input type="text" id="r-since" name="since" placeholder="e.g. 2022"></p>
+        </div>
+        {% if applications %}
+          <fieldset class="ref-apps">
+            <legend>Send their letter to</legend>
+            {% for app in applications %}
+              <label class="check-row"><input type="checkbox" name="applications" value="{{ app.id }}" checked>{% if app.candidate.country_code %}{{ app.candidate.country_code|flag }}{% endif %}{{ app.title }}</label>
+            {% endfor %}
+          </fieldset>
+        {% endif %}
+        <p><label for="r-note">What should they mention?</label><textarea id="r-note" name="note" rows="3" placeholder="The project you did together, a result you are proud of"></textarea></p>
+        <button type="button">Send request</button>
+      </fieldset>
+    </form>
+  </section>
+
+  <aside class="side-panel" aria-labelledby="who-heading">
+    <h2 id="who-heading">Who asks for one</h2>
+    {% if asks %}
+      <ul class="ref-asks">
+        {% for app, refs in asks %}
+          <li><a href="{% url 'student-letter-workspace' app.id %}?doc=references">{% if app.candidate.country_code %}{{ app.candidate.country_code|flag }}{% endif %}{{ app.title }}</a><small>{{ refs.0|truncatechars:140 }}</small></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">None of the programme pages we have read mention recommendation letters yet. Most master's programmes ask for one or two, so it is worth asking early.</p>
+    {% endif %}
+    <h3>How it will work</h3>
+    <ol class="ws-steps">
+      <li>You name the referee and pick the applications.</li>
+      <li>We email them a private link with each programme's rules.</li>
+      <li>They upload the letter. You see that it arrived, not what it says.</li>
+    </ol>
+  </aside>
+</div>
+{% endblock %}

@@ -160,8 +160,8 @@ def budget_unspent(
     """The pack's summed application fees sit below the student's application budget.
 
     Plan decision 5's stand-in for the optimizer's "budget unspent" outcome.
-    With no rate table -- which is what a deployed worker has today
-    (`handle_research_message` runs with rates=None) -- this is False and
+    With no rate table -- what a worker has when neither CBAR nor the ECB
+    answered (`research.rates.current_rates` returned None) -- this is False and
     counts nothing, rather than comparing currencies at a rate somebody made
     up. A fee in a currency the table lacks is the same answer, for the same
     reason.

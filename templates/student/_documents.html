@@ -103,7 +103,7 @@
                     <input type="hidden" name="application_id" value="{{ cell.column.application_id }}">
                     <input type="hidden" name="document_id" value="{{ cell.held.document_id }}">
                     <input type="hidden" name="source" value="{{ cell.held.source }}">
-                    <button type="submit" class="btn-quiet">Submit document to {{ cell.column.title }}</button>
+                    <button type="submit" class="cell-send" title="Submit document to {{ cell.column.title }}"><span aria-hidden="true">Send</span><span class="sr-only">Submit document to {{ cell.column.title }}</span></button>
                   </form>
                 {% endif %}
               </td>

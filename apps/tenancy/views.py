@@ -60,7 +60,8 @@ def mfa_setup(request: HttpRequest) -> HttpResponse:
                 device.confirmed = True
                 device.save(update_fields=["confirmed"])
             otp_login(request, device)
-            return redirect("tenancy-mfa-setup")
+            # Verified: on to the role's own dashboard (config.urls.index).
+            return redirect("/")
         else:
             error = "Invalid code. Try again."
 

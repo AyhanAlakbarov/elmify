@@ -566,12 +566,13 @@ def _facts_and_documents(agency, student) -> None:
                 source_ref="demo:showcase", created_by=student,
             )
 
-        DocumentDraft.objects.create(
+        cv = DocumentDraft.objects.create(
             tenant_id=agency.id, student=student, kind=DocumentDraft.Kind.CV, version=1,
             render_variant="STANDARD", content=_cv_content(),
             status=DocumentDraft.Status.APPROVED, approved_by=student, approved_at=now,
             rendered_filename="Aysel-Mammadova-CV.pdf",
         )
+        stored = [(cv, "Aysel-Mammadova-CV.pdf")]
         programmes = [
             a for a in Application.objects.filter(student=student).select_related("candidate")
             if a.candidate is not None and a.candidate.program_id is not None
@@ -579,7 +580,7 @@ def _facts_and_documents(agency, student) -> None:
         # Five letters approved, one waiting for the student, the rest unwritten.
         pairs = zip(programmes[:6], ("APPROVED",) * 5 + ("DRAFT",), strict=False)
         for version, (application, status) in enumerate(pairs, start=1):
-            DocumentDraft.objects.create(
+            letter = DocumentDraft.objects.create(
                 tenant_id=agency.id, student=student,
                 kind=DocumentDraft.Kind.MOTIVATION_LETTER, version=version,
                 programme_id=application.candidate.program_id, status=status,
@@ -591,6 +592,16 @@ def _facts_and_documents(agency, student) -> None:
                 content=_letter(application.candidate.program_name,
                                 application.candidate.institution_name),
             )
+            if status == "APPROVED":
+                stored.append((letter, f"Motivation-letter-{version}.pdf"))
+            else:
+                # The one draft waits for the counsellor, so "Letters to review"
+                # has something to show.
+                Application.objects.filter(id=application.id).update(letter_note="flagged")
+        # Without the files, every Download link on the Documents page is a 404
+        # (found by the 2026-10-25 crawl): the worker stores a rendered PDF in
+        # production, so the showcase has to as well.
+        _store_pdfs(stored)
         for kind in ("PASSPORT", "TRANSCRIPT", "LANGUAGE_CERTIFICATE", "RECOMMENDATION"):
             DocumentVersion.objects.create(
                 tenant_id=agency.id, student=student, kind=kind, state="AVAILABLE",
@@ -598,6 +609,30 @@ def _facts_and_documents(agency, student) -> None:
                 expires_on=date(2031, 4, 1) if kind == "PASSPORT" else None,
             )
     print("Facts, CV, letters and uploads added")
+
+
+def _store_pdfs(drafts) -> None:  # type: ignore[no-untyped-def]
+    from html import escape
+
+    from weasyprint import HTML
+
+    from apps.documents.render import render_cv
+    from apps.documents.schemas import CVContent
+    from apps.documents.storage import store_document
+
+    for draft, filename in drafts:
+        if draft.kind == "CV":
+            pdf = render_cv(CVContent.model_validate(draft.content), variant="STANDARD").pdf_bytes
+        else:
+            paragraphs = "".join(
+                f"<p>{escape(unit['text'])}</p>" for unit in draft.content["units"]
+            )
+            pdf = HTML(string=(
+                "<html><body style='font-family:serif;font-size:11pt;margin:2.5cm'>"
+                f"<p>Dear Admissions Committee,</p>{paragraphs}"
+                "<p>Yours sincerely,<br>Aysel Mammadova</p></body></html>"
+            )).write_pdf()
+        store_document(draft=draft, filename=filename, content=pdf or b"")
 
 
 def _cv_content() -> dict:

@@ -52,7 +52,7 @@ def test_a_missing_motivation_letter_links_to_its_letter(
     client.force_login(user_a)
     body = client.get(LIST, HTTP_HOST=domain_a.host).content.decode()
     assert "Still missing" in body
-    assert f'href="/student/writing/#letter-{application.id}">Motivation letter' in body
+    assert f'href="/student/writing/letters/{application.id}/">Motivation letter' in body
 
 
 def test_the_option_page_shows_its_facts_and_why_the_student_fits(

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Plan and payment{% endblock %}
+{% block content %}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-settings' %}">Settings</a><span aria-hidden="true">/</span><span aria-current="page">Plan and payment</span></nav>
+<div class="page-head"><div><h1>Plan and payment</h1><p>Matching is free. Your programme search and transcript reading start once your application year is paid.</p></div></div>
+
+<section class="panel cycle-status{% if cycle %} is-paid{% endif %}" aria-labelledby="cycle-heading">
+  <h2 id="cycle-heading">{% if cycle %}{{ cycle.academic_year }} is paid{% else %}{{ academic_year }} is not paid yet{% endif %}</h2>
+  {% if cycle %}
+    <p>Paid on {{ cycle.paid_at|date:"j F Y" }}. Transcript pages used: {{ cycle.pages_used }}.</p>
+  {% else %}
+    <p class="muted">Until it is, you can see your matches but the programme search and transcript reading do not start.</p>
+  {% endif %}
+</section>
+
+<div class="plan-grid">
+  {% for plan in plans %}
+    <section class="plan-card{% if plan.key == current_plan %} is-current{% endif %}" aria-labelledby="plan-{{ plan.key }}">
+      <h2 id="plan-{{ plan.key }}">{{ plan.name }}{% if plan.key == current_plan %} <span class="badge badge-brand">Your plan</span>{% endif %}</h2>
+      <p class="plan-price">{{ plan.price }} <small>{{ plan.period }}</small></p>
+      <ul>{% for feature in plan.features %}<li>{{ feature }}</li>{% endfor %}</ul>
+      {% if plan.key == "apply" and plan.key != current_plan %}
+        <p><button type="button" disabled>Pay by card</button> <span class="soon">Coming soon</span></p>
+        <p class="muted small">Card payment is not switched on yet. Your counsellor can mark your year as paid in the meantime: <a href="{% url 'student-messages' %}">send them a message</a>.</p>
+      {% endif %}
+    </section>
+  {% endfor %}
+</div>
+<p class="muted small">Prices are proposed and may change during the pilot.</p>
+{% endblock %}

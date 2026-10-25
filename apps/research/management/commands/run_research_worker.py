@@ -6,13 +6,23 @@ from django.utils import timezone
 from apps.queue import consume_once
 from apps.research.dispatch import recover_undispatched_runs
 from apps.research.provenance_job import Deps, check_named_program, check_pending
+from apps.research.rates import current_rates
 from apps.research.schemas import ResearchMessage
 from apps.research.services import handle_research_message
 from apps.research.worker import process_research_message
 
 
-def _handle(message: ResearchMessage) -> None:
-    handle_research_message(message)
+def _handle_with_rates(message: ResearchMessage) -> None:
+    # Fetched BEFORE the tenant transaction opens: a cold cache is up to five
+    # HTTP requests, which must not hold a database transaction (CLAUDE.md,
+    # read_and_derive's idle-in-transaction cost). None stays None: the spine
+    # publishes its "no exchange-rate table" pack rather than guessing.
+    rates = current_rates()
+
+    def handle(value: ResearchMessage) -> None:
+        handle_research_message(value, rates=rates)
+
+    process_research_message(message, handle)
 
 
 def route(message: ResearchMessage) -> None:
@@ -27,7 +37,7 @@ def route(message: ResearchMessage) -> None:
     if message.kind == "check_named_program":
         check_named_program(message)
         return
-    process_research_message(message, _handle)
+    _handle_with_rates(message)
 
 
 class Command(BaseCommand):

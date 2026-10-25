@@ -142,11 +142,10 @@ def handle_research_message(
     `OfficialFixture` and hard-code `eligible=True`; the evaluator, `build_pack`
     and the reader's catalogue were all reachable from tests only.
 
-    `rates` is injected and **has no production source yet**:
-    `funding.rate_sources.parse_ecb_daily` and `parse_cbar_daily` exist with no
-    caller in `apps/`. Passing None is therefore what a deployed worker does
-    today, and the spine publishes an empty pack saying so rather than
-    comparing currencies with a table somebody made up.
+    `rates` is injected: the research worker passes `research.rates.current_rates()`
+    (CBAR, else the ECB, cached six hours). When neither answers it is None, and
+    the spine publishes an empty pack saying so rather than comparing currencies
+    with a table somebody made up.
     """
     try:
         run = RecommendationRun.objects.select_for_update().get(id=message.run_id)

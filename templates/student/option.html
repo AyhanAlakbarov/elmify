@@ -107,6 +107,7 @@
             {% else %}<a class="btn" href="{{ card.button.url }}">{{ card.button.label }}</a>{% endif %}
           {% endif %}
           {% if card.kit_url %}<a class="btn btn-quiet" href="{{ card.kit_url }}">Application kit</a>{% endif %}
+          <a class="btn btn-quiet" href="{% url 'student-letter-workspace' card.application_id %}">Letters and essays</a>
         </div>
         {% if card.portal_record_url %}
           <form class="card-form" method="post" action="{{ card.portal_record_url }}">

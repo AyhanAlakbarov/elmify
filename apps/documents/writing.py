@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -257,6 +258,19 @@ def writing_page(request: HttpRequest) -> HttpResponse:
     return render(request, "student/writing.html", page_context(student))
 
 
+#: Where a letter action may send the student back to: the letter workspace
+#: (documents.workspace). Anything else in `next` is ignored.
+_BACK_TO = re.compile(r"^/student/writing/letters/[0-9a-f-]{36}/(\?doc=[a-z]+)?$")
+
+
+def _back(request: HttpRequest) -> HttpResponse:
+    """Back to the page the action was pressed on: the workspace, else CV & letters."""
+    target = str(request.POST.get("next", ""))
+    if _BACK_TO.match(target):
+        return redirect(target)
+    return redirect("student-writing")
+
+
 def _enqueue(message: DocumentWorkMessage) -> bool:
     try:
         enqueue_document_work(message, queue_url=settings.DOCUMENT_QUEUE_URL)
@@ -275,19 +289,19 @@ def letter_write(request: HttpRequest, application_id: UUID) -> HttpResponse:
     )
     if not _writable(application):
         messages.error(request, "Letters are written for programmes, not for scholarships.")
-        return redirect("student-writing")
+        return _back(request)
     if not generatable_facts(student).filter(category=VerifiedFact.Category.IDENTITY).exists():
         messages.error(
             request, "Confirm your name and contact details first, at the top of this page."
         )
-        return redirect("student-writing")
+        return _back(request)
     if application.letter_state in ("QUEUED", "CHECKING"):
-        return redirect("student-writing")
+        return _back(request)
     if rate_limited(
         "letter-request", student.id, limit=_LETTER_REQUESTS_PER_HOUR, window_seconds=3600
     ):
         messages.error(request, LETTER_NOTES["rate_limited"])
-        return redirect("student-writing")
+        return _back(request)
     if not _enqueue(
         DocumentWorkMessage(
             action="generate",
@@ -299,12 +313,12 @@ def letter_write(request: HttpRequest, application_id: UUID) -> HttpResponse:
         )
     ):
         messages.error(request, _QUEUE_DOWN)
-        return redirect("student-writing")
+        return _back(request)
     application.letter_state = "QUEUED"
     application.letter_note = ""
     application.save(update_fields=["letter_state", "letter_note"])
     messages.success(request, f"The AI is writing your letter for {application.title}.")
-    return redirect("student-writing")
+    return _back(request)
 
 
 @login_required
@@ -327,7 +341,7 @@ def letter_approve(request: HttpRequest, draft_id: UUID) -> HttpResponse:
     )
     if application is None:
         messages.error(request, "This letter's application was removed.")
-        return redirect("student-writing")
+        return _back(request)
     if not _enqueue(
         DocumentWorkMessage(
             action="approve_letter",
@@ -339,9 +353,9 @@ def letter_approve(request: HttpRequest, draft_id: UUID) -> HttpResponse:
         )
     ):
         messages.error(request, _QUEUE_DOWN)
-        return redirect("student-writing")
+        return _back(request)
     application.letter_state = "CHECKING"
     application.letter_note = ""
     application.save(update_fields=["letter_state", "letter_note"])
     messages.success(request, "Checking your letter. It will be ready to download in a minute.")
-    return redirect("student-writing")
+    return _back(request)

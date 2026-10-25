@@ -9,9 +9,10 @@ queue, so a student who signs up locally waits forever. This script finds every
 run that has no pack yet and runs the real handler in-process, exactly as
 scripts/seed_demo.py does for the demo student. It adds no behaviour to the app.
 
-The exchange rates are a fixed demo table (the app has no production rate
-source yet; see apps/research/services.handle_research_message). Never run this
-against a real database.
+The exchange rates are today's real table (apps/research/rates.py: CBAR, else
+the ECB) when this machine can reach either bank, and a fixed demo table when it
+cannot, so an offline laptop still gets packs. Never run this against a real
+database.
 """
 
 from __future__ import annotations
@@ -61,6 +62,20 @@ def _demo_rates():  # type: ignore[no-untyped-def]
     )
 
 
+_RATES = None
+
+
+def _rates():  # type: ignore[no-untyped-def]
+    """Loaded once per process: offline, each attempt waits on retries."""
+    global _RATES
+    if _RATES is None:
+        from apps.research.rates import current_rates
+
+        _RATES = current_rates() or _demo_rates()
+        print(f"exchange rates: {_RATES.source}, {_RATES.retrieved_on}")
+    return _RATES
+
+
 def process_pending() -> int:
     from django.db import transaction
 
@@ -72,7 +87,7 @@ def process_pending() -> int:
     from apps.tenancy.db import set_local_tenant
     from apps.tenancy.models import Agency
 
-    rates = _demo_rates()
+    rates = _rates()
     done = 0
     for tenant_id in Agency.objects.values_list("id", flat=True):
         with transaction.atomic(), tenant_scope(tenant_id):

@@ -45,7 +45,7 @@
           </ul>
         </nav>
       {% elif viewer_role == "COUNSELOR" %}
-        <nav aria-label="Main" class="nav"><ul><li><a href="/counselor/"{% if "/counselor/" in p %} aria-current="page"{% endif %}><span class="ico ico-people" aria-hidden="true"></span>Students</a></li></ul></nav>
+        <nav aria-label="Main" class="nav"><ul><li><a href="/counselor/"{% if "/counselor/" in p and "/counselor/letters/" not in p %} aria-current="page"{% endif %}><span class="ico ico-people" aria-hidden="true"></span>Students</a></li><li><a href="/counselor/letters/"{% if "/counselor/letters/" in p %} aria-current="page"{% endif %}><span class="ico ico-pen" aria-hidden="true"></span>Letters to review</a></li></ul></nav>
       {% elif viewer_role == "OWNER" %}
         <nav aria-label="Main" class="nav">
           <ul>

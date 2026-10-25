@@ -102,9 +102,9 @@ def build_student_pack(
             "funding can be matched."
         )
     if rates is None:
-        # Deliberately loud. `parse_ecb_daily` and `parse_cbar_daily` exist and
-        # have no production caller, so nothing loads a rate table on a
-        # deployed worker yet. Costs and budgets are compared in a base
+        # Deliberately loud. The worker loads a table through
+        # `research.rates.current_rates`; None means neither CBAR nor the ECB
+        # answered with a fresh one. Costs and budgets are compared in a base
         # currency, and a made-up table would produce a confident wrong gap.
         logger.warning("no exchange-rate table available; publishing an empty pack")
         return _empty(

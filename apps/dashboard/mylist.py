@@ -124,7 +124,9 @@ def missing_links(card: Card, *, counselor_view: bool = False) -> tuple[Missing,
         if counselor_view or not kind:
             url = card.documents_url
         elif kind == "MOTIVATION_LETTER":
-            url = f"/student/writing/#letter-{card.application_id}"
+            url = f"/student/writing/letters/{card.application_id}/"
+        elif kind == "RECOMMENDATION":
+            url = f"/student/writing/letters/{card.application_id}/?doc=references"
         elif kind == "CV":
             url = "/student/writing/#drafts"
         else:

@@ -95,9 +95,13 @@ def require_staff_mfa(user: AbstractBaseUser, role: str) -> None:
     privileged surface here), and keying only off the membership role let a
     superuser whose membership happens to be STUDENT walk straight past this.
     """
-    is_django_staff = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
-    if (role in _STAFF_MFA_ROLES or is_django_staff) and not user.is_verified():  # type: ignore[attr-defined]
+    if _needs_mfa(user, role):
         raise PermissionDenied("multi-factor verification required")
+
+
+def _needs_mfa(user: AbstractBaseUser, role: str) -> bool:
+    is_django_staff = bool(getattr(user, "is_staff", False) or getattr(user, "is_superuser", False))
+    return (role in _STAFF_MFA_ROLES or is_django_staff) and not user.is_verified()  # type: ignore[attr-defined]
 
 
 class HostTenantContextMiddleware:
@@ -134,6 +138,12 @@ class TenantMembershipMiddleware:
                 # htmx-config makes 403 swap.
                 raise PermissionDenied("tenant membership required")
             request.membership = membership  # type: ignore[attr-defined]
+            if request.path == "/" and _needs_mfa(request.user, membership.role):
+                # The bare host is where a successful login lands
+                # (LOGIN_REDIRECT_URL), so an unverified staff member is sent to
+                # the code screen instead of a "Not allowed" page with no way
+                # forward. Every other path still denies, as the gate pins.
+                return redirect(_MFA_SETUP_PATH)
             if request.path != _MFA_SETUP_PATH:
                 # require_staff_mfa already raises PermissionDenied; letting it
                 # propagate is what reaches templates/403.html.

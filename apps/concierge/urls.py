@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .plan import plan_page
 from .views import (
     acknowledge_notification_view,
     admin_support_grant,
@@ -39,6 +40,7 @@ urlpatterns = [
         name="concierge-acknowledge-notification",
     ),
     path("student/settings/", settings_page, name="student-settings"),
+    path("student/settings/plan/", plan_page, name="student-settings-plan"),
     path("student/messages/", messages_page, name="student-messages"),
     path("student/messages/send/", send_student_message, name="concierge-send-student-message"),
     path("admin/support-grant/", admin_support_grant, name="concierge-admin-support-grant"),

@@ -220,3 +220,37 @@ def test_mfa_verify_attempts_are_rate_limited(
 
     blocked = client.post("/mfa/setup/", {"token": "000000"}, HTTP_HOST=domain_a.host)
     assert blocked.status_code == 429
+
+
+@pytest.mark.django_db
+def test_a_staff_login_lands_on_the_code_screen_not_a_denied_page(
+    client, domain_a, counselor_user, counselor_membership
+):
+    """LOGIN_REDIRECT_URL is "/": an unverified counsellor sent there got a bare
+    403 with no way forward (found by the 2026-10-25 crawl). The bare host now
+    sends them to the code screen; every other staff path still denies."""
+    from django_otp.oath import totp
+    from django_otp.plugins.otp_totp.models import TOTPDevice
+
+    device = TOTPDevice.objects.create(user=counselor_user, name="default", confirmed=True)
+    client.force_login(counselor_user)
+
+    landing = client.get("/", HTTP_HOST=domain_a.host)
+    assert landing.status_code == 302
+    assert landing["Location"] == "/mfa/setup/"
+    assert client.get("/counselor/", HTTP_HOST=domain_a.host).status_code == 403
+
+    verified = client.post(
+        "/mfa/setup/", {"token": f"{totp(device.bin_key):06d}"}, HTTP_HOST=domain_a.host
+    )
+    assert verified["Location"] == "/"
+    assert client.get("/", HTTP_HOST=domain_a.host)["Location"] == "/counselor/"
+
+
+@pytest.mark.django_db
+def test_the_denied_page_links_to_the_code_screen(
+    client, domain_a, counselor_user, counselor_membership
+):
+    client.force_login(counselor_user)
+    body = client.get("/counselor/", HTTP_HOST=domain_a.host).content.decode()
+    assert 'href="/mfa/setup/"' in body

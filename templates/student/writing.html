@@ -157,6 +157,7 @@
             {% else %}
               <p class="muted">This takes about a minute. Refresh the page to see it.</p>
             {% endif %}
+            <a class="text-link" href="{% url 'student-letter-workspace' app.id %}">Open side by side</a>
           </div>
         </li>
         {% endwith %}
@@ -165,6 +166,11 @@
   {% else %}
     <p class="quiet-line">Letters are written per application. Add a programme to <a href="{% url 'student-applications' %}">My applications</a> first.</p>
   {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="refs-heading">
+  <div class="panel-head"><h2 id="refs-heading">Recommendation letters</h2><span class="soon">Coming soon</span></div>
+  <p class="quiet-line">Ask a teacher or manager once, and send their letter to every application that needs one. <a href="{% url 'student-references' %}">See how it will work</a></p>
 </section>
 
 {% if transcript %}

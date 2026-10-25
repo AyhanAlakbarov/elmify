@@ -1013,6 +1013,7 @@ def test_europass_worker_task_role_can_read_and_write_evidence_bucket(template: 
         ("EuropassCanaryRule", "EuropassWorkerTaskDefinition"),
         ("RetryDueFetchesRule", "WorkerTaskDefinition"),
         ("ProvenanceRecheckRule", "WorkerTaskDefinition"),
+        ("ExecuteDueErasuresRule", "WorkerTaskDefinition"),
         ("VerifyDueCyclesRule", "WorkerTaskDefinition"),
         ("SyncMailboxesRule", "WorkerTaskDefinition"),
     ],
@@ -1733,6 +1734,16 @@ def test_the_ladder_ships_with_its_schedule(template: Template) -> None:
     every screen says the right thing. An hourly sweep nobody invokes fails the
     same silent way."""
     assert "ReminderLadderRule" in template.resource_ids()
+
+
+def test_erasure_ships_with_its_schedule_enabled(template: Template) -> None:
+    """The deployment blocker CLAUDE.md records, closed: a deletion request is
+    executed only if something runs execute_due_erasures, daily, as the worker."""
+    rule = template.resource("ExecuteDueErasuresRule")["Properties"]
+    assert rule["State"] == "ENABLED"
+    assert rule["ScheduleExpression"] == "rate(1 day)"
+    overrides = json.loads(rule["Targets"][0]["Input"]["Fn::Sub"])["containerOverrides"][0]
+    assert overrides["command"] == ["python", "manage.py", "execute_due_erasures"]
 
 # --- the fetch vendors' keys reach the research worker ------------------------
 

@@ -205,3 +205,30 @@ def test_the_card_counts_days_in_english(days, words) -> None:
         "student/_card.html", {"card": _card(deadline_local=NOW, days_left=days)}
     )
     assert words in body
+
+
+def test_missing_letters_are_one_row_that_opens_the_writer() -> None:
+    """Found on the 2026-10-25 showcase: thirteen "Motivation letter — needed for"
+    rows, each with a Submit document button for a letter not yet written."""
+    first = _card(missing=("Motivation letter",), deadline=NOW + timedelta(days=9))
+    second = _card(missing=("Motivation letter", "Transcript"), deadline=NOW + timedelta(days=3))
+    items = items_from_cards([first, second], now=NOW, answer_url="/a", group_letters=True)
+    letters = [item for item in items if item.button == "Write letters"]
+    assert len(letters) == 1
+    assert letters[0].text == "Motivation letters still needed for 2 applications"
+    assert letters[0].url == "/student/writing/#letters"
+    assert letters[0].deadline == NOW + timedelta(days=3)
+    assert [item.button for item in items if "Transcript" in item.text] == ["Submit document"]
+
+
+def test_one_missing_letter_links_to_its_own_workspace() -> None:
+    card = _card(missing=("Motivation letter",))
+    [item] = items_from_cards([card], now=NOW, answer_url="/a", group_letters=True)
+    assert item.button == "Write letter"
+    assert item.url == f"/student/writing/letters/{card.application_id}/"
+
+
+def test_a_counsellor_keeps_one_row_per_application() -> None:
+    cards = [_card(missing=("Motivation letter",)), _card(missing=("Motivation letter",))]
+    items = items_from_cards(cards, now=NOW, answer_url="/a")
+    assert [item.button for item in items] == ["Submit document", "Submit document"]

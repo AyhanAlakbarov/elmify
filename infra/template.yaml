@@ -2768,8 +2768,8 @@ Resources:
              "command":["python","manage.py","resume_transcript_readings"]}]}
 
   # Hourly, not daily: the ladder's last rung is 6 hours before the deadline,
-  # which a daily job cannot hit. Shipped enabled, unlike the erasure schedule
-  # that was deferred -- a sweep nothing invokes is a ladder that silently
+  # which a daily job cannot hit. Shipped enabled (the erasure schedule was
+  # once deferred; see ExecuteDueErasuresRule) -- a sweep nothing invokes is a ladder that silently
   # never fires, with every screen saying the right thing.
   ReminderLadderRule:
     Type: AWS::Events::Rule
@@ -2915,6 +2915,34 @@ Resources:
           Input: !Sub |
             {"containerOverrides":[{"name":"worker",
              "command":["python","manage.py","provenance_recheck"]}]}
+
+  # Daily, and shipped ENABLED (CLAUDE.md, "Erasure: the schedule is deferred,
+  # and that is a deployment blocker"). A student who requests deletion is
+  # locked out at once; without this rule the thirty-day window expires and
+  # nothing ever moves the request to EXECUTED -- locked out indefinitely and
+  # never erased, with every screen saying the right thing. Runs as the worker
+  # (runtime_engine), the one role granted EXECUTE on the erasure guard
+  # (scripts/create_erasure_guard.sql, run by hand after migrations).
+  ExecuteDueErasuresRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Execute GDPR erasures whose thirty-day window has expired
+      ScheduleExpression: "rate(1 day)"
+      State: ENABLED
+      Targets:
+        - Id: execute-due-erasures
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref WorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"worker",
+             "command":["python","manage.py","execute_due_erasures"]}]}
 
   # Rung 5 of the fetch ladder (apps/research/fetch): a due RETRY_SCHEDULED or
   # BUDGET row is time-fixed, not host-fixed, so this just needs to wake up
