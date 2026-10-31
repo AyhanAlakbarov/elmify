@@ -27,7 +27,7 @@ jobs:
         uses: docker://toniblyx/prowler:5.39.0@sha256:64ff238bfaa6da041960dfeb55883dc966d650b527c12864895731e94af807b6
         with:
           args: aws --output-formats json-ocsf --output-directory /github/workspace/prowler-output
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: prowler-report
