@@ -45,7 +45,7 @@ dev = [
   "pytest>=9.0.3,<10",
   "pytest-cov>=7.1.0,<8",
   "pytest-django>=4.11,<5",
-  "ruff>=0.16.6,<1",
+  "ruff>=0.17.3,<1",
   "types-defusedxml>=0.7,<1",
 ]
 
