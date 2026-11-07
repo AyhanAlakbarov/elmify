@@ -18,7 +18,7 @@ dependencies = [
   # apps/research/names.py: romanise every script before a name meets a
   # domain label. ISC; unidecode (GPL) was the measured prototype's choice.
   "anyascii>=0.3.2,<0.4",
-  "stagehand>=4.1.0,<5",
+  "stagehand>=4.4.0,<5",
   "pypdf>=6.19.0,<7",
   # Was transitive via scrapling[fetchers]; declared directly now that
   # scrapling is gone. The portal Docker stage still needs the `playwright`
