@@ -4,8 +4,6 @@ Plain, unstyled HTML on purpose (requirements P1-9 amendment): the team designs
 the presentation later; these pages exist so the behaviour can be tested end to end.
 """
 
-import hashlib
-
 from django.conf import settings
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
@@ -17,6 +15,7 @@ from apps.concierge.cycles import grant_early_access_cycle
 from apps.privacy import acceptance, documents
 from apps.privacy.forms import CONSENT_TEXT, SignupForm
 from apps.privacy.models import Acceptance, LegalDocument
+from apps.ratelimit import actor_key as _key
 from apps.ratelimit import rate_limited
 from apps.tenancy.context import current_tenant_id
 from apps.tenancy.models import Agency, Membership
@@ -27,11 +26,6 @@ LANGUAGE_NAMES = (("en", "English"), ("az", "Azərbaycanca"), ("ru", "Русск
 STALE_MESSAGE = "These documents changed while the page was open. Read the current versions below."
 TOO_MANY = "Too many sign-up attempts. Try again later."
 _HOUR = 3600
-
-
-def _key(value: str) -> int:
-    """rate_limited takes UUID | int; SHA-256 so a crafted value cannot collide."""
-    return int.from_bytes(hashlib.sha256(value.encode()).digest()[:8], "big")
 
 
 def _client_ip(request: HttpRequest) -> str:
@@ -98,6 +92,15 @@ def signup(request: HttpRequest) -> HttpResponse:
 
 
 def legal_document(request: HttpRequest, kind: str) -> HttpResponse:
+    if kind == "terms_of_service":
+        kind = "terms"
+    elif kind in {"privacy_notice", "privacy"}:
+        tenant_id = current_tenant_id()
+        _, kind = (
+            acceptance.required_kinds(tenant_id)
+            if tenant_id is not None
+            else ("terms", "privacy_notice_direct")
+        )
     if kind not in documents.KINDS:
         raise Http404
     doc = documents.current(kind, request.GET.get("lang") or "en")

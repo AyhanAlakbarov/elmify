@@ -9,14 +9,20 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-from apps.documents.table import ROWS
+from apps.accounts.models import StudentProfileVersion
+from apps.documents.referee_needs import needs_for
+from apps.documents.table import ROWS, kinds_named
 from apps.documents.templatetags.cv_countries import country_name
 from apps.funding.models import RecommendationCandidate
 from apps.portals.models import Application
 
 from .board import Board, Card
+
+if TYPE_CHECKING:
+    from apps.tenancy.models import Membership
 
 #: Requirement keys in plain words, for the page's requirement list.
 KEY_LABELS = {
@@ -80,6 +86,7 @@ _PERIODS = {
 }
 
 _LABEL_KINDS = {label: kind for kind, label in ROWS}
+_KIND_LABELS = dict(ROWS)
 
 #: The award's stored codes in words. UNSTATED and "" are left off the page.
 _TIMING = {
@@ -93,12 +100,43 @@ _CYCLE = {
     "WITH_ADMISSION_CYCLE": "With your university application",
     "ONE_OFF": "A one-time call",
 }
+_DEGREE_LEVELS = {
+    "MASTER": "Master's (MSc / MA)",
+    "BACHELOR": "Bachelor's",
+    "PHD": "PhD / Doctorate",
+}
+_FAMILIES = {
+    "GOVERNMENT_SCHOLARSHIP": "Government scholarship",
+    "PRIVATE_FOUNDATION": "Private foundation",
+    "DEPARTMENT_OR_PROGRAM": "University / departmental award",
+    "INSTITUTIONAL": "University scholarship",
+}
+_ROUTES = {
+    "AUTOMATIC_ON_ADMISSION": "Included with admission (no separate form)",
+    "SEPARATE_APPLICATION": "Separate scholarship application",
+}
+_CAREER_INTENTS = {
+    "PHD": "PhD & academic research",
+    "INDUSTRY": "Industry & R&D",
+    "PUBLIC_SECTOR": "Public sector & policy",
+    "ENTREPRENEURSHIP": "Entrepreneurship",
+}
 
 
 @dataclass(frozen=True)
 class Missing:
     label: str
     url: str
+
+
+@dataclass(frozen=True)
+class ChecklistItem:
+    text: str
+    category: str
+    status: str
+    tone: str
+    url: str
+    action_label: str
 
 
 @dataclass(frozen=True)
@@ -125,7 +163,7 @@ def missing_links(card: Card, *, counselor_view: bool = False) -> tuple[Missing,
             url = card.documents_url
         elif kind == "MOTIVATION_LETTER":
             url = f"/student/writing/letters/{card.application_id}/"
-        elif kind == "RECOMMENDATION":
+        elif kind in ("REFERENCE_LETTER", "RECOMMENDATION"):
             url = f"/student/writing/letters/{card.application_id}/?doc=references"
         elif kind == "CV":
             url = "/student/writing/#drafts"
@@ -133,6 +171,118 @@ def missing_links(card: Card, *, counselor_view: bool = False) -> tuple[Missing,
             url = card.documents_url
         links.append(Missing(label, url))
     return tuple(links)
+
+
+def _kind_url(kind: str, card: Card, *, counselor_view: bool) -> tuple[str, str]:
+    if counselor_view or not kind:
+        return card.documents_url, "Documents"
+    if kind == "MOTIVATION_LETTER":
+        return f"/student/writing/letters/{card.application_id}/", "CV & letters"
+    if kind in ("REFERENCE_LETTER", "RECOMMENDATION"):
+        return f"/student/writing/letters/{card.application_id}/?doc=references", "Referees"
+    if kind == "CV":
+        return "/student/writing/#drafts", "CV & letters"
+    return card.documents_url, "Documents"
+
+
+def checklist_for(card: Card, *, counselor_view: bool = False) -> tuple[ChecklistItem, ...]:
+    """Each sentence in `card.requirements` paired with its live status in the student's kit."""
+    missing_set = set(card.missing)
+    has_doc_tracking = card.documents[1] > 0
+    items: list[ChecklistItem] = []
+    for sentence in card.requirements:
+        matched = sorted(kinds_named(sentence))
+        if not matched:
+            items.append(ChecklistItem(sentence, "", "", "neutral", "", ""))
+            continue
+        primary_kind = matched[0]
+        label = _KIND_LABELS.get(primary_kind, "")
+        url, workspace = _kind_url(primary_kind, card, counselor_view=counselor_view)
+        if any(_KIND_LABELS.get(k, "") in missing_set for k in matched):
+            items.append(
+                ChecklistItem(
+                    text=sentence,
+                    category=label,
+                    status="Missing",
+                    tone="warn",
+                    url=url,
+                    action_label=f"Open {workspace}",
+                )
+            )
+        elif has_doc_tracking:
+            items.append(
+                ChecklistItem(
+                    text=sentence,
+                    category=label,
+                    status="Ready in kit",
+                    tone="ok",
+                    url=url,
+                    action_label=workspace,
+                )
+            )
+        else:
+            items.append(ChecklistItem(sentence, label, "", "neutral", url, workspace))
+    return tuple(items)
+
+
+def profile_alignment_for(
+    student: Membership, candidate: RecommendationCandidate | None
+) -> tuple[Line, ...]:
+    """Student-specific profile context aligned to this candidate (tenant tables only)."""
+    profile = StudentProfileVersion.objects.filter(student=student).order_by("-version").first()
+    snapshot = (profile.snapshot if profile else None) or {}
+    if not isinstance(snapshot, dict) or not snapshot:
+        return ()
+    lines: list[Line] = []
+    history = snapshot.get("academic_history")
+    if isinstance(history, list) and history and isinstance(history[0], dict):
+        first = history[0]
+        qual = str(first.get("qualification") or "").strip()
+        field = str(first.get("field") or "").strip()
+        inst = str(first.get("institution") or "").strip()
+        grade = str(first.get("grade") or "").strip()
+        scale = str(first.get("grading_scale") or "").strip().removeprefix("0-")
+        deg_part = " ".join(p for p in (qual, f"in {field}" if field else "") if p)
+        inst_part = f" · {inst}" if inst else ""
+        gpa_part = (
+            f" (GPA {grade}/{scale})"
+            if grade and scale
+            else (f" (GPA {grade})" if grade else "")
+        )
+        if deg_part or inst_part:
+            lines.append(Line("Your academic background", f"{deg_part}{inst_part}{gpa_part}"))
+    target_field = str(snapshot.get("target_field") or "").strip()
+    notes = str(snapshot.get("additional_notes") or "").strip().rstrip(".")
+    career_code = str(snapshot.get("career_intent") or "").strip()
+    career = _CAREER_INTENTS.get(career_code, "")
+    focus_parts = [p for p in (target_field, notes) if p]
+    if focus_parts:
+        focus_text = " — ".join(focus_parts)
+        if career:
+            focus_text = f"{focus_text} ({career})"
+        lines.append(Line("Your field & research focus", focus_text))
+    elif career:
+        lines.append(Line("Your career track", career))
+    langs = snapshot.get("language_evidence")
+    if isinstance(langs, list) and langs and isinstance(langs[0], dict):
+        l0 = langs[0]
+        lang_name = str(l0.get("language") or "").strip()
+        level = str(l0.get("level") or "").strip()
+        if lang_name and level:
+            lines.append(Line("Your verified language level", f"{lang_name} {level}"))
+    if (
+        candidate is not None
+        and candidate.self_funded is not None
+        and not candidate.is_below_fit_bar
+    ):
+        if candidate.opportunity_id is None and not candidate.funding_gap_is_placeholder:
+            lines.append(
+                Line(
+                    "Your self-funded coverage",
+                    f"{candidate.self_funded} {candidate.currency} covered by your stated budget",
+                )
+            )
+    return tuple(lines)
 
 
 def country_groups(student_id: UUID, board: Board) -> tuple[CountryGroup, ...]:
@@ -196,6 +346,11 @@ class OptionPage:
     has_details: bool
     #: A grade bar is among the requirements; else the page says none is stated.
     states_grade: bool
+    risk_tier: str = ""
+    rank: int | None = None
+    risk_notes: tuple[str, ...] = ()
+    funding_condition: str = ""
+    referee_rules: tuple[Line, ...] = ()
 
 
 def _reason(text: str) -> str:
@@ -221,6 +376,33 @@ _PLAIN = (
      "You hold the {held_lower}'s degree it asks for"),
     ("WORK_EXPERIENCE", re.compile(r"^WORK_EXPERIENCE: (?P<held>\d+) months against (?P<bar>\S+)$"),
      "Your {held} months of experience meet the {bar} required"),
+    ("OTHER", re.compile(r"^OTHER: the page states a condition no key fits; read the sentence$"),
+     "Check the official rule above — your counsellor will help confirm if this applies to you"),
+    (
+        "TALENT",
+        re.compile(
+            r"^TALENT: the profile does not carry sports or arts achievement; a human decides it$"
+        ),
+        "Based on sports, arts, or competition achievements — "
+        "your counsellor will review this with you",
+    ),
+    ("NEED", re.compile(r"^NEED: the profile does not carry income; a human decides a means test$"),
+     "Based on household financial need — checked during your application"),
+    (
+        "EMPLOYMENT",
+        re.compile(r"^EMPLOYMENT: the profile does not carry an employer; a human decides it$"),
+        "Depends on your employer or work status — checked with your counsellor",
+    ),
+    (
+        "AFFINITY",
+        re.compile(r"^AFFINITY: a membership the profile does not record; a human decides it$"),
+        "Depends on a specific membership or affiliation — check the official rule above",
+    ),
+    (
+        "GUARANTOR",
+        re.compile(r"^GUARANTOR: whether a guarantor can be produced is not in the profile$"),
+        "Requires a financial guarantor — check the official rule above",
+    ),
 )
 
 
@@ -246,6 +428,29 @@ def _fit_sentence(key: str, reason: str) -> str:
     return plain_reason(key, reason) if reason else KEY_LABELS.get(key, "This condition")
 
 
+def _referee_lines(candidate: RecommendationCandidate, *, is_award: bool) -> tuple[Line, ...]:
+    records = (
+        candidate.referee_requirements
+        if isinstance(candidate.referee_requirements, list)
+        else []
+    )
+    if not records:
+        return ()
+    need = needs_for(records, award=is_award)
+    pairs = (
+        ("Letters required", need.count),
+        ("Who writes them", need.kind),
+        ("Submission mode", need.mode),
+        ("Referee email", need.institutional_email_required),
+        ("Referee deadline", need.due),
+    )
+    return tuple(
+        Line(label, stated.rule_text)
+        for label, stated in pairs
+        if stated is not None and stated.rule_text
+    )
+
+
 def option_page(candidate: RecommendationCandidate) -> OptionPage:
     details = candidate.details or {}
     fit = candidate.fit or {}
@@ -261,6 +466,13 @@ def option_page(candidate: RecommendationCandidate) -> OptionPage:
         facts.append(Line("Country", country_name(candidate.country_code)))
     if details.get("city"):
         facts.append(Line("City", str(details["city"])))
+    if candidate.degree_level:
+        deg_label = _DEGREE_LEVELS.get(candidate.degree_level, candidate.degree_level.title())
+        facts.append(Line("Degree level", deg_label))
+    if is_award and card.get("family"):
+        family_label = _FAMILIES.get(str(card.get("family")), "")
+        if family_label:
+            facts.append(Line("Scholarship type", family_label))
     if details.get("duration_months"):
         months = int(details["duration_months"])
         facts.append(
@@ -271,6 +483,10 @@ def option_page(candidate: RecommendationCandidate) -> OptionPage:
         facts.append(Line("Length", str(details["duration_text"])))
     if details.get("languages"):
         facts.append(Line("Taught in", ", ".join(str(x) for x in details["languages"])))
+    if card.get("route"):
+        route_label = _ROUTES.get(str(card.get("route")), "")
+        if route_label:
+            facts.append(Line("Funding route", route_label))
     if card.get("deadline"):
         facts.append(Line("Deadline", str(card["deadline"])))
     timing = _TIMING.get(str(details.get("timing", "")), "")
@@ -345,4 +561,9 @@ def option_page(candidate: RecommendationCandidate) -> OptionPage:
             isinstance(row, dict) and row.get("key") == "GRADE"
             for row in fit.get("conditions", [])
         ),
+        risk_tier=candidate.risk_tier_label,
+        rank=candidate.rank,
+        risk_notes=tuple(candidate.risk_notes),
+        funding_condition=candidate.funding_condition,
+        referee_rules=_referee_lines(candidate, is_award=is_award),
     )

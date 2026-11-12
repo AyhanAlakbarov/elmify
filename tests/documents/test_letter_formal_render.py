@@ -326,6 +326,21 @@ def test_a_formal_english_letter_carries_its_sourced_salutation() -> None:
     assert "Strasbourg" not in html
 
 
+def test_a_formal_french_letter_carries_its_sourced_salutation_and_closing() -> None:
+    html = _letter_html(LetterShape(form="FORMAL_LETTER"), language="fr")
+    assert "Madame, Monsieur," in html
+    assert "Je vous prie d&#x27;agréer, Madame, Monsieur, mes salutations distinguées." in html
+    assert "A Student" in html
+    assert "Strasbourg" not in html
+    artifact = render_letter(
+        _content(language="fr"),
+        structure="CONTINUOUS_LETTER",
+        shape=LetterShape(form="FORMAL_LETTER"),
+        funder_kind="UNIVERSITY_ADMISSION",
+    )
+    assert artifact.variant == "LETTER_FORMAL"
+
+
 def test_every_formality_formula_is_quoted_from_the_rule_it_cites() -> None:
     """The check that catches an invented salutation.
 

@@ -39,7 +39,7 @@ plan in several places:
 
 **Base branch:** `master` at or after `115c752` (PR #133). Work on the branch the session was given.
 The brief names that branch `claude/plan-<item>`. Use a dedicated test database:
-`POSTGRES_DB=tehsil_sweep_harness`.
+`POSTGRES_DB=elmify_sweep_harness`.
 
 ---
 
@@ -122,7 +122,7 @@ parallel and are not on `master`:
   `costDollars.total`) and nothing else. No title, snippet or score passes the adapter boundary.
 - After every task, run:
   `uv run ruff check apps config tests scripts`, `uv run mypy apps config`,
-  `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research tests/tenancy` and
+  `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research tests/tenancy` and
   `uv run python manage.py makemigrations --check --dry-run`. Never run `ruff format`.
 
 ## File map
@@ -359,7 +359,7 @@ Update that file's `_Stub` so it satisfies the new protocol, and add `SearchMete
 
 - [ ] **Step 2: Run the tests and confirm that they fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/providers -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/providers -q`
 Expected: FAIL with `ImportError: cannot import name 'SearchMeter'`.
 
 - [ ] **Step 3: Implement.** In `apps/research/providers/__init__.py`, change `SearchRequest`'s
@@ -511,7 +511,7 @@ and change the `from . import SearchRequest` line to `from . import SearchMeter,
 
 - [ ] **Step 5: Run the tests and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/providers tests/research/test_sweep.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/providers tests/research/test_sweep.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Commit.**
@@ -618,7 +618,7 @@ Add the four names to `_SHARED_TABLES` in `tests/tenancy/test_database_isolation
 
 - [ ] **Step 2: Run the tests and confirm that they fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_sweep_rls.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_sweep_rls.py -q`
 Expected: FAIL with `ImportError: cannot import name 'SweepAngle'`.
 
 - [ ] **Step 3: Add the models.** Append to `apps/research/models.py`:
@@ -853,7 +853,7 @@ class Migration(migrations.Migration):
 
 - [ ] **Step 5: Run the tests and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_sweep_rls.py tests/tenancy/test_database_isolation.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_sweep_rls.py tests/tenancy/test_database_isolation.py -q`
 Expected: PASS. `test_task7_rls_policy_shapes_and_runtime_acl` now iterates over the four new
 tables as well.
 
@@ -957,7 +957,7 @@ def test_a_diaspora_pass_without_a_home_language_is_refused() -> None:
 
 - [ ] **Step 2: Run the tests and confirm that they fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_languages.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_languages.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.languages'`.
 
 - [ ] **Step 3: Implement.** Create `apps/research/languages.py`:
@@ -1013,7 +1013,7 @@ SELECT DISTINCT ?code WHERE {{
 
 #: Wikidata's query service refuses anonymous clients; the policy asks for a
 #: descriptive agent. No key, no personal data.
-_USER_AGENT = "tehsil-agent/1.0 (funding sweep language loop)"
+_USER_AGENT = "elmify/1.0 (funding sweep language loop)"
 
 
 class CountryLanguages(Protocol):
@@ -1071,7 +1071,7 @@ def pass_languages(
 
 - [ ] **Step 4: Run the tests and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_languages.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_languages.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit.**
@@ -1320,7 +1320,7 @@ def test_the_cycle_turns_in_september() -> None:
 
 - [ ] **Step 4: Run the tests and confirm that they fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_angles.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_angles.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.angles'`.
 
 - [ ] **Step 5: Implement.** Create `apps/research/angles.py`:
@@ -1612,7 +1612,7 @@ def active_angles(
 
 - [ ] **Step 6: Run the tests and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_angles.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_angles.py -q`
 Expected: PASS.
 
 - [ ] **Step 7: Commit.**
@@ -1664,7 +1664,7 @@ def test_a_family_with_no_sweep_is_refused() -> None:
 
 - [ ] **Step 2: Run the tests and confirm that they fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_sweep_commands.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_sweep_commands.py -q`
 Expected: FAIL with `Unknown command: 'generate_sweep_angles'`.
 
 - [ ] **Step 3: Implement.** Create `apps/research/management/commands/generate_sweep_angles.py`:
@@ -1740,7 +1740,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run the tests and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_sweep_commands.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_sweep_commands.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit.**
@@ -1844,7 +1844,7 @@ def test_nobody_is_dropped_before_three_batches() -> None:
 
 - [ ] **Step 2: Run the tests and confirm that they fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_harness.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_harness.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.harness'`.
 
 - [ ] **Step 3: Implement.** Create `apps/research/harness.py`:
@@ -1937,7 +1937,7 @@ def decayed(batches: Sequence[BatchResult], providers: Sequence[str]) -> set[str
 
 - [ ] **Step 4: Run the tests and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_harness.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_harness.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit.**
@@ -2141,7 +2141,7 @@ def test_rung_four_needs_no_register() -> None:
 
 - [ ] **Step 2: Run the tests and confirm that they fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_harness.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_harness.py -q`
 Expected: FAIL with `ImportError: cannot import name 'PassConfig'`.
 
 - [ ] **Step 3: Implement.** Append to `apps/research/harness.py`. Merge the imports into the
@@ -2415,7 +2415,7 @@ Two notes for the executor:
 
 - [ ] **Step 4: Run the tests and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_harness.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_harness.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit.**
@@ -2540,7 +2540,7 @@ def test_a_dead_angle_is_retired_only_past_the_threshold(settings) -> None:
 
 - [ ] **Step 3: Run the tests and confirm that they fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_tally.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_tally.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.tally'`.
 
 - [ ] **Step 4: Implement.** Create `apps/research/tally.py`:
@@ -2696,7 +2696,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_tally.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_tally.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Commit.**
@@ -2785,7 +2785,7 @@ def test_a_dry_run_names_what_would_run(settings, capsys) -> None:
 
 - [ ] **Step 3: Run the tests and confirm that the new ones fail.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research/test_sweep_commands.py tests/research/test_harness.py -q`
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research/test_sweep_commands.py tests/research/test_harness.py -q`
 Expected: the three command tests FAIL, because `--family` is not an argument yet. The harness
 additions PASS.
 
@@ -2950,7 +2950,7 @@ set (decision 38 supersedes `language` with Wikidata P37)."
 
 - [ ] **Step 6: Run the full suites and confirm that they pass.**
 
-Run: `POSTGRES_DB=tehsil_sweep_harness uv run pytest tests/research tests/tenancy -q`, then
+Run: `POSTGRES_DB=elmify_sweep_harness uv run pytest tests/research tests/tenancy -q`, then
 `uv run ruff check apps config tests scripts`, then `uv run mypy apps config`, then
 `uv run python manage.py makemigrations --check --dry-run`.
 Expected: all PASS, with no migration changes.

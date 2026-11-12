@@ -7,12 +7,15 @@ then the only writer is the agency fallback: the portal a person recorded.
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 if TYPE_CHECKING:
     from .models import Application, PortalForm
+
+logger = logging.getLogger(__name__)
 
 
 class SnapshotDate(BaseModel):
@@ -68,4 +71,7 @@ def read_snapshot(application: Application) -> RouteSnapshot | None:
     try:
         return RouteSnapshot.model_validate(application.route_snapshot)
     except ValidationError:
+        logger.warning(
+            "stored route_snapshot unreadable for application %s", application.id
+        )
         return None

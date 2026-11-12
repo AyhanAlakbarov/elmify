@@ -65,7 +65,7 @@ def _usable(host: str) -> bool:
     )
 
 
-def _ascii_host(host: str) -> str:
+def ascii_host(host: str) -> str:
     """``host`` in its IDNA (punycode) form, or "" when it has none.
 
     münchen.de keys as xn--mnchen-3ya.de; a fullwidth look-alike maps to the
@@ -217,7 +217,7 @@ def _key(host: str) -> str:
     This key is for READING (which senders a pack justifies). Acting on a link
     checks full hosts instead: see `link_hosts`.
     """
-    host = _ascii_host(host.strip().casefold().rstrip("."))
+    host = ascii_host(host.strip().casefold().rstrip("."))
     if not _usable(host):
         return ""
     domain = registrable_domain(host)
@@ -422,7 +422,7 @@ def link_hosts(student: Membership) -> set[str]:
     named = [_host_of(url) for url in urls] + [str(host) for _id, host, _learned in forms]
     hosts: set[str] = set()
     for raw in named:
-        host = _ascii_host(raw.strip().casefold().rstrip("."))
+        host = ascii_host(raw.strip().casefold().rstrip("."))
         # _key only validates here: "" for anything unusable or unregistrable,
         # so a bare suffix such as github.io never becomes a link target.
         # _is_platform_host excludes a platform's own name too, whatever _key

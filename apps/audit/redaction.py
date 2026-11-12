@@ -88,16 +88,44 @@ def classifiable_fields(model: type[Model]) -> list[str]:
 
 
 REDACT: dict[str, RedactSpec] = {
+    # The table's immutability trigger admits exactly this UPDATE -- snapshot
+    # to {} with every other column unchanged (accounts/0006). Redact another
+    # field here, or change JSONField's empty value, and erasure fails again.
     "accounts.StudentProfileVersion": RedactSpec("student_id", ("snapshot",)),
+    # The onboarding questionnaire in progress: every answer the student typed.
+    "accounts.ConsultationDraftRecord": RedactSpec("student_id", ("envelope",)),
     "documents.VerifiedFact": RedactSpec("student_id", ("payload", "source_ref")),
     "documents.NarrativeInput": RedactSpec("student_id", ("text", "provenance")),
     "documents.TranscriptReading": RedactSpec(
-        "student_id", ("record", "highlights", "key_numbers", "rows", "accepted")
+        "student_id", (
+            "record", "highlights", "key_numbers", "rows", "crops", "answers", "review_reason",
+            "accepted",
+        )
     ),
+    # A checked reading of the student's repos or thesis (CV evidence spec §9); the
+    # rows are also deleted by advance_deletion, redacted first like PortalAnswer.
+    "documents.EvidenceReading": RedactSpec("student_id", ("repo", "reading")),
     "documents.TranscriptPage": RedactSpec("student_id", ("page",)),
     "documents.TranscriptUpload": RedactSpec("student_id", ("file_sha256",)),
-    "documents.DocumentDraft": RedactSpec("student_id", ("content",)),
+    "documents.DocumentDraft": RedactSpec(
+        "student_id",
+        ("content", "requirement_states", "applied_fixes", "render_warnings"),
+    ),
+    # A digest of the student's own text (cv_fixes.subject_of). advance_deletion
+    # deletes these rows first; this entry is the classification, and the
+    # backstop if that order ever changes.
+    "documents.CvFixRevert": RedactSpec("student_id", ("subject",)),
+    # Deleted outright by advance_deletion (beside PortalAnswer); redacted
+    # first as well, so an erasure that ever reorders keeps no digest of the
+    # student's CV lines.
+    "documents.CVRelevanceAnswer": RedactSpec("student_id", ("item_digest",)),
+    "documents.CVItemChoice": RedactSpec("student_id", ("item_digest",)),
     "documents.RevisionRequest": RedactSpec("document__student_id", ("note",)),
+    # A professor's name, address and the student's own words about them: third-party
+    # data that exists only for this student and goes with them (lanes spec §12).
+    "documents.Referee": RedactSpec(
+        "student_id", ("name", "title", "institution", "email", "relationship")
+    ),
     "concierge.RoadmapItem": RedactSpec("student_id", ("result",)),
     "concierge.RequiredAction": RedactSpec("student_id", ("description",)),
     "concierge.ManualOperation": RedactSpec("roadmap_item__student_id", ("description",)),
@@ -121,6 +149,15 @@ REDACT: dict[str, RedactSpec] = {
     # The tagged address carries the student's own address; the tag alone names
     # their account on one portal.
     "portals.PortalAccount": RedactSpec("student_id", ("tag", "address")),
+    # A file name can carry the student's name.
+    "portals.PreparedDocument": RedactSpec("student_id", ("filename",)),
+    # Deleted outright by advance_deletion; redacted first as well, so an
+    # erasure that ever reorders still never keeps a typed answer.
+    "portals.PortalAnswer": RedactSpec("student_id", ("value",)),
+    # What a passport, diploma or certificate read says about the student.
+    # Deleted outright by advance_deletion; redacted first as well, as
+    # PortalAnswer is.
+    "documents.DocumentReading": RedactSpec("student_id", ("values", "file_sha256")),
     # The address is the student's own mailbox and the cursor is a pointer into
     # it. Both are about the person, neither survives them. The push
     # subscription id names a live watch on that mailbox at the provider.
@@ -172,18 +209,44 @@ REDACT: dict[str, RedactSpec] = {
     # another programme -- about them, like MailSignal.offered_programme.
     "portals.Application": RedactSpec(
         "student_id",
-        ("decision_available_at", "outcome", "outcome_recorded_at", "outcome_source", "name"),
+        (
+            "decision_available_at",
+            "outcome",
+            "funding_outcome",
+            "funding_outcome_source",
+            "outcome_recorded_at",
+            "outcome_source",
+            "name",
+        ),
     ),
     # The discipline bucket is a model's reading of the student's own field
     # words -- derived from what they wrote, so it goes with them.
     "research.ProfileCellSelection": RedactSpec("student_id", ("discipline_bucket",)),
+    # A waiting first search's saved place holds the query text built from the
+    # student's interest and field words (the tap clears it when it finishes).
+    "research.SearchTap": RedactSpec("student_id", ("resume",)),
     # The coverage line names the student's home cells, i.e. their nationality
     # and residence (copied at build time so the web tier renders it without
-    # the catalogue).
-    "funding.PackVersion": RedactSpec("run__profile_version__student_id", ("coverage",)),
-    # Each condition decided against the student: the reasons quote their own
-    # grade, language level and nationality, and the budget is theirs.
-    "funding.RecommendationCandidate": RedactSpec("run__profile_version__student_id", ("fit",)),
+    # the catalogue). The empty reason can name their field, intake and
+    # excluded countries.
+    "funding.PackVersion": RedactSpec(
+        "run__profile_version__student_id", ("coverage", "empty_reason")
+    ),
+    # What the student can pay themselves, the note it produces, and the student's
+    # estimated chance and calibration features derived from their profile/transcript.
+    # Each condition in `fit` is decided against the student (quoting their own grade,
+    # language level, nationality, and budget).
+    "funding.RecommendationCandidate": RedactSpec(
+        "run__profile_version__student_id",
+        (
+            "self_funded",
+            "funding_condition",
+            "estimated_chance_pct",
+            "estimated_funded_chance_pct",
+            "calibration_features",
+            "fit",
+        ),
+    ),
 }
 
 KEEP: dict[str, tuple[str, ...]] = {
@@ -207,6 +270,7 @@ KEEP: dict[str, tuple[str, ...]] = {
     # link is the application relation, excluded from classification.
     "watch.Expectation": ("kind", "due_at", "created_at"),
     "accounts.StudentProfileVersion": ("version", "schema_version", "created_at"),
+    "accounts.ConsultationDraftRecord": ("updated_at",),
     "audit.DeletionRequest": (
         "state",
         "legal_hold",
@@ -223,6 +287,11 @@ KEEP: dict[str, tuple[str, ...]] = {
     # A bare timestamp on a row the erasure deletes outright -- the pseudonym
     # itself is the primary key, which classifiable_fields() skips.
     "audit.Pseudonym": ("created_at",),
+    # Elmify staff looking at a student's file. Every field is KEEP and the row survives
+    # the erasure, like funding.AuditEvent: it records what staff did, holds no filename
+    # and no name, and the agency's record of it must outlive the student it describes.
+    # document_kind is two closed enums joined (DRAFT_CV, UPLOAD_PASSPORT, ...).
+    "audit.StaffFileAccess": ("action", "document_kind", "document_id", "accessed_at"),
     "concierge.ApplicationFeeLedgerEntry": (
         "program_id",
         "approved_limit",
@@ -244,7 +313,10 @@ KEEP: dict[str, tuple[str, ...]] = {
     # it is destroyed when the period expires, and the exemption covers the
     # receipt and nothing else. Tripwire: test_receipt_has_no_writer_yet.
     "concierge.Receipt": ("object_key", "created_at"),
-    "concierge.DocumentVersion": ("state", "scan_result", "kind", "created_at", "content_type"),
+    # replaces: another row's opaque id. retired_at: a bare timestamp.
+    "concierge.DocumentVersion": (
+        "state", "scan_result", "kind", "created_at", "content_type", "replaces", "retired_at",
+    ),
     "concierge.ManualOperation": ("performed_at",),
     "concierge.Notification": (
         "acknowledged_at",
@@ -270,6 +342,12 @@ KEEP: dict[str, tuple[str, ...]] = {
         "approved_at",
         "created_at",
         "approval_mode",
+        # The list is built from the programme's and funder's published rules,
+        # never from the student's entries; only the states (REDACT) name them.
+        "requirements",
+        "requirements_digest",
+        "destination_label",
+        "is_general",
         # Gate codes and archetypes, a retry flag and a cycle year: what the
         # letter engine checked, never what the letter said (detail is dropped).
         "letter_gates",
@@ -278,10 +356,16 @@ KEEP: dict[str, tuple[str, ...]] = {
     ),
     "documents.DocumentDraftFact": ("created_at",),
     "documents.NarrativeInput": ("kind", "proposed_by", "confirmed_at", "created_at"),
-    "documents.TranscriptReading": ("created_at",),
+    "documents.TranscriptReading": ("created_at", "review_requested_at"),
+    "documents.EvidenceReading": ("source_kind", "changed_at", "reader_version", "read_at"),
     "documents.TranscriptPage": (
         "number", "slot", "retakes", "state", "refusal", "skipped_because", "source",
         "api_version", "superseded_at", "created_at",
+    ),
+    "documents.DocumentReading": (
+        "kind", "state", "failure", "attempts", "next_attempt_at", "reader_version",
+        "azure_pages", "azure_billed_at", "facts_written", "primary_chosen_at", "updated_at",
+        "created_at",
     ),
     "documents.TranscriptUpload": (
         "role", "language", "mode", "retake_slot", "state", "refusal", "refusal_page",
@@ -290,6 +374,25 @@ KEEP: dict[str, tuple[str, ...]] = {
     # advice_shown is the style rule's own canned wording, same precedent as
     # funding.ConstraintOverride.risk_text_shown below: not student-specific.
     "documents.RevisionRequest": ("kind", "created_at", "advice_shown"),
+    # Enums, a count, flags and timestamps: nothing that names the professor.
+    "documents.Referee": (
+        "institutional_email", "kind", "agreed_requests", "gives_generic_letter", "status",
+        "created_at", "updated_at",
+    ),
+    "documents.RefereeRequest": ("mode", "state", "created_at", "updated_at"),
+    "documents.CvFixRevert": ("fix", "created_at"),
+    # A digest of a programme's requirements, the question's version and a
+    # closed answer label -- nothing about a person once item_digest is gone.
+    "documents.CVRelevanceAnswer": (
+        "requirements_digest",
+        "question_version",
+        "answer",
+        "chance",
+        "unrelated",
+        "model",
+        "created_at",
+    ),
+    "documents.CVItemChoice": ("program_id", "section", "created_at"),
     "documents.VerifiedFact": ("category", "source_tier", "confirmed_at", "created_at"),
     "funding.Approval": ("decision", "created_at"),
     "funding.AuditEvent": ("actor_kind", "event", "object_id", "created_at"),
@@ -338,6 +441,10 @@ KEEP: dict[str, tuple[str, ...]] = {
         "application_fee_currency",
         "funds_program_ids",
         "funding_card",
+        # The programme's own reference-letter sentences, the same for every student.
+        "referee_requirements",
+        # the engine's order for the pool: a fact about the programme list, not the person.
+        "rank",
         # the scholarship page's facts (city, costs, cover): about the award.
         "details",
     ),
@@ -356,10 +463,19 @@ KEEP: dict[str, tuple[str, ...]] = {
         "kit_requirements",
         "kit_your_actions",
         "kit_letter_cycle",
+        "kit_file_rules",
         # a copy of the programme's published route, like kit_requirements
         "route_snapshot",
         # when Start application was pressed: operational, like created_at.
         "started_at",
+        # the fee's state, when it was marked paid and by which route:
+        # operational, like started_at.
+        "fee_state",
+        "fee_paid_at",
+        "fee_paid_source",
+        # where the CV stands and when it resumes: operational.
+        "cv_status",
+        "cv_resumes_at",
         # a work state and a fixed refusal code (writing.LETTER_NOTES), never text.
         "letter_state",
         "letter_note",
@@ -374,6 +490,18 @@ KEEP: dict[str, tuple[str, ...]] = {
         "redeemed_at",
         "last_seen_at",
         "revoked_at",
+        # when the student allowed this browser portal passwords: about the device.
+        "passwords_allowed_at",
+    ),
+    # Vocabulary and a closed enum (which field a box asks for, what the typed
+    # value matched), the portal's own selector and a timestamp. The row is
+    # deleted outright on erasure (deletion.py), like audit.Pseudonym.
+    "portals.PortalAnswer": (
+        "selector",
+        "guessed_field",
+        "matched_field",
+        "outcome",
+        "created_at",
     ),
     "portals.DeviceAction": (
         "kind",
@@ -386,12 +514,30 @@ KEEP: dict[str, tuple[str, ...]] = {
     # behaviour -- neither says anything about the person once tag and address
     # are gone.
     # tag_dropped_by_student is which button, the same kind of fact.
+    # The object itself goes with the student's prefix.
+    "portals.PreparedDocument": (
+        "slot",
+        "document",
+        "sources",
+        "inputs_digest",
+        "state",
+        "reason",
+        "content_type",
+        "byte_size",
+        "object_key",
+        "object_version",
+        "prepared_at",
+    ),
     "portals.PortalAccount": (
         "portal_host",
         "created_at",
         "registered_at",
         "tag_outcome",
         "tag_dropped_by_student",
+        # when we held a password and when the student took it over --
+        # timestamps about the account, not the person.
+        "password_held_at",
+        "student_managed_at",
     ),
     # provider/tier/status are what the platform was permitted to do, which is
     # the record an erasure must not destroy; the timestamps say when.
@@ -464,6 +610,8 @@ KEEP: dict[str, tuple[str, ...]] = {
         "state",
         "ending",
         "recency_only",
+        "kind",
+        "queries_reused",
         "allowance_usd",
         "provider_calls",
         "pages_fetched",
@@ -515,6 +663,23 @@ def _empty_value(model: type[Model], field_name: str) -> object:
         # Nullable by schema (quiet_hours_start/end): NULL already means
         # "no window set", so redacting to NULL does not collide with that
         # meaning the way it would for a NOT NULL column.
+        return None
+    if internal == "DecimalField" and field.null:
+        # Nullable by schema (RecommendationCandidate.self_funded): NULL already
+        # means "the student stated nothing", which is what an erased one reads as.
+        return None
+    if (
+        internal
+        in (
+            "PositiveSmallIntegerField",
+            "PositiveIntegerField",
+            "SmallIntegerField",
+            "IntegerField",
+        )
+        and field.null
+    ):
+        # Nullable by schema (RecommendationCandidate.estimated_chance_pct): NULL
+        # already means "no estimate stored", which is what an erased row reads as.
         return None
     if internal in ("DateField", "DateTimeField") and field.null:
         # Nullable by schema: NULL means "never happened", which is what an

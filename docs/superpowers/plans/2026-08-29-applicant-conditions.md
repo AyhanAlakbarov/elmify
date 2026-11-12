@@ -25,7 +25,7 @@ service belongs here too.**"
 ## Global Constraints
 
 - **Test database must be isolated to this task:** every pytest invocation in this plan is prefixed
-  `POSTGRES_DB=tehsil_conditions`. The shared `test_tehsil` database wedges across parallel sessions.
+  `POSTGRES_DB=elmify_conditions`. The shared `test_elmify` database wedges across parallel sessions.
 - **Commit through uv:** `uv run git commit`, never bare `git commit`. The Bandit pre-commit hook
   lives in the uv venv and is not on PATH; a bare commit fails with "`pre-commit` not found".
 - **Never run `ruff format`** in this repo. The gate is lint-only; `ruff format` churns 26 unrelated
@@ -257,7 +257,7 @@ def test_condition_rows_without_their_required_shape_are_rejected(
 - [ ] **Step 3: Run the tests to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/test_catalog_models.py -q
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/test_catalog_models.py -q
 ```
 
 Expected: FAIL. `test_catalog_choice_contracts_are_exact` fails on the kind set; the two new tests
@@ -421,7 +421,7 @@ and is the only branch that pairs a null `condition_type` with a non-null compar
 - [ ] **Step 6: Generate the migration**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run python manage.py makemigrations funding \
+POSTGRES_DB=elmify_conditions uv run python manage.py makemigrations funding \
   -n benefit_rule_applicant_conditions
 ```
 
@@ -432,8 +432,8 @@ and confirm it depends on `0015_funding_family_affinity_and_private_foundation`.
 - [ ] **Step 7: Run the tests to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/test_catalog_models.py -q
-POSTGRES_DB=tehsil_conditions uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/test_catalog_models.py -q
+POSTGRES_DB=elmify_conditions uv run python manage.py makemigrations --check --dry-run
 ```
 
 Expected: all `test_catalog_models.py` tests PASS; `makemigrations --check` prints
@@ -621,7 +621,7 @@ def test_an_applicant_conditions_comparable_survives_into_the_claim_table(
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/research/test_extraction.py tests/research/test_catalog_writer.py -q
+POSTGRES_DB=elmify_conditions uv run pytest tests/research/test_extraction.py tests/research/test_catalog_writer.py -q
 ```
 
 Expected: FAIL — `extra="forbid"` rejects the unknown `comparable_value` keyword, and
@@ -769,7 +769,7 @@ Leave the number at `8_000`. Raising it without evidence of truncation is specul
 - [ ] **Step 7: Run the tests to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/research/ -q
+POSTGRES_DB=elmify_conditions uv run pytest tests/research/ -q
 ```
 
 Expected: PASS, with no new failures against the baseline.
@@ -972,7 +972,7 @@ def test_a_closed_route_does_not_count_toward_affordability_coverage() -> None:
 - [ ] **Step 3: Run the tests to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/test_hard_gates.py -q
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/test_hard_gates.py -q
 ```
 
 Expected: FAIL — `extra="forbid"` on `CandidateFacts` rejects the unknown `applicant_conditions`
@@ -1125,7 +1125,7 @@ In `evaluate`, replace the two lines that build and return the hard-gate failure
 - [ ] **Step 6: Run the tests to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/test_hard_gates.py tests/funding/test_affordability.py tests/funding/test_ranking.py -q
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/test_hard_gates.py tests/funding/test_affordability.py tests/funding/test_ranking.py -q
 ```
 
 Expected: PASS. If `test_affordability.py` or `test_ranking.py` regress, the guard is placed wrong —
@@ -1251,7 +1251,7 @@ def test_a_route_already_closed_on_experience_does_not_also_force_review() -> No
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/test_hard_gates.py -q -k "review or moot or inapplicable or already_closed"
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/test_hard_gates.py -q -k "review or moot or inapplicable or already_closed"
 ```
 
 Expected: FAIL — outcome is `ELIGIBLE` where the test expects `POSSIBLY_ELIGIBLE_REVIEW`.
@@ -1296,7 +1296,7 @@ Replace the last three lines of `evaluate`:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/ -q
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/ -q
 ```
 
 Expected: PASS, apart from the 25 pre-existing `TemplateDoesNotExist` failures. If a
@@ -1413,7 +1413,7 @@ def test_return_service_on_an_inapplicable_route_is_not_disclosed() -> None:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/test_ranking.py -q -k "bonded or return_service"
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/test_ranking.py -q -k "bonded or return_service"
 ```
 
 Expected: FAIL — `tradeoffs` is empty; no disclosure string is produced.
@@ -1473,7 +1473,7 @@ In `rank_candidates`, replace the `tradeoffs` assignment inside the final loop:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/test_ranking.py tests/funding/test_pack_service.py -q
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/test_ranking.py tests/funding/test_pack_service.py -q
 ```
 
 Expected: PASS. `test_ranking.py:65`'s existing `assert "weaker fit" in " ".join(ranked[0].tradeoffs)`
@@ -1482,8 +1482,8 @@ must still pass — the weaker-fit string is prepended, not replaced.
 - [ ] **Step 5: Run every gate**
 
 ```bash
-POSTGRES_DB=tehsil_conditions uv run pytest tests/funding/ tests/research/ -q
-POSTGRES_DB=tehsil_conditions uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_conditions uv run pytest tests/funding/ tests/research/ -q
+POSTGRES_DB=elmify_conditions uv run python manage.py makemigrations --check --dry-run
 uv run ruff check apps tests
 uv run mypy apps
 uv run bandit -c pyproject.toml -r apps config

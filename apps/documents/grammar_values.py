@@ -38,12 +38,15 @@ from typing import TYPE_CHECKING
 
 from apps.research.decisions import Answer, Choice, DecisionBudget, Noul, Question
 
-from .constraints import _INCLUDE_TARGETS, _ORDER_TARGETS, _SECTIONS
+from .constraints import _INCLUDE_TARGETS, _ORDER_TARGETS, _SECTIONS, CAP_SECTIONS
 from .grammar import (
+    _FILE_TERMS,
     _IMPLAUSIBLE_CAP,
     _IMPLAUSIBLE_MAX,
     BOUNDS,
     CONDITION_KINDS,
+    COVERAGE_VALUES,
+    FILE_FIELDS,
     FORM_VALUES,
     FORMAT_VERDICTS,
     NAMING_VALUES,
@@ -91,6 +94,27 @@ _DIRECTION_CRITERIA: dict[str, object] = {
                      "starting with your current position",
                      "in umgekehrt chronologischer Reihenfolge", "antichronologisch"],
     },
+}
+
+#: Every coverage answer defined in words, with an example each: the
+#: 2026-10-08 probes showed an undefined option answers under the bar.
+_COVERAGE_CRITERIA: dict[str, object] = {
+    "complete": {"what": "Every activity must be listed; nothing may be left out.",
+                 "examples": ["List all your academic and professional activities.",
+                              "Your CV must be complete and without omissions."]},
+    "relevant_only": {"what": "Only what is relevant to this programme should be listed.",
+                      "examples": ["Only include experience relevant to the programme."]},
+    "from_upper_secondary": {"what": "The CV starts with secondary-school graduation.",
+                             "examples": ["Begin with your upper secondary school graduation.",
+                                          "beginnend mit dem Schulabschluss"]},
+    "from_first_degree": {"what": "The CV starts with the first university degree.",
+                          "examples": ["Start with your bachelor's studies."]},
+    "last_n_years": {"what": "The CV covers a stated number of recent years.",
+                     "examples": ["Covering the last 10 years."]},
+    "section_cap": {"what": "One section may list at most a stated number of entries.",
+                    "examples": ["List no more than 5 publications.",
+                                 "Name up to 3 awards."]},
+    "none": {"what": "None of the above."},
 }
 
 #: Question id suffix per referee field. `referee_email` because the field name
@@ -224,6 +248,138 @@ def _referee_drafts(answers: Mapping[str, Answer], i: int) -> list[_Draft]:
     return drafts
 
 
+_SIZE = re.compile(
+    r"(\d+(?:[.,]\d+)?)\s*(mb|mo|megabytes?|мб|kb|ko|kilobytes?|кб)\b", re.IGNORECASE
+)
+_FILE_NAME = re.compile(r"\b[\w-]+\.(?:pdf|jpe?g|png)\b", re.IGNORECASE)
+#: Placeholder words in a printed file name, casefolded. Anything else is literal.
+_NAME_PLACEHOLDERS = {
+    "surname": "{surname}", "lastname": "{surname}", "familyname": "{surname}",
+    "nachname": "{surname}", "firstname": "{given_name}", "givenname": "{given_name}",
+    "vorname": "{given_name}", "name": "{full_name}", "fullname": "{full_name}",
+}
+_MIN_FILE_BYTES, _MAX_FILE_BYTES = 10_000, 100_000_000
+
+_FILE_CRITERIA: dict[str, dict[str, object]] = {
+    "document": {
+        "CV": {"what": "The applicant's CV / résumé."},
+        "MOTIVATION_LETTER": {"what": "The applicant's motivation letter or statement."},
+        "REFERENCE_LETTER": {"what": "A recommendation or reference letter."},
+        "TRANSCRIPT": {"what": "A transcript of records or grade list."},
+        "DIPLOMA": {"what": "A degree certificate or diploma.",
+                    "examples": ["all your diplomas as one PDF"]},
+        "PASSPORT": {"what": "A passport or ID scan."},
+        "LANGUAGE_CERTIFICATE": {"what": "A language test certificate (IELTS, TOEFL...)."},
+        "EVERY_DOCUMENT": {"what": "All application documents at once.",
+                           "examples": ["All documents must be compiled as a single PDF file.",
+                                        "Each file must be under 2MB."]},
+        "NOT_STATED": {"what": "The sentence states no requirement about a file."},
+    },
+    "format": {
+        "PDF": {"what": "Only PDF is accepted.", "examples": ["in pdf format"]},
+        "JPG": {"what": "Only JPG/JPEG images are accepted."},
+        "PDF_OR_JPG": {"what": "PDF or JPG, the applicant chooses."},
+        "NOT_STATED": {"what": "The sentence names no file format."},
+    },
+    "combine": {
+        "ONE_FILE": {"what": "The documents named must be merged into one file.",
+                     "examples": ["compiled as a single PDF file", "all diplomas as one PDF"]},
+        "SEPARATE_FILES": {"what": "Each document must be a separate file."},
+        "NOT_STATED": {"what": "The sentence does not say."},
+    },
+}
+
+
+def size_options(text: str) -> tuple[str, ...]:
+    """Each size the sentence prints, as printed ("2 MB"), in order."""
+    return tuple(dict.fromkeys(f"{m.group(1)} {m.group(2).upper()}" for m in _SIZE.finditer(text)))
+
+
+def _in_band(value: int) -> bool:
+    return _MIN_FILE_BYTES <= value <= _MAX_FILE_BYTES
+
+
+def size_bytes(option: str) -> int | None:
+    """"2 MB" -> 2_000_000; "300 KB" -> 300_000. None outside the plausible band."""
+    number, unit = option.split(" ", 1)
+    kilo = ("kb", "ko", "kilobyte", "kilobytes", "кб")
+    scale = 1_000 if unit.lower() in kilo else 1_000_000
+    if re.fullmatch(r"\d{1,3},\d{3}", number):  # "10,000 KB": English thousands separator
+        value = round(float(number.replace(",", "")) * scale)
+        return value if _in_band(value) else None
+    if re.fullmatch(r"\d{1,3}\.\d{3}", number):
+        # "10.000 KB" is 10 KB or 10,000 KB: both in the band means we cannot know. Never guess.
+        readings = {round(float(number) * scale), round(float(number.replace(".", "")) * scale)}
+        fits = [v for v in readings if _in_band(v)]
+        return fits[0] if len(fits) == 1 else None
+    value = round(float(number.replace(",", ".")) * scale)
+    return value if _in_band(value) else None
+
+
+def name_options(text: str) -> tuple[str, ...]:
+    return tuple(dict.fromkeys(m.group(0) for m in _FILE_NAME.finditer(text)))
+
+
+def name_pattern(printed: str) -> str:
+    """"SURNAME_CV.pdf" -> "{surname}_CV.pdf". Separators and literals are kept."""
+    parts = re.split(r"([_\-.\s])", printed)
+    mapped = [_NAME_PLACEHOLDERS.get(p.casefold().replace("_", ""), p) for p in parts]
+    if "{surname}" in mapped:
+        # Spec 3.5: a bare "Name" beside a surname is the given name.
+        mapped = ["{given_name}" if p == "{full_name}" and q.casefold() == "name" else p
+                  for p, q in zip(mapped, parts, strict=True)]
+    return "".join(mapped)
+
+
+def _file_questions(i: int, where: str, text: str) -> dict[str, Question]:
+    questions: dict[str, Question] = {
+        f"{i}:file_document": Choice(
+            inspect=where, options=FILE_FIELDS["document"], criteria=_FILE_CRITERIA["document"],
+            question="Which of the applicant's documents does this file requirement apply to?",
+        ),
+        f"{i}:file_format": Choice(
+            inspect=where, options=FILE_FIELDS["format"], criteria=_FILE_CRITERIA["format"],
+            question="Which file format must the document be submitted in?",
+        ),
+        f"{i}:file_combine": Choice(
+            inspect=where, options=FILE_FIELDS["combine"], criteria=_FILE_CRITERIA["combine"],
+            question="Must these documents be combined into one file?",
+        ),
+    }
+    if sizes := size_options(text):
+        questions[f"{i}:file_size"] = Choice(
+            inspect=where, options=(*sizes, "none"),
+            question="Which of these is the largest file size allowed, if any?",
+        )
+    if names := name_options(text):
+        questions[f"{i}:file_name"] = Choice(
+            inspect=where, options=(*names, "none"),
+            question="Which of these is the file name the applicant must give the file, if any?",
+        )
+    return questions
+
+
+def _file_drafts(answers: Mapping[str, Answer], i: int) -> list[_Draft]:
+    document = answers.get(f"{i}:file_document")
+    if document is None or document.value == "NOT_STATED" or document.confidence < SLOT_BAR:
+        return []
+    doc = str(document.value)
+    drafts: list[_Draft] = []
+    for field in ("format", "combine"):
+        answer = answers.get(f"{i}:file_{field}")
+        if answer is not None and answer.value != "NOT_STATED" and answer.confidence >= SLOT_BAR:
+            drafts.append(_Draft("file", (doc, field, str(answer.value)), answer.confidence))
+    size = answers.get(f"{i}:file_size")
+    if size is not None and size.value != "none" and size.confidence >= SLOT_BAR:
+        if (cap := size_bytes(str(size.value))) is not None:
+            drafts.append(_Draft("file", (doc, "max_bytes", cap), size.confidence))
+    name = answers.get(f"{i}:file_name")
+    if name is not None and name.value != "none" and name.confidence >= SLOT_BAR:
+        drafts.append(_Draft("file", (doc, "name_pattern", name_pattern(str(name.value))),
+                             name.confidence))
+    return drafts
+
+
 #: `cv` defined, the sections left to their names. Measured live 2026-10-08:
 #: undefined, "education and work experience in chronological order" came back
 #: `education` at 0.51 and "Der Lebenslauf ... chronologisch" `cv` at 0.79-0.82,
@@ -241,7 +397,7 @@ _BOUND_CRITERIA: dict[str, object] = {
     "maximum": {
         "what": "The most the document may be: a cap.",
         "examples": ["no more than 800 words", "maximal zwei DIN-A4-Seiten",
-                     "the 500 in 300–500 words"],
+                     "the 500 in 300–500 words", "the 3 in 'list at most 3 publications'"],
     },
     "minimum": {
         "what": "The least the document must be: a floor.",
@@ -275,6 +431,9 @@ _UNIT_CRITERIA: dict[str, object] = {
                    "examples": ["3,500 characters", "2.800 Zeichen", "800字"]},
     "megabytes": {"what": "Megabytes (MB) of the file's size.",
                   "examples": ["under 2MB", "The PDF file must not exceed 10 MB"]},
+    "entries": {"what": "Items in one section of the CV: positions, publications, awards.",
+                "examples": ["list at most 3 publications",
+                             "no more than 5 work experience entries"]},
     "other": {"what": "Anything else: kilobytes, lines, minutes, percent, or no unit at all."},
 }
 
@@ -472,6 +631,10 @@ def value_questions(
                     inspect=where, question="what is the condition about?",
                     options=CONDITION_KINDS,
                 )
+        if _FILE_TERMS.search(text):
+            # Before the bar and the `other` check: a diploma sentence IS
+            # document `other`, and its file rule is the reason it is read.
+            questions.update(_file_questions(i, where, text))
         if not _asks_values(slot):
             continue
         if slot.operation == "limit":
@@ -491,6 +654,12 @@ def value_questions(
                     options=(*UNITS, "other"), criteria=_UNIT_CRITERIA,
                 )
                 if slot.document == "cv":
+                    # Read only when the unit comes back `entries`; asked
+                    # always because both answers arrive in one response.
+                    questions[f"{i}:figure:{k}:section"] = Choice(
+                        inspect=at, question="Which CV section does this count limit, if any?",
+                        options=(*_SECTIONS, "none"),
+                    )
                     # Only the CV picks a key by it (max_chars_incl/excl_spaces);
                     # the letter's cap is measured with spaces and its floor
                     # without -- each the stricter reading -- so it never asks.
@@ -551,6 +720,26 @@ def value_questions(
             questions[f"{i}:style_font"] = Choice(
                 inspect=where, question="which font does it name, if any?",
                 options=(*fonts, "none") if fonts else ("none", "not_stated"),
+            )
+        elif slot.operation == "coverage":
+            questions[f"{i}:coverage"] = Choice(
+                inspect=where,
+                question=(
+                    "What does it say about how much of the applicant's history the CV covers?"
+                ),
+                options=COVERAGE_VALUES, criteria=_COVERAGE_CRITERIA,
+            )
+            # Asked unconditionally, like the style details: a number or a section
+            # cannot wait for the coverage answer, which is in the same response.
+            numbers = tuple(dict.fromkeys(str(f.number) for f in figures_on_line(text)))
+            questions[f"{i}:coverage_number"] = Choice(
+                inspect=where, question="which number does it state, if any?",
+                options=(*numbers, "none") if numbers else ("none", "not_stated"),
+            )
+            questions[f"{i}:coverage_section"] = Choice(
+                inspect=where,
+                question="Which section does a count of entries apply to, if any?",
+                options=(*CAP_SECTIONS, "none"),
             )
         elif slot.operation in ("form", "naming"):
             questions[f"{i}:{slot.operation}"] = Choice(
@@ -652,11 +841,6 @@ def _rules_for(
     the sentence and the produced `Rule.index` both come from `slot.index`."""
     candidate = candidates[slot.index]
 
-    if slot.document == "other" and slot.document_confidence >= SLOT_BAR:
-        # Fees, deadlines, transcripts. Not this reader's business, and not a
-        # note either -- a note on every unrelated sentence is noise that hides
-        # the notes that matter.
-        return ()
     # Controller ruling C3: a conditional sentence is ALWAYS a note, never
     # applied -- addendum §6.6 says a conditional rule binds no student until
     # the student's own facts are compared. `condition` still carries the
@@ -666,6 +850,13 @@ def _rules_for(
     if slot.conditional:
         chosen = answers.get(f"{i}:condition")
         condition = str(chosen.value) if chosen else "other"
+    files = _file_drafts(answers, i) if _FILE_TERMS.search(candidate.text) else []
+
+    if slot.document == "other" and slot.document_confidence >= SLOT_BAR:
+        # Fees, deadlines, transcripts. Not this reader's business, and not a
+        # note either -- a note on every unrelated sentence is noise that hides
+        # the notes that matter.
+        return _settled(slot, candidate, files, condition) if files else ()
     referee = _referee_drafts(answers, i) if _asks_referee(slot) else []
 
     if _below_bar(slot):
@@ -676,7 +867,7 @@ def _rules_for(
             probabilities=(("document", slot.document_confidence),
                            ("operation", slot.operation_confidence)),
         )
-        return (unsure, *_settled(slot, candidate, referee, condition))
+        return (unsure, *_settled(slot, candidate, [*referee, *files], condition))
 
     if slot.operation == "limit":
         drafts = _limit_drafts(candidate, slot, answers, i)
@@ -686,7 +877,7 @@ def _rules_for(
         value, unit, detail, confidence, note = _value(candidate, slot, answers, i)
         drafts = [_Draft(slot.operation, value, confidence, note, unit=unit, detail=detail)]
 
-    return _settled(slot, candidate, [*drafts, *referee], condition)
+    return _settled(slot, candidate, [*drafts, *referee, *files], condition)
 
 
 def _settled(
@@ -703,9 +894,19 @@ def _settled(
         # A referee fact is ABOUT the referee's letter by definition -- the
         # third_party exclusion is about whose document a rule binds, and would
         # otherwise drop every fact about how the referee's letter arrives.
-        if not note and slot.third_party and draft.operation != "referee":
+        # Controller ruling P2: both also override an `unsure` draft, whose
+        # value to_notes would otherwise save as a reading -- a supervisor's
+        # CV or a conditional route becoming the student's own rule.
+        # Not for a referee or file draft (final review M1): to_notes never
+        # reads those, and to_referee / to_file_rules store a `conditional`
+        # one in the shared catalogue -- an `unsure` value below the bar
+        # would land there as a route.
+        open_note = note == "" or (
+            note == "unsure" and draft.operation not in ("referee", "file")
+        )
+        if open_note and slot.third_party and draft.operation != "referee":
             note = "third_party"
-        if not note and slot.conditional:
+        elif open_note and slot.conditional:
             note = "conditional"
         if not note and not _has_sink(slot.document, draft):
             note = "unapplied"
@@ -720,6 +921,8 @@ def _settled(
 
 
 def _has_sink(document: str, draft: _Draft) -> bool:
+    if draft.operation == "file":
+        return True  # Program.file_rules (Task 2)
     if draft.operation == "limit":
         return bool(limit_sink(document, draft.bound, draft.unit, excl_spaces=draft.excl_spaces))
     return bool(sink_for(document, draft.operation, draft.unit or draft.value))
@@ -773,6 +976,17 @@ def _limit_drafts(
             continue
         if not _plausible(figure.number, str(bound.value), str(unit.value)):
             continue
+        section = ""
+        if unit.value == "entries":
+            picked = answers.get(f"{i}:figure:{k}:section")
+            if picked is None or picked.value == "none":
+                # A count of entries in no section the CV has: shown, unapplied.
+                no_sink_unit = True
+                continue
+            if picked.confidence < SLOT_BAR:
+                doubt = picked.confidence if doubt is None else min(doubt, picked.confidence)
+                continue
+            section = str(picked.value)
         spaces = answers.get(f"{i}:figure:{k}:spaces")
         excluded = (
             unit.value == "characters" and spaces is not None
@@ -780,7 +994,7 @@ def _limit_drafts(
         )
         drafts.append(_Draft(
             "limit", figure.number, confidence, unit=str(unit.value), bound=str(bound.value),
-            figure=k, excl_spaces=excluded,
+            figure=k, excl_spaces=excluded, detail=section,
         ))
     if doubt is not None:
         drafts.append(_Draft("limit", None, doubt, "unsure"))
@@ -858,6 +1072,8 @@ def _value(
         confidence = min(target.confidence, direction.confidence)
         return ((str(target.value), str(direction.value)), "", "", confidence,
                 "" if confidence >= SLOT_BAR else "unsure")
+    if slot.operation == "coverage":
+        return _coverage_value(answers, i)
     if slot.operation == "style":
         return _style_value(answers, i)
     if slot.operation in ("include", "emphasise", "form", "naming"):
@@ -881,6 +1097,7 @@ _STYLE_DETAIL: dict[str, str] = {
     "font_size_minimum": "style_number",
     "line_spacing": "style_spacing",
     "margins": "style_number",
+    "cv_start_last_years": "style_number",
 }
 
 
@@ -906,6 +1123,31 @@ def _style_value(answers: Mapping[str, Answer], i: int) -> tuple[object, str, st
         return value, "", "", chosen.confidence, "unapplied"
     confidence = min(chosen.confidence, detail_answer.confidence if detail_answer else 1.0)
     return value, "", detail, confidence, "" if confidence >= SLOT_BAR else "unsure"
+
+
+def _coverage_value(answers: Mapping[str, Answer], i: int) -> tuple[object, str, str, float, str]:
+    """(kind, section, number). The number is a figure code found on the line
+    (value_questions offers only those), never one a model chose. A value
+    coverage_key cannot carry -- a cap on `none`, a count of 0 -- is noted
+    `unapplied` by _settled through _has_sink, with its sentence kept."""
+    chosen = answers.get(f"{i}:coverage")
+    if chosen is None or chosen.value == "none":
+        return None, "", "", chosen.confidence if chosen else 0.0, "unapplied"
+    kind = str(chosen.value)
+    confidence = chosen.confidence
+    section, number = "", 0
+    if kind in ("last_n_years", "section_cap"):
+        figure = answers.get(f"{i}:coverage_number")
+        try:
+            number = int(float(str(figure.value))) if figure is not None else 0
+        except ValueError:
+            number = 0
+        confidence = min(confidence, figure.confidence if figure is not None else 0.0)
+    if kind == "section_cap":
+        where = answers.get(f"{i}:coverage_section")
+        section = str(where.value) if where is not None else "none"
+        confidence = min(confidence, where.confidence if where is not None else 0.0)
+    return (kind, section, number), "", "", confidence, "" if confidence >= SLOT_BAR else "unsure"
 
 
 def _format_value(answers: Mapping[str, Answer], i: int) -> tuple[object, str, str, float, str]:

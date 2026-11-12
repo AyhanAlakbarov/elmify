@@ -147,7 +147,7 @@ def test_a_student_cannot_download_another_students_document(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_unassigned_counselor_cannot_download(
+def test_a_counselor_cannot_download_assigned_or_not(
     client,
     domain_a,
     agency_a,
@@ -175,8 +175,9 @@ def test_an_unassigned_counselor_cannot_download(
         CounselorAssignment.objects.create(
             tenant=agency_a, counselor=counselor_membership, student=membership_a, active=True
         )
+    # Owner 2026-10-10: counsellors read files (documents-draft-view), never download them.
     assert (
-        client.get(f"/documents/{draft.id}/cv-v1.pdf", HTTP_HOST=domain_a.host).status_code == 200
+        client.get(f"/documents/{draft.id}/cv-v1.pdf", HTTP_HOST=domain_a.host).status_code == 404
     )
 
 
@@ -219,3 +220,35 @@ def test_a_document_from_another_tenant_is_invisible(
     assert (
         client.get(f"/documents/{draft.id}/cv-v1.pdf", HTTP_HOST=domain_a.host).status_code == 404
     )
+
+
+def test_crops_are_under_the_students_prefix():
+    from apps.documents.storage import crop_key
+
+    tenant, student, reading = uuid4(), uuid4(), uuid4()
+    key = crop_key(tenant_id=tenant, student_id=student, reading_id=reading, ref="1:grade")
+    assert key == f"tenants/{tenant}/students/{student}/transcript-crops/{reading}/1-grade.png"
+
+
+@pytest.mark.parametrize("ref", ["1:photo", "a:grade", "1:grade/../x", "", "-1:grade"])
+def test_a_crop_ref_that_is_not_a_row_and_cell_is_refused(ref):
+    from apps.documents.storage import crop_key
+
+    with pytest.raises(ValueError):
+        crop_key(tenant_id=uuid4(), student_id=uuid4(), reading_id=uuid4(), ref=ref)
+
+
+def test_a_crop_is_read_back_only_for_a_ref_the_reading_names(monkeypatch, fake_store):
+    from types import SimpleNamespace
+
+    from apps.documents import storage
+
+    monkeypatch.setattr(storage, "_object_store", lambda: fake_store)
+    reading = SimpleNamespace(tenant_id=uuid4(), student_id=uuid4(), id=uuid4())
+    key = storage.crop_key(tenant_id=reading.tenant_id, student_id=reading.student_id,
+                           reading_id=reading.id, ref="1:grade")
+    storage.store_crop(key, b"\x89PNG crop")
+    reading.crops = {"1:grade": key}
+    assert storage.read_crop(reading, "1:grade") == b"\x89PNG crop"
+    with pytest.raises(KeyError):
+        storage.read_crop(reading, "2:grade")

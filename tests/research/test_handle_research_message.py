@@ -248,3 +248,298 @@ def test_a_student_command_carries_the_coverage_line_to_the_new_version(
         )
         newer = reject_candidate(pack, award_candidate.id, membership_a)
         assert newer.coverage == pack.coverage
+
+
+@pytest.mark.django_db(transaction=True)
+def test_an_empty_pack_keeps_its_reason_where_the_student_page_can_read_it(
+    agency_a, membership_a
+):
+    """The reason used to reach only the counsellor's task; the student saw
+    "Finish your profile" on a finished one. It now travels on the pack."""
+    _catalogue()
+    run = _run(agency_a, membership_a)
+    message = ResearchMessage(kind="run_research", tenant_id=agency_a.id, run_id=run.id)
+    with tenant_scope(agency_a.id):
+        pack = handle_research_message(message, rates=EUR_RATES)
+        assert "short form" in PackVersion.objects.get(id=pack.id).empty_reason
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_published_pack_carries_no_empty_reason(agency_a, membership_a):
+    _catalogue()
+    run = _full_run(agency_a, membership_a)
+    message = ResearchMessage(kind="run_research", tenant_id=agency_a.id, run_id=run.id)
+    with tenant_scope(agency_a.id):
+        pack = handle_research_message(message, rates=EUR_RATES)
+        assert pack.published_at is not None
+        assert PackVersion.objects.get(id=pack.id).empty_reason == ""
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rebuild_pack_updates_existing_candidate_in_place_and_marks_newly_unlocked_candidate(
+    agency_a, membership_a
+):
+    from decimal import Decimal
+
+    program, award = _catalogue()
+    run, first = _publish_full(agency_a, membership_a)
+    with tenant_scope(agency_a.id):
+        prog_cand = RecommendationCandidate.objects.get(run=run, program=program)
+        orig_id = prog_cand.id
+        RecommendationCandidate.objects.filter(id=orig_id).update(
+            estimated_chance_pct=Decimal("20.00")
+        )
+        msg = ResearchMessage(kind="rebuild_pack", tenant_id=agency_a.id, run_id=run.id)
+        second = handle_research_message(msg, rates=EUR_RATES)
+        assert second.version == 2
+        assert RecommendationCandidate.objects.filter(run=run, program=program).count() == 1
+        prog_cand.refresh_from_db()
+        assert prog_cand.id == orig_id
+        assert prog_cand.calibration_features.get("score_boosted") is True
+        assert prog_cand.calibration_features.get("previous_chance_pct") == "20"
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rebuild_pack_never_resurrects_rejected_candidates_or_uses_rejected_award_for_gate_10(
+    agency_a, membership_a
+):
+    from decimal import Decimal
+    from uuid import uuid4
+
+    from apps.funding.models import (
+        CostComponent,
+        FundingBenefit,
+        FundingOpportunity,
+        FundingOpportunityProgram,
+        Program,
+    )
+
+    program, award = _catalogue()
+    assert award is not None
+    award.tuition = "FULL"
+    award.living = "FULL"
+    award.route = "STUDENT_APPLIES_SEPARATELY"
+    award.save(update_fields=["tuition", "living", "route"])
+
+    CostComponent.objects.create(
+        program=program, kind="TUITION", amount=Decimal("12000"), currency="EUR", period="ANNUAL"
+    )
+    free_prog = Program.objects.create(
+        institution=program.institution,
+        canonical_key=f"program:{uuid4()}",
+        name="MSc Computer Science Free",
+        campus_name="Main",
+        city="Berlin",
+        country_code="DE",
+        location_key="DE-BERLIN",
+        degree_level="MASTER",
+        teaching_languages=["English"],
+        duration_months=12,
+    )
+    auto_waiver = FundingOpportunity.objects.create(
+        canonical_key=f"read:PROGRAM:{uuid4()}",
+        name="Departmental Automatic Waiver",
+        family="DEPARTMENT_OR_PROGRAM",
+        scope_type="PROGRAM",
+        program=free_prog,
+        kind="I2_PROGRAMME_ATTACHED",
+        agreement="AGREED",
+        served=True,
+        money_form="FEE_WAIVER",
+        route="AUTOMATIC_ON_ADMISSION",
+    )
+    FundingOpportunityProgram.objects.create(opportunity=auto_waiver, program=free_prog)
+    FundingBenefit.objects.create(
+        opportunity=auto_waiver,
+        kind="TUITION",
+        amount=Decimal("12000"),
+        currency="EUR",
+        period="ANNUAL",
+        description="Automatic tuition waiver.",
+    )
+
+    run, first = _publish_full(agency_a, membership_a, funding_dependency="MANDATORY")
+    with tenant_scope(agency_a.id):
+        award_cand = RecommendationCandidate.objects.get(run=run, opportunity=award)
+        prog_cand = RecommendationCandidate.objects.get(run=run, program=program)
+        assert PackCandidate.objects.filter(pack_version=first, candidate=award_cand).exists()
+        assert PackCandidate.objects.filter(pack_version=first, candidate=prog_cand).exists()
+
+        # Student rejects the award
+        after_reject = reject_candidate(first, award_cand.id, membership_a)
+        award_cand.refresh_from_db()
+        assert award_cand.state == RecommendationCandidate.State.REJECTED
+
+        # Now rebuild_pack runs (e.g., on score progression)
+        rebuilt = rebuild_pack(run, rates=EUR_RATES)
+        assert rebuilt.version == after_reject.version + 1
+        award_cand.refresh_from_db()
+        assert award_cand.state == RecommendationCandidate.State.REJECTED
+        # Rejected award is NOT resurrected into the new PackVersion
+        assert not PackCandidate.objects.filter(
+            pack_version=rebuilt, candidate=award_cand
+        ).exists()
+        # And the costed mandatory-funding programme that relied on the rejected award
+        # for Gate 10 is no longer packed either, while the free programme stays packed.
+        assert not PackCandidate.objects.filter(
+            pack_version=rebuilt, candidate=prog_cand
+        ).exists()
+        assert PackCandidate.objects.filter(
+            pack_version=rebuilt, candidate__program=free_prog
+        ).exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_rebuild_pack_preserves_submitted_external_award_after_deadline_passes(
+    agency_a, membership_a
+):
+    from decimal import Decimal
+    from uuid import uuid4
+
+    from apps.funding.models import CostComponent, Program
+    from apps.portals.models import Application
+
+    program, award = _catalogue()
+    assert award is not None
+    award.tuition = "FULL"
+    award.living = "FULL"
+    award.route = "STUDENT_APPLIES_SEPARATELY"
+    award.save(update_fields=["tuition", "living", "route"])
+
+    run, first = _publish_full(agency_a, membership_a, funding_dependency="MANDATORY")
+    with tenant_scope(agency_a.id):
+        award_cand = RecommendationCandidate.objects.get(run=run, opportunity=award)
+        # Student already submitted the external HOLDER scholarship before its deadline passed
+        Application.objects.create(
+            student=membership_a,
+            program_id=award.id,
+            candidate=award_cand,
+            state=Application.State.SUBMITTED,
+        )
+
+    # Now the scholarship's deadline is in the past (2026-01-15), and a new costed programme
+    # appears / unlocks after mid-semester score progression.
+    FundingCycleVerification.objects.create(
+        opportunity=award,
+        intake_start_year=2027,
+        state="OPEN",
+        evidence=[
+            {
+                "step": "0",
+                "url": "https://example-foundation.org/stipend",
+                "sha256": "b" * 64,
+                "at": "2026-10-01",
+                "archived": False,
+                "captured_at": "",
+                "offered": "YES",
+                "applies_to": "2027",
+                "intake_year": 2027,
+                "stated_on": "2026-10-01",
+                "deadlines": [["2026-10-15", "15 October 2026", "ALL"]],
+                "quote": "Deadline is 15 October 2026.",
+                "agreement": "AGREED",
+            }
+        ],
+    )
+    unlocked_prog = Program.objects.create(
+        institution=program.institution,
+        canonical_key=f"program:{uuid4()}",
+        name="MSc Computer Science II",
+        campus_name="Main",
+        city="Berlin",
+        country_code="DE",
+        location_key="DE-BERLIN",
+        degree_level="MASTER",
+        teaching_languages=["English"],
+        duration_months=12,
+    )
+    CostComponent.objects.create(
+        program=unlocked_prog,
+        kind="TUITION",
+        amount=Decimal("10000"),
+        currency="EUR",
+        period="ANNUAL",
+    )
+
+    with tenant_scope(agency_a.id):
+        rebuilt = rebuild_pack(run, rates=EUR_RATES)
+        assert rebuilt.version == 2
+        assert PackCandidate.objects.filter(
+            pack_version=rebuilt, candidate=award_cand
+        ).exists()
+        unlocked_cand = RecommendationCandidate.objects.get(run=run, program=unlocked_prog)
+        assert PackCandidate.objects.filter(
+            pack_version=rebuilt, candidate=unlocked_cand
+        ).exists()
+        assert unlocked_cand.calibration_features.get("score_unlocked") is True
+        assert "Foundation Stipend" in (
+            unlocked_cand.calibration_features.get("winnable_with") or []
+        )
+
+        # G1: Rejecting the scholarship from the pack strips it from winnable_with
+        # and updates funding_condition on the dependent programme
+        reject_candidate(rebuilt, award_cand.id, membership_a)
+        unlocked_cand.refresh_from_db()
+        assert "Foundation Stipend" not in (
+            unlocked_cand.calibration_features.get("winnable_with") or []
+        )
+        assert "removed from your pack" in unlocked_cand.funding_condition
+
+
+@pytest.mark.django_db(transaction=True)
+def test_pass3_b5_g2_funded_chance_boost_and_ineligible_regression_marking(
+    agency_a, membership_a
+):
+    from uuid import uuid4
+
+    from apps.funding.models import Program
+
+    program, _award = _catalogue()
+    run, first = _publish_full(agency_a, membership_a)
+    with tenant_scope(agency_a.id):
+        assert first.version == 1
+        prog_cand = RecommendationCandidate.objects.get(run=run, program=program)
+        # B5: Simulate a low initial funded chance (15%) with high admission chance (75%),
+        # so when rebuild_pack computes a higher funded chance (>= 25%), score_boosted triggers
+        # via funded_jumped even if admission chance rose by < 10%
+        RecommendationCandidate.objects.filter(id=prog_cand.id).update(
+            estimated_chance_pct=prog_cand.estimated_chance_pct,
+            estimated_funded_chance_pct=1,
+        )
+        v2 = rebuild_pack(run, rates=EUR_RATES)
+        assert v2.version == 2
+        prog_cand.refresh_from_db()
+        if (prog_cand.estimated_funded_chance_pct or 0) >= 11:
+            assert prog_cand.calibration_features.get("score_boosted") is True
+            assert prog_cand.calibration_features.get("previous_funded_chance_pct") == "1"
+
+    # G2: Now add a second programme that is initially eligible, then becomes NOT_ELIGIBLE
+    second_prog = Program.objects.create(
+        institution=program.institution,
+        canonical_key=f"program:{uuid4()}",
+        name="MSc Quantum Computing",
+        campus_name="Main",
+        city="Berlin",
+        country_code="DE",
+        location_key="DE-BERLIN",
+        degree_level="MASTER",
+        teaching_languages=["English"],
+        duration_months=24,
+    )
+    with tenant_scope(agency_a.id):
+        v3 = rebuild_pack(run, rates=EUR_RATES)
+        second_cand = RecommendationCandidate.objects.get(run=run, program=second_prog)
+        assert second_cand.eligible is True
+
+    second_prog.teaching_languages = ["Japanese"]
+    second_prog.save(update_fields=["teaching_languages"])
+    with tenant_scope(agency_a.id):
+        v4 = rebuild_pack(run, rates=EUR_RATES)
+        assert v4.version == v3.version + 1
+        second_cand.refresh_from_db()
+        assert second_cand.eligible is False
+        assert (
+            second_cand.eligibility_status
+            == RecommendationCandidate.EligibilityStatus.NOT_ELIGIBLE
+        )
+

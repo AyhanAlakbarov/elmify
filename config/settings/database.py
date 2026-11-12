@@ -1,4 +1,7 @@
+import hashlib
+import re
 from collections.abc import Mapping
+from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -22,8 +25,8 @@ def database_config(
     if role is None:
         if require_explicit_role:
             raise ImproperlyConfigured(_ROLE_ERROR)
-        user = environ.get("POSTGRES_USER", "tehsil")
-        password = environ.get("POSTGRES_PASSWORD", "tehsil")
+        user = environ.get("POSTGRES_USER", "elmify")
+        password = environ.get("POSTGRES_PASSWORD", "elmify")
     else:
         credential_names = _ROLE_CREDENTIALS.get(role)
         if credential_names is None:
@@ -42,7 +45,7 @@ def database_config(
         if not name or not host:
             raise ImproperlyConfigured("POSTGRES_DB and POSTGRES_HOST are required")
     else:
-        name = environ.get("POSTGRES_DB", "tehsil")
+        name = environ.get("POSTGRES_DB", "elmify")
         host = environ.get("POSTGRES_HOST", "127.0.0.1")
 
     return {
@@ -55,3 +58,23 @@ def database_config(
             "PORT": environ.get("POSTGRES_PORT", "5432"),
         }
     }
+
+
+def per_checkout_test_database_name(environ: Mapping[str, str], checkout: Path) -> str | None:
+    """Name the test database after this checkout, so worktrees never share one.
+
+    Every worktree used to derive the same `test_elmify`, and two sessions
+    running pytest at once dropped and recreated it under each other. An
+    exported POSTGRES_DB still wins: None leaves Django's `test_<NAME>`
+    default, so anyone exporting it sees exactly the old name. The basename
+    keeps the name readable; the path digest keeps two clones that share a
+    basename apart. Built from the path alone, so no git is needed. At most
+    54 bytes, under Postgres's 63, leaving room for pytest-django's xdist
+    `_gwN` suffix.
+    """
+    if environ.get("POSTGRES_DB"):
+        return None
+    resolved = checkout.resolve()
+    slug = re.sub(r"[^a-z0-9]+", "_", resolved.name.lower()).strip("_")[:32]
+    digest = hashlib.blake2s(str(resolved).encode(), digest_size=4).hexdigest()
+    return "_".join(part for part in ("test_elmify", slug, digest) if part)

@@ -166,6 +166,51 @@ def test_replace_supersedes_every_live_page(agency_a, membership_a, paid_cycle_a
     assert _live(agency_a, paid_cycle_a) == [(1, "READ", "", 0)]
 
 
+def _retired(agency, upload):
+    with tenant_scope(agency.id):
+        upload.document.refresh_from_db()
+    return upload.document.retired_at is not None
+
+
+def test_replace_retires_the_older_transcript_files_when_it_supersedes_their_pages(
+    agency_a, membership_a, paid_cycle_a
+):
+    """Plan 4b Task 6: the document table follows the reading -- the files whose pages a
+    REPLACE superseded are retired with them, never before (a REPLACE still being read)."""
+    first, content = _upload(agency_a, membership_a, paid_cycle_a)
+    _run(agency_a, first, content, inventory=_inv(1), reads=(PageRead(1, page=_page()),))
+    added, content = _upload(agency_a, membership_a, paid_cycle_a, content=PNG + b"a")
+    _run(agency_a, added, content, inventory=_inv(1), reads=(PageRead(1, page=_page()),))
+    new, content = _upload(agency_a, membership_a, paid_cycle_a, content=PNG + b"n", mode="REPLACE")
+    assert not _retired(agency_a, first) and not _retired(agency_a, added)
+    _run(agency_a, new, content, inventory=_inv(1), reads=(PageRead(1, page=_page()),))
+    assert [_retired(agency_a, u) for u in (first, added, new)] == [True, True, False]
+
+
+def test_add_and_retake_retire_no_transcript_file(agency_a, membership_a, paid_cycle_a):
+    first, content = _upload(agency_a, membership_a, paid_cycle_a)
+    _run(agency_a, first, content, inventory=_inv(1, 2),
+         reads=(PageRead(1, page=_page()), PageRead(2, refusal="unreadable")))
+    retake, content = _upload(agency_a, membership_a, paid_cycle_a, content=PNG + b"r",
+                              mode="RETAKE", retake_slot=2)
+    _run(agency_a, retake, content, inventory=_inv(1), reads=(PageRead(1, page=_page()),))
+    assert not _retired(agency_a, first) and not _retired(agency_a, retake)
+
+
+def test_a_file_whose_every_page_was_retaken_is_retired(agency_a, membership_a, paid_cycle_a):
+    """Fix I2: pages 1-2 from the original, page 3 added alone, then page 3 retaken: the added
+    file holds no live page, so it is retired; the original still holds two."""
+    first, content = _upload(agency_a, membership_a, paid_cycle_a)
+    _run(agency_a, first, content, inventory=_inv(1, 2),
+         reads=(PageRead(1, page=_page()), PageRead(2, page=_page())))
+    added, content = _upload(agency_a, membership_a, paid_cycle_a, content=PNG + b"a")
+    _run(agency_a, added, content, inventory=_inv(1), reads=(PageRead(1, refusal="cut_off"),))
+    retake, content = _upload(agency_a, membership_a, paid_cycle_a, content=PNG + b"r",
+                              mode="RETAKE", retake_slot=3)
+    _run(agency_a, retake, content, inventory=_inv(1), reads=(PageRead(1, page=_page()),))
+    assert [_retired(agency_a, u) for u in (first, added, retake)] == [False, True, False]
+
+
 def test_add_appends_after_the_last_slot(agency_a, membership_a, paid_cycle_a):
     first, content = _upload(agency_a, membership_a, paid_cycle_a)
     _run(agency_a, first, content, inventory=_inv(1), reads=(PageRead(1, page=_page()),))
@@ -203,11 +248,15 @@ def test_a_translations_original_language_pages_are_skipped(agency_a, membership
         )
 
 
-@pytest.mark.parametrize(("content", "reason"), [
-    (b"\x00\x00\x00\x18ftypheic" + b"\x00" * 16, "heic"),
-    (b"PK\x03\x04docx", "unsupported_file"),
-    (b"%PDF" + b"\x00" * 10_000_001, "unsupported_file"),
-])
+@pytest.mark.parametrize(
+    ("content", "reason"),
+    [
+        (b"\x00\x00\x00\x18ftypheic" + b"\x00" * 16, "heic"),
+        (b"PK\x03\x04docx", "unsupported_file"),
+        (b"%PDF" + b"\x00" * 10_000_001, "unsupported_file"),
+    ],
+    ids=["heic", "docx", "oversized_pdf"],
+)
 def test_a_file_the_reader_cannot_take_is_refused_before_the_parser(
     agency_a, membership_a, paid_cycle_a, content, reason,
 ):
@@ -1206,3 +1255,253 @@ def test_a_revived_charged_replace_with_a_newer_upload_is_not_read_again(
         assert (r.refusal, r.pages_counted, paid_cycle_a.pages_used) == (
             "newer_upload", None, used,
         )
+
+
+def test_the_reader_gets_each_pages_slot_and_the_stored_rows_keep_their_origin(
+    agency_a, membership_a, paid_cycle_a
+):
+    from dataclasses import replace
+
+    from apps.documents.transcript import RowOrigin, row_from_json
+
+    [upload] = _read_all(agency_a, membership_a, paid_cycle_a,
+                         ({}, (PageRead(1, refusal="cut_off"), PageRead(2, page=_page()))))
+    with tenant_scope(agency_a.id):
+        TranscriptPage.objects.filter(slot=1).update(retakes=2)
+    origin = RowOrigin(slot=2, table=0, row=1, cells={"title": 1, "credits": 2, "grade": 3})
+    reading = _reading()
+    reading = replace(reading, rows=(replace(reading.rows[0], origin=origin),))
+    with patch("apps.documents.transcript_pages.read_from_pages", return_value=reading) as read:
+        assemble(agency_a.id, upload.id)
+    assert read.call_args.kwargs["slots"] == (2,)
+    with tenant_scope(agency_a.id):
+        stored = TranscriptReading.objects.get(document=upload.document).rows
+    assert row_from_json(stored[0]).origin == origin
+
+
+_REGIONS = ((None, None, None), ((0.1, 0.30, 0.4, 0.32), (0.5, 0.30, 0.6, 0.32),
+                                  (0.7, 0.30, 0.8, 0.32)))
+_ORIGIN_CELLS = {"title": 0, "credits": 1, "grade": 2}
+
+
+def _regioned_page():
+    return _page().model_copy(update={"cell_regions": (_REGIONS,)})
+
+
+def _crop_reading(*, doubt="low_confidence", slot=1):
+    from dataclasses import replace
+
+    from apps.documents.transcript import Highlight, Row, RowOrigin
+
+    reading = _reading()
+    rows = (
+        Row(0, "course", "Calculus", "6", "91", "COMPLETED"),
+        Row(1, "course", "Organic Chemistry", "6", "A", "COMPLETED",
+            RowOrigin(slot=slot, table=0, row=1, cells=_ORIGIN_CELLS)),
+    )
+    return replace(reading, rows=rows,
+                   doubts=(Highlight(kind=doubt, scope="row", ref="1"),))
+
+
+class _Cropper:
+    def __init__(self, raises=None):
+        self.calls, self.raises = [], raises
+
+    def __call__(self, document, page, boxes, *, aspect=None, angle=None):
+        self.calls.append((document.id, page, list(boxes)))
+        if self.raises is not None:
+            raise self.raises
+        return [b"\x89PNG" + bytes([n]) for n in range(len(boxes))]
+
+
+def _assemble_with_crops(agency, upload, reading, cropper, fake_store):
+    with (
+        patch("apps.documents.transcript_pages.read_from_pages", return_value=reading),
+        patch("apps.documents.transcript_pages.crop_cells", cropper),
+        patch("apps.documents.storage._object_store", return_value=fake_store),
+    ):
+        assemble(agency.id, upload.id)
+    with tenant_scope(agency.id):
+        return TranscriptReading.objects.get(document=upload.document)
+
+
+def test_assembly_crops_only_the_flagged_rows_cells(
+    agency_a, membership_a, paid_cycle_a, fake_store
+):
+    [upload] = _read_all(agency_a, membership_a, paid_cycle_a,
+                         ({}, (PageRead(1, page=_regioned_page()),)))
+    cropper = _Cropper()
+    stored = _assemble_with_crops(agency_a, upload, _crop_reading(), cropper, fake_store)
+    assert set(stored.crops) == {"1:credits", "1:grade"}
+    assert cropper.calls == [(upload.document_id, 1, [_REGIONS[1][1], _REGIONS[1][2]])]
+    prefix = f"tenants/{agency_a.id}/students/{membership_a.id}/transcript-crops/{stored.id}/"
+    assert all(key.startswith(prefix) for key in stored.crops.values())
+    assert fake_store.get(stored.crops["1:grade"]) == b"\x89PNG\x01"
+
+
+def test_an_unsure_row_shows_its_title(agency_a, membership_a, paid_cycle_a, fake_store):
+    [upload] = _read_all(agency_a, membership_a, paid_cycle_a,
+                         ({}, (PageRead(1, page=_regioned_page()),)))
+    stored = _assemble_with_crops(
+        agency_a, upload, _crop_reading(doubt="unsure"), _Cropper(), fake_store
+    )
+    assert set(stored.crops) == {"1:title"}
+
+
+def test_a_text_layer_row_gets_no_crop(agency_a, membership_a, paid_cycle_a, fake_store):
+    [upload] = _read_all(agency_a, membership_a, paid_cycle_a,
+                         ({}, (PageRead(1, page=_page()),)))  # no cell regions
+    cropper = _Cropper()
+    stored = _assemble_with_crops(agency_a, upload, _crop_reading(), cropper, fake_store)
+    assert stored.crops == {} and cropper.calls == []
+
+
+def test_a_retaken_page_is_cropped_from_its_current_upload(
+    agency_a, membership_a, paid_cycle_a, fake_store
+):
+    from django.utils import timezone
+
+    [first] = _read_all(agency_a, membership_a, paid_cycle_a,
+                        ({}, (PageRead(1, page=_regioned_page()),)))
+    retake, _ = _upload(agency_a, membership_a, paid_cycle_a, content=PNG + b"r",
+                        mode="RETAKE", retake_slot=1)
+    with tenant_scope(agency_a.id):
+        old = TranscriptPage.objects.get(slot=1)
+        TranscriptPage.objects.filter(id=old.id).update(superseded_at=timezone.now())
+        TranscriptPage.objects.create(
+            student=membership_a, cycle=paid_cycle_a, upload=retake, number=1, slot=1,
+            retakes=1, state="READ", source="azure", page=_regioned_page().model_dump(mode="json"),
+        )
+        TranscriptUpload.objects.filter(id=retake.id).update(state="READ")
+    cropper = _Cropper()
+    _assemble_with_crops(agency_a, retake, _crop_reading(), cropper, fake_store)
+    assert [call[0] for call in cropper.calls] == [retake.document_id]
+
+
+def test_a_crop_failure_never_fails_the_reading(
+    agency_a, membership_a, paid_cycle_a, fake_store, caplog
+):
+    [upload] = _read_all(agency_a, membership_a, paid_cycle_a,
+                         ({}, (PageRead(1, page=_regioned_page()),)))
+    cropper = _Cropper(raises=OcrUnavailable("function error ValueError"))
+    stored = _assemble_with_crops(agency_a, upload, _crop_reading(), cropper, fake_store)
+    assert stored.crops == {}
+    assert "transcript crop failed" in caplog.text
+
+
+def _many_rows_page(count):
+    rows = (("Course", "ECTS", "Grade"),) + tuple((f"C{i}", "6", "A") for i in range(count))
+    regions = ((None, None, None),) + tuple(
+        ((0.1, 0.01 * i, 0.2, 0.01 * i + 0.005), (0.5, 0.01 * i, 0.6, 0.01 * i + 0.005),
+         (0.7, 0.01 * i, 0.8, 0.01 * i + 0.005)) for i in range(count)
+    )
+    return _page(tables=(rows,)).model_copy(
+        update={"cell_regions": (regions,), "page_aspect": 0.7071, "page_angle": 180.0}
+    )
+
+
+def _many_flagged(count):
+    from dataclasses import replace
+
+    from apps.documents.transcript import Highlight, Row, RowOrigin
+
+    rows = tuple(
+        Row(i, "course", f"C{i}", "6", "A", "COMPLETED",
+            RowOrigin(slot=1, table=0, row=i + 1, cells=_ORIGIN_CELLS))
+        for i in range(count)
+    )
+    doubts = tuple(Highlight(kind="low_confidence", scope="row", ref=str(i)) for i in range(count))
+    return replace(_reading(), rows=rows, doubts=doubts)
+
+
+class _FailingOnce(_Cropper):
+    def __call__(self, document, page, boxes, *, aspect=None, angle=None):
+        self.calls.append((document.id, page, list(boxes), aspect, angle))
+        if len(self.calls) == 2:
+            raise OcrUnavailable("function error ValueError")
+        return [b"\x89PNG" for _ in boxes]
+
+
+def test_a_page_full_of_doubtful_rows_is_cropped_in_batches_and_a_failed_batch_loses_only_itself(
+    agency_a, membership_a, paid_cycle_a, fake_store, caplog
+):
+    [upload] = _read_all(agency_a, membership_a, paid_cycle_a,
+                         ({}, (PageRead(1, page=_many_rows_page(25)),)))
+    cropper = _FailingOnce()
+    stored = _assemble_with_crops(agency_a, upload, _many_flagged(25), cropper, fake_store)
+    assert [len(call[2]) for call in cropper.calls] == [20, 20, 10]
+    assert {(call[3], call[4]) for call in cropper.calls} == {(0.7071, 180.0)}
+    assert len(stored.crops) == 30  # the first and third batch
+    assert "transcript crop failed" in caplog.text
+
+
+def test_assembling_a_friends_transcript_refuses_upload_and_alerts_counsellor(
+    agency_a, membership_a, counselor_membership, paid_cycle_a
+):
+    from apps.concierge.models import Notification
+    from apps.tenancy.models import CounselorAssignment
+
+    membership_a.user.first_name, membership_a.user.last_name = "Narmin", "Aliyeva"
+    membership_a.user.save()
+    with tenant_scope(agency_a.id):
+        CounselorAssignment.objects.create(
+            tenant=agency_a, counselor=counselor_membership, student=membership_a
+        )
+    [upload] = _read_all(
+        agency_a,
+        membership_a,
+        paid_cycle_a,
+        ({}, (PageRead(1, page=_page(lines=("Student Name: Kamran Hasanov",))),)),
+    )
+    with patch("apps.documents.transcript_pages.read_from_pages") as read:
+        assemble(agency_a.id, upload.id)
+    read.assert_not_called()
+    with tenant_scope(agency_a.id):
+        upload.refresh_from_db()
+        assert (upload.state, upload.refusal) == ("REFUSED", "owner_mismatch")
+        assert not TranscriptReading.objects.filter(document=upload.document).exists()
+        assert Notification.objects.filter(
+            roadmap_item__student=membership_a, recipient=counselor_membership
+        ).exists()
+
+
+def test_appending_a_friends_transcript_page_after_valid_upload_refuses_append(
+    agency_a, membership_a, paid_cycle_a
+):
+    membership_a.user.first_name, membership_a.user.last_name = "Narmin", "Aliyeva"
+    membership_a.user.save()
+    first, second = _read_all(
+        agency_a,
+        membership_a,
+        paid_cycle_a,
+        (
+            {},
+            (
+                PageRead(
+                    1,
+                    page=_page(lines=("Student Name: Narmin Aliyeva", "Baku State University")),
+                ),
+            ),
+        ),
+        (
+            {"mode": "APPEND"},
+            (
+                PageRead(
+                    1,
+                    page=_page(lines=("Student Name: Kamran Hasanov", "ADA University")),
+                ),
+            ),
+        ),
+    )
+    with patch("apps.documents.transcript_pages.read_from_pages") as read:
+        assemble(agency_a.id, second.id)
+    read.assert_not_called()
+    with tenant_scope(agency_a.id):
+        second.refresh_from_db()
+        assert (second.state, second.refusal) == ("REFUSED", "owner_mismatch")
+        first_pages = list(
+            TranscriptPage.objects.filter(upload=first, superseded_at__isnull=True)
+        )
+        assert len(first_pages) == 1
+
+

@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- **Worktree.** All work happens in `/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter` on branch `claude/deqar-register-adapter`. The shell's working directory resets to the main repository between commands, and the main repository holds the owner's uncommitted work. Pass `-C /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter` to every `git` command, and `cd` into the worktree inside the same command for every `uv run`.
-- **Test database.** Every pytest run sets `POSTGRES_DB=tehsil_deqar_adapter`. The default database is shared with parallel sessions and wedges.
+- **Worktree.** All work happens in `/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter` on branch `claude/deqar-register-adapter`. The shell's working directory resets to the main repository between commands, and the main repository holds the owner's uncommitted work. Pass `-C /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter` to every `git` command, and `cd` into the worktree inside the same command for every `uv run`.
+- **Test database.** Every pytest run sets `POSTGRES_DB=elmify_deqar_adapter`. The default database is shared with parallel sessions and wedges.
 - **Lint, never format.** Run `uv run ruff check .`. Never run `ruff format`: it rewrites 26 unrelated files.
 - **Import order.** After adding imports to a file, run `uv run ruff check <file> --fix --select I` so ruff orders them. That fixes import order only, and is not `ruff format`.
 - **No name matching.** Listings join on `InstitutionIdentifier` under the read's scheme only. An unbound value is dropped.
@@ -171,7 +171,7 @@ def test_refresh_re_exports_the_one_off_site_error() -> None:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_egress.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_egress.py -q
 ```
 
 Expected: collection fails with `ImportError: cannot import name 'OffSiteRedirect' from 'apps.research.egress'`.
@@ -272,13 +272,13 @@ with:
 Keep the two comment lines above it. Then:
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && uv run ruff check apps/research/refresh.py --fix --select I
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && uv run ruff check apps/research/refresh.py --fix --select I
 ```
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_egress.py tests/research/test_refresh.py tests/research/test_discovery.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_egress.py tests/research/test_refresh.py tests/research/test_discovery.py -q
 ```
 
 Expected: all pass. `test_refresh.py`'s off-site tests are the regression check that the move changed no behaviour.
@@ -286,7 +286,7 @@ Expected: all pass. `test_refresh.py`'s off-site tests are the regression check 
 - [ ] **Step 6: Lint and type-check**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config
 ```
 
 Expected: no errors.
@@ -294,7 +294,7 @@ Expected: no errors.
 - [ ] **Step 7: Commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
 git -C $W add apps/research/egress.py apps/research/refresh.py tests/research/test_egress.py
 git -C $W commit -F - <<'MSG'
 feat(research): per-call egress limits; origin check moves to egress
@@ -389,7 +389,7 @@ def test_a_whed_value_must_be_iau_and_six_digits(houston, tmp_path) -> None:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/funding/test_register_models.py tests/funding/test_institution_identifier.py tests/funding/test_load_institution_identifiers.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/funding/test_register_models.py tests/funding/test_institution_identifier.py tests/funding/test_load_institution_identifiers.py -q
 ```
 
 Expected: the three new tests fail. The axis test fails with `AttributeError: NATIONALLY_RECOGNISED`; the scheme test with an `IntegrityError` on the check constraint; the loader test with `CommandError: unknown scheme 'WHED'`.
@@ -446,7 +446,7 @@ In `RegisterListing.Axis`, add after `WORK_RIGHTS_AFTER_STUDY = "WORK_RIGHTS_AFT
 - [ ] **Step 4: Generate the migration and inspect it**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run python manage.py makemigrations funding -n nationally_recognised_axis_and_whed_scheme && cat apps/funding/migrations/0028_nationally_recognised_axis_and_whed_scheme.py
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run python manage.py makemigrations funding -n nationally_recognised_axis_and_whed_scheme && cat apps/funding/migrations/0028_nationally_recognised_axis_and_whed_scheme.py
 ```
 
 Expected: a migration depending on `0027_merge_20260908_1207` whose operations touch exactly three constraints, `institution_identifier_scheme_valid`, `register_listing_axis_valid` and `register_coverage_axis_valid`, each removed and re-added (or altered) with the widened value list. If it contains anything else, stop: the model edit went wrong.
@@ -471,7 +471,7 @@ In `apps/funding/management/commands/load_institution_identifiers.py`, add to `_
 - [ ] **Step 6: Run the tests to verify they pass**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/funding -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/funding -q
 ```
 
 Expected: all pass, including the existing drift pins `test_an_axis_must_be_one_the_design_names` and the `_IDENTIFIER_SCHEMES` equality test.
@@ -479,7 +479,7 @@ Expected: all pass, including the existing drift pins `test_an_axis_must_be_one_
 - [ ] **Step 7: Lint, type-check, and confirm no further migration is pending**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config && POSTGRES_DB=tehsil_deqar_adapter uv run python manage.py makemigrations --check --dry-run
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config && POSTGRES_DB=elmify_deqar_adapter uv run python manage.py makemigrations --check --dry-run
 ```
 
 Expected: no errors, `No changes detected`.
@@ -487,7 +487,7 @@ Expected: no errors, `No changes detected`.
 - [ ] **Step 8: Commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
 git -C $W add apps/funding/models.py apps/funding/migrations/0028_nationally_recognised_axis_and_whed_scheme.py apps/funding/management/commands/load_institution_identifiers.py tests/funding/test_register_models.py tests/funding/test_institution_identifier.py tests/funding/test_load_institution_identifiers.py
 git -C $W commit -F - <<'MSG'
 feat(funding): NATIONALLY_RECOGNISED axis and WHED identifier scheme
@@ -894,7 +894,7 @@ def test_the_config_is_the_four_daily_files_and_their_measured_shape() -> None:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_register_deqar.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_register_deqar.py -q
 ```
 
 Expected: collection fails with `ImportError: cannot import name 'DEQAR' from 'apps.research.registers'`.
@@ -1302,7 +1302,7 @@ REGISTERS = {DEQAR.slug: DEQAR}
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_register_deqar.py tests/research/test_registers.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_register_deqar.py tests/research/test_registers.py -q
 ```
 
 Expected: all pass, including the existing `test_registers_module_reaches_no_llm_client`.
@@ -1310,7 +1310,7 @@ Expected: all pass, including the existing `test_registers_module_reaches_no_llm
 - [ ] **Step 5: Lint and type-check**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config
 ```
 
 Expected: no errors. If mypy rejects `csv.DictReader[str]` as the return annotation, keep the annotation and check that `from __future__ import annotations` is the first import. Do not loosen it to `Any`.
@@ -1318,7 +1318,7 @@ Expected: no errors. If mypy rejects `csv.DictReader[str]` as the return annotat
 - [ ] **Step 6: Commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
 git -C $W add apps/research/registers.py tests/research/test_register_deqar.py
 git -C $W commit -F - <<'MSG'
 feat(research): the Register config and the pure DEQAR read
@@ -1577,7 +1577,7 @@ def test_an_existing_whed_binding_is_left_alone_and_a_conflict_is_reported(
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_register_deqar.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_register_deqar.py -q
 ```
 
 Expected: collection fails with `ImportError: cannot import name 'RecordSummary'`.
@@ -1729,7 +1729,7 @@ def record_register_read(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_register_deqar.py tests/research/test_registers.py tests/funding/test_register_models.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_register_deqar.py tests/research/test_registers.py tests/funding/test_register_models.py -q
 ```
 
 Expected: all pass.
@@ -1737,7 +1737,7 @@ Expected: all pass.
 - [ ] **Step 5: Lint and type-check**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config
 ```
 
 Expected: no errors.
@@ -1745,7 +1745,7 @@ Expected: no errors.
 - [ ] **Step 6: Commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
 git -C $W add apps/research/registers.py tests/research/test_register_deqar.py
 git -C $W commit -F - <<'MSG'
 feat(research): record a register read by replacing its publisher's rows
@@ -1966,7 +1966,7 @@ def test_the_register_path_never_imports_the_profile_refresh() -> None:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_register_deqar.py tests/research/test_registers.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_register_deqar.py tests/research/test_registers.py -q
 ```
 
 Expected: collection fails with `ImportError: cannot import name 'refresh_register' from 'apps.research.registers'`.
@@ -2155,7 +2155,7 @@ class Command(BaseCommand):
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research -q
 ```
 
 Expected: all pass.
@@ -2163,7 +2163,7 @@ Expected: all pass.
 - [ ] **Step 6: Lint, type-check, scan**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config
 ```
 
 Expected: no errors, no new bandit findings.
@@ -2171,7 +2171,7 @@ Expected: no errors, no new bandit findings.
 - [ ] **Step 7: Commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
 git -C $W add apps/research/registers.py apps/research/management/commands/refresh_register.py tests/research/test_register_deqar.py tests/research/test_registers.py
 git -C $W commit -F - <<'MSG'
 feat(research): refresh_register, collect to recorded rows in one call
@@ -2540,7 +2540,7 @@ def test_the_command_runs_whed(bound, monkeypatch) -> None:
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_register_whed.py -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_register_whed.py -q
 ```
 
 Expected: collection fails with `ImportError: cannot import name 'WHED' from 'apps.research.registers'`.
@@ -2705,7 +2705,7 @@ Delete the earlier `REGISTERS = {DEQAR.slug: DEQAR}` line from Task 3, so `REGIS
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research -q
 ```
 
 Expected: all pass.
@@ -2713,7 +2713,7 @@ Expected: all pass.
 - [ ] **Step 5: Lint, type-check, scan**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config
 ```
 
 Expected: no errors.
@@ -2721,7 +2721,7 @@ Expected: no errors.
 - [ ] **Step 6: Commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
 git -C $W add apps/research/registers.py tests/research/test_register_whed.py
 git -C $W commit -F - <<'MSG'
 feat(research): the WHED register, WHED's own search as the verdict
@@ -2806,7 +2806,7 @@ def test_whed_search_still_answers_a_known_id_and_a_missing_one_in_the_same_word
 - [ ] **Step 3: Run both canaries live**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && POSTGRES_DB=tehsil_deqar_adapter uv run pytest tests/research/test_register_deqar.py tests/research/test_register_whed.py -m live -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && POSTGRES_DB=elmify_deqar_adapter uv run pytest tests/research/test_register_deqar.py tests/research/test_register_whed.py -m live -q
 ```
 
 Expected: 5 passed. If a test fails with `SourceBlocked` or a network error, record the exact error in the final report and continue. Do not mark the test skipped or change its assertion. If WHED has reworded either result line, stop and report: the read refuses every WHED run until `_whed_result` matches the new wording.
@@ -2814,7 +2814,7 @@ Expected: 5 passed. If a test fails with `SourceBlocked` or a network error, rec
 - [ ] **Step 4: Check the DEQAR read against the real files**
 
 ```bash
-D=$(mktemp -d) && for f in institutions reports agencies countries; do curl -sS -m 300 -o "$D/deqar-$f.csv" "https://backend.deqar.eu/static/daily-csv/deqar-$f.csv"; done && cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && DEQAR_DIR="$D" DJANGO_SETTINGS_MODULE=config.settings.test uv run python - <<'EOF'
+D=$(mktemp -d) && for f in institutions reports agencies countries; do curl -sS -m 300 -o "$D/deqar-$f.csv" "https://backend.deqar.eu/static/daily-csv/deqar-$f.csv"; done && cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && DEQAR_DIR="$D" DJANGO_SETTINGS_MODULE=config.settings.test uv run python - <<'EOF'
 import os
 from collections import Counter
 from datetime import date
@@ -2849,7 +2849,7 @@ In `docs/superpowers/specs/2026-09-07-institution-identifier-binding-design.md`,
 - [ ] **Step 6: Run the full gate**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config && uv run python manage.py check && POSTGRES_DB=tehsil_deqar_adapter uv run python manage.py makemigrations --check --dry-run && POSTGRES_DB=tehsil_deqar_adapter uv run pytest -q
+cd /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config && uv run python manage.py check && POSTGRES_DB=elmify_deqar_adapter uv run python manage.py makemigrations --check --dry-run && POSTGRES_DB=elmify_deqar_adapter uv run pytest -q
 ```
 
 Expected: every command succeeds, `makemigrations` reports `No changes detected`, pytest reports no failures. Before blaming this branch for a failure in an unrelated app, check `ps aux | grep pytest` for another session using the same database.
@@ -2857,7 +2857,7 @@ Expected: every command succeeds, `makemigrations` reports `No changes detected`
 - [ ] **Step 7: Confirm the diff is only this work**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter diff --stat origin/master...HEAD
+git -C /home/orkhan/Desktop/elmify/.worktrees/deqar-adapter diff --stat origin/master...HEAD
 ```
 
 Expected: only the files in this plan's File Structure table, plus the spec, the recon note and this plan.
@@ -2865,7 +2865,7 @@ Expected: only the files in this plan's File Structure table, plus the spec, the
 - [ ] **Step 8: Commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
 git -C $W add tests/research/test_register_deqar.py tests/research/test_register_whed.py docs/superpowers/specs/2026-09-07-institution-identifier-binding-design.md
 git -C $W commit -F - <<'MSG'
 test(research): live DEQAR and WHED canaries; record both binding levels

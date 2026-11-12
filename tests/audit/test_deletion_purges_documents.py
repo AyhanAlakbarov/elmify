@@ -414,3 +414,27 @@ def test_erasure_reaches_a_promoted_upload(agency_a):
     delete_student_documents(tenant_id=tenant_id, student_id=student_id, client=client)
     deleted = client.delete_objects.call_args_list[0].kwargs["Delete"]["Objects"]
     assert {"Key": key, "VersionId": "v1"} in deleted
+
+
+def test_executing_a_deletion_deletes_the_students_relevance_rows(
+    agency_a, django_user_model, monkeypatch
+):
+    from apps.audit import deletion
+    from apps.documents.models import CVItemChoice, CVRelevanceAnswer
+
+    monkeypatch.setattr(deletion, "delete_student_documents", lambda **kwargs: 0)
+    monkeypatch.setattr(deletion, "delete_student_portal_credentials", lambda **kwargs: 0)
+    monkeypatch.setattr(deletion, "delete_student_mailbox_tokens", lambda **kwargs: 0)
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "del-rel")
+        CVRelevanceAnswer.objects.create(
+            student=student, requirements_digest="r" * 64, item_digest="i" * 64,
+            question_version="cv-relevance-1", answer="unrelated", chance=0.95, unrelated=0.95,
+        )
+        CVItemChoice.objects.create(student=student, program_id=uuid4(), section="awards",
+                                    item_digest="i" * 64)
+        request = _approved_request(agency_a, student)
+        advance_deletion(request, "EXECUTED")
+        assert not CVRelevanceAnswer.objects.filter(student=student).exists()
+        assert not CVItemChoice.objects.filter(student=student).exists()
+

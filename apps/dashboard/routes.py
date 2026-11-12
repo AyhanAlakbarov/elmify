@@ -10,20 +10,27 @@ _STUDENT = {
     "start": "student-application-start",
     "outcome": "student-application-outcome",
     "remove": "student-application-remove",
-    "kit": "portals-application-kit",
     "acknowledge": "concierge-acknowledge-notification",
     "accept_offer": "student-offer-accept",
     "ignore_offer": "student-offer-ignore",
+    "programme": "student-programme",
+    "add": "student-application-add",
+    "fee_paid": "student-application-fee-paid",
+    "budget": "student-settings-budget",
 }
-#: No "start" and no "kit": the fill runs in the student's own browser through
-#: the student's own extension (spec §4a), and the kit page is the student's.
+#: No "start": the fill runs in the student's own browser through the
+#: student's own extension (spec §4a). "kit" is the counsellor's read-only
+#: debugging view of the answers we will submit; the student has no such page.
 _COUNSELOR = {
+    "kit": "counselor-student-application-kit",
     "outcome": "counselor-student-outcome",
     "remove": "counselor-student-application-remove",
     "acknowledge": "counselor-student-acknowledge",
     "portal": "counselor-student-application-portal",
     "accept_offer": "counselor-student-offer-accept",
     "ignore_offer": "counselor-student-offer-ignore",
+    "programme": "counselor-student-programme",
+    "add": "counselor-student-application-add",
 }
 
 

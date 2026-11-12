@@ -71,6 +71,19 @@ class PortalForm(models.Model):
     #: A list rather than one value because a portal mails from several -- a
     #: transactional vendor for receipts, the university's own for decisions.
     sender_domains = models.JSONField(default=list, blank=True)
+    #: Per-portal rules the bench taught (plan 6, spec §9), keyed by field class.
+    #: option_synonyms maps our value to the portal's option text, or to the
+    #: option's `value` attribute where that differs from its text: fillVerified
+    #: matches either, readBack reads the value.
+    value_formats = models.JSONField(default=dict, blank=True)
+    option_synonyms = models.JSONField(default=dict, blank=True)
+    readback_equivalences = models.JSONField(default=dict, blank=True)
+    #: The portal's own password rules, from the recorded SIGNUP page (spec §6).
+    password_rules = models.TextField(blank=True, default="")
+    #: A live relearn met a changed form while a bench-verified map served it
+    #: (plan 5 Task 6). Until the bench runs again the verified map no longer
+    #: outranks a tenant's fresh one, and `portal_bench --queue` lists the form.
+    needs_bench = models.BooleanField(default=False)
     discovered_at = models.DateTimeField(auto_now_add=True)
 
     class TermsPosture(models.TextChoices):
@@ -148,6 +161,9 @@ class FieldMap(models.Model):
     version = models.PositiveIntegerField()
     #: [{"profile_field": "personal.given_name", "action": {...ActionInput...}}]
     entries = models.JSONField(default=list)
+    #: Upload boxes the map learned: {"selector","kind","variant","degree","sure"}.
+    #: Never a field-map entry: documents are attached, not typed (FILL_METHODS).
+    slots = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     superseded_at = models.DateTimeField(null=True, blank=True)
     #: Which tenant's snapshot produced this map, or NULL for one the PLATFORM
@@ -171,6 +187,10 @@ class FieldMap(models.Model):
     learned_by_tenant = models.ForeignKey(
         "tenancy.Agency", null=True, blank=True, on_delete=models.CASCADE, related_name="+"
     )
+    #: Set by the bench's verified gate (plan 6). A verified map is shared
+    #: (learned_by_tenant NULL) and outranks a tenant's own map unless its form
+    #: needs_bench.
+    verified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -192,19 +212,18 @@ class FieldMap(models.Model):
         rather than one ordered query, because "prefer mine, else shared" is
         not expressible as an ordering that also survives a superseded row on
         one side only.
+
+        A bench-verified map comes first, for every tenant: a person has checked
+        it against the real pages (CLAUDE.md, "Promotion ... after a human
+        looks"). A form that needs the bench again falls back to the order
+        above, where the verified row is simply the shared one -- except that a
+        tenant map older than the verified row stays beaten: `needs_bench` is
+        one flag for the form, and one tenant's relearn must not hand every
+        other tenant back the map the bench already replaced.
         """
-        scoped = None
-        if tenant_id is not None:
-            scoped = (
-                cls.objects.filter(
-                    portal_form=portal_form,
-                    learned_by_tenant_id=tenant_id,
-                    superseded_at__isnull=True,
-                )
-                .order_by("-version")
-                .first()
-            )
-        return scoped or (
+        # At most one shared row is current: _store_map(None) supersedes the
+        # previous one under the form lock. So a verified map IS the shared row.
+        shared = (
             cls.objects.filter(
                 portal_form=portal_form,
                 learned_by_tenant__isnull=True,
@@ -213,6 +232,80 @@ class FieldMap(models.Model):
             .order_by("-version")
             .first()
         )
+        scoped = (
+            cls.objects.filter(
+                portal_form=portal_form,
+                learned_by_tenant_id=tenant_id,
+                superseded_at__isnull=True,
+            )
+            .order_by("-version")
+            .first()
+            if tenant_id is not None
+            and (shared is None or shared.verified_at is None or portal_form.needs_bench)
+            else None
+        )
+        return cls.pick_current(portal_form, shared, scoped)
+
+    @staticmethod
+    def pick_current(
+        portal_form: PortalForm, shared: FieldMap | None, scoped: FieldMap | None
+    ) -> FieldMap | None:
+        verified = shared if shared is not None and shared.verified_at is not None else None
+        if verified is not None and not portal_form.needs_bench:
+            return verified
+        # "Newer" by version, never created_at: the counter is assigned under
+        # the form lock, so it cannot be misordered by two hosts' clocks.
+        if scoped is not None and verified is not None and scoped.version < verified.version:
+            scoped = None
+        return scoped or shared
+
+
+
+class PageRecord(models.Model):
+    """One recorded portal page: what the bench replays and what verifies a map
+    (spec §9, §10 "A form we have not mapped yet"). Never a value: `snapshot` is
+    the redacted, value-free description, and a BENCH_WALK's HTML copy (in the
+    object store under `html_key`) was blanked in the browser and redacted
+    server-side (bench.py).
+
+    Retention (owner, 2026-10-09): kept, never served to any tenant view -- only
+    the operator's `portal_bench` reads it -- and not reached by a student's
+    erasure, because it holds no student value by construction.
+    """
+
+    class Source(models.TextChoices):
+        LIVE_LEARN = "LIVE_LEARN"
+        BENCH_WALK = "BENCH_WALK"
+
+    class Kind(models.TextChoices):
+        FORM = "FORM"
+        LOGIN = "LOGIN"
+        SIGNUP = "SIGNUP"
+        CONFIRMATION = "CONFIRMATION"
+        OTHER = "OTHER"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    portal_form = models.ForeignKey(
+        PortalForm, on_delete=models.CASCADE, related_name="page_records"
+    )
+    field_map = models.ForeignKey(
+        FieldMap, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    source = models.CharField(max_length=12, choices=Source.choices)
+    page_kind = models.CharField(max_length=12, choices=Kind.choices)
+    step = models.PositiveIntegerField(default=1)
+    snapshot = models.JSONField()
+    html_key = models.CharField(max_length=300, blank=True, default="")
+    password_rules = models.TextField(blank=True, default="")
+    #: The operator confirmed this LOGIN or SIGNUP page worked as spec §6 says
+    #: in their own live walk (`portal_bench --walk-ok`). Promotion needs both.
+    walk_ok = models.BooleanField(default=False)
+    #: Set when a newer walk replaces this one (`--new-walk`); nothing reads it yet.
+    superseded_at = models.DateTimeField(null=True, blank=True)
+    learned_by_tenant = models.ForeignKey(
+        "tenancy.Agency", null=True, blank=True, on_delete=models.CASCADE, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
 
 
 class RecoveryEvent(models.Model):
@@ -271,6 +364,31 @@ class Application(TenantScopedModel):
         PORTAL = "PORTAL", "Portal"
         PERSON = "PERSON", "Recorded by a person"
 
+    class FeeState(models.TextChoices):
+        """Lanes spec §3.2. HELD and RELEASED belong to the fee hold (plan 3b);
+        nothing sets them yet."""
+
+        NONE = "NONE", "No application fee"
+        UNKNOWN = "UNKNOWN", "Fee not known yet"
+        OPEN = "OPEN", "To pay"
+        HELD = "HELD", "On hold"
+        RELEASED = "RELEASED", "Released by the student"
+        PAID = "PAID", "Paid"
+        SKIPPED = "SKIPPED", "Skipped"
+
+    class CVStatus(models.TextChoices):
+        """Where this card's CV stands (CV build step 4.2)."""
+
+        QUEUED = "QUEUED", "Being made"
+        WAITING_IDENTITY = "WAITING_IDENTITY", "Waiting for identity details"
+        WAITING_EMAIL = "WAITING_EMAIL", "Waiting for the student's email"
+        NO_CV = "NO_CV", "No CV asked for"
+        MADE = "MADE", "Made"
+
+    class FeePaidSource(models.TextChoices):
+        STUDENT = "STUDENT", "Marked by the student"
+        MAIL = "MAIL", "A receipt email"
+
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="applications")
     program_id = models.UUIDField()
@@ -320,6 +438,8 @@ class Application(TenantScopedModel):
     kit_requirements = models.JSONField(default=list, blank=True)
     kit_your_actions = models.JSONField(default=list, blank=True)
     kit_letter_cycle = models.CharField(max_length=20, blank=True)
+    #: Program.file_rules, copied by capture_requirements (the web tier reads no catalogue).
+    kit_file_rules = models.JSONField(default=list, blank=True)
     #: How this programme is applied for, copied when the card is made (lanes
     #: spec §3.1; apps/portals/route_snapshot.py). {} = no route known yet.
     route_snapshot = models.JSONField(default=dict, blank=True)
@@ -332,12 +452,26 @@ class Application(TenantScopedModel):
     #: A trusted DECISION mail arrived (spec §4). Moves the card to Decision.
     decision_available_at = models.DateTimeField(null=True, blank=True)
     outcome = models.CharField(max_length=24, choices=Outcome.choices, blank=True)
+    funding_outcome = models.CharField(
+        max_length=24, choices=Outcome.choices, blank=True, default=""
+    )
+    funding_outcome_source = models.CharField(
+        max_length=10, choices=OutcomeSource.choices, blank=True, default=""
+    )
     outcome_recorded_at = models.DateTimeField(null=True, blank=True)
     outcome_source = models.CharField(max_length=10, choices=OutcomeSource.choices, blank=True)
     #: The signal an automatic outcome came from -- never the letter's text.
     outcome_evidence = models.ForeignKey(
         "mailbox.MailSignal", null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    #: The application fee's state (lanes spec §3.2, §7.4). Set from the
+    #: candidate's fee copy when the card is made (portals.fees.fee_state_for).
+    fee_state = models.CharField(max_length=10, choices=FeeState.choices, default=FeeState.UNKNOWN)
+    fee_paid_at = models.DateTimeField(null=True, blank=True)
+    fee_paid_source = models.CharField(max_length=10, choices=FeePaidSource.choices, blank=True)
+    #: Where this card's CV stands (CV build step 4.2); blank until one is asked for.
+    cv_status = models.CharField(max_length=20, blank=True, default="", choices=CVStatus.choices)
+    cv_resumes_at = models.DateTimeField(null=True, blank=True)
     #: The motivation letter for this application, while one is being worked on
     #: by the document worker: "" (nothing pending), QUEUED (being written),
     #: CHECKING (approval being checked) or REFUSED (the engine declined; the
@@ -373,9 +507,10 @@ class Application(TenantScopedModel):
     def next_step_sequence(self) -> int:
         """Next audit-trail sequence number.
 
-        # ponytail: read-then-write. It takes two workers on one application
-        # to race, and there is one portal task by construction
-        # (PortalDesiredCount maxes at 1). Revisit if that ever changes.
+        # ponytail: read-then-write. Writers are now web requests from one
+        # student's extension, so two on one application can race; the loser
+        # hits portal_step_app_sequence_uniq and fails loudly rather than
+        # writing a duplicate. Lock the application row if that is ever seen.
         """
         last = self.steps.order_by("-sequence").values_list("sequence", flat=True).first()
         return (last or 0) + 1
@@ -385,6 +520,26 @@ class Application(TenantScopedModel):
             models.UniqueConstraint(fields=("tenant", "id"), name="portal_app_tenant_id_uniq"),
             models.UniqueConstraint(
                 fields=("student", "candidate"), name="portal_app_one_per_candidate"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    fee_state__in=(
+                        "NONE", "UNKNOWN", "OPEN", "HELD", "RELEASED", "PAID", "SKIPPED"
+                    )
+                ),
+                name="portal_app_fee_state_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    cv_status__in=(
+                        "", "QUEUED", "WAITING_IDENTITY", "WAITING_EMAIL", "NO_CV", "MADE"
+                    )
+                ),
+                name="portal_app_cv_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(fee_paid_source__in=("", "STUDENT", "MAIL")),
+                name="portal_app_fee_paid_source_valid",
             ),
             #: A person's correction reaches these columns (spec §4); an unknown
             #: value must be refused by the database, not only by the view.
@@ -470,6 +625,13 @@ class PortalAccount(TenantScopedModel):
     #: Mail to the tag may correct any other REJECTS (tags.restore_tag), never
     #: this one: the student is the authority on their own form.
     tag_dropped_by_student = models.BooleanField(default=False)
+    #: When the platform made and stored this account's password (spec §6, D3).
+    #: A marker only: the password itself is in Secrets Manager
+    #: (apps/portals/credentials.py), never in this table.
+    password_held_at = models.DateTimeField(null=True, blank=True)
+    #: The student said "I changed my password": the co-pilot no longer logs in
+    #: here and our copy was deleted at that moment.
+    student_managed_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -556,6 +718,11 @@ class ExtensionPairing(TenantScopedModel):
     redeemed_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
     revoked_at = models.DateTimeField(null=True, blank=True)
+    #: When the student proved it was them for this browser: paired within
+    #: minutes of typing their Elmify password, or confirmed with it later.
+    #: Until then the browser gets no portal password (ext_api.portal_login);
+    #: a dashboard session alone is not that proof.
+    passwords_allowed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -596,6 +763,40 @@ class DeviceAction(TenantScopedModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=("tenant", "id"), name="portal_action_tenant_id_uniq")
+        ]
+
+
+class PortalAnswer(TenantScopedModel):
+    """What a student typed into a box the co-pilot marked (owner, 2026-10-09).
+
+    The value is the student's own and stays in their tenant (FORCE RLS); it is
+    erased with them inside advance_deletion's set_local_tenant block. Never
+    sent to a model, never written to a FieldMap: a map learns only WHICH field
+    a box asks for, from several students agreeing (answers.py).
+    """
+
+    class Outcome(models.TextChoices):
+        CONFIRMED_GUESS = "CONFIRMED_GUESS"
+        CORRECTED_GUESS = "CORRECTED_GUESS"
+        NEW_ANSWER = "NEW_ANSWER"
+        CHANGED_OUR_VALUE = "CHANGED_OUR_VALUE"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    student = models.ForeignKey(Membership, on_delete=models.CASCADE, related_name="+")
+    portal_form = models.ForeignKey(PortalForm, on_delete=models.CASCADE, related_name="+")
+    selector = models.CharField(max_length=300)
+    #: The field the latest packet named for this box (a hint's guess, or the
+    #: field of an entry the student changed). Vocabulary, never a value.
+    guessed_field = models.CharField(max_length=100, blank=True)
+    #: The student's own verified fact the typed value equals, "" for none.
+    matched_field = models.CharField(max_length=100, blank=True)
+    value = models.TextField()
+    outcome = models.CharField(max_length=20, choices=Outcome.choices)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("tenant", "id"), name="portal_answer_tenant_id_uniq")
         ]
 
 
@@ -643,5 +844,53 @@ class ReminderSent(TenantScopedModel):
             models.UniqueConstraint(fields=("tenant", "id"), name="remindersent_tenant_id_uniq"),
             models.UniqueConstraint(
                 fields=("tenant", "application", "rung"), name="remindersent_once_per_rung"
+            ),
+        ]
+
+
+class PreparedDocument(TenantScopedModel):
+    """One document of one application, prepared to the programme's file rules
+    (plan 4). `slot` names what it replaces: "CV:<draft id>", "DIPLOMA:<upload
+    id>", "DIPLOMA" for all diplomas merged, or "EVERY_DOCUMENT" for the whole
+    application. Served only while `inputs_digest` matches the current sources
+    and rules (apps.portals.prepare.current_prepared)."""
+
+    class State(models.TextChoices):
+        READY = "READY", "Ready"
+        CANNOT_FIT = "CANNOT_FIT", "Cannot fit the rules"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    #: CASCADE: a per-application copy, rebuildable; removing an untouched card
+    #: (applications.remove_application) must not be blocked by it.
+    application = models.ForeignKey(
+        Application, on_delete=models.CASCADE, related_name="prepared_documents"
+    )
+    student = models.ForeignKey(
+        Membership, on_delete=models.PROTECT, related_name="prepared_documents"
+    )
+    slot = models.CharField(max_length=80)
+    document = models.CharField(max_length=32)
+    #: [{"source": "draft" | "upload", "id": "<uuid>"}], in the file's order.
+    sources = models.JSONField(default=list)
+    inputs_digest = models.CharField(max_length=64)
+    state = models.CharField(max_length=12, choices=State.choices)
+    #: Why it cannot fit: unreadable, encrypted, signed, pages, too_large,
+    #: too_large_to_return, image_too_large, active_content; or a note on a
+    #: READY file (name_needs_name_parts).
+    reason = models.CharField(max_length=40, blank=True)
+    filename = models.CharField(max_length=100, blank=True)
+    content_type = models.CharField(max_length=40, blank=True)
+    byte_size = models.PositiveIntegerField(null=True, blank=True)
+    object_key = models.CharField(max_length=300, blank=True)
+    #: The S3 version id of that object, so a replaced copy is deleted exactly.
+    object_version = models.CharField(max_length=1024, blank=True)
+    #: auto_now: the last time this slot was prepared.
+    prepared_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("tenant", "id"), name="prepareddoc_tenant_id_uniq"),
+            models.UniqueConstraint(
+                fields=("application", "slot"), name="prepareddoc_one_per_slot"
             ),
         ]

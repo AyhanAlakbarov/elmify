@@ -1143,3 +1143,184 @@ def test_a_provider_string_never_becomes_a_city(source, snapshot) -> None:
     assert result.program.city == ""
     assert result.program.campus_name == ""
     assert result.program.provider_text == "University of Belgrade; LUMSA; Örebro University"
+
+
+def test_write_catalog_entry_creates_cost_components_and_feeds_program_facts(
+    source: OfficialSource, snapshot: OfficialSourceSnapshot
+) -> None:
+    from apps.funding.facts import program_facts as build_program_facts
+    from apps.funding.models import CostComponent, CostComponentEvidenceClaim
+
+    claims = ExtractedClaims(
+        duration_months=24,
+        teaching_languages=(
+            TeachingLanguageClaim(language="English", evidence="Taught entirely in English."),
+        ),
+        fees=(
+            MoneyClaim(
+                label="International tuition fee",
+                amount=Decimal("3000.00"),
+                currency="EUR",
+                period="annual",
+                evidence="The international tuition fee is 3000.00 EUR per year.",
+            ),
+            MoneyClaim(
+                label="Semester contribution",
+                amount=Decimal("150.00"),
+                currency="EUR",
+                period="semester",
+                evidence="A semester contribution of 150.00 EUR is due each semester.",
+            ),
+        ),
+        costs=(
+            MoneyClaim(
+                label="Student housing",
+                amount=Decimal("450.00"),
+                currency="EUR",
+                period="monthly",
+                evidence="Student housing costs 450.00 EUR per month.",
+            ),
+        ),
+        application_fee=MoneyClaim(
+            label="Application fee",
+            amount=Decimal("75.00"),
+            currency="EUR",
+            period="one_off",
+            evidence="A non-refundable application fee of 75.00 EUR applies.",
+        ),
+        confidence=0.9,
+    )
+
+    result = write_catalog_entry(
+        lead=_official_lead(), claims=claims, source=source, snapshot=snapshot
+    )
+
+    assert result is not None
+    components = list(
+        CostComponent.objects.filter(program=result.program).order_by("kind", "amount")
+    )
+    assert [
+        (c.kind, c.amount, c.currency, c.period) for c in components
+    ] == [
+        ("APPLICATION_FEE", Decimal("75.00"), "EUR", "ONE_OFF"),
+        ("HOUSING", Decimal("450.00"), "EUR", "MONTHLY"),
+        ("TUITION", Decimal("3000.00"), "EUR", "ANNUAL"),
+    ]
+    for component in components:
+        assert CostComponentEvidenceClaim.objects.filter(cost_component=component).count() == 1
+
+    facts = build_program_facts(result.program, costs=components, benefits=(), rules=())
+    assert [
+        (item.kind, item.amount, item.currency, item.period)
+        for item in facts.cost_components
+    ] == [
+        ("APPLICATION_FEE", Decimal("75.00"), "EUR", "ONE_OFF"),
+        ("HOUSING", Decimal("450.00"), "EUR", "MONTHLY"),
+        ("TUITION", Decimal("3000.00"), "EUR", "ANNUAL"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "bad_title",
+    [
+        "BSc in Computer Science",
+        "Bachelor of Arts in Economics",
+        "Undergraduate Programme in Law",
+        "PhD in Artificial Intelligence",
+        "Doctoral Programme in Physics",
+    ],
+)
+def test_resolve_program_refuses_non_masters_titles_and_non_masters_seeds(
+    source, snapshot, bad_title: str
+) -> None:
+    lead = ResearchLead.from_url(
+        "https://www.utn.de/en/study/programme", source_type="PROGRAM", funding_family=""
+    )
+    claims = ExtractedClaims(
+        institution_name="University of Technology Nuremberg",
+        program_name=bad_title,
+        city="Nuremberg",
+        country_code="DE",
+        duration_months=24,
+        teaching_languages=(
+            TeachingLanguageClaim(language="English", evidence="Taught in English."),
+        ),
+        confidence=0.9,
+    )
+    assert write_catalog_entry(lead=lead, claims=claims, source=source, snapshot=snapshot) is None
+
+    # A joint Master/PhD title that includes a Master's marker IS allowed
+    joint_claims = claims.model_copy(update={"program_name": "Integrated MSc and PhD in Robotics"})
+    res = write_catalog_entry(lead=lead, claims=joint_claims, source=source, snapshot=snapshot)
+    assert res is not None
+    assert res.program.degree_level == "MASTER"
+
+
+def test_award_serve_gates_reject_explicit_non_masters_scholarship_titles() -> None:
+    from dataclasses import replace
+
+    from apps.research.card_funding.card import AwardCard, Card, Field
+    from apps.research.card_funding.store import is_servable_award
+    from apps.research.funding_judge import FundingDecision
+    from apps.research.funding_reader import _served
+
+    lead = ResearchLead.from_url(
+        "https://www.utn.de/en/study/scholarships",
+        source_type="INSTITUTION",
+        funding_family="UNIVERSITY_WIDE",
+    )
+    base_decision = FundingDecision(
+        kind="I1_UNIVERSITY_WIDE",
+        scope="INSTITUTION",
+        offered="YES",
+        internationals_included="YES",
+        nationality_shape="OPEN",
+        route="STUDENT_APPLIES_SEPARATELY",
+        money_form="GRANT",
+        holder="INSTITUTION",
+        tuition="FULL",
+        living="PARTIAL",
+        extras=(),
+        obligation=(),
+        agreement="AGREED",
+        quotes=("Full tuition PhD Research Fellowship.",),
+        name="PhD Research Fellowship",
+        disputed=(),
+        heading="Fellowships",
+    )
+    assert _served(base_decision, lead) is False
+
+    joint_decision = replace(base_decision, name="Master's and PhD Research Fellowship")
+    assert _served(joint_decision, lead) is True
+
+    from apps.research.card_funding.parse import Value
+
+    shown_full = Field(
+        name="tuition_level",
+        state="shown",
+        values=(Value(value="full", quote=None, source="test", decisions=()),),
+    )
+    phd_award = AwardCard(
+        name="Undergraduate Merit Scholarship",
+        name_quote=None,
+        fields={"tuition_level": shown_full},
+        holds=(),
+    )
+    card = Card(
+        program_id=None,
+        source_url="https://www.utn.de/en/study/scholarships",
+        lang="en",
+        outcome="read",
+    )
+    assert is_servable_award(card, phd_award) is False
+
+    msc_award = AwardCard(
+        name="Graduate Merit Scholarship",
+        name_quote=None,
+        fields={"tuition_level": shown_full},
+        holds=(),
+    )
+    assert is_servable_award(card, msc_award) is True
+
+
+

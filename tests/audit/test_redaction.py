@@ -456,3 +456,51 @@ def test_a_write_time_failure_on_a_later_model_rolls_back_an_earlier_ones_update
     # write did not survive -- proving redact_student still needs that
     # wrapper and is not "safe enough" without it.
     assert student.application_email == "amina@example.test"
+
+
+def test_a_waiting_first_searchs_saved_place_is_erased_with_the_student(
+    agency_a, django_user_model
+):
+    from datetime import date
+    from decimal import Decimal
+
+    from apps.research.models import SearchTap, SearchWallet
+    from tests.funding.conftest import make_run
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "amina")
+        run = make_run(agency_a, student)
+        wallet = SearchWallet.objects.create(
+            student=student, intended_intake=date(2027, 9, 1), budget_usd=Decimal("100")
+        )
+        tap = SearchTap.objects.create(
+            student=student, wallet=wallet, run_id=run.id, allowance_usd=Decimal("5"),
+            resume={"queries": ["marine biology scholarships"]},
+        )
+
+        redact_student(tenant_id=agency_a.id, student_id=student.id)
+
+        tap.refresh_from_db()
+    assert tap.resume == {}
+
+
+def test_redaction_empties_draft_warnings_and_applied_fixes(agency_a, django_user_model):
+    """Both JSON fields can quote the student's own CV entries or gap dates."""
+    from apps.documents.models import DocumentDraft
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "amina-warn")
+        draft = DocumentDraft.objects.create(
+            tenant=agency_a,
+            student=student,
+            kind=DocumentDraft.Kind.CV,
+            version=1,
+            content={"personal_information": {"full_name": "Amina"}},
+            render_warnings=[{"rule_id": "R-031", "detail": "no signature"}],
+            applied_fixes=[{"kind": "left_out", "item": "First-aid course"}],
+        )
+        redact_student(tenant_id=agency_a.id, student_id=student.id)
+        draft.refresh_from_db()
+    assert draft.render_warnings == {}
+    assert draft.applied_fixes == {}
+

@@ -379,8 +379,11 @@ def test_opportunity_program_endpoint_pair_is_unique(constrained_rows) -> None:
 @pytest.mark.django_db
 @pytest.mark.parametrize("statement", ["UPDATE", "DELETE"])
 def test_profile_history_is_append_only(constrained_rows, statement) -> None:
+    # A content edit, not '{}': blanking the snapshot is erasure's one admitted
+    # UPDATE (accounts/0006, tests/audit/test_profile_version_erasure.py).
     sql = (
-        "UPDATE public.accounts_studentprofileversion SET snapshot = '{}'::jsonb WHERE id = %s"
+        "UPDATE public.accounts_studentprofileversion "
+        "SET snapshot = '{\"edited\": true}'::jsonb WHERE id = %s"
         if statement == "UPDATE"
         else "DELETE FROM public.accounts_studentprofileversion WHERE id = %s"
     )

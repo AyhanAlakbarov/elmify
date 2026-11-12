@@ -57,6 +57,7 @@ from .models import (
 )
 from .names import tokens
 from .provenance import Reason, Recognition
+from .reader import _document as _parse_html
 from .ror import RorFacts
 from .services import DomainBusy, acquire_domain_lease
 from .snapshot import ObjectStore
@@ -143,7 +144,7 @@ def read_sources(path: Path = SOURCES, registry: Path = REGISTRY) -> tuple[Prove
 
 def readable_page(page: FetchedPage) -> bool:
     """A page with bytes a caller may read. UNCHANGED carries its body too
-    (fetch/__init__.py, `_CARRIES_BYTES`). Not `fetch.types.usable`, which asks
+    (fetch/__init__.py, `CARRIES_BYTES`). Not `fetch.types.usable`, which asks
     whether raw vendor bytes are a document at all."""
     return bool(page.body) and (page.ok or page.outcome == Outcome.UNCHANGED)
 
@@ -452,15 +453,6 @@ _IN_REGION = (
     f"[ancestor::*[@role='banner' or @role='contentinfo']{_PAGE_LEVEL}"
     f" or ancestor::header{_PAGE_LEVEL} or ancestor::footer{_PAGE_LEVEL}]"
 )
-
-
-def _parse_html(body: bytes) -> Any:
-    """UTF-8 first, as reader._document does: lxml assumes Latin-1 for bytes
-    with no charset, and vendor bodies are UTF-8 (measured, PR #155)."""
-    try:
-        return lxml.html.document_fromstring(body.decode("utf-8"))
-    except (UnicodeDecodeError, ValueError):
-        return lxml.html.document_fromstring(body)
 
 
 def _links_to_root(img: Any, domain: str) -> bool:

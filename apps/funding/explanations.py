@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass
 from typing import cast
 
@@ -16,6 +17,8 @@ from apps.research.extraction import (
     privacy_safe_identifier,
     response_metadata,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ExplanationDraft(BaseModel):
@@ -107,7 +110,12 @@ def draft_explanation(
             max_output_tokens=1_000,
             store=False,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "draft_explanation: OpenAI responses.parse failed for model %s: %s",
+            model_id,
+            exc,
+        )
         return _fallback(model_id, "model_failure")
 
     parsed = getattr(response, "output_parsed", None)
@@ -120,7 +128,12 @@ def draft_explanation(
             if isinstance(parsed, ExplanationDraft)
             else ExplanationDraft.model_validate(parsed)
         )
-    except ValidationError:
+    except ValidationError as exc:
+        logger.warning(
+            "draft_explanation: ExplanationDraft.model_validate failed for model %s: %s",
+            model_id,
+            exc,
+        )
         return _fallback(model_id, "malformed_output")
     return ExplanationResult(
         draft=draft,

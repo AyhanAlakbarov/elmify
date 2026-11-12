@@ -5,7 +5,7 @@ from django.db import IntegrityError
 from pydantic import ValidationError
 
 from apps.accounts.consultation import correction_key
-from apps.accounts.models import StudentProfileVersion
+from apps.accounts.models import ConsultationDraftRecord, StudentProfileVersion
 from apps.funding.models import RecommendationRun
 from apps.tenancy.context import tenant_scope
 from tests.acceptance.helpers import complete_consultation, confirm_consultation
@@ -13,7 +13,7 @@ from tests.acceptance.helpers import complete_consultation, confirm_consultation
 
 @pytest.mark.frontend
 @pytest.mark.django_db(transaction=True)
-def test_first_consultation_answer_is_stored_only_in_the_bound_session(
+def test_first_consultation_answer_is_stored_for_the_student(
     client, domain_a, membership_a, user_a
 ) -> None:
     client.force_login(user_a)
@@ -25,7 +25,9 @@ def test_first_consultation_answer_is_stored_only_in_the_bound_session(
     )
 
     assert response.status_code == 200
-    assert client.session[f"consultation:{domain_a.agency_id}:{membership_a.id}"] == {
+    with tenant_scope(domain_a.agency_id):
+        stored = ConsultationDraftRecord.objects.get(student=membership_a).envelope
+    assert stored == {
         "tenant_id": str(domain_a.agency_id),
         "membership_id": str(membership_a.id),
         "answers": {"nationality": "AZ"},
@@ -38,24 +40,26 @@ def test_first_consultation_answer_is_stored_only_in_the_bound_session(
 # "AZE": the field's own constraint (two letters) holds on a stored draft too
 # (Task 18 minor) -- the Annotated metadata, not just the bare type.
 @pytest.mark.parametrize("nationality", [" AZ ", "AZE"])
-def test_noncanonical_session_draft_is_discarded(
+def test_noncanonical_stored_draft_is_discarded(
     client, domain_a, membership_a, user_a, nationality
 ) -> None:
     client.force_login(user_a)
-    key = f"consultation:{domain_a.agency_id}:{membership_a.id}"
-    session = client.session
-    session[key] = {
-        "tenant_id": str(domain_a.agency_id),
-        "membership_id": str(membership_a.id),
-        "answers": {"nationality": nationality},
-    }
-    session.save()
+    with tenant_scope(domain_a.agency_id):
+        ConsultationDraftRecord.objects.create(
+            student=membership_a,
+            envelope={
+                "tenant_id": str(domain_a.agency_id),
+                "membership_id": str(membership_a.id),
+                "answers": {"nationality": nationality},
+            },
+        )
 
     response = client.get("/student/profile/", HTTP_HOST=domain_a.host)
 
     assert response.status_code == 200
     assert b"nationality" in response.content
-    assert key not in client.session
+    with tenant_scope(domain_a.agency_id):
+        assert not ConsultationDraftRecord.objects.filter(student=membership_a).exists()
 
 
 def test_profile_duplicate_error_identifies_its_correction_question() -> None:
@@ -151,10 +155,9 @@ def test_unpaid_confirm_with_a_schema_invalid_draft_is_402_not_500(
     complete_consultation(client, host=domain_a.host)
     from apps.accounts.consultation import read_draft, write_draft
 
-    session = client.session
-    draft = read_draft(session, tenant_id=domain_a.agency_id, membership_id=membership_a.id)
-    write_draft(session, draft.with_answer("target_field", "x" * 201))
-    session.save()
+    with tenant_scope(domain_a.agency_id):
+        draft = read_draft(tenant_id=domain_a.agency_id, membership_id=membership_a.id)
+        write_draft(draft.with_answer("target_field", "x" * 201))
 
     response = confirm_consultation(client, host=domain_a.host)
 
@@ -202,7 +205,8 @@ def test_failed_run_creation_keeps_the_draft_without_a_profile(
     with tenant_scope(domain_a.agency_id):
         assert StudentProfileVersion.objects.count() == 0
         assert RecommendationRun.objects.count() == 0
-    assert any(key.startswith("consultation:") for key in client.session.keys())
+    with tenant_scope(domain_a.agency_id):
+        assert ConsultationDraftRecord.objects.filter(student=membership_a).exists()
 
 
 def test_the_transcript_questions_come_after_every_other_question_but_the_notes():
@@ -229,6 +233,269 @@ def test_the_review_step_reads_structured_answers_as_text(
     assert "{" not in body.split("Check your answers", 1)[1].split("</dl>", 1)[0]
 
 
+def _late_reading(domain, membership):
+    from apps.concierge.documents import register
+    from apps.documents.models import TranscriptReading
+
+    with tenant_scope(domain.agency_id):
+        document = register(domain.agency_id, membership.id, kind="TRANSCRIPT")
+        return TranscriptReading.objects.create(
+            student=membership,
+            document=document,
+            record={
+                "institution": "Bakı Dövlət Universiteti", "country_code": "AZ",
+                "qualification": "Bakalavr", "field": "Kimya", "grade": "88",
+                "grading_scale": "0-100", "completed_on": "2026-06-30",
+                "expected_completion": None,
+                "courses": [{"title": "Üzvi kimya", "ects": "6.00", "grade": "91",
+                             "in_progress": False}],
+            },
+        )
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_reading_that_arrives_late_is_offered_and_can_be_used(
+    client, domain_a, membership_a, user_a
+) -> None:
+    client.force_login(user_a)
+    complete_consultation(client, host=domain_a.host)
+    _late_reading(domain_a, membership_a)
+
+    review = client.get("/student/profile/", HTTP_HOST=domain_a.host).content.decode()
+    assert "Your transcript has been read" in review
+
+    used = client.post(
+        "/student/profile/", {"action": "use_reading"}, HTTP_HOST=domain_a.host
+    ).content.decode()
+    assert "Bakı Dövlət Universiteti" in used
+    assert "Your transcript has been read" not in used
+
+
+@pytest.mark.django_db(transaction=True)
+def test_declining_a_late_reading_keeps_the_typed_degree(
+    client, domain_a, membership_a, user_a, paid_cycle_a
+) -> None:
+    client.force_login(user_a)
+    complete_consultation(client, host=domain_a.host)
+    reading = _late_reading(domain_a, membership_a)
+
+    confirm_consultation(client, host=domain_a.host)
+
+    with tenant_scope(domain_a.agency_id):
+        profile = StudentProfileVersion.objects.get(student=membership_a)
+        reading.refresh_from_db()
+    assert profile.snapshot["academic_history"][0]["institution"] == "Baku State University"
+    assert reading.accepted is None
+
+
+@pytest.mark.frontend
+@pytest.mark.django_db(transaction=True)
+def test_back_and_review_change_actions_allow_editing_answers(
+    client, domain_a, membership_a, user_a
+) -> None:
+    client.force_login(user_a)
+    client.post(
+        "/student/profile/",
+        {"key": "nationality", "value": "AZ"},
+        HTTP_HOST=domain_a.host,
+    )
+    step2 = client.get("/student/profile/", HTTP_HOST=domain_a.host).content.decode()
+    assert "Where do you live now?" in step2
+    assert 'value="back"' in step2
+
+    back_resp = client.post(
+        "/student/profile/",
+        {"action": "back"},
+        HTTP_HOST=domain_a.host,
+    ).content.decode()
+    assert "Your nationality" in back_resp
+    assert 'value="AZ"' in back_resp
+
+    review_body = complete_consultation(client, host=domain_a.host).content.decode()
+    assert 'value="correct"' in review_body
+    change_resp = client.post(
+        "/student/profile/",
+        {"action": "correct", "key": "target_field"},
+        HTTP_HOST=domain_a.host,
+    ).content.decode()
+    assert "What do you want to study" in change_resp
+    assert 'value="Chemistry"' in change_resp
+
+    updated_review = client.post(
+        "/student/profile/",
+        {"key": "target_field", "value": "Chemical Engineering"},
+        HTTP_HOST=domain_a.host,
+    ).content.decode()
+    assert "Check your answers" in updated_review
+    assert "Chemical Engineering" in updated_review
+
+
+@pytest.mark.frontend
+@pytest.mark.django_db(transaction=True)
+def test_returning_student_with_finalized_profile_lands_on_review_to_edit_single_field(
+    client, domain_a, membership_a, monkeypatch, user_a, paid_cycle_a
+) -> None:
+    monkeypatch.setattr("apps.accounts.views.dispatch_recommendation_run", lambda **_kwargs: False)
+    client.force_login(user_a)
+    complete_consultation(client, host=domain_a.host)
+    confirm_consultation(client, host=domain_a.host)
+
+    # Revisiting /student/profile/ seeds from the latest StudentProfileVersion
+    revisit = client.get("/student/profile/", HTTP_HOST=domain_a.host).content.decode()
+    assert "Check your answers" in revisit
+    assert 'value="correct"' in revisit
+
+    client.post(
+        "/student/profile/",
+        {"action": "correct", "key": "allowed_countries"},
+        HTTP_HOST=domain_a.host,
+    )
+    edited = client.post(
+        "/student/profile/",
+        {"key": "allowed_countries", "value": "DE, FR, NL"},
+        HTTP_HOST=domain_a.host,
+    ).content.decode()
+    assert "Check your answers" in edited
+    assert "DE; FR; NL" in edited
+
+    resp = confirm_consultation(client, host=domain_a.host)
+    assert resp.status_code == 302
+    with tenant_scope(domain_a.agency_id):
+        latest = (
+            StudentProfileVersion.objects.filter(student=membership_a)
+            .order_by("-version")
+            .first()
+        )
+        assert latest is not None
+        assert latest.version == 2
+        assert latest.snapshot["allowed_countries"] == ["DE", "FR", "NL"]
+
+
+@pytest.mark.frontend
+@pytest.mark.django_db(transaction=True)
+def test_money_step_defaults_currency_from_residence_or_prior_money_answer(
+    client, domain_a, membership_a, user_a
+) -> None:
+    from tests.acceptance.helpers import answer_post
+
+    client.force_login(user_a)
+    steps = (
+        ("nationality", "AZ"),
+        ("country_of_residence", "AZ"),
+        ("date_of_birth", "2002-05-01"),
+        ("target_field", "Chemistry"),
+        ("allowed_countries", "DE"),
+        ("excluded_countries", ""),
+        ("intended_intake", "2027-09-01"),
+        ("funding_dependency", "MANDATORY"),
+    )
+    resp = None
+    for k, v in steps:
+        resp = client.post("/student/profile/", answer_post(k, v), HTTP_HOST=domain_a.host)
+    assert resp is not None
+    budget_html = resp.content.decode()
+    assert "application_budget" in budget_html
+    assert 'value="AZN" selected' in budget_html
+
+    stretch_html = client.post(
+        "/student/profile/",
+        answer_post("application_budget", {"amount": "150.00", "currency": "GBP"}),
+        HTTP_HOST=domain_a.host,
+    ).content.decode()
+    assert "budget_stretch" in stretch_html
+    assert 'value="GBP" selected' in stretch_html
+
+
+@pytest.mark.frontend
+@pytest.mark.django_db(transaction=True)
+def test_returning_student_preserves_experience_and_validates_passport_nationality_continuity(
+    client, domain_a, membership_a, monkeypatch, user_a, paid_cycle_a
+) -> None:
+    from django.utils import timezone
+
+    from apps.accounts.profile_versions import create_profile_version
+    from apps.accounts.schemas import StudentProfileSnapshot
+    from apps.documents.models import VerifiedFact
+
+    monkeypatch.setattr("apps.accounts.views.dispatch_recommendation_run", lambda **_kwargs: False)
+    client.force_login(user_a)
+    complete_consultation(client, host=domain_a.host)
+    confirm_consultation(client, host=domain_a.host)
+
+    with tenant_scope(domain_a.agency_id):
+        v1 = StudentProfileVersion.objects.get(student=membership_a)
+        snap_with_exp = StudentProfileSnapshot.model_validate(
+            {
+                **v1.snapshot,
+                "experience": [{"kind": "WORK", "summary": "Chemist", "months": 18}],
+            }
+        )
+        create_profile_version(student=membership_a, snapshot=snap_with_exp)
+
+    # Revisiting /student/profile/ and attempting an unverified DOB change shows a clear message
+    client.get("/student/profile/", HTTP_HOST=domain_a.host)
+    client.post(
+        "/student/profile/",
+        {"action": "correct", "key": "date_of_birth"},
+        HTTP_HOST=domain_a.host,
+    )
+    client.post(
+        "/student/profile/",
+        {"key": "date_of_birth", "value": "1999-01-01"},
+        HTTP_HOST=domain_a.host,
+    )
+    bad_confirm = confirm_consultation(client, host=domain_a.host)
+    assert bad_confirm.status_code == 400
+    assert b"does not match your verified profile records" in bad_confirm.content
+
+    # Restore DOB, add a confirmed passport IDENTITY fact with full country name "Germany",
+    # and update nationality to "DE": continuity holds and experience is preserved.
+    with tenant_scope(domain_a.agency_id):
+        VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.IDENTITY,
+            payload={"citizenship": "Germany"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:99999999-9999-9999-9999-999999999999",
+            confirmed_by=membership_a,
+            confirmed_at=timezone.now(),
+            created_by=membership_a,
+        )
+    client.post(
+        "/student/profile/",
+        {"action": "correct", "key": "date_of_birth"},
+        HTTP_HOST=domain_a.host,
+    )
+    client.post(
+        "/student/profile/",
+        {"key": "date_of_birth", "value": "2002-05-01"},
+        HTTP_HOST=domain_a.host,
+    )
+    client.post(
+        "/student/profile/",
+        {"action": "correct", "key": "nationality"},
+        HTTP_HOST=domain_a.host,
+    )
+    client.post(
+        "/student/profile/",
+        {"key": "nationality", "value": "Germany"},
+        HTTP_HOST=domain_a.host,
+    )
+    ok_confirm = confirm_consultation(client, host=domain_a.host)
+    assert ok_confirm.status_code == 302
+    with tenant_scope(domain_a.agency_id):
+        latest = (
+            StudentProfileVersion.objects.filter(student=membership_a)
+            .order_by("-version")
+            .first()
+        )
+        assert latest is not None
+        assert latest.snapshot["nationality"] == "DE"
+        assert latest.snapshot["experience"] == [
+            {"kind": "WORK", "summary": "Chemist", "months": 18}
+        ]
+
+
 @pytest.mark.django_db
 def test_a_question_sent_back_by_the_review_says_why(client, domain_a, user_a, membership_a):
     """Every answer passes alone, but together they do not (a certificate in a
@@ -247,6 +514,7 @@ def test_a_question_sent_back_by_the_review_says_why(client, domain_a, user_a, m
         ("intended_intake", "2027-09-01"),
         ("funding_dependency", "MANDATORY"),
         ("application_budget", {"amount": "150.00", "currency": "EUR"}),
+        ("budget_stretch", ""),
         ("career_intent", "PHD"),
         ("acceptable_teaching_languages", "English"),
         (

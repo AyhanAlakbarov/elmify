@@ -232,8 +232,8 @@ Run after the build, on a throwaway database, in the foreground (background jobs
 this machine), with both keys sourced:
 
 ```
-POSTGRES_DB=tehsil_funding_precision DATABASE_ROLE=migration uv run python manage.py migrate -v0
-POSTGRES_DB=tehsil_funding_precision DATABASE_ROLE=migration uv run python manage.py discover \
+POSTGRES_DB=elmify_funding_precision DATABASE_ROLE=migration uv run python manage.py migrate -v0
+POSTGRES_DB=elmify_funding_precision DATABASE_ROLE=migration uv run python manage.py discover \
   --field any --country XX --tenant <agency id> --max-leads 200 --cycle 2027 --funding
 ```
 

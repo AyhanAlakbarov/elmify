@@ -1333,3 +1333,70 @@ def test_readable_text_still_honours_a_declared_legacy_charset():
 def test_html_lang_reads_a_utf8_page_without_a_charset():
     body = '<html lang="az"><body><main><p>Dövlət Proqramı</p></main></body></html>'.encode()
     assert html_lang(body) == "az"
+
+
+def test_scanned_pdf_multimodal_ocr_fallback_via_gemini_flash_openrouter():
+    from apps.research.pdf import (
+        DEFAULT_PDF_VISION_MODEL,
+        ocr_scanned_pdf_via_openrouter,
+        pdf_text_or_ocr,
+    )
+
+    scanned_bytes = _pdf("")  # valid %PDF with 0 characters in text layer
+    captured: list[dict[str, object]] = []
+
+    def _fake_post(
+        url: str, *, payload: dict[str, object], headers: dict[str, str], read_timeout: float
+    ):
+        captured.append({"url": url, "payload": payload, "headers": headers})
+        return {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": (
+                            "# Study in Saudi Master's Scholarship\n"
+                            "- Full tuition waiver and monthly stipend of 900 SAR.\n"
+                            "- Applicants must hold a Bachelor's degree."
+                        )
+                    },
+                }
+            ]
+        }
+
+    ocr_text = ocr_scanned_pdf_via_openrouter(
+        scanned_bytes,
+        source_key="sa-decree-pdf",
+        api_key="sk-or-pdf-test",
+        post=_fake_post,
+    )
+    assert "Full tuition waiver and monthly stipend of 900 SAR." in ocr_text
+    assert len(captured) == 1
+    sent_payload = captured[0]["payload"]
+    assert sent_payload["model"] == DEFAULT_PDF_VISION_MODEL
+    assert sent_payload["max_tokens"] == 4000
+    assert "DATA" in str(sent_payload["messages"])
+
+    # `pdf_text_or_ocr` and `readable_text(..., ocr_fallback=...)` invoke fallback on scanned PDF
+    via_helper = pdf_text_or_ocr(scanned_bytes, ocr_fallback=lambda _b: ocr_text)
+    assert "Full tuition waiver" in via_helper
+    fetched_pdf = FetchResult(
+        "https://studyinsaudi.sa/call.pdf", (), "application/pdf", scanned_bytes
+    )
+    assert readable_text(fetched_pdf) == ""
+    assert "Full tuition waiver" in readable_text(
+        fetched_pdf, ocr_fallback=lambda _b: ocr_text
+    )
+
+    # Non-scanned PDF with sufficient text does not call OCR fallback
+    digital_pdf = _pdf("Applicants must hold a Bachelor's degree in chemistry or physics. " * 3)
+    called_fallback = False
+
+    def _should_not_run(_b: bytes) -> str:
+        nonlocal called_fallback
+        called_fallback = True
+        return "fallback"
+
+    assert "Applicants must hold" in pdf_text_or_ocr(digital_pdf, ocr_fallback=_should_not_run)
+    assert called_fallback is False
+

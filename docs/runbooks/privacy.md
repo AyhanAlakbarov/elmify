@@ -32,7 +32,7 @@ roles may only read `privacy_legaldocument`.
   line is part of the text students see. Remove it, in a material publish, once the lawyer has
   approved the translation.
 - The English texts say "Company name and address: to be completed before launch" and use the
-  placeholder address `privacy@tehsil.example`. Replace both before the first real student signs up.
+  placeholder address `privacy@elmify.example`. Replace both before the first real student signs up.
 - The agency notice contains the literal `{{ agency }}`; the legal page fills in the agency's name.
 
 ## The `privacy@` mailbox

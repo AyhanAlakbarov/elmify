@@ -13,7 +13,7 @@
 
 ## Global Constraints
 
-- **`export POSTGRES_DB=tehsil_erasure_console`** before running tests.
+- **`export POSTGRES_DB=elmify_erasure_console`** before running tests.
 - **Never run `ruff format`.** Lint-only repo.
 - **The full gate, as CI runs it:**
   ```
@@ -135,7 +135,7 @@ def test_the_view_absorbs_a_duplicate_when_the_lock_does_not(
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-export POSTGRES_DB=tehsil_erasure_console
+export POSTGRES_DB=elmify_erasure_console
 uv run pytest tests/audit/test_deletion_views.py -q -k "second_open or closed_request or double_submit"
 ```
 
@@ -1197,7 +1197,7 @@ reaches `display_name` and puts an erased person's real name back on the agency'
 - [ ] **Step 2: Run every check CI runs**
 
 ```bash
-export POSTGRES_DB=tehsil_erasure_console
+export POSTGRES_DB=elmify_erasure_console
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config

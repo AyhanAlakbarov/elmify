@@ -1,0 +1,10 @@
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col">Course</th><th scope="col">Credits</th><th scope="col">Grade</th><th scope="col"></th></tr></thead>
+  <tbody>
+    {% for row, changed, unread in courses %}
+      <tr><td>{{ row.title }}</td><td>{{ row.credits }}</td><td>{{ row.grade }}</td><td>{% if changed %}you changed this{% endif %}{% if unread %}{% if changed %}; {% endif %}you couldn't read this; someone will check it{% endif %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>

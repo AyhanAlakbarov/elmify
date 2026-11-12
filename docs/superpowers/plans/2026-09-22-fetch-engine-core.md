@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-fetch-engine-design.md` — this plan is its §17 plan 1 ("Engine core"). §17 plan 2 (site jobs: map, crawl, `/agent`, monitors) is a separate plan and nothing here anticipates it. Read the spec's §4 (the ladder), §5 (`HostProfile`), §6 (the outcomes), §9 (cost) and §10 (safety) before starting; they are the argument for every task below.
 
-**Base branch:** `claude/fetch-spec-refresh`, rebased on 2026-09-23 onto `origin/master` at 40f8400 (which already carries the spec). Work in a fresh worktree: `git worktree add ../fetch-engine claude/fetch-spec-refresh`. Test database: `POSTGRES_DB=tehsil_fetch_engine` — never share a test DB between sessions. **Read the Reconciliation section first: master already carries part of this plan.**
+**Base branch:** `claude/fetch-spec-refresh`, rebased on 2026-09-23 onto `origin/master` at 40f8400 (which already carries the spec). Work in a fresh worktree: `git worktree add ../fetch-engine claude/fetch-spec-refresh`. Test database: `POSTGRES_DB=elmify_fetch_engine` — never share a test DB between sessions. **Read the Reconciliation section first: master already carries part of this plan.**
 
 ## Reconciliation with master, 2026-09-23 — read before any task
 
@@ -125,7 +125,7 @@ one task per subagent, each briefed with this section and the master module it e
 - **No vendor ever fetches `europa.eu`, a contracted API, or a portal.** `apps/documents/europass.py`'s own `_request` (student PII, pinned address, DNS-rebinding guard) and `egress.fetch_json_api` (our own API keys) are untouched by every task here.
 - **`fetched_via == "EGRESS"` remains reachable only for `europa.eu`,** and a test asserts no other host uses it.
 - **Never run `ruff format`** in this repo — it is a lint-only gate and `ruff format` churns 26 files (CLAUDE.md).
-- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_fetch_engine uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
+- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=elmify_fetch_engine uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
 - **RLS is verified against a `NOBYPASSRLS` role or it is not verified.** The test role bypasses RLS, so a passing test proves nothing about a policy; use the `runtime_connection` fixture (`tests/tenancy/test_database_isolation.py:80`) or `rls_enforced_orm` (`tests/conftest.py:58`). CLAUDE.md, "Row-level security: what actually filters a query". **Before Task 2's test can use `runtime_connection` at all, it has to move:** it is defined inside `tests/tenancy/test_database_isolation.py`, so it is invisible from `tests/research/`, and it grants `SELECT` on `tenancy_membership` alone, so a new table is invisible to the role whatever its policy says — the test would pass on a permission error. `docs/superpowers/plans/2026-09-23-decision-layer-and-rule-grammar.md` Task 2 Step 0 carries the fix (move it to `tests/conftest.py`, widen the grant to the schema); whichever plan runs first does it.
 - **Ten of the eleven outcomes are values, not exceptions.** Only a programming error raises out of `fetch_page`. A caller that wants the old exception behaviour gets it from the compatibility wrapper in Task 10, not from the ladder.
 
@@ -266,7 +266,7 @@ def test_an_unreadable_page_is_not_ok_but_is_not_an_exception():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_types.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_types.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.fetch'`
 
 - [ ] **Step 3: Write minimal implementation**
@@ -457,7 +457,7 @@ FETCH_REPROBE_DAYS = int(os.getenv("FETCH_REPROBE_DAYS", "30"))
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_types.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_types.py -v`
 Expected: 9 passed
 
 - [ ] **Step 5: Verify the settings load and the defaults are the documented plan**
@@ -564,7 +564,7 @@ def test_the_attempt_index_supports_the_retry_sweep():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_models_rls.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_models_rls.py -v`
 Expected: FAIL with `ImportError: cannot import name 'HostProfile'`
 
 - [ ] **Step 3: Write the models**
@@ -652,7 +652,7 @@ class FetchAttempt(models.Model):
 
 - [ ] **Step 4: Generate the schema migration**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run python manage.py makemigrations research --name fetch_engine`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run python manage.py makemigrations research --name fetch_engine`
 Expected: creates `apps/research/migrations/0004_fetch_engine.py` with two `CreateModel` operations.
 
 - [ ] **Step 5: Write the RLS migration by hand**
@@ -710,12 +710,12 @@ In `tests/tenancy/test_database_isolation.py`, add `"research_hostprofile"` and 
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_models_rls.py tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_models_rls.py tests/tenancy/test_database_isolation.py -v`
 Expected: all pass. If `test_both_tables_are_shared_catalog_under_a_real_policy` fails on the write, read the failure: a *successful* insert means the policy is missing, which is the bug this test exists to catch.
 
 - [ ] **Step 8: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_fetch_engine uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_fetch_engine uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean
 
 - [ ] **Step 9: Commit**
@@ -970,7 +970,7 @@ def test_rung_two_asks_for_actions_and_costs_more():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_firecrawl.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_firecrawl.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.fetch.firecrawl'`
 
 - [ ] **Step 3: Write the provider**
@@ -1171,7 +1171,7 @@ def scrape(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_firecrawl.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_firecrawl.py -v`
 Expected: 13 passed
 
 - [ ] **Step 5: Run the checks**
@@ -1354,7 +1354,7 @@ def test_transparent_bytes_skip_extraction_for_provenance():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_scrapedo.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_scrapedo.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.fetch.scrapedo'`
 
 - [ ] **Step 3: Write the provider**
@@ -1516,7 +1516,7 @@ def _result(url, outcome, rung, credits, reason, redirects, started, **extra) ->
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_scrapedo.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_scrapedo.py -v`
 Expected: 10 passed
 
 - [ ] **Step 5: Run the checks**
@@ -1681,7 +1681,7 @@ def test_the_archive_credits_are_carried_into_the_result():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_archive.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_archive.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.fetch.archive'`
 
 - [ ] **Step 3: Write the provider**
@@ -1791,7 +1791,7 @@ def latest_capture(url: str, *, api_key: str, now: datetime | None = None, fetch
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_archive.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_archive.py -v`
 Expected: 7 passed
 
 - [ ] **Step 5: Run the checks**
@@ -1882,7 +1882,7 @@ def test_spending_is_recorded_per_vendor_for_reconciliation():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_budget.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_budget.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.fetch.budget'`
 
 - [ ] **Step 3: Write the budget**
@@ -1954,7 +1954,7 @@ def default_budget(sweep_id: UUID | None = None) -> SweepBudget:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_budget.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_budget.py -v`
 Expected: 5 passed
 
 - [ ] **Step 5: Run the checks**
@@ -2224,7 +2224,7 @@ def test_bytes_purpose_goes_straight_to_the_transport_vendor():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_ladder.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_ladder.py -v`
 Expected: FAIL with `ImportError: cannot import name 'fetch_page'`
 
 - [ ] **Step 3: Write the ladder**
@@ -2468,7 +2468,7 @@ def _call(rung: int, url: str, *, tag, profile, providers, purpose="read") -> Fe
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_ladder.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_ladder.py -v`
 Expected: 14 passed
 
 - [ ] **Step 5: Run the checks**
@@ -2586,7 +2586,7 @@ def test_a_probe_from_rung_one_is_dated_even_when_it_fails():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_profile.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_profile.py -v`
 Expected: FAIL with `ImportError: cannot import name 'remember'`
 
 - [ ] **Step 3: Add the write-back**
@@ -2665,7 +2665,7 @@ and at the two terminal paths after the loop (the archive success, and the final
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_profile.py tests/research/test_fetch_ladder.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_profile.py tests/research/test_fetch_ladder.py -v`
 Expected: 21 passed (7 new plus Task 7's 14 still green)
 
 - [ ] **Step 5: Run the checks**
@@ -2789,7 +2789,7 @@ def test_the_blocked_source_reason_is_updated_not_frozen_at_the_first_one():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_delegation.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_delegation.py -v`
 Expected: FAIL — `AttributeError: <module 'apps.research.discovery'> has no attribute 'fetch_page'`
 
 - [ ] **Step 3: Delegate, and fix the diagnostics defect**
@@ -2891,14 +2891,14 @@ and that the call does not raise.
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/ tests/documents/test_program_rules.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/ tests/documents/test_program_rules.py -v`
 Expected: all pass. The existing `tests/research/test_discovery.py` cases that inject `plain_fetch`
 or `browser_render` now exercise the ignored parameters; update their assertions to monkeypatch
 `apps.research.discovery.fetch_page` instead, keeping one case per behaviour they were pinning.
 
 - [ ] **Step 6: Run the full suite and the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_fetch_engine uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_fetch_engine uv run pytest`
 Expected: all green. This is the first task where every caller runs on the new engine, so a failure
 here is a real regression in a caller, not a test-fixture problem.
 
@@ -3019,7 +3019,7 @@ def test_the_command_reports_what_it_did(monkeypatch, capsys):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_retry_command.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_retry_command.py -v`
 Expected: FAIL with `CommandError: Unknown command: 'retry_due_fetches'`
 
 - [ ] **Step 3: Write the command**
@@ -3079,7 +3079,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_retry_command.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_retry_command.py -v`
 Expected: 5 passed
 
 - [ ] **Step 5: Add the schedule to the infrastructure template**
@@ -3091,7 +3091,7 @@ first step), so a shorter rule only wakes to find nothing due.
 
 - [ ] **Step 6: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/infra/ tests/research/`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_fetch_engine uv run pytest tests/infra/ tests/research/`
 Expected: all clean
 
 - [ ] **Step 7: Commit**
@@ -3176,7 +3176,7 @@ def test_the_three_things_that_must_survive_a_literal_reading_survive():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_deletion.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_deletion.py -v`
 Expected: FAIL — the first three tests fail because the old path is still present.
 
 - [ ] **Step 3: Delete**
@@ -3207,7 +3207,7 @@ paragraph this replaced is in `git log` for the branch.
 
 - [ ] **Step 4: Run the full suite**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest`
 Expected: all pass. Expect to fix a handful of tests that constructed `FetchResult` fixtures for the
 deleted path — those become `FetchedPage` fixtures or monkeypatch `fetch_page`.
 
@@ -3265,7 +3265,7 @@ admit exactly `WebSecurityGroup`, `WorkerSecurityGroup` and `PortalSecurityGroup
 Excluded from a default run by `addopts = "-m 'not live'"`. Run deliberately:
 
     FIRECRAWL_API_KEY=... SCRAPEDO_API_KEY=... \
-    POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_live.py -m live -v
+    POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_live.py -m live -v
 
 It asserts the outcome CLASS and a credit CEILING per host, never content.
 Content changes when a university edits a page; the engine's job is to reach
@@ -3347,7 +3347,7 @@ def test_a_second_fetch_of_an_unchanged_page_is_free_of_a_reader_run():
 
 - [ ] **Step 2: Verify the gate is excluded from a default run**
 
-Run: `POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_live.py -v`
+Run: `POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_live.py -v`
 Expected: `14 deselected` — `addopts = "-m 'not live'"` keeps real money out of the default suite.
 
 - [ ] **Step 3: Remove the browser tier from the infrastructure**
@@ -3373,12 +3373,12 @@ its research-browser row, since that tier no longer exists.
 
 - [ ] **Step 5: Run everything**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_fetch_engine uv run pytest && uv run bandit -c pyproject.toml -r apps config && uv run pip-audit && POSTGRES_DB=tehsil_fetch_engine uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_fetch_engine uv run pytest && uv run bandit -c pyproject.toml -r apps config && uv run pip-audit && POSTGRES_DB=elmify_fetch_engine uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean.
 
 - [ ] **Step 6: Run the live gate once, deliberately, and record what it cost**
 
-Run: `FIRECRAWL_API_KEY=... SCRAPEDO_API_KEY=... POSTGRES_DB=tehsil_fetch_engine uv run pytest tests/research/test_fetch_live.py -m live -v`
+Run: `FIRECRAWL_API_KEY=... SCRAPEDO_API_KEY=... POSTGRES_DB=elmify_fetch_engine uv run pytest tests/research/test_fetch_live.py -m live -v`
 Expected: every host reaches an acceptable outcome inside its ceiling. Record the actual per-host
 credits in the PR description — that measurement is what the next tier decision rests on, and it is
 the first real number the engine produces.

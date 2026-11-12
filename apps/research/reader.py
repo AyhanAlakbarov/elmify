@@ -46,7 +46,7 @@ from .egress import FetchResult, SourceBlocked, UnsafeTarget, require_same_origi
 from .egress import OffSiteRedirect as OffSiteRedirect  # re-exported for callers
 from .extraction import ResponsesAPI, parsed_or_none, privacy_safe_identifier
 from .harvest import change_digest, content_digest
-from .pdf import PdfUnreadable, pdf_text
+from .pdf import PdfUnreadable, pdf_text, pdf_text_or_ocr
 from .snapshot import ObjectStore, archive_marker, persist_snapshot
 
 logger = logging.getLogger(__name__)
@@ -344,6 +344,7 @@ def readable_text(
     terms: re.Pattern[str] | None = _ADMISSION_TERMS,
     *,
     select_only_over_cap: bool = True,
+    ocr_fallback: Callable[[bytes], str] | None = None,
 ) -> str:
     """The part of a page worth reading, as structure rather than a run of prose.
 
@@ -388,6 +389,10 @@ def readable_text(
     content_type = fetched.content_type or "text/html"
     if content_type == "application/pdf" and fetched.body.startswith(b"%PDF"):
         try:
+            if ocr_fallback is not None:
+                return _capped(
+                    pdf_text_or_ocr(fetched.body, ocr_fallback=ocr_fallback).split("\n")
+                )
             return pdf_text(fetched.body)
         except PdfUnreadable:
             logger.warning("programme page is a PDF pypdf could not read")
@@ -569,7 +574,7 @@ _NOT_FOUND_PATH = re.compile(r"(?:^|/)(?:404|not[-_]?found|error)(?:\.[a-z0-9]+)
 #: A path no host serves, asked once per host to learn what that host says
 #: about a page that is not there. Fixed rather than random so the answer can
 #: be cached and a test double can recognise it.
-_CONTROL_PATH = "/tehsil-control-probe-8f3c1a0e-not-a-real-page"
+_CONTROL_PATH = "/elmify-control-probe-8f3c1a0e-not-a-real-page"
 #: A host's not-found page is a template, not a publication; a day is short
 #: enough to follow a redesign and long enough to cost one fetch per batch.
 _CONTROL_TTL_SECONDS = 24 * 60 * 60

@@ -172,3 +172,34 @@ def test_production_requires_shared_database_configuration(missing_key: str) -> 
 
     with pytest.raises(ImproperlyConfigured):
         database_config(environ, require_explicit_role=True)
+
+
+def test_each_checkout_gets_its_own_test_database_unless_postgres_db_is_set() -> None:
+    """Parallel worktrees used to share `test_elmify` and wedge each other."""
+    import os
+    import re
+
+    from django.conf import settings
+
+    from config.settings.database import per_checkout_test_database_name as name_for
+
+    long_worktree = Path("/w/.claude/worktrees/Agent-A405257507DB195B5" + "-x" * 40)
+    names = [
+        name_for({}, Path("/home/a/elmify")),
+        name_for({}, Path("/home/b/elmify")),  # same basename, other clone
+        name_for({}, long_worktree),
+        name_for({}, Path("/---")),  # nothing survives sanitising
+    ]
+
+    assert len(set(names)) == len(names)
+    for name in names:
+        assert name is not None
+        assert re.fullmatch(r"[a-z_][a-z0-9_]*", name), name
+        assert len(name.encode()) <= 54, name
+    assert names[0].startswith("test_elmify_elmify_")
+    # An explicit POSTGRES_DB wins: Django falls back to test_<POSTGRES_DB>.
+    assert name_for({"POSTGRES_DB": "elmify_mine"}, Path("/home/a/elmify")) is None
+    # And the suite itself runs under the derivation, not a shared name.
+    assert settings.DATABASES["default"]["TEST"]["NAME"] == name_for(
+        os.environ, settings.BASE_DIR
+    )

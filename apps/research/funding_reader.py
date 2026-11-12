@@ -15,6 +15,8 @@ from django.utils import timezone
 
 from apps.funding.card import AmountLine, AwardCard
 from apps.funding.models import (
+    BenefitRule,
+    BenefitRuleEvidenceClaim,
     FundingBenefit,
     FundingBenefitEvidenceClaim,
     FundingOpportunity,
@@ -27,6 +29,7 @@ from apps.funding.models import (
     Program,
 )
 
+from .catalog import is_non_masters_program_title
 from .cycle_verification import record_read_evidence
 from .discovery import ResearchLead, catalog_key
 from .funding_judge import DecidedAmount, FundingDecision
@@ -178,6 +181,7 @@ def _served(decision: FundingDecision, lead: ResearchLead) -> bool:
         decision.agreement == "AGREED"
         and lead.can_support_claim
         and decision.offered == "YES"
+        and not is_non_masters_program_title(decision.name)
         and bool(_benefit_kinds(decision) or decision.money_form != "UNSTATED")
     )
 
@@ -208,7 +212,10 @@ def write_funding_decision(
         raise ValueError("a POINTER writes no funding row")
     institution_scope = decision.scope == "INSTITUTION"
     if institution_scope and program.institution_id is None:
-        return None
+        if lead.one_programme_per_site or decision.kind != "I1_UNIVERSITY_WIDE":
+            institution_scope = False
+        else:
+            return None
     checked_at = now or timezone.now()
     scope_type = "INSTITUTION" if institution_scope else "PROGRAM"
     anchor_id = program.institution_id if institution_scope else program.id
@@ -230,6 +237,25 @@ def write_funding_decision(
         if not agreed and existing.agreement == "AGREED" and not same_page:
             # Many pages reach one key; a vaguer read of ANOTHER page must not
             # unserve an award a page stated clearly. Its own page may.
+            return existing
+        if (
+            existing.agreement == "AGREED"
+            and existing.suspension_quote
+            and decision.offered == "YES"
+            and decision.applies_to == "UNSTATED"
+            and decision.stated_on == "UNSTATED"
+            and not same_page
+        ):
+            # An undated general YES on another page (e.g. /overview) must not
+            # overwrite an explicit suspension recorded off /scholarships.
+            record_read_evidence(
+                existing,
+                decision,
+                url=snapshot.final_url or source.canonical_url,
+                sha256=snapshot.sha256,
+                at=checked_at.date(),
+                today=checked_at.date(),
+            )
             return existing
     opportunity, _created = FundingOpportunity.objects.update_or_create(
         canonical_key=canonical_key,
@@ -295,6 +321,8 @@ def _write_rows(
     # A re-read replaces the quotes. PROTECT FKs: joins, then benefits, then
     # claims -- whose ids must be collected before the joins go.
     old_claim_ids = list(opportunity.evidence_claims.values_list("id", flat=True))
+    BenefitRuleEvidenceClaim.objects.filter(benefit_rule__benefit__opportunity=opportunity).delete()
+    BenefitRule.objects.filter(benefit__opportunity=opportunity).delete()
     FundingBenefitEvidenceClaim.objects.filter(benefit__opportunity=opportunity).delete()
     FundingOpportunityEvidenceClaim.objects.filter(opportunity=opportunity).delete()
     FundingBenefit.objects.filter(opportunity=opportunity).delete()
@@ -328,6 +356,23 @@ def _write_rows(
         created.append(benefit)
     for amount in decision.amounts:
         _write_amount(opportunity, decision, amount, benefits=created, claims=claims)
+    if created and decision.conditions:
+        primary_benefit = created[0]
+        for cond in decision.conditions:
+            rule = BenefitRule.objects.create(
+                benefit=primary_benefit,
+                kind=BenefitRule.Kind.ELIGIBILITY,
+                key=cond.key,
+                operator=cond.operator,
+                value=cond.value[:200],
+                rule_text=cond.quote[:4_000],
+                scope_type=BenefitRule.Scope.GLOBAL,
+            )
+            matching_claims = [c for c in claims if c.claim == cond.quote] or claims
+            for claim in matching_claims:
+                BenefitRuleEvidenceClaim.objects.get_or_create(
+                    benefit_rule=rule, evidence_claim=claim
+                )
 
 
 def _write_amount(
@@ -407,14 +452,36 @@ def write_holder_decision(
         found_via=f"READER:{lead.discovered_by}"[:120] if lead.discovered_by else "READER",
     )
     checked_at = now or timezone.now()
+    agreed = decision.agreement == "AGREED"
     served = _served(decision, lead)
     canonical_key = catalog_key(
         "read",
         f"HOLDER_OWN:{organisation.pk}:{source.id}:{decision.heading}:{decision.kind}",
     )
     existing = FundingOpportunity.objects.filter(canonical_key=canonical_key).first()
-    if existing is not None and existing.review and existing.reviewed_sha256 == snapshot.sha256:
-        return existing  # a human decided on this page version
+    if existing is not None:
+        same_page = existing.evidence_claims.filter(source=source).exists()
+        if existing.review and (not same_page or existing.reviewed_sha256 == snapshot.sha256):
+            return existing  # a human decided on this page version
+        if not agreed and existing.agreement == "AGREED" and not same_page:
+            return existing
+        if (
+            existing.agreement == "AGREED"
+            and existing.suspension_quote
+            and decision.offered == "YES"
+            and decision.applies_to == "UNSTATED"
+            and decision.stated_on == "UNSTATED"
+            and (not same_page or bool(existing.suspended_for))
+        ):
+            record_read_evidence(
+                existing,
+                decision,
+                url=snapshot.final_url or source.canonical_url,
+                sha256=snapshot.sha256,
+                at=checked_at.date(),
+                today=checked_at.date(),
+            )
+            return existing
     opportunity, _created = FundingOpportunity.objects.update_or_create(
         canonical_key=canonical_key,
         defaults={

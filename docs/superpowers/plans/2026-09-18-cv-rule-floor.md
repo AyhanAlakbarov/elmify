@@ -22,7 +22,7 @@ be `UNAPPLICABLE`; `catalog_seed.py` puts the mappable share at about a third.
 - **COUNTRY-scoped rules are `ADVISORY_*`, never `BINDING`, and never `language`** (spec §1). All five existing country rules already obey this.
 - **Only keys in `apps/documents/constraints.py::_CONSTRAINT_KEYS` may be used.** Never invent a key. A rule the vocabulary cannot carry goes in the unapplicable dict — that is what the dict is for, not a defeat.
 - **`rule_text` is copied verbatim from the CSV's `Rule` column**, and `source_url` from its `Source URL [provenance]` column (take the URL before any trailing ` [note]`). `rule_id` max length is 20 chars.
-- **Run pytest with `POSTGRES_DB=tehsil_cv_corpus`** in this worktree. The shared `test_tehsil` database gets dropped by other sessions mid-run.
+- **Run pytest with `POSTGRES_DB=elmify_cv_corpus`** in this worktree. The shared `test_elmify` database gets dropped by other sessions mid-run.
 - **Never `git add -A`.** Other sessions share this checkout. Commit with an explicit pathspec: `git commit <paths> -m ...`.
 
 ---
@@ -72,7 +72,7 @@ def test_a_pending_rule_is_not_also_accounted_for() -> None:
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents/test_rule_manifest.py -q`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents/test_rule_manifest.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.documents.rule_manifest'`
 
 - [ ] **Step 3: Write the manifest**
@@ -166,7 +166,7 @@ def accounted_for() -> dict[str, str]:
 
 - [ ] **Step 4: Run the test — it should now fail on the real gap**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents/test_rule_manifest.py -q`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents/test_rule_manifest.py -q`
 Expected: FAIL — "86 researched rules are in no bucket and not pending" listing R-001, R-002, R-003, …
 
 - [ ] **Step 5: Fill PENDING with exactly those 86 ids**
@@ -201,12 +201,12 @@ PENDING: frozenset[str] = frozenset({
 
 - [ ] **Step 6: Run the test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents/test_rule_manifest.py -q`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents/test_rule_manifest.py -q`
 Expected: PASS (2 passed)
 
 - [ ] **Step 7: Run the wider suites the manifest touches**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
 Expected: all pass
 
 - [ ] **Step 8: Commit**
@@ -316,7 +316,7 @@ Delete the fourteen ids and the `# data-field (Task 2)` comment from the `PENDIN
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS. A failure naming an id means it left `PENDING` without arriving anywhere — put it in a bucket.
 
 - [ ] **Step 8: Commit**
@@ -372,7 +372,7 @@ Scope-scoped ones go in `SEED_RULES` (`apps/documents/catalog_seed.py`) in the d
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -426,7 +426,7 @@ PY
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -474,7 +474,7 @@ UNAPPLICABLE = {
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -527,7 +527,7 @@ UNAPPLICABLE = {
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -577,7 +577,7 @@ UNAPPLICABLE = {
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -640,18 +640,18 @@ def test_nothing_is_pending_adjudication() -> None:
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest tests/documents/test_rule_manifest.py -q`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest tests/documents/test_rule_manifest.py -q`
 Expected: PASS (3 passed)
 
 - [ ] **Step 6: Run the full suite**
 
-Run: `POSTGRES_DB=tehsil_cv_corpus uv run pytest -q && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config`
+Run: `POSTGRES_DB=elmify_cv_corpus uv run pytest -q && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config`
 Expected: all pass
 
 - [ ] **Step 7: Print the final tally for the commit message**
 
 ```bash
-POSTGRES_DB=tehsil_cv_corpus DJANGO_SETTINGS_MODULE=config.settings.test uv run python -c "
+POSTGRES_DB=elmify_cv_corpus DJANGO_SETTINGS_MODULE=config.settings.test uv run python -c "
 import django, collections; django.setup()
 from apps.documents.rule_manifest import accounted_for, research_rule_ids
 print(len(research_rule_ids()), 'researched rules')

@@ -638,3 +638,47 @@ def test_no_json_asked_or_none_returned_reports_no_json_credits():
         "https://example.test/a", api_key="k", post=_ok(json={"verdicts": []}), json_format=_JSON
     )
     assert served.outcome is Outcome.FETCHED and served.json_credits == 4
+
+
+def test_a_deadline_caps_the_vendor_clock_and_the_http_wait_and_never_backs_off():
+    seen = []
+
+    def post(url, *, json_body, headers, timeout, total_s=None):
+        seen.append((json_body["timeout"], timeout, total_s))
+        return 429, b"{}", {}
+
+    def sleep(seconds):  # pragma: no cover - the assertion is the point
+        raise AssertionError("no back-off under a deadline")
+
+    with pytest.raises(VendorUnavailable):
+        firecrawl.scrape("https://example.test/a", api_key="k", post=post, sleep=sleep,
+                         timeout_s=4.0)
+    assert seen == [(4000, 4000, 4.0)]  # one call, every clock at the time left
+
+
+def test_the_page_title_survives_firecrawls_headless_html():
+    """Firecrawl's `html` has no <head>; an embedded video's <title> came first
+    on hrantdink.org. The vendor's metadata.title must be the first title read."""
+    from apps.research.resolver import page_titles
+
+    html = ('<html><body><iframe><title>Ödül - YouTube</title></iframe>'
+            + "<p>Vakfın çalışmaları.</p>" * 200 + "</body></html>")
+    page = firecrawl.scrape(
+        "https://example.test/a", api_key="k",
+        post=_ok(html=html, metadata={
+            "url": "https://example.test/a", "statusCode": 200, "contentType": "text/html",
+            "title": "Anasayfa - Hrant Dink Vakfı", "ogSiteName": ["Hrant Dink Vakfı"],
+        }),
+    )
+    assert page_titles(page.body) == ("Anasayfa - Hrant Dink Vakfı", "Hrant Dink Vakfı")
+
+
+def test_a_pdf_body_gets_no_title_prepended():
+    page = firecrawl.scrape(
+        "https://example.test/h.pdf", api_key="k",
+        post=_ok(html="<p>text</p>", metadata={
+            "url": "https://example.test/h.pdf", "statusCode": 200,
+            "contentType": "application/pdf", "title": "Handbook", "numPages": 1,
+        }),
+    )
+    assert b"<title>" not in page.body

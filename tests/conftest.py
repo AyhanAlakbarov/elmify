@@ -17,6 +17,7 @@ from psycopg import sql
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.models import Agency, Membership, TenantDomain
 from config.settings.database import database_config
+from tests import ephemeral_pg
 
 
 def _connect_as(database_role: str, user: str, password: str) -> psycopg.Connection:
@@ -65,6 +66,26 @@ def verify_mfa_session(client, user):
 
 
 @pytest.fixture(scope="session")
+def django_db_modify_db_settings(django_db_modify_db_settings_parallel_suffix):
+    """Point the session at a throwaway Postgres when this worktree has one (tests/ephemeral_pg.py):
+    `pixi install` done and no POSTGRES_HOST set. A sandboxed `pytest` cannot reach the host's
+    docker Postgres; CI and docker users set POSTGRES_HOST and keep their server."""
+    if not ephemeral_pg.wanted():
+        yield
+        return
+    from django.conf import settings
+
+    pg = ephemeral_pg.start()
+    targets = (settings.DATABASES["default"], connection.settings_dict)
+    for db in {id(d): d for d in targets}.values():  # the same dict, or a copy of it
+        db.update(HOST=pg.host, PORT=str(pg.port))
+    try:
+        yield
+    finally:
+        pg.stop()
+
+
+@pytest.fixture(scope="session")
 def django_db_setup(django_db_setup, django_db_blocker):
     """Run scripts/create_erasure_guard.sql, which production runs as an admin.
 
@@ -110,7 +131,7 @@ def rls_enforced_orm(django_db_blocker):
     reconnecting is what puts the ORM -- managers, FK descriptors, everything --
     behind that role.
     """
-    role_name = f"tehsil_rls_{uuid4().hex}"
+    role_name = f"elmify_rls_{uuid4().hex}"
     role = sql.Identifier(role_name)
     database = sql.Identifier(str(connection.settings_dict["NAME"]))
     with django_db_blocker.unblock(), connection.cursor() as cursor:
@@ -182,7 +203,7 @@ def _member_of(role_name: str, django_db_blocker):
             ).format(sql.Identifier(role_name))
         )
 
-    throwaway = f"tehsil_test_{uuid4().hex}_{role_name}"
+    throwaway = f"elmify_test_{uuid4().hex}_{role_name}"
     role = sql.Identifier(throwaway)
     try:
         with django_db_blocker.unblock(), connection.cursor() as cursor:
@@ -245,7 +266,7 @@ def role_connection(django_db_setup, django_db_blocker):
     already present -- Task 5's migration does the same ``IF NOT EXISTS``,
     so this is harmless and lets the fixture work before that migration
     lands). Per test, it creates a unique, disposable
-    ``tehsil_test_<hex>_<role_name>`` role, ``GRANT``s it membership in the
+    ``elmify_test_<hex>_<role_name>`` role, ``GRANT``s it membership in the
     fixed role, and connects as the throwaway -- never the fixed role
     itself, and the throwaway gets no table or sequence grants of its own.
     If a query succeeds through this connection, that privilege came from
@@ -305,7 +326,7 @@ def runtime_connection(django_db_setup, django_db_blocker):
     ``@pytest.mark.django_db(transaction=True)``: rows written through Django's
     own connection are invisible here until they commit.
     """
-    runtime_role = f"tehsil_runtime_test_{uuid4().hex}"
+    runtime_role = f"elmify_runtime_test_{uuid4().hex}"
     role = sql.Identifier(runtime_role)
     with django_db_blocker.unblock(), connection.cursor() as cursor:
         cursor.execute(

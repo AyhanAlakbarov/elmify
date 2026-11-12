@@ -125,24 +125,24 @@ of them were reached.
 (one more attempt only, database isolated, do not run it again regardless of outcome).
 
 - **Attempt 1** (prior session): errored in the pytest-django test-database fixture
-  (`database "test_tehsil" already exists` / `is being accessed by other users`) before any
+  (`database "test_elmify" already exists` / `is being accessed by other users`) before any
   live API call — a different worktree's concurrent pytest session was using the same
-  `test_tehsil` database. Zero API cost.
+  `test_elmify` database. Zero API cost.
 - **Attempt 2** (prior session): passed the fixture, then failed 530.60s (8m50s) into the run
   with `psycopg.errors.AdminShutdown` / `django.db.utils.OperationalError: terminating
   connection due to administrator command`, while writing `Program.cv_constraints` for a
   programme partway through the dev split. **Root cause, identified by the controller**: every
   worktree on this machine derives the same Postgres test database name
-  (`test_tehsil`) from the shared default `POSTGRES_DB`; a concurrent Claude session running
-  pytest from `/home/orkhan/Desktop/tehsil_agent/.worktrees/glass-box-kit` re-created that
+  (`test_elmify`) from the shared default `POSTGRES_DB`; a concurrent Claude session running
+  pytest from `/home/orkhan/Desktop/elmify/.worktrees/glass-box-kit` re-created that
   database mid-run, killing attempt 2's connection. From attempt 2's tee'd output, the warnings
   visible before the crash place it at or past programme #12 of 30 in CSV order
   (`fau-ai-msc`, which logged a handled `OffSiteRedirect` and continued) — so **at least 12,
   and likely a few more, of the 30 dev programmes had already completed real
   OpenAI/Anthropic/Tavily calls** before the interrupted database write ended the run. That
   spend produced no usable table, since the run never reached scoring.
-- **Attempt 3 (this run)**: run with `POSTGRES_DB=tehsil_cv_corpus` (isolated per the
-  controller's ruling), so pytest-django created and used `test_tehsil_cv_corpus`, untouched by
+- **Attempt 3 (this run)**: run with `POSTGRES_DB=elmify_cv_corpus` (isolated per the
+  controller's ruling), so pytest-django created and used `test_elmify_cv_corpus`, untouched by
   any other worktree. **Passed**, 568.74s (9m28s), all 30 dev programmes measured, `1 passed`.
 
 **Tavily calls, this attempt, as printed/countable:**

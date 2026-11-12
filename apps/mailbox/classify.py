@@ -61,6 +61,12 @@ _DEVELOPER = (
     "YYYY-MM-DDTHH:MM with the UTC offset the email states (for example "
     "2027-03-12T10:00+01:00), only YYYY-MM-DD when it gives a date without a time, and empty "
     "when it gives no date or asks the applicant to choose one."
+    " FEE_PAID only when the email confirms a payment the applicant already made, such as "
+    "a receipt for the application fee. A fee still to be paid is FEE, and confirmation "
+    "that the application itself arrived is RECEIVED."
+    " REFEREE_SUBMITTED only when the email says a referee or recommender has submitted "
+    "their letter for this application. A request to nominate a referee, or a reminder that "
+    "a letter is still missing, is not REFEREE_SUBMITTED."
 )
 
 
@@ -86,6 +92,8 @@ class MailVerdict(BaseModel):
         "DECISION",
         "VERIFICATION",
         "FEE",
+        "FEE_PAID",
+        "REFEREE_SUBMITTED",
         "OTHER",
     ]
     #: At most one action per message, and only from this closed list. There is

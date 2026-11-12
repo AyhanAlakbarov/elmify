@@ -23,7 +23,8 @@ import hashlib
 import secrets
 from datetime import datetime, timedelta
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
+from django.http import HttpRequest
 from django.utils import timezone
 
 from apps.tenancy.models import Membership
@@ -34,6 +35,10 @@ from .models import ExtensionPairing
 #: the same page load; anything longer is a bearer credential sitting in a
 #: browser for no reason.
 PAIRING_CODE_TTL = timedelta(minutes=2)
+
+#: Device bearer tokens expire after 30 days absolute or 7 days idle (AUTH-VULN-02).
+DEVICE_TOKEN_TTL = timedelta(days=30)
+DEVICE_IDLE_TTL = timedelta(days=7)
 
 
 class PairingRefused(Exception):
@@ -53,7 +58,7 @@ def _digest(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def issue_pairing_code(membership: Membership) -> str:
+def issue_pairing_code(membership: Membership, *, passwords_allowed: bool = False) -> str:
     """Mint a code for this session, invalidating any code still pending.
 
     Invalidating is not tidiness: two live codes for one membership is two
@@ -69,8 +74,25 @@ def issue_pairing_code(membership: Membership) -> str:
         membership=membership,
         code_hash=_digest(code),
         code_expires_at=_now() + PAIRING_CODE_TTL,
+        passwords_allowed_at=_now() if passwords_allowed else None,
     )
     return code
+
+
+#: A login this recent is proof enough that the student, not just their
+#: session, is at the keyboard: onboarding pairs right after logging in.
+FRESH_LOGIN = timedelta(minutes=15)
+
+
+def remember_login(sender: object, request: HttpRequest | None, **kwargs: object) -> None:
+    """user_logged_in: when this session last saw the password typed."""
+    if request is not None:
+        request.session["authenticated_at"] = _now().timestamp()
+
+
+def fresh_login(request: HttpRequest) -> bool:
+    at = request.session.get("authenticated_at")
+    return isinstance(at, (int, float)) and _now().timestamp() - at <= FRESH_LOGIN.total_seconds()
 
 
 def redeem_pairing_code(raw_code: str, installation_id: str) -> tuple[ExtensionPairing, str]:
@@ -113,21 +135,28 @@ def authenticate_device(raw_token: str) -> ExtensionPairing | None:
     # TenantMembershipMiddleware -- both of which sit inside
     # `if request.user.is_authenticated` and so never run for a device token.
     # Without this line the flag is simply not load-bearing on this surface.
+    now = _now()
     return (
         ExtensionPairing.objects.select_related("membership")
         .filter(
+            Q(last_seen_at__isnull=True) | Q(last_seen_at__gt=now - DEVICE_IDLE_TTL),
             token_hash=_digest(raw_token),
             revoked_at__isnull=True,
             membership__active=True,
+            redeemed_at__gt=now - DEVICE_TOKEN_TTL,
         )
         .first()
     )
 
 
 def active_pairings(membership: Membership) -> QuerySet[ExtensionPairing]:
-    """The installations this student has paired and not revoked."""
+    """The installations this student has paired and not revoked or expired."""
+    now = _now()
     return ExtensionPairing.objects.filter(
-        membership=membership, redeemed_at__isnull=False, revoked_at__isnull=True
+        Q(last_seen_at__isnull=True) | Q(last_seen_at__gt=now - DEVICE_IDLE_TTL),
+        membership=membership,
+        redeemed_at__gt=now - DEVICE_TOKEN_TTL,
+        revoked_at__isnull=True,
     )
 
 

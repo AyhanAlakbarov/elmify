@@ -124,27 +124,6 @@ class VendorUnavailable(SourceBlocked):
         self.escalate = escalate
 
 
-class ChargedFailure(SourceBlocked):
-    """The TARGET failed and the vendor billed us for the attempt anyway.
-
-    The sibling of VendorUnavailable, not a kind of it: a vendor's own failure
-    (down, out of credits, rate-limited) costs nothing, and a 404 or a block
-    page relayed from the origin costs the full call. The budget below is wrong
-    by exactly the failures if the two are one class -- and the failures are the
-    half of a sweep nobody plans for.
-
-    ``escalate`` as above. A 404 is dead on every tier and scrape.do's published
-    billing counts 404 as a SUCCESS, so escalating one costs 1 + 25 credits for
-    a page that does not exist; a 403 is the bot-wall signature and is exactly
-    what the residue tier is for.
-    """
-
-    def __init__(self, message: str, *, credits: int, escalate: bool = True) -> None:
-        super().__init__(message)
-        self.credits = credits
-        self.escalate = escalate
-
-
 class FetchBudgetExhausted(SourceBlocked):
     """The sweep's credit budget is spent for this vendor."""
 

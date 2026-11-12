@@ -1,6 +1,15 @@
+import os
 from typing import Any, cast
 
 from .base import *  # noqa: F403
+from .database import per_checkout_test_database_name
+
+# A plain `uv run pytest` in any worktree gets its own test database, so parallel
+# sessions stop wedging a shared `test_elmify`. The dev NAME is untouched, and an
+# exported POSTGRES_DB keeps the old `test_<POSTGRES_DB>` name.
+DATABASES["default"]["TEST"] = {  # noqa: F405
+    "NAME": per_checkout_test_database_name(os.environ, BASE_DIR)  # noqa: F405
+}
 
 SECRET_KEY = "test-only"  # nosec B105 - test fixture value, never deployed
 ALLOWED_HOSTS = ["*"]

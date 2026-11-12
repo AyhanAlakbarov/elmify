@@ -27,7 +27,7 @@
 - Modify: `/home/orkhan/.config/ai_rules/rules/engineering.md`
 - Modify: `/home/orkhan/.config/ai_rules/rules/artifacts.md`
 - Test: `/tmp/test_unverified_source_security_gate.py` (ephemeral)
-- Update: `/home/orkhan/Desktop/tehsil_agent/skill-observations/log.md` (Observation 14 status only)
+- Update: `/home/orkhan/Desktop/elmify/skill-observations/log.md` (Observation 14 status only)
 
 **Interfaces:**
 - Consumes: the approved trust classification in `docs/superpowers/specs/2026-08-10-unverified-source-security-gate-design.md`.
@@ -138,8 +138,8 @@ Then verify:
 
 ```bash
 python3 /tmp/test_unverified_source_security_gate.py
-rg -n '^### Observation 14:|^\*\*Status:\*\* ACTIONED' /home/orkhan/Desktop/tehsil_agent/skill-observations/log.md
-diff -u /tmp/skill-observations-log-before-14-action.md /home/orkhan/Desktop/tehsil_agent/skill-observations/log.md
+rg -n '^### Observation 14:|^\*\*Status:\*\* ACTIONED' /home/orkhan/Desktop/elmify/skill-observations/log.md
+diff -u /tmp/skill-observations-log-before-14-action.md /home/orkhan/Desktop/elmify/skill-observations/log.md
 ```
 
 Expected: Observation 14 exists exactly once, its status is ACTIONED, and no other observation changed.

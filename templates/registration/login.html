@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Log in{% endblock %}
+{% block title %}Log in — Elmify{% endblock %}
+{% block meta_description %}Sign in to your Elmify student or counsellor workspace to review your matched master's programmes, scholarship deadlines, CV, motivation letters, and referee briefs.{% endblock %}
 {% block content %}
   <h1>Log in</h1>
-  <p class="muted">Welcome back. Pick up your applications where you left them.</p>
+  <p class="muted">Welcome back. Pick up your master&rsquo;s and scholarship applications where you left them.</p>
   {% if rate_limited %}<p role="alert">Too many attempts. Try again in a few minutes.</p>{% endif %}
   {% for error in form.non_field_errors %}<p role="alert">{{ error }}</p>{% endfor %}
   <form method="post" action="{% url 'accounts-login' %}">

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Referees{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div>
+      <h1>Referees</h1>
+      <p>Keep track of the professors and managers who agreed to write for you, and plan which application each referee covers.</p>
+    </div>
+    <a class="btn btn-quiet" href="{% url 'student-referee-plan' %}">Who writes for which application</a>
+  </div>
+  <div class="ref-layout">
+    {% include "student/_referees.html" %}
+    <section class="panel" aria-labelledby="add-referee-heading">
+      <h2 id="add-referee-heading">Add a professor</h2>
+      <form method="post" action="{% url 'student-referee-add' %}">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Add</button>
+      </form>
+    </section>
+  </div>
+{% endblock %}

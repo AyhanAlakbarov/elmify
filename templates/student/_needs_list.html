@@ -1,10 +1,12 @@
 <ul class="needs-list">
   {% for item in needs %}
     <li>
-      <p>{{ item.text }}{% if item.deadline %} <span class="due">Due {{ item.deadline|date:"j M Y" }}</span>{% endif %}</p>
+      <p>{{ item.text }}{% if item.deadline %} — due <span class="due">{% if item.deadline_text %}{{ item.deadline_text }}{% else %}{{ item.deadline|date:"j M Y" }}{% endif %}</span>{% endif %}</p>
       <div class="row-actions">
         {% if item.url %}
-          {% if item.method == "post" %}
+          {% if item.apply and apply_blocker %}
+            {% if apply_blocker.url %}<a class="btn btn-small" href="{{ apply_blocker.url }}">{{ apply_blocker.text }}</a>{% else %}<span>{{ apply_blocker.text }}</span>{% endif %}
+          {% elif item.method == "post" %}
             {% if not read_only %}<form method="post" action="{{ item.url }}">{% csrf_token %}<button type="submit">{{ item.button }}</button></form>{% endif %}
           {% else %}
             <a class="btn btn-small" href="{{ item.url }}">{{ item.button }}</a>

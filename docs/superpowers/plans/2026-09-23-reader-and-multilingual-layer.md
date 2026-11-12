@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-typed-decisions-and-multilingual-sources-design.md` — this plan is its §15 plan 2. Read §4 (D4, D5), §5 (the reader rebuilt around selection, including "Each sentence carries its context" and §5.3's replace-on-empty rule), §6.6 (template reading), §8 (the whole multilingual layer), §9a (operations) and §11 (gates 2, 3, 4, 6, 9, 10) before starting. They are the argument for every task below.
 
-**Base branch:** `claude/fetch-spec-refresh`. **This plan lands after `docs/superpowers/plans/2026-09-23-decision-layer-and-rule-grammar.md`** and consumes its names unchanged: `ask(state, questions, *, decision, language="", budget=None, record=True, client=None)`, `Noul`, `Choice`, `Answer`, `DecisionBudget`, `run_budget()`, `grammar_questions.read_slots`, `grammar_values.read_values`, `grammar.Rule`, `rule_sinks.*`, `SLOT_BAR`, `CHUNK`. Work in a fresh worktree: `git worktree add ../reader-layer claude/fetch-spec-refresh`. Test database: `POSTGRES_DB=tehsil_reader` — never share a test DB between sessions (CLAUDE.md).
+**Base branch:** `claude/fetch-spec-refresh`. **This plan lands after `docs/superpowers/plans/2026-09-23-decision-layer-and-rule-grammar.md`** and consumes its names unchanged: `ask(state, questions, *, decision, language="", budget=None, record=True, client=None)`, `Noul`, `Choice`, `Answer`, `DecisionBudget`, `run_budget()`, `grammar_questions.read_slots`, `grammar_values.read_values`, `grammar.Rule`, `rule_sinks.*`, `SLOT_BAR`, `CHUNK`. Work in a fresh worktree: `git worktree add ../reader-layer claude/fetch-spec-refresh`. Test database: `POSTGRES_DB=elmify_reader` — never share a test DB between sessions (CLAUDE.md).
 
 ## Reconciliation with master 40f8400 — 2026-09-23, read before Task 2
 
@@ -47,7 +47,7 @@ and this plan keeps both.
 - **Decision B is unchanged.** `read_program_page` takes an `OfficialSource` row and never a URL, `require_same_origin` still runs before `persist_snapshot`, and `retrieve=` may still only be bound from code in this repo or a test double. Nothing in this plan adds a parameter that could name a page.
 - **Enforcement never changes.** Every derived rule stays `ADVISORY_HIGH_RISK` and `resolve_rules`' guard that a programme rule may not lower a key's enforcement stays untouched.
 - **Never run `ruff format`** in this repo — it is a lint-only gate and `ruff format` churns 26 files (CLAUDE.md).
-- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_reader uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
+- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=elmify_reader uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
 - **RLS is verified against a `NOBYPASSRLS` role or it is not verified.** The test role bypasses RLS, so a passing test proves nothing about a policy; use `rls_enforced_orm` (`tests/conftest.py`) or the `runtime_connection` fixture (`tests/tenancy/test_database_isolation.py`). CLAUDE.md, "Row-level security: what actually filters a query".
 - **`ProgramStatement` is shared-catalog data with third-party content in it** (CLAUDE.md). Everything this plan adds to it — the heading path, the language, the probabilities, the translation — is read by every tenant. Only URLs already reachable from an `OfficialSource` the catalog vouches for are ever profiled, which `read_program_page`'s signature is what enforces.
 - **Migration numbers.** `funding` is at `0046_candidate_catalog_link` on master (2026-09-23, 40f8400 — the funding slice-1 merge took `0043`-`0046` after this plan was written), so this plan writes `0047_statement_context`. Check `git ls-tree --name-only origin/master apps/funding/migrations/` before writing it: another branch may have landed one, and a textually clean merge whose `dependencies` names a node that no longer exists is exactly the collision CLAUDE.md records from 2026-09-15.
@@ -165,7 +165,7 @@ Add `_SELECT_OVER_CHARS` and `re` to that module's imports, and delete the now-d
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_reader.py -k "cap or vocabulary or selection" -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_reader.py -k "cap or vocabulary or selection" -v`
 Expected: FAIL — `ImportError: cannot import name '_SELECT_OVER_CHARS'`, and once that is added, `test_a_requirement_past_the_old_cap_is_not_cut_off` fails on the missing sentence because `_capped` cut it.
 
 - [ ] **Step 3: Write the implementation**
@@ -253,12 +253,12 @@ The two funding callers say what they mean:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_reader.py tests/research/test_pipeline.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_reader.py tests/research/test_pipeline.py -v`
 Expected: all pass. The whole reader module's existing tests must stay green — `test_only_the_sections_that_mention_admission_reach_the_model` builds an 800-copy filler page, which is over the threshold, so it still selects.
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_reader uv run pytest`
 Expected: all clean.
 
 - [ ] **Step 6: Commit**
@@ -407,7 +407,7 @@ def test_an_empty_page_yields_no_sentence_rather_than_one_empty_one():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_sentences.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_sentences.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.sentences'`
 
 - [ ] **Step 3: Write the implementation**
@@ -587,7 +587,7 @@ from .sentences import _HEADING_LINE  # re-exported: derive and funding_judge im
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_sentences.py tests/research/test_reader.py tests/documents/test_derive.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_sentences.py tests/research/test_reader.py tests/documents/test_derive.py -v`
 Expected: all pass — the constant moved, and every existing importer still reads it off `reader`.
 
 - [ ] **Step 5: Run the checks**
@@ -701,7 +701,7 @@ def test_two_unicode_spellings_of_one_path_are_one_source():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_reader.py -k normalize_or_uzbek tests/research/test_discovery.py -k cyrillic_or_spellings -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_reader.py -k normalize_or_uzbek tests/research/test_discovery.py -k cyrillic_or_spellings -v`
 Expected: FAIL — the Uzbek forms normalize to five distinct strings, `İngilizce` keeps its combining dot, and the two path spellings differ.
 
 - [ ] **Step 3: Write the implementation**
@@ -769,12 +769,12 @@ Add `import unicodedata` to `discovery.py`'s imports.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_reader.py tests/research/test_discovery.py tests/documents/test_derive.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_reader.py tests/research/test_discovery.py tests/documents/test_derive.py -v`
 Expected: all pass. `derive.candidates` and `_haystack` both call `normalize`, so their tests are the regression check that the fold changed nothing for Latin text.
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_reader uv run pytest`
 Expected: all clean.
 
 - [ ] **Step 6: Commit**
@@ -957,7 +957,7 @@ def test_a_pattern_matches_the_whole_word_only():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_vocabulary.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_vocabulary.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.vocabulary'`
 
 - [ ] **Step 3: Write the loader, then draft the data**
@@ -1323,12 +1323,12 @@ and `_rule_for` collects them:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_vocabulary.py tests/documents/test_grammar_values.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_vocabulary.py tests/documents/test_grammar_values.py -v`
 Expected: all pass. `test_grammar_values.py`'s language cases need rewriting to the Noul shape in the same commit — a Choice's single answer cannot express two allowed languages, which is the point.
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_reader uv run pytest`
 Expected: all clean.
 
 - [ ] **Step 6: Commit**
@@ -1497,7 +1497,7 @@ The four fixtures (`program`, `source`, `snapshot`, `store`) go in `tests/resear
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_statement_context_rls.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_statement_context_rls.py -v`
 Expected: FAIL with `TypeError: ProgramStatement() got unexpected keyword arguments: 'heading_path'`
 
 - [ ] **Step 3: Write the implementation**
@@ -1657,12 +1657,12 @@ class Migration(migrations.Migration):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_statement_context_rls.py tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_statement_context_rls.py tests/tenancy/test_database_isolation.py -v`
 Expected: all pass, and the isolation suite still lists `funding_programstatement` among `_SHARED_TABLES` with exactly the two policies.
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run python manage.py makemigrations --check --dry-run && uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_reader uv run pytest`
+Run: `uv run python manage.py makemigrations --check --dry-run && uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_reader uv run pytest`
 Expected: "No changes detected", then all clean.
 
 - [ ] **Step 6: Commit**
@@ -1886,7 +1886,7 @@ def test_an_empty_page_costs_no_request():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_page_questions.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_page_questions.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.page_questions'`
 
 - [ ] **Step 3: Write the implementation**
@@ -2116,7 +2116,7 @@ def select_sentences(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_page_questions.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_page_questions.py -v`
 Expected: 8 passed
 
 - [ ] **Step 5: Run the checks**
@@ -2272,7 +2272,7 @@ def test_labelling_asks_one_request_for_the_whole_selection():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_page_questions.py -k label -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_page_questions.py -k label -v`
 Expected: FAIL with `ImportError: cannot import name 'label_sentences'`
 
 - [ ] **Step 3: Write the implementation**
@@ -2430,7 +2430,7 @@ def label_sentences(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_page_questions.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_page_questions.py -v`
 Expected: 14 passed
 
 - [ ] **Step 5: Run the checks**
@@ -2591,7 +2591,7 @@ def test_the_sweep_translates_only_untranslated_non_english_rows(program, snapsh
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_translation.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_translation.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.translation'`
 
 - [ ] **Step 3: Write the implementation**
@@ -2809,12 +2809,12 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_translation.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_translation.py -v`
 Expected: 12 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_reader uv run pytest`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -3064,7 +3064,7 @@ def test_a_selected_sentence_already_found_by_code_is_not_judged_twice():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_read_program_page.py tests/documents/test_derive.py -k "selected or read" -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_read_program_page.py tests/documents/test_derive.py -k "selected or read" -v`
 Expected: FAIL — `read_program_page() got an unexpected keyword argument 'client'`, and `candidates() got an unexpected keyword argument 'selected'`.
 
 - [ ] **Step 3: Write the implementation**
@@ -3342,12 +3342,12 @@ def read_and_derive(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research tests/documents -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research tests/documents -v`
 Expected: all pass. `tests/research/test_reader.py` keeps its `readable_text`, `normalize`, `page_lines`, `is_shell` and `html_lang` tests and loses every test of `extract_statements`, `verified_statements` and the union — twelve of them, named in the commit message. The live `test_three_live_reads_of_a_real_page_derive_the_same_rules` moves to Task 11's gate 2, which asserts the same property against the new path.
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_reader uv run pytest && uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_reader uv run pytest && uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean.
 
 - [ ] **Step 6: Commit**
@@ -3516,7 +3516,7 @@ def test_reads_are_rate_limited_per_programme(program):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/documents/test_template_reader.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/documents/test_template_reader.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.template_reader'`
 
 - [ ] **Step 3: Write the implementation**
@@ -3751,7 +3751,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/documents/test_template_reader.py -v`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/documents/test_template_reader.py -v`
 Expected: 7 passed
 
 - [ ] **Step 5: Run the checks**
@@ -3996,7 +3996,7 @@ https://www.daad.de/en/studying-in-germany/scholarships/daad-funding-programmes/
 
 - [ ] **Step 2: Run the gates and record what they say**
 
-Run: `POSTGRES_DB=tehsil_reader uv run pytest tests/research/test_selection_gate.py tests/research/test_language_gates.py -m live -v -s`
+Run: `POSTGRES_DB=elmify_reader uv run pytest tests/research/test_selection_gate.py tests/research/test_language_gates.py -m live -v -s`
 Expected: gates 3 and 10 skip with "see the corpus spec" until the corpus is labelled. Gate 2's recall skips for any URL with no rows; gate 2's determinism and gate 6 run for real and cost about $0.02 in decisions. **Paste the printed numbers into the commit message** — this is a measurement, and a measurement nobody recorded is a measurement nobody made.
 
 - [ ] **Step 3: Fill the expectation file from the recorded run**
@@ -4007,7 +4007,7 @@ Then re-run gate 2's recall. If it is below 0.95, do NOT lower the bar: the spec
 
 - [ ] **Step 4: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_reader uv run pytest`
 Expected: all clean, and the live gates do not run in the default suite.
 
 - [ ] **Step 5: Commit**

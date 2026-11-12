@@ -48,10 +48,10 @@ reader of the old draft knows what not to trust in it:
 ## Global Constraints
 
 - **Worktree.** All work happens in
-  `/home/orkhan/Desktop/tehsil_agent/.worktrees/cv-timeline` on branch
+  `/home/orkhan/Desktop/elmify/.worktrees/cv-timeline` on branch
   `claude/cv-timeline-entry`. Never `cd` to the main checkout; its git index is shared
   and other sessions commit there. Use `git -C <worktree>` if a shell resets its cwd.
-- **Test database.** Always `POSTGRES_DB=tehsil_cvtimeline uv run pytest`. Never the shared
+- **Test database.** Always `POSTGRES_DB=elmify_cvtimeline uv run pytest`. Never the shared
   default. Baseline to beat, measured on this branch at `1a4c6b5e` on 2026-10-05:
   **6368 passed, 72 skipped, 68 deselected, 2 xfailed**. It goes up, never down.
 - **Never run `ruff format`** in this repo — it rewrites hundreds of untouched files and no
@@ -159,7 +159,7 @@ def test_a_timeline_fact_can_be_stored(student):
 - [ ] **Step 2: Run it and watch it fail**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_gaps.py::test_a_timeline_fact_can_be_stored -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_gaps.py::test_a_timeline_fact_can_be_stored -q
 ```
 
 Expected: `AttributeError: TIMELINE` on `VerifiedFact.Category`.
@@ -191,7 +191,7 @@ unapplied migration, and that edge knots `tests/migrations/test_task7_migrations
 `0024_merge_20260927_0906`. Generate it, then strip the dependency to `documents` alone:
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run python manage.py makemigrations documents --name timeline_category
+POSTGRES_DB=elmify_cvtimeline uv run python manage.py makemigrations documents --name timeline_category
 ```
 
 Then edit the generated `apps/documents/migrations/0025_timeline_category.py` so it reads
@@ -235,9 +235,9 @@ in CI compares against exactly that.
 - [ ] **Step 5: Run the test and the migration check**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_gaps.py::test_a_timeline_fact_can_be_stored -q
-POSTGRES_DB=tehsil_cvtimeline uv run python manage.py makemigrations --check --dry-run
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/migrations -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_gaps.py::test_a_timeline_fact_can_be_stored -q
+POSTGRES_DB=elmify_cvtimeline uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/migrations -q
 ```
 
 Expected: the test passes, `makemigrations --check` reports no changes, the migration tests
@@ -306,7 +306,7 @@ def test_cv_content_has_no_timeline_by_default():
 - [ ] **Step 2: Run it and watch it fail**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_schemas.py -q -k timeline
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_schemas.py -q -k timeline
 ```
 
 Expected: `ImportError`/`NameError` on `TimelineEntry`.
@@ -362,7 +362,7 @@ and `Field` — they do, every other entry uses them — and add nothing.
 - [ ] **Step 4: Run the schema tests**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_schemas.py -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_schemas.py -q
 ```
 
 Expected: PASS.
@@ -406,7 +406,7 @@ non-`personal_information` field in a one-tuple, so it needs no change.
 - [ ] **Step 6: Run it and watch it fail**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_verification.py -q -k timeline
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_verification.py -q -k timeline
 ```
 
 Expected: the new `timeline` parametrizations fail -- no `_CategorySpec` covers the field, so
@@ -441,7 +441,7 @@ the page):
 - [ ] **Step 8: Run the verification tests**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_verification.py tests/documents/test_schemas.py -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_verification.py tests/documents/test_schemas.py -q
 ```
 
 Expected: PASS.
@@ -611,7 +611,7 @@ Import `json` and `TimelineEntry` if the file does not already.
 - [ ] **Step 2: Run them and watch the render ones fail**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_render.py tests/documents/test_europass.py -q -k "timeline or gap"
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_render.py tests/documents/test_europass.py -q -k "timeline or gap"
 ```
 
 Expected: the Europass test already passes (nothing maps the field) — a test that passes before
@@ -719,7 +719,7 @@ dated rows are gaps still gets the section and its heading.
 - [ ] **Step 5: Run the render and Europass suites in full**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_render.py tests/documents/test_europass.py tests/documents/test_funder_templates.py -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_render.py tests/documents/test_europass.py tests/documents/test_funder_templates.py -q
 ```
 
 Expected: PASS, with no change to any existing experience-order test — `_experience_rows`
@@ -801,7 +801,7 @@ function instead of this change.
 - [ ] **Step 2: Run it and watch it fail**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_ingestion.py -q -k timeline
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_ingestion.py -q -k timeline
 ```
 
 Expected: `len(timeline) == 1` fails with 0 — `_SECTIONS` does not list the field.
@@ -845,7 +845,7 @@ sentence:
 - [ ] **Step 5: Run the ingestion and generation tests**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_ingestion.py tests/documents/test_generation.py -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_ingestion.py tests/documents/test_generation.py -q
 ```
 
 Expected: PASS.
@@ -962,7 +962,7 @@ Rename it `test_every_create_group_asks_exactly_its_declared_keys`.
 - [ ] **Step 2: Run it and watch it fail**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_gaps.py -q -k "group_keys or declared_keys or does_not_carry"
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_gaps.py -q -k "group_keys or declared_keys or does_not_carry"
 ```
 
 Expected: `AttributeError: 'GapQuestion' object has no attribute 'group_keys'`.
@@ -1101,7 +1101,7 @@ The rest of that loop (the `unknown` key check, the `_LIST_KEYS` wrap, the
 - [ ] **Step 6: Run the whole gaps and intake suite**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py tests/documents/test_gap_interview_view.py -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py tests/documents/test_gap_interview_view.py -q
 uv run mypy apps/documents
 ```
 
@@ -1459,7 +1459,7 @@ not already imported there.
 - [ ] **Step 3: Run them and watch them fail**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_gaps.py -q -k "timeline or gap_notes"
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_gaps.py -q -k "timeline or gap_notes"
 ```
 
 Expected: `AttributeError: TIMELINE_GAP` on `Kind`, and the note/question assertions failing.
@@ -1696,7 +1696,7 @@ In `apps/documents/gaps.py`'s opening docstring:
 - [ ] **Step 9: Run the whole documents suite**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents -q
 ```
 
 Expected: PASS. If `tests/documents/test_gap_interview_view.py` asserts a note count or a
@@ -1773,7 +1773,7 @@ call `verify_mfa_session` before a `get`, do the same here.
 - [ ] **Step 11: Run them**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_gap_intake.py tests/documents/test_gap_interview_view.py -q
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_gap_intake.py tests/documents/test_gap_interview_view.py -q
 ```
 
 Expected: PASS.
@@ -1846,7 +1846,7 @@ def test_a_gap_statement_never_reaches_the_letter_prompt():
 - [ ] **Step 2: Run it and watch it fail**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents/test_letters.py -q -k gap_statement
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents/test_letters.py -q -k gap_statement
 ```
 
 Expected: FAIL on `"carer" not in payload`.
@@ -1879,7 +1879,7 @@ def _facts_payload(facts: dict[UUID, VerifiedFact]) -> str:
 - [ ] **Step 4: Run the letter suites**
 
 ```bash
-POSTGRES_DB=tehsil_cvtimeline uv run pytest tests/documents -q -k letter
+POSTGRES_DB=elmify_cvtimeline uv run pytest tests/documents -q -k letter
 ```
 
 Expected: PASS.
@@ -1904,9 +1904,9 @@ git commit -m "documents: a gap statement is printed on the CV and nowhere else 
 ```bash
 uv run ruff check .
 uv run mypy apps config
-POSTGRES_DB=tehsil_cvtimeline uv run pytest -q
-POSTGRES_DB=tehsil_cvtimeline uv run python manage.py check
-POSTGRES_DB=tehsil_cvtimeline uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_cvtimeline uv run pytest -q
+POSTGRES_DB=elmify_cvtimeline uv run python manage.py check
+POSTGRES_DB=elmify_cvtimeline uv run python manage.py makemigrations --check --dry-run
 uv run bandit -c pyproject.toml -r apps config
 git diff --stat origin/master...HEAD
 git status --short

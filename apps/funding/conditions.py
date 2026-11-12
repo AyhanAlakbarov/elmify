@@ -21,6 +21,7 @@ from importing each other.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import date as _date
 from typing import TYPE_CHECKING, Protocol, cast
 
 from pydantic import ValidationError
@@ -124,7 +125,10 @@ def _as_triple(condition: ApplicantConditionFact) -> ConditionTriple:
 
 
 def _decision_for(
-    condition: ApplicantConditionFact, profile: StudentProfileSnapshot
+    condition: ApplicantConditionFact,
+    profile: StudentProfileSnapshot,
+    *,
+    today: _date | None = None,
 ) -> Decision:
     # The one seam: a malformed row (an out-of-vocabulary key/operator, a value
     # over 200 characters, an empty rule_text) makes ConditionTriple's own
@@ -140,11 +144,15 @@ def _decision_for(
             f"funding route {condition.benefit_id}: this condition could not be read "
             "(its key, operator or value falls outside the closed vocabulary)",
         )
-    return decide(triple, profile)
+    return decide(triple, profile, today=today)
 
 
 def _unmet_conditions(
-    benefit: BenefitFact, candidate: HasFundingRoutes, profile: StudentProfileSnapshot
+    benefit: BenefitFact,
+    candidate: HasFundingRoutes,
+    profile: StudentProfileSnapshot,
+    *,
+    today: _date | None = None,
 ) -> tuple[ApplicantConditionFact, ...]:
     """Conditions on this route the profile shows the student does not meet.
 
@@ -155,12 +163,15 @@ def _unmet_conditions(
         condition
         for condition in candidate.applicant_conditions
         if condition.benefit_id == benefit.id
-        and _decision_for(condition, profile).outcome == "FAILED"
+        and _decision_for(condition, profile, today=today).outcome == "FAILED"
     )
 
 
 def closed_route_reasons(
-    profile: StudentProfileSnapshot, candidate: HasFundingRoutes
+    profile: StudentProfileSnapshot,
+    candidate: HasFundingRoutes,
+    *,
+    today: _date | None = None,
 ) -> tuple[str, ...]:
     """Every route shut by a condition the student demonstrably does not meet.
 
@@ -175,17 +186,21 @@ def closed_route_reasons(
         # to fall back to), so naming it here would print the wrong bar.
         f"{condition.key or condition.condition_type} condition: {condition.rule_text}"
         for benefit in candidate.benefits
-        for condition in _unmet_conditions(benefit, candidate, profile)
+        for condition in _unmet_conditions(benefit, candidate, profile, today=today)
     )
 
 
 def benefit_applies(
-    benefit: BenefitFact, candidate: HasFundingRoutes, profile: StudentProfileSnapshot
+    benefit: BenefitFact,
+    candidate: HasFundingRoutes,
+    profile: StudentProfileSnapshot,
+    *,
+    today: _date | None = None,
 ) -> bool:
     # Conditions are checked before scope: a route the student cannot enter does not
     # apply to them no matter where it is published. Both the mandatory-funding hard
     # gate and affordability's buckets call this, so the guard lands once.
-    if _unmet_conditions(benefit, candidate, profile):
+    if _unmet_conditions(benefit, candidate, profile, today=today):
         return False
     if benefit.scope_type == "GLOBAL":
         return True
@@ -198,7 +213,12 @@ def benefit_applies(
     return benefit.program_id == candidate.program_id
 
 
-def open_routes(profile: StudentProfileSnapshot, candidate: HasFundingRoutes) -> set[str]:
+def open_routes(
+    profile: StudentProfileSnapshot,
+    candidate: HasFundingRoutes,
+    *,
+    today: _date | None = None,
+) -> set[str]:
     """Ids of the funding routes still available to this student.
 
     Anything said about a route that is already shut -- by scope, or by a condition
@@ -208,35 +228,41 @@ def open_routes(profile: StudentProfileSnapshot, candidate: HasFundingRoutes) ->
     return {
         benefit.id
         for benefit in candidate.benefits
-        if benefit.is_current and benefit_applies(benefit, candidate, profile)
+        if benefit.is_current and benefit_applies(benefit, candidate, profile, today=today)
     }
 
 
 def unevaluable_condition_reasons(
-    profile: StudentProfileSnapshot, candidate: HasFundingRoutes
+    profile: StudentProfileSnapshot,
+    candidate: HasFundingRoutes,
+    *,
+    today: _date | None = None,
 ) -> tuple[str, ...]:
     """Conditions on still-open routes that no profile field can decide.
 
     The reason comes from the decider, which names the field the profile lacks,
     so a consultant is told what to ask rather than that something was unclear.
     """
-    routes = open_routes(profile, candidate)
+    routes = open_routes(profile, candidate, today=today)
     return tuple(
         f"{decision.reason} (funding route {condition.benefit_id}): {condition.rule_text}"
         for condition in candidate.applicant_conditions
         if condition.benefit_id in routes
-        and (decision := _decision_for(condition, profile)).outcome == "UNDECIDABLE"
+        and (decision := _decision_for(condition, profile, today=today)).outcome == "UNDECIDABLE"
     )
 
 
 def return_service_disclosures(
-    profile: StudentProfileSnapshot, candidate: HasFundingRoutes
+    profile: StudentProfileSnapshot,
+    candidate: HasFundingRoutes,
+    *,
+    today: _date | None = None,
 ) -> tuple[str, ...]:
     """A bonded award is a different product, and the student must be told before
     accepting it. Only for routes that actually apply -- warning about a bond on a
     scheme the student cannot use would push them off an unbonded candidate.
     """
-    routes = open_routes(profile, candidate)
+    routes = open_routes(profile, candidate, today=today)
     return tuple(
         f"funding route {obligation.benefit_id} is bonded: it commits you to "
         f"{obligation.months} months of return service after graduation \u2014 "
@@ -261,18 +287,24 @@ def return_service_disclosures(
 
 
 def failed_conditions(
-    profile: StudentProfileSnapshot, conditions: Sequence[ApplicantConditionFact]
+    profile: StudentProfileSnapshot,
+    conditions: Sequence[ApplicantConditionFact],
+    *,
+    today: _date | None = None,
 ) -> tuple[str, ...]:
     """Conditions this student demonstrably does not meet. FAILED only."""
     return tuple(
         f"{condition.key or condition.condition_type}: {condition.rule_text}"
         for condition in conditions
-        if _decision_for(condition, profile).outcome == "FAILED"
+        if _decision_for(condition, profile, today=today).outcome == "FAILED"
     )
 
 
 def undecidable_conditions(
-    profile: StudentProfileSnapshot, conditions: Sequence[ApplicantConditionFact]
+    profile: StudentProfileSnapshot,
+    conditions: Sequence[ApplicantConditionFact],
+    *,
+    today: _date | None = None,
 ) -> tuple[str, ...]:
     """Conditions no profile field can decide, each naming the field it needs.
 
@@ -283,5 +315,5 @@ def undecidable_conditions(
     return tuple(
         f"{decision.reason}: {condition.rule_text}"
         for condition in conditions
-        if (decision := _decision_for(condition, profile)).outcome == "UNDECIDABLE"
+        if (decision := _decision_for(condition, profile, today=today)).outcome == "UNDECIDABLE"
     )

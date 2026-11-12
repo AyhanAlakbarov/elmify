@@ -1,0 +1,7 @@
+# Read by ~/.local/bin/agent-config (global agent tooling; schema in the setup-audit design).
+# Every key is optional; a missing key takes the default.
+
+[format]
+# ruff format rewrites this tree into invalid Python (except-tuples, 349 files on 2026-09-25):
+# the git guard refuses whole-tree formatting here. The lint check (ruff check) is the gate.
+whole_tree = "refuse"

@@ -3,7 +3,12 @@ import pytest
 from apps.documents.derive import Candidate, Derivations, LetterVerdict, decide_letter_shape
 from apps.documents.letter_gates import check_language_mismatch
 from apps.documents.letter_schemas import LetterContent, LetterUnit
-from apps.documents.letter_shape import LetterShape, apply_derived_shape, shape_from_prompt
+from apps.documents.letter_shape import (
+    LetterShape,
+    apply_derived_shape,
+    counts_characters,
+    shape_from_prompt,
+)
 from apps.funding.models import ApplicationPrompt, CatalogWriteBlocked, Program
 
 from .conftest import make_program
@@ -795,3 +800,13 @@ def test_a_character_floor_reaches_the_prompt(program) -> None:
         program, "2027", LetterShape(min_chars=2800), source_url="https://x.example/p"
     )
     assert prompt.letter_min_chars == 2800
+
+
+@pytest.mark.parametrize("language", ["ru", "el", "ar", "hy", "ka", "en", "de"])
+def test_only_cjk_counts_characters(language):
+    assert counts_characters(language) is False
+
+
+@pytest.mark.parametrize("language", ["ja", "ja-JP", "zh", "zh-Hans", "ko"])
+def test_cjk_counts_characters(language):
+    assert counts_characters(language) is True

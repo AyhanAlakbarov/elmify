@@ -7,7 +7,9 @@ const PACKET_PREFIX = "packet:";
 
 /** One non-empty string from storage.local, or null. */
 async function storedString(key: string): Promise<string | null> {
-  const stored = await chrome.storage.local.get(key);
+  // A storage failure reads as "not paired": every caller then answers its
+  // page instead of leaving it waiting on a rejected promise.
+  const stored = await chrome.storage.local.get(key).catch(() => ({}) as Record<string, unknown>);
   const value = stored[key];
   return typeof value === "string" && value ? value : null;
 }
@@ -69,6 +71,31 @@ async function call(
   return body;
 }
 
+/** An upload served by ext_api.document: a device endpoint, so the token and
+ *  never a cookie. Drafts still come from download_document with the session.
+ *  ponytail: not through call(), which parses JSON; this body is bytes. */
+export async function fetchDocument(origin: string, path: string): Promise<ArrayBuffer> {
+  const token = await deviceToken();
+  if (!token) throw new ExtError(401, "pairing_required");
+  const response = await fetch(`${origin}${path}`, {
+    credentials: "omit",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return fileBytes(response);
+}
+
+const FILE_TYPES = ["application/pdf", "image/png", "image/jpeg"];
+
+/** The file's bytes, or document_unavailable. A redirect or a non-file type is
+ *  an expired session's login page answering 200, never the student's file. */
+export function fileBytes(response: Response): Promise<ArrayBuffer> {
+  const type = (response.headers.get("Content-Type") ?? "").split(";", 1).join("").trim().toLowerCase();
+  if (!response.ok || response.redirected || !FILE_TYPES.includes(type)) {
+    throw new ExtError(response.status, "document_unavailable");
+  }
+  return response.arrayBuffer();
+}
+
 /**
  * Redeem a one-time code minted by the dashboard's own session.
  *
@@ -115,7 +142,10 @@ export async function pairFromTab(tabId: number, origin: string): Promise<void> 
 }
 
 async function installationId(): Promise<string> {
-  const existing = await storedString("installation_id");
+  // Read directly, never through storedString: a storage failure there reads
+  // as "none", and minting a fresh id on it would change the device's identity.
+  const stored = (await chrome.storage.local.get("installation_id"))["installation_id"];
+  const existing = typeof stored === "string" && stored ? stored : null;
   if (existing) return existing;
   const fresh = crypto.randomUUID();
   await chrome.storage.local.set({ installation_id: fresh });
@@ -178,9 +208,15 @@ export async function storePacket(applicationId: string, packet: FillPacket): Pr
   await chrome.storage.session.set({ [`${PACKET_PREFIX}${applicationId}`]: packet });
 }
 
-export async function loadPacket(applicationId: string): Promise<FillPacket | null> {
+/** The cached packet, expired or not: what a page's dock report is checked
+ *  against, so a panel reopened hours later still lists the fields. */
+export async function cachedPacket(applicationId: string): Promise<FillPacket | null> {
   const stored = await chrome.storage.session.get(`${PACKET_PREFIX}${applicationId}`);
-  const packet = stored[`${PACKET_PREFIX}${applicationId}`] as FillPacket | undefined;
+  return (stored[`${PACKET_PREFIX}${applicationId}`] as FillPacket | undefined) ?? null;
+}
+
+export async function loadPacket(applicationId: string): Promise<FillPacket | null> {
+  const packet = await cachedPacket(applicationId);
   if (!packet) return null;
   if (Date.parse(packet.expires_at) <= Date.now()) return null;
   return packet;
@@ -230,8 +266,48 @@ export async function postAddress(
   })) as { address: string; awaiting_mail: boolean; ask_after_seconds: number };
 }
 
-export async function checkMailbox(origin: string): Promise<void> {
-  await call(origin, "/ext/mailbox/check", { method: "POST" });
+/** The account's login for the portal page the content script stands on
+ *  (spec 2026-10-09 §6). Returned to the caller only -- never stored. */
+export async function postPortalLogin(
+  origin: string,
+  applicationId: string,
+  ask: { page: "login" | "signup"; host: string; max_length?: number; came_back?: boolean },
+): Promise<{ username: string; password: string }> {
+  return (await call(origin, `/ext/applications/${applicationId}/portal-login`, {
+    method: "POST",
+    body: JSON.stringify(ask),
+  })) as { username: string; password: string };
+}
+
+/** The answers channel (owner, 2026-10-09): values the student typed into boxes
+ *  the packet named. The one call that carries typed values. */
+export async function postAnswers(
+  origin: string,
+  applicationId: string,
+  answers: unknown[],
+): Promise<{ recorded: number }> {
+  return (await call(origin, `/ext/applications/${applicationId}/answers`, {
+    method: "POST",
+    body: JSON.stringify({ answers }),
+  })) as { recorded: number };
+}
+
+/** The student's one tap on an offered value (spec 2026-10-12 §7.3): the server
+ *  confirms the fact and answers with the value to type, formatted for the portal. */
+export async function confirmOffer(
+  origin: string,
+  applicationId: string,
+  factId: string,
+): Promise<{ profile_field: string; value: string }> {
+  return (await call(origin, `/ext/applications/${applicationId}/facts/${factId}/confirm`, {
+    method: "POST",
+    body: "{}",
+  })) as { profile_field: string; value: string };
+}
+
+export async function checkMailbox(origin: string): Promise<{ queued: number }> {
+  const body = (await call(origin, "/ext/mailbox/check", { method: "POST" })) as { queued?: unknown };
+  return { queued: typeof body.queued === "number" ? body.queued : 0 };
 }
 
 export async function fetchRegistration(
@@ -254,4 +330,33 @@ export async function postRegistrationAnswer(
     method: "POST",
     body: JSON.stringify(answer),
   })) as { learned: boolean };
+}
+
+/** Bench mode (plan 6): a portal form an operator may record. */
+export interface BenchForm {
+  id: string;
+  portal_host: string;
+  form_url: string;
+}
+
+export async function benchWhoami(origin: string): Promise<boolean> {
+  const body = (await call(origin, "/ext/bench/whoami")) as { operator?: unknown };
+  return body.operator === true;
+}
+
+export async function benchPortalForms(origin: string): Promise<BenchForm[]> {
+  const body = (await call(origin, "/ext/bench/portal-forms")) as { forms: BenchForm[] };
+  return body.forms;
+}
+
+/** One recorded page: a value-free snapshot and a value-blanked, script-free copy. */
+export async function postBenchPage(
+  origin: string,
+  portalFormId: string,
+  page: { page_kind: string; password_rules: string; snapshot: unknown; html: string },
+): Promise<{ record_id: string }> {
+  return (await call(origin, `/ext/bench/portal-forms/${portalFormId}/pages`, {
+    method: "POST",
+    body: JSON.stringify(page),
+  })) as { record_id: string };
 }

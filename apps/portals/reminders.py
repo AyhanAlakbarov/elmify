@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.mail import send_mail
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone as dj_timezone
 
 from apps.concierge.models import Notification, RoadmapItem
@@ -137,6 +137,15 @@ def notify_student(
     )
 
 
+def _assigned_counselor(student: Membership) -> Membership | None:
+    assignment = (
+        CounselorAssignment.objects.filter(student=student, active=True)
+        .select_related("counselor")
+        .first()
+    )
+    return assignment.counselor if assignment is not None else None
+
+
 def notify_counselor(
     application: Application, item: RoadmapItem, remaining: timedelta
 ) -> Notification | None:
@@ -148,18 +157,12 @@ def notify_counselor(
     reach somebody and this is a second copy of a message the student already
     has.
     """
-    assignment = (
-        # active=True, not merely assigned: the model keeps the inactive rows,
-        # so dropping the filter routes the task to someone who has left.
-        CounselorAssignment.objects.filter(student=application.student, active=True)
-        .select_related("counselor")
-        .first()
-    )
-    if assignment is None:
+    counselor = _assigned_counselor(application.student)
+    if counselor is None:
         return None
     return Notification.objects.create(
         tenant=application.tenant,
-        recipient=assignment.counselor,
+        recipient=counselor,
         roadmap_item=item,
         message=(
             f"{application.where}: due in {remaining_phrase(remaining)}. "
@@ -324,6 +327,189 @@ def _remind_one(application_id: UUID, moment: datetime) -> bool:
     logger.info(
         "ReminderSent rung=%s application=%s portal=%s",
         rung.value,
+        application.id,
+        application.where,
+    )
+    return True
+
+
+#: How long after the application deadline to ask for an unrecorded decision (R3),
+#: countering winner-only self-reporting bias in `OutcomeSource.PERSON`.
+POST_DEADLINE_OUTCOME_CHECKIN_DELAY = timedelta(days=14)
+#: Second post-deadline follow-up when the first check-in was acknowledged without an outcome.
+POST_DEADLINE_FOLLOWUP_CHECKIN_DELAY = timedelta(days=45)
+_OUTCOME_CHECKIN_PREFIX = "Have you heard back from "
+
+
+def email_outcome_checkin(application: Application) -> bool:
+    """Mail the student asking whether a decision has arrived for a past-deadline application."""
+    if not settings.REMINDER_EMAIL_FROM:
+        return False
+    address = application.student.application_email
+    if not address:
+        return False
+    host = application.where
+    send_mail(
+        subject=f"Have you heard back about {application.title}?",
+        message=(
+            f"Have you heard back from {host} about {application.title}?\n\n"
+            "Open your dashboard to record the decision on your board so your plan stays accurate."
+        ),
+        from_email=settings.REMINDER_EMAIL_FROM,
+        recipient_list=[address],
+    )
+    return True
+
+
+def send_due_outcome_checkins_for_tenant(
+    tenant_id: UUID, *, now: datetime | None = None
+) -> int:
+    """Ask students (and assigned counselors) to record decisions for past-deadline applications.
+
+    Targets applications that have moved past preparation (`_ACTIVE_STATES`) and are not
+    in a `BLOCKED_*` escalation state, whose deadline passed at least
+    `POST_DEADLINE_OUTCOME_CHECKIN_DELAY` ago (or whose `deadline` is missing and `started_at`
+    is at least `POST_DEADLINE_FOLLOWUP_CHECKIN_DELAY` ago), and that still have no recorded
+    `outcome` or `decision_available_at`. Sends an initial check-in and at most one `+45d`
+    follow-up if the first check-in was acknowledged while the decision remained pending.
+    """
+    moment = now or dj_timezone.now()
+    cutoff = moment - POST_DEADLINE_OUTCOME_CHECKIN_DELAY
+    no_deadline_cutoff = moment - POST_DEADLINE_FOLLOWUP_CHECKIN_DELAY
+    with tenant_scope(tenant_id):
+        with tenant_transaction(tenant_id):
+            due_ids = list(
+                Application.objects.filter(
+                    Q(deadline__isnull=False, deadline__lte=cutoff)
+                    | Q(
+                        deadline__isnull=True,
+                        started_at__isnull=False,
+                        started_at__lte=no_deadline_cutoff,
+                    ),
+                    Q(outcome="", decision_available_at__isnull=True)
+                    | Q(
+                        outcome__in=(
+                            Application.Outcome.ADMITTED,
+                            Application.Outcome.ADMITTED_CONDITIONAL,
+                        ),
+                        funding_outcome="",
+                        candidate__estimated_funded_chance_pct__isnull=False,
+                    ),
+                    student__active=True,
+                )
+                .exclude(state__in=_ACTIVE_STATES)
+                .exclude(state__startswith="BLOCKED_")
+                .exclude(Exists(stopping_requests().filter(student=OuterRef("student"))))
+                .exclude(
+                    Exists(
+                        Notification.objects.filter(
+                            application=OuterRef("pk"),
+                            roadmap_item__stage=RoadmapItem.Stage.MONITORING,
+                            message__startswith=_OUTCOME_CHECKIN_PREFIX,
+                            acknowledged_at__isnull=True,
+                        )
+                    )
+                )
+                .values_list("id", flat=True)
+            )
+
+        checked_in = 0
+        for application_id in due_ids:
+            try:
+                with tenant_transaction(tenant_id):
+                    if _checkin_one(application_id, moment):
+                        checked_in += 1
+            except Exception:
+                logger.exception("OutcomeCheckinFailed application=%s", application_id)
+        return checked_in
+
+
+def _checkin_one(application_id: UUID, moment: datetime) -> bool:
+    application = (
+        Application.objects.select_for_update(of=("self",))
+        .select_related("student", "portal_form", "candidate")
+        .filter(id=application_id)
+        .first()
+    )
+    if (
+        application is None
+        or application.state in _ACTIVE_STATES
+        or application.state.startswith("BLOCKED_")
+    ):
+        return False
+    needs_admission_checkin = (
+        not application.outcome and application.decision_available_at is None
+    )
+    needs_bundled_funding_checkin = (
+        application.outcome
+        in (Application.Outcome.ADMITTED, Application.Outcome.ADMITTED_CONDITIONAL)
+        and not application.funding_outcome
+        and application.candidate is not None
+        and application.candidate.estimated_funded_chance_pct is not None
+    )
+    if not needs_admission_checkin and not needs_bundled_funding_checkin:
+        return False
+    existing_checkins = list(
+        Notification.objects.filter(
+            application=application,
+            roadmap_item__stage=RoadmapItem.Stage.MONITORING,
+            message__startswith=_OUTCOME_CHECKIN_PREFIX,
+        )
+    )
+    if any(n.acknowledged_at is None for n in existing_checkins) or len(existing_checkins) >= 2:
+        return False
+    is_followup = len(existing_checkins) == 1 or needs_bundled_funding_checkin
+    if application.deadline is not None:
+        required_delay = (
+            POST_DEADLINE_FOLLOWUP_CHECKIN_DELAY
+            if is_followup
+            else POST_DEADLINE_OUTCOME_CHECKIN_DELAY
+        )
+        if application.deadline > moment - required_delay:
+            return False
+    else:
+        if application.started_at is None:
+            return False
+        required_delay = (
+            POST_DEADLINE_FOLLOWUP_CHECKIN_DELAY * 2
+            if is_followup
+            else POST_DEADLINE_FOLLOWUP_CHECKIN_DELAY
+        )
+        if application.started_at > moment - required_delay:
+            return False
+    if held_for_quiet_hours(application.student, moment):
+        return False
+
+    checkin_deadline = moment + timedelta(days=7)
+    Notification.raise_card(
+        student=application.student,
+        recipient=application.student,
+        stage=RoadmapItem.Stage.MONITORING,
+        deadline=checkin_deadline,
+        owner=application.student,
+        application=application,
+        action=Notification.Action.OPEN_PORTAL if application.portal_form_id else "",
+        message=(
+            f"Have you heard back from {application.where} about {application.title}? "
+            "Record the decision on your board so your plan stays accurate."
+        ),
+    )
+    if (counselor := _assigned_counselor(application.student)) is not None:
+        Notification.raise_card(
+            student=application.student,
+            recipient=counselor,
+            stage=RoadmapItem.Stage.MONITORING,
+            deadline=checkin_deadline,
+            owner=counselor,
+            application=application,
+            message=(
+                f"{application.where} ({application.title}): deadline passed without a recorded "
+                "decision. Check in with this student and record the outcome on their board."
+            ),
+        )
+    email_outcome_checkin(application)
+    logger.info(
+        "OutcomeCheckinSent application=%s portal=%s",
         application.id,
         application.where,
     )

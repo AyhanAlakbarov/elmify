@@ -2,16 +2,16 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_DB: tehsil
-      POSTGRES_USER: tehsil
-      POSTGRES_PASSWORD: tehsil
+      POSTGRES_DB: elmify
+      POSTGRES_USER: elmify
+      POSTGRES_PASSWORD: elmify
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tehsil"]
+      test: ["CMD-SHELL", "pg_isready -U elmify"]
       interval: 2s
       timeout: 2s
       retries: 15
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
@@ -27,7 +27,7 @@ services:
       timeout: 2s
       retries: 15
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
 volumes:
   postgres-data:

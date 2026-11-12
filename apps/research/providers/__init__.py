@@ -87,3 +87,19 @@ class SearchProvider(Protocol):
     def name(self) -> str: ...
 
     def search(self, request: SearchRequest, meter: SearchMeter | None = None) -> Iterable[str]: ...
+
+
+def default_providers() -> list[SearchProvider]:
+    """Exa and Brave, each only when its key is set. Never Tavily (roster:
+    resolution and /map only)."""
+    from django.conf import settings
+
+    from .brave import BraveProvider
+    from .exa import ExaProvider
+
+    providers: list[SearchProvider] = []
+    if settings.EXA_API_KEY:
+        providers.append(ExaProvider(api_key=settings.EXA_API_KEY))
+    if settings.BRAVE_API_KEY:
+        providers.append(BraveProvider(api_key=settings.BRAVE_API_KEY))
+    return providers

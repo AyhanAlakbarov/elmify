@@ -6,7 +6,7 @@
 # Named stage rather than COPY --from=<image> directly: Dependabot's docker
 # updater only parses FROM lines (dependabot-core#5103), so an inline image
 # reference here would never be bumped. The alias makes it a FROM line.
-FROM ghcr.io/astral-sh/uv:0.12.18@sha256:3adc3706091ce7c2fe595e669628caedd6d951551b92b258b7e7dbe06d9440bc AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 FROM python:3.14-slim@sha256:caaf356f40667c496d405780745b9ac25771c189a51dfcc42430d531ea09f8a2 AS build
 
@@ -52,17 +52,24 @@ FROM runtime AS web
 # until it isn't -- a missing shared library does not fail `docker build`, it
 # fails when WeasyPrint runs. The web-image CI job renders a PDF for that
 # reason, and this is the package that job would otherwise be waiting to catch.
+#
+# fonts-sil-charis is the CV's own face (spec 2026-10-12-cv-engine-quality-design §3.5); Carlito,
+# Caladea and EB Garamond are the licensed, metric-compatible stand-ins for Calibri, Cambria and
+# Garamond when a PROGRAMME names one, exactly as fonts-liberation is for Times New Roman and Arial.
+# All four are SIL OFL and in Debian trixie main (checked 2026-10-13). Gelasio (Georgia) has no
+# package, so Georgia falls back to the default with a note.
 RUN apt-get update && apt-get install --no-install-recommends -y \
     libpango-1.0-0 libpangocairo-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 \
     libharfbuzz-subset0 \
     fonts-dejavu-core fonts-liberation \
+    fonts-sil-charis fonts-crosextra-carlito fonts-crosextra-caladea fonts-ebgaramond \
     && rm -rf /var/lib/apt/lists/*
 # Production storage serves only what collectstatic wrote (CLAUDE.md, "Static
 # files"). Production settings refuse to import without their environment, so
 # the build passes placeholders: collectstatic opens no database, cache or queue.
 RUN DJANGO_SECRET_KEY=collectstatic-only DJANGO_ALLOWED_HOSTS=localhost \
     DATABASE_ROLE=runtime_web POSTGRES_WEB_USER=collectstatic POSTGRES_WEB_PASSWORD=collectstatic \
-    POSTGRES_DB=tehsil POSTGRES_HOST=localhost \
+    POSTGRES_DB=elmify POSTGRES_HOST=localhost \
     RESEARCH_QUEUE_URL=unused EUROPASS_QUEUE_URL=unused PORTAL_QUEUE_URL=unused \
     DOCUMENT_QUEUE_URL=unused DOCUMENT_SCAN_QUEUE_URL=unused MAILBOX_QUEUE_URL=unused \
     CACHE_URL=redis://localhost:6379/0 \
@@ -76,35 +83,3 @@ FROM runtime AS worker
 # docs/superpowers/specs/2026-09-18-funder-reader-fetch-tiers-and-resolution-queue-design.md.
 USER app
 CMD ["python", "manage.py", "run_research_worker"]
-
-FROM runtime AS portal
-# This stage DOES carry credentials: it holds the database password, the LLM
-# key and a profile of live portal session cookies, because a fill has to read
-# a FieldMap and write an audit trail while it types. What makes that
-# acceptable is the renderer sandbox -- see apps/portals/engine.py, which
-# refuses to open a session when it would be stripped. That is also why the
-# portal service runs on EC2 capacity and not Fargate: Fargate refuses the
-# unprivileged user namespaces the sandbox needs (measured, us-east-1,
-# 2026-08-26), so Chrome would fail to launch there rather than run unprotected.
-#
-# playwright: apps/portals/engine.py needs Chrome for Testing, which is the
-# revision playwright installs.
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-# xvfb because extensions do not load in headless_shell, so Chrome runs headful
-# and headful Chrome needs a display. xauth is not optional here: xvfb-run
-# shells out to it to generate the throwaway MIT-MAGIC-COOKIE and refuses to
-# start without it ("xauth command not found"), discovered building this
-# stage. fonts-dejavu-core keeps the rendered page close to what a portal
-# expects to be filled in. No dbus-x11: the in-container sandbox validation
-# (docker build --target portal, then scripts/validate_portal_sandbox.py)
-# passed without it, so it is not installed -- add it back only if a real
-# portal is found to need D-Bus session services.
-RUN apt-get update && apt-get install --no-install-recommends -y \
-    xvfb xauth fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/*
-RUN playwright install --with-deps chromium && chmod -R a+rX /ms-playwright
-ENV PORTAL_PROFILE_ROOT=/var/lib/tehsil/portal-profiles
-RUN mkdir -p /var/lib/tehsil/portal-profiles && chown app /var/lib/tehsil/portal-profiles
-USER app
-CMD ["xvfb-run", "-a", "--server-args=-screen 0 1280x1024x24", \
-     "python", "manage.py", "run_portal_worker"]

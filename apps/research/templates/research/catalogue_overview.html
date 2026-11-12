@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Platform Catalogue &amp; Winner Cohorts · elmify{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Platform Catalogue &amp; Winner Cohorts</h1>
+    <p class="lede">Anonymized winner cohort statistics synced across tenant agencies.</p>
+  </div>
+</header>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>Kind</th>
+      <th>Target</th>
+      <th>Holder</th>
+      <th>Country</th>
+      <th>Sample size</th>
+      <th>Median work exp (months)</th>
+      <th>Research signal rate</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for cohort in cohorts %}
+    <tr>
+      <td>{{ cohort.target_kind }}</td>
+      <td>{{ cohort.target_name }}</td>
+      <td>{{ cohort.holder_name }}</td>
+      <td>{{ cohort.country_code }}</td>
+      <td>{{ cohort.sample_size }}</td>
+      <td>{{ cohort.work_experience_months_median|default:"—" }}</td>
+      <td>{{ cohort.research_signal_rate|default:"—" }}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="7">No winner cohort profiles synced yet.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

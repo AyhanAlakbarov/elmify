@@ -8,9 +8,11 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SerializerFunctionWrapHandler,
     StringConstraints,
     field_serializer,
     field_validator,
+    model_serializer,
     model_validator,
 )
 from pydantic_core import PydanticCustomError
@@ -46,6 +48,8 @@ class CourseRecord(BaseModel):
 
     `ects` is None when the credit system could not be converted
     (apps/documents/credits.py) -- unknown, never guessed.
+    `description` optionally records syllabus topics or module content to clarify
+    opaque transcript titles (e.g. 'Special Topics in CS I' or 'Elective Module 3').
     """
 
     model_config = _PROFILE_CONFIG
@@ -54,6 +58,14 @@ class CourseRecord(BaseModel):
     ects: Decimal | None = Field(default=None, ge=0, le=100, max_digits=6, decimal_places=2)
     grade: str | None = Field(default=None, max_length=50)
     in_progress: bool = False
+    description: str | None = Field(default=None, max_length=500)
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        data: dict[str, object] = handler(self)
+        if data.get("description") is None:
+            data.pop("description", None)
+        return data
 
 
 class AcademicRecord(BaseModel):
@@ -164,8 +176,11 @@ class StudentProfileSnapshot(BaseModel):
     career_intent: Literal["WORK_ABROAD", "RETURN_HOME", "PHD", "UNDECIDED"]
     application_budget: Money
     funding_dependency: Literal["MANDATORY", "IMPORTANT", "OPTIONAL"]
+    #: Optional extra the student allows ONLY for exceptional items (lanes spec
+    #: §7.7). None means no stretch; blank and 0 are both stored as None.
+    budget_stretch: Money | None = None
     #: What the student can cover per year for tuition and living. Required
-    #: unless funding is MANDATORY (see validate_profile_relationships).
+    #: when funding is IMPORTANT; optional when OPTIONAL (None means no annual cap).
     self_funding_capacity: Money | None = None
     strategy: Literal["BALANCED", "FUNDING_FIRST"]
     duration_preference: Literal["ONE_YEAR", "TWO_YEAR", "NONE"] = "NONE"
@@ -359,7 +374,7 @@ class StudentProfileSnapshot(BaseModel):
                 "invalid duration preference combination",
                 {"target": "duration_preference"},
             )
-        if self.funding_dependency != "MANDATORY" and self.self_funding_capacity is None:
+        if self.funding_dependency == "IMPORTANT" and self.self_funding_capacity is None:
             raise PydanticCustomError(
                 "profile_self_funding_missing",
                 "say how much you can cover yourself",

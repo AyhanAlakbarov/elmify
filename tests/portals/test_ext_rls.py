@@ -151,7 +151,8 @@ def test_the_packet_route_reads_facts_behind_the_policy(
     agency_a, domain_a, membership_a, user_a, application_a, client, rls_enforced_orm, monkeypatch
 ) -> None:
     """RED if mint_packet's reads escape their tenant_transaction: verified
-    values come back empty and a complete application refuses as missing_fact."""
+    values come back empty, so the entry degrades to a no-value hint and `entries`
+    is empty."""
     from apps.portals import packets
 
     monkeypatch.setattr(
@@ -166,7 +167,9 @@ def test_the_packet_route_reads_facts_behind_the_policy(
     )
 
     assert response.status_code == 200, response.content
-    assert response.json()["entries"][0]["value"] == "Ada Byron"
+    entries = response.json()["entries"]
+    assert len(entries) == 1
+    assert entries[0]["value"] == "Ada Byron"
 
 
 def test_the_packet_route_writes_a_portal_account_behind_the_policy(
@@ -181,8 +184,8 @@ def test_the_packet_route_writes_a_portal_account_behind_the_policy(
 ) -> None:
     """RED if portal_address's write escapes its tenant_transaction: the
     INSERT is refused by the policy, so contact.email never gets filled and
-    the route refuses with missing_fact (409) instead of minting a packet
-    carrying the tagged address."""
+    the address is missing, so `entries` is empty (a no_fact hint instead) rather
+    than carrying the tagged address."""
     from apps.portals import packets
     from apps.portals.models import PortalAccount
     from apps.tenancy.db import tenant_transaction
@@ -197,7 +200,9 @@ def test_the_packet_route_writes_a_portal_account_behind_the_policy(
     )
 
     assert response.status_code == 200, response.content
-    value = response.json()["entries"][0]["value"]
+    entries = response.json()["entries"]
+    assert len(entries) == 1
+    value = entries[0]["value"]
     assert value.startswith("leyla.apply+") and value.endswith("@outlook.com")
 
     with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):

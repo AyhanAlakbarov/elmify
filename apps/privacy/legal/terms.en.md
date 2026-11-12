@@ -2,7 +2,7 @@
 
 ## The service
 
-Tehsil provides software that helps students find programmes and funding, prepare documents such as CVs and motivation letters, and prepare applications to universities and funders abroad. These terms apply when you create an account and use the service.
+Elmify provides software that helps students find programmes and funding, prepare documents such as CVs and motivation letters, and prepare applications to universities and funders abroad. These terms apply when you create an account and use the service.
 
 ## Your obligations
 
@@ -14,7 +14,7 @@ Tehsil provides software that helps students find programmes and funding, prepar
 
 ## Application fees
 
-You pay application fees directly to the universities and funders. Tehsil does not collect them for you and is not a party to your payment.
+You pay application fees directly to the universities and funders. Elmify does not collect them for you and is not a party to your payment.
 
 ## No guarantee
 
@@ -36,4 +36,4 @@ When these terms change in a way that matters, the new version is shown at your 
 
 These terms are governed by the law of the Republic of Azerbaijan.
 
-Contact: privacy@tehsil.example
+Contact: privacy@elmify.example

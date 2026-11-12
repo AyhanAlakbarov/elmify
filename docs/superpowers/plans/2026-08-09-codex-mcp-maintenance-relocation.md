@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Goal:** Relocate the machine-wide Codex MCP maintenance bundle from `tehsil_agent` to `/home/orkhan/.local/share/codex-mcp/` without changing runtime behavior.
+**Goal:** Relocate the machine-wide Codex MCP maintenance bundle from `elmify` to `/home/orkhan/.local/share/codex-mcp/` without changing runtime behavior.
 
 **Architecture:** Change the launcher’s Graphify pin to the stable user-data path, retain migration support for the old project path, and use one transactional host script to install and verify the bundle. Project copies are deleted only after both production launch paths pass.
 
@@ -32,7 +32,7 @@
 Create a fixture whose installed launcher contains:
 
 ```bash
-graph_path="$home/Desktop/tehsil_agent/graphify-out/graph.json"
+graph_path="$home/Desktop/elmify/graphify-out/graph.json"
 ```
 
 Run setup and require the rendered launcher to contain:
@@ -92,7 +92,7 @@ Expected: every command exits `0`.
 - Create: `relocate-codex-mcp-maintenance.sh`
 
 **Interfaces:**
-- Consumes: the four maintenance files and `graphify-out/graph.json` from `tehsil_agent`.
+- Consumes: the four maintenance files and `graphify-out/graph.json` from `elmify`.
 - Produces: `/home/orkhan/.local/share/codex-mcp/`, an updated live launcher, a recovery backup, and a clean project root.
 
 - [x] **Step 1: Validate and stage a candidate bundle**
@@ -120,13 +120,13 @@ Restore the backed-up config, Bash configuration, launcher, and prior bundle. Re
 
 - [x] **Step 5: Delete project copies only after success**
 
-Remove the three scripts, launcher template, `graphify-out/`, and the one-time relocation script from `tehsil_agent`.
+Remove the three scripts, launcher template, `graphify-out/`, and the one-time relocation script from `elmify`.
 
 ### Task 4: Verify the completed separation
 
 **Files:**
 - Verify: `/home/orkhan/.local/share/codex-mcp/`
-- Verify: `/home/orkhan/Desktop/tehsil_agent/`
+- Verify: `/home/orkhan/Desktop/elmify/`
 
 **Interfaces:**
 - Consumes: installed host state.
@@ -138,7 +138,7 @@ Require all five assets, a non-empty 70-node graph, and the stable Graphify path
 
 - [x] **Step 2: Verify project cleanup**
 
-Require the relocated files and `graphify-out/` to be absent from `tehsil_agent` while `idea.md`, project dependencies, docs, and skill observations remain.
+Require the relocated files and `graphify-out/` to be absent from `elmify` while `idea.md`, project dependencies, docs, and skill observations remain.
 
 - [x] **Step 3: Report the backup path and verification result**
 

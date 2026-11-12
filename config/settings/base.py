@@ -119,6 +119,16 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+#: Session and CSRF cookie lifetime and browser flags (AUTH-VULN-03 / AUTH-VULN-05).
+#: 8-hour session lifetime with sliding renewal and browser-close expiry; Lax SameSite
+#: so top-level OAuth redirects (/mailbox/callback/<provider>/) keep the session cookie.
+SESSION_COOKIE_AGE = 60 * 60 * 8
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SAMESITE = "Lax"
+
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"
 USE_I18N = True
@@ -138,9 +148,7 @@ RESEARCH_QUEUE_URL = os.getenv("RESEARCH_QUEUE_URL", "test-research-queue")
 #: so the search starts without a checkout (none exists yet; R13 uses
 #: `manage.py mark_cycle_paid`). On by default only on a DEBUG machine; a
 #: deployed site turns it on deliberately with EARLY_ACCESS_FREE_CYCLE=1.
-EARLY_ACCESS_FREE_CYCLE = (
-    os.getenv("EARLY_ACCESS_FREE_CYCLE", "1" if DEBUG else "0") == "1"
-)
+EARLY_ACCESS_FREE_CYCLE = os.getenv("EARLY_ACCESS_FREE_CYCLE", "1" if DEBUG else "0") == "1"
 EUROPASS_QUEUE_URL = os.getenv("EUROPASS_QUEUE_URL", "test-europass-queue")
 DOCUMENT_QUEUE_URL = os.getenv("DOCUMENT_QUEUE_URL", "test-document-queue")
 DOCUMENT_SCAN_QUEUE_URL = os.getenv("DOCUMENT_SCAN_QUEUE_URL", "test-document-scan-queue")
@@ -170,30 +178,44 @@ TRANSCRIPT_PAGES_PER_CYCLE = 50
 TRANSCRIPT_MAX_RETAKES = 2
 #: Spec §7.1: Azure pages one tenant may have read in a UTC day; past it, readings wait (DELAYED)
 #: rather than bill without bound. The value is open (spec §11) -- 2,000 pages is about $20.
+#: Counts both readers' Azure pages: transcripts and document fact reading.
 TRANSCRIPT_TENANT_DAILY_AZURE_PAGES = int(
     os.environ.get("TRANSCRIPT_TENANT_DAILY_AZURE_PAGES", "2000")
 )
 #: Spec §7.1: an upload still READING (or scanned clean and never picked up) this long after its
 #: last write was lost with a killed worker; the resume sweep takes it up again.
 TRANSCRIPT_STUCK_AFTER_MINUTES = 30
-EVIDENCE_BUCKET_NAME = os.getenv("EVIDENCE_BUCKET_NAME", "test-evidence-bucket")
-PORTAL_QUEUE_URL = os.getenv("PORTAL_QUEUE_URL", "test-portal-queue")
-#: Where Chrome profiles for portal sessions live. A path on the portal task's
-#: own encrypted volume -- never a shared filesystem, see apps/portals/profiles.py.
-PORTAL_PROFILE_ROOT = Path(
-    os.getenv("PORTAL_PROFILE_ROOT", "/tmp/tehsil-portal-profiles")  # nosec B108
-    # development-only fallback; production sets PORTAL_PROFILE_ROOT in the
-    # Dockerfile's portal stage, and the directory is created 0700 by
-    # profile_dir rather than reused.
+#: Spec 2026-10-12: read a passport, ID card, diploma or certificate into facts.
+#: Off until the launch gates in spec §9 are met; Azure also needs
+#: TRANSCRIPT_AZURE_ENABLED, which now gates both readers.
+FACT_READING_ENABLED = os.getenv("FACT_READING_ENABLED", "") == "1"
+#: Pages sent to Azure per document, from the first: billing stops here.
+FACT_READING_PAGE_CAPS = {"PASSPORT": 4, "DIPLOMA": 4, "LANGUAGE_CERTIFICATE": 2}
+#: A value Azure reads with no strip to check it is proven only at or above this,
+#: for the field and for every word in it (spec §5.2.3).
+FACT_READING_CONFIDENCE = 0.95
+#: Readings per student per hour; our own re-reads never count.
+FACT_READING_HOURLY = 20
+#: Two OpenRouter model ids from two vendors that read a diploma or certificate
+#: (spec 2026-10-12 §5.3.3): the pair the catalogue reader measured (owner
+#: decision 2026-10-12). "[]" turns diploma and certificate reading off.
+# ponytail: one OpenRouter route per model; pin a single DeepSeek provider
+# (OpenRouter provider routing) if answers drift between hosts.
+FACT_READING_READERS: list[str] = json.loads(
+    os.getenv("FACT_READING_READERS",
+              '["deepseek/deepseek-v4.1-flash", "openai/gpt-6-luna"]')
 )
-PORTAL_PROFILE_TTL_HOURS = int(os.getenv("PORTAL_PROFILE_TTL_HOURS", "24"))
-#: The resolution provider is named in configuration, not in code. Empty means
-#: no service tier, which is a supported deployment: every challenge then goes
-#: to a consultant. The credential is read from the environment at use time and
-#: is deliberately not a setting -- it must not appear in a settings dump.
-PORTAL_CAPTCHA_ENDPOINT = os.getenv("PORTAL_CAPTCHA_ENDPOINT", "")
-PORTAL_CAPTCHA_ATTEMPTS = int(os.getenv("PORTAL_CAPTCHA_ATTEMPTS", "3"))
-PORTAL_CAPTCHA_TIMEOUT_SECONDS = float(os.getenv("PORTAL_CAPTCHA_TIMEOUT_SECONDS", "120"))
+FACT_READING_READER_MAX_TOKENS = 600
+#: Pinned OpenRouter hosts per reader model (as measured in engine_eval/chat.py);
+#: a model absent here is routed by OpenRouter.
+FACT_READING_READER_HOSTS: dict[str, list[str]] = {"deepseek/deepseek-v4.1-flash": ["fireworks"]}
+#: Reader calls per agency per day: the per-tenant cost breaker CLAUDE.md requires of
+#: every LLM-calling path. Four calls at most per document (two readers, one retry each).
+FACT_READING_TENANT_DAILY_CALLS = 2000
+#: CV evidence spec §10.1: place supported GitHub and thesis/report bullets onto
+#: generated CVs once the §14 accuracy gate is met.
+CV_REPO_BULLETS_ENABLED = os.getenv("CV_REPO_BULLETS_ENABLED", "") == "1"
+EVIDENCE_BUCKET_NAME = os.getenv("EVIDENCE_BUCKET_NAME", "test-evidence-bucket")
 OPENAI_EXTRACTION_MODEL = os.getenv("OPENAI_EXTRACTION_MODEL", "gpt-5.6-luna")
 OPENAI_EXPLANATION_MODEL = os.getenv("OPENAI_EXPLANATION_MODEL", "gpt-5.6-terra")
 OPENAI_ESCALATION_MODEL = os.getenv("OPENAI_ESCALATION_MODEL", "gpt-5.6-sol")
@@ -204,17 +226,25 @@ OPENAI_MODEL_SCHEMA_VERSION = 2
 #: from ANTHROPIC_API_KEY at use time, never a setting.
 ANTHROPIC_JUDGE_MODEL = os.getenv("ANTHROPIC_JUDGE_MODEL", "claude-sonnet-5")
 #: Whether a STUDENT'S OWN TEXT may be sent to that second family as well.
-#: Default off, and the default is the point. ANTHROPIC_JUDGE_MODEL reads
-#: programme pages -- shared-catalogue text with no personal data in it --
-#: while apps/documents/letter_verification.py::check_written_requirements
-#: would send the finished letter: the applicant's name and address in the
-#: header block, and their own biography. OpenAI is already a processor for
-#: that data class because generation sends it there; Anthropic is not, and
-#: the agency DPAs (docs/runbooks/shadow-pilot.md) do not name a second model
-#: vendor. Turning this on is a data-protection decision with a written basis,
-#: never a caller quietly passing a client through. (Branch security review,
-#: 2026-09-22.)
-LETTER_JUDGE_SECOND_FAMILY = os.getenv("LETTER_JUDGE_SECOND_FAMILY", "") == "1"
+#: `apps/documents/letter_verification.py::check_written_requirements` sends
+#: the finished letter -- the applicant's name and address in the header block,
+#: and their own biography. OpenAI is already a processor for that data class
+#: because generation sends it there; Anthropic was not.
+#:
+#: **ON by default since the owner's decision of 2026-09-24**, which was the
+#: one thing this gate was waiting for: a written basis. Two conditions travel
+#: with it and neither is enforced by code, so they are written here.
+#: (1) The use agreement naming the second vendor is to be published -- the
+#: agency DPAs (`docs/runbooks/shadow-pilot.md`) still do not name one, and
+#: this default is ahead of that paperwork, not behind it.
+#: (2) `ANTHROPIC_API_KEY` does not reach the worker task definition. Until it
+#: does, the Claude reading is simply lost and the judge logs "judged by one
+#: model family" -- the gate is on and the second opinion is not there, which
+#: looks identical to working. Deploy the key or the decision buys nothing.
+#: Why a second family at all, rather than a third reading of the same model:
+#: three samples of one model share its bias (measured for the CV-format judge,
+#: owner decision 2026-09-14).
+LETTER_JUDGE_SECOND_FAMILY = os.getenv("LETTER_JUDGE_SECOND_FAMILY", "1") == "1"
 #: Kept: `manage.py discover` and `pool_cv_corpus` read it, and it holds the
 #: Tavily key today. The per-provider names below are what the roster needs
 #: (roster §4.13) -- one generic name cannot carry four keys with four
@@ -228,6 +258,10 @@ TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "") or SEARCH_API_KEY
 #: permission on file (roster §8); queries are profile-free by construction
 #: (anchors.guard_phrase) because Exa ToS 1.2(c) licenses query text.
 EXA_API_KEY = os.getenv("EXA_API_KEY", "")
+#: OpenAlex API key (mandatory since 2026-02-13; 2026-10-14-professor-and-paper-discovery.md
+#: §1). No key, no request: the unauthenticated path is gone. Sent only to
+#: api.openalex.org via the `api-key` header and never logged.
+OPENALEX_API_KEY = os.getenv("OPENALEX_API_KEY", "")
 #: Diffbot Knowledge Graph: Enhance by name is the resolver's residue step
 #: (spec 6.5; 7/10 on the syllabic-acronym and Georgian-script names no lexical
 #: rule reaches). Its terms carry an explicit commercial grant and NO effective
@@ -256,12 +290,18 @@ DECISIONS_BASE_URL = os.getenv("DECISIONS_BASE_URL", "https://openrouter.ai/api"
 #: student-derived text once that gate opens and the DPA gate (docs/legal)
 #: covers it too.
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+#: The platform's one GitHub key (CV evidence spec §12.2): fine-grained, read-only, public
+#: repositories only, no organisation access, held in Secrets Manager and delivered to the
+#: document worker (infra/template.yaml). Empty means no request at all -- the
+#: unauthenticated path through the shared NAT address is gone. Never logged, and sent to
+#: api.github.com only (apps/documents/evidence/github.py).
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 #: Jev (TypeSafe System One) through OpenRouter (owner decision 2026-09-26):
 #: `apps/research/jev.py` is the provenance vetoes' client (apps/research/blocking.py).
 #: The key is OpenRouter's, env only. It coexists with the decision layer's client
 #: above (DECISIONS_BASE_URL, TYPESAFE_MODEL); unifying the two is a later design decision.
 #: Only page text is ever sent to it; no real student text before the DPA.
-JEV_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+JEV_API_KEY = OPENROUTER_API_KEY
 JEV_BASE_URL = os.getenv("JEV_BASE_URL", "https://openrouter.ai/api")
 #: A pinned, versioned model -- never the moving `jev-latest` alias. Every
 #: Jev threshold in the repo is tuned against this ID.
@@ -287,8 +327,11 @@ TYPESAFE_MODEL = os.getenv("TYPESAFE_MODEL", "typesafe/jev-1.13")
 #: DECISIONS_BASE_URL. An adapter entry appears ONLY when §11 gate 9's
 #: measurement showed it better on that decision (optionally in one language:
 #: "D4:kk-Cyrl"). Never a failover.
+#: `evidence_support` (apps/documents/evidence/checks.py) is named even though it equals
+#: the default: its state is student text (thesis spans), and checks.support refuses to
+#: send it anywhere provider_for does not answer "typesafe" (CV evidence spec §7.4).
 DECISIONS_PROVIDER: dict[str, str] = json.loads(
-    os.getenv("DECISIONS_PROVIDER", '{"default": "typesafe"}')
+    os.getenv("DECISIONS_PROVIDER", '{"default": "typesafe", "evidence_support": "typesafe"}')
 )
 #: Layer 3 of the cost controls (spec §9a). Jev is cheap and unbounded; a
 #: runaway sweep is still a bill. At $0.042/MTok this is about $8 a month.
@@ -308,11 +351,62 @@ ORG_CLASSIFY_RUN_LIMIT = int(os.getenv("ORG_CLASSIFY_RUN_LIMIT", "3000"))
 #: unopened)", counted from first filing.
 RESOLUTION_DAILY_CAP_PER_OPERATOR = int(os.getenv("RESOLUTION_DAILY_CAP_PER_OPERATOR", "20"))
 RESOLUTION_EXPIRY_DAYS = int(os.getenv("RESOLUTION_EXPIRY_DAYS", "30"))
+#: CV relevance engine (apps/documents/relevance.py). Ships switched OFF: an
+#: item is judged only when its language is listed here, and a language is
+#: listed only after `manage.py cv_relevance_eval` reports it at or above the
+#: pass mark (spec §7.2). "tr" and "az" must BOTH be listed for a Turkic
+#: Latin line, because the script cannot tell them apart.
+CV_RELEVANCE_LANGUAGES: frozenset[str] = frozenset()
+#: P(unrelated) at or above which an item is left out. Set from the
+#: measurement's Learn-then-Test bar; 0.9 is the spec's starting value.
+CV_RELEVANCE_BAR = 0.9
+
+# --- The card reader's stack (verified-catalog §5, §0.25; provisional until owner round 2) ---
+#: Two cheap readers read every section; the decider answers only their split. One setting that
+#: every question set and every session reuses (apps/research/card_engine/readers.py::stack
+#: refuses a malformed one). Each OpenRouter reader is pinned to ONE host: a re-pinned host is a
+#: re-certification (§5.5). DeepSeek's host (inference-net/fp8) was chosen by the 2026-10-12
+#: three-host measurement; Fireworks 429'd on every call. gpt-6-luna takes no `temperature`
+#: (404 under require_parameters, measured 2026-10-11). CARD_READERS_JSON replaces the whole stack.
+_CARD_READERS_DEFAULT: dict[str, object] = {
+    "pair": [
+        {"name": "deepseek", "transport": "openrouter", "model": "deepseek/deepseek-v4.1-flash",
+         "host": "inference-net/fp8",
+         "params": {"reasoning": {"enabled": False}, "temperature": 0}},
+        {"name": "luna", "transport": "openrouter", "model": "openai/gpt-6-luna",
+         "host": "openai", "params": {"reasoning": {"effort": "none"}}},
+    ],
+    "decider": {"name": "opus", "transport": "anthropic", "model": "claude-opus-5-5"},
+}
+#: Unset means the default; anything set is used as written, so `{}`, `[]` or `0` is refused by
+#: stack() (and `manage.py check`) instead of silently becoming the default.
+def _card_readers(raw: str) -> object:
+    """Malformed JSON stays a string so stack() raises StackMisconfigured and `manage.py check`
+    reports research.E001, instead of settings import taking down every process."""
+    if not raw:
+        return _CARD_READERS_DEFAULT
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+CARD_READERS: object = _card_readers(os.getenv("CARD_READERS_JSON", ""))
+#: Model calls (every attempt, D8 included) one catalogue run may make in an hour, and one
+#: tenant's on-demand reads (a typed programme, §3.3): the cost circuit-breakers CLAUDE.md's LLM
+#: rule requires, counted through apps/ratelimit.rate_limited.
+CARD_READER_RUN_CALLS_PER_HOUR = int(os.getenv("CARD_READER_RUN_CALLS_PER_HOUR", "20000"))
+CARD_READER_TENANT_CALLS_PER_HOUR = int(os.getenv("CARD_READER_TENANT_CALLS_PER_HOUR", "400"))
 
 #: The sweep harness (spec 6.7). Generations per (country, family) per day --
 #: one call per language of the pass, so 8 covers a four-language country
 #: regenerated once.
 SWEEP_ANGLE_GENERATIONS_PER_DAY = int(os.getenv("SWEEP_ANGLE_GENERATIONS_PER_DAY", "8"))
+#: The model that writes the sweep's search sentences (angles.py), through OpenRouter with
+#: OPENROUTER_API_KEY. DeepSeek, not OPENAI_EXTRACTION_MODEL: measured 2026-10-13 on Turkish
+#: foundations (docs/superpowers/research/2026-10-13-sweep-sentence-writing-comparison.md), it was
+#: the most consistent writer at a third of the cost, and the 2026-10-03 engine design names it.
+SWEEP_ANGLE_MODEL = os.getenv("SWEEP_ANGLE_MODEL", "deepseek/deepseek-v4.1-flash")
 #: One pass's search + classification-fetch ceiling, USD. $5 fits Exa's free
 #: $10/month and Brave's free tier at measurement scale; corridor-scale runs
 #: wait for the plans (spec section 7).
@@ -341,7 +435,7 @@ CLOSED_LIST_RECHECK_DAYS = int(os.getenv("CLOSED_LIST_RECHECK_DAYS", "90"))
 # throttled or refused. Operator-run enumeration only (apps/research/wikidata.py).
 WIKIDATA_USER_AGENT = os.getenv(
     "WIKIDATA_USER_AGENT",
-    "tehsil-agent-enumerator/1.0 (https://github.com/0rkhann/tehsil_agent)",
+    "elmify-enumerator/1.0 (https://github.com/0rkhann/elmify)",
 )
 # ROR v2 identifies heavy clients by a free client id sent as `Client-Id`;
 # blank sends none.
@@ -408,6 +502,11 @@ MODEL_PRICES_USD_PER_MTOK: dict[str, dict[str, float]] = _MODEL_PRICES_OVERRIDE 
     # Anthropic pricing, verified 2026-09-26: Sonnet 5 is $2 input / $10 output
     # per MTok; cache read 0.1x input, 5-minute cache write 1.25x input.
     "claude-sonnet-5": {"input": 2.00, "cache_read": 0.20, "cache_write": 2.50, "output": 10.00},
+    # Claude Opus 5.5, verified 2026-10-12 at platform.claude.com/docs/en/about-claude/pricing:
+    # "| Claude Opus 5.5 | $4 / MTok | $5 / MTok | $8 / MTok | $0.20 / MTok | $20 / MTok |"
+    # (base input, 5m cache write, 1h cache write, cache hits, output). The page names models by
+    # display name; claude-opus-5-5 is this repo's id for it (the card reader's decider).
+    "claude-opus-5-5": {"input": 4.00, "cache_read": 0.20, "cache_write": 5.00, "output": 20.00},
     # OPENAI_EXTRACTION_MODEL (gpt-5.6-luna) is deliberately UNPRICED: no row
     # until a published OpenAI price for that exact model has been read (on
     # 2026-09-26 openai.com/api/pricing and platform.openai.com/docs/pricing
@@ -454,20 +553,11 @@ FETCH_WEBHOOKS_ENABLED = os.getenv("FETCH_WEBHOOKS_ENABLED", "") == "1"
 #: `concurrencyLimited` with a long queue (spec 9.3): the vendor is already
 #: queueing our work, and asking for more parallelism buys latency, not pages.
 FIRECRAWL_CONCURRENCY = int(os.getenv("FIRECRAWL_CONCURRENCY", "25"))
-#: Standard's published rate limits; they pace a sweep. Not enforced by a
-#: distributed semaphore -- see spec 9.3: the vendors queue over-limit work
-#: themselves and a counter shared across ECS tasks would be a second
-#: implementation of what they already enforce.
-FIRECRAWL_SCRAPE_RPM = int(os.getenv("FIRECRAWL_SCRAPE_RPM", "500"))
-FIRECRAWL_CRAWL_RPM = int(os.getenv("FIRECRAWL_CRAWL_RPM", "100"))
 #: Standard's monthly credits. Read by the monitor pre-flight only: a monitor
 #: is created only if the cycle's `estimatedCreditsPerMonth` fits inside this
 #: minus the sweep reserve, because a monitor that cannot pay for its checks
 #: reports `skipped_no_credits` forever and looks like a site that never changes.
 FIRECRAWL_MONTHLY_CREDITS = int(os.getenv("FIRECRAWL_MONTHLY_CREDITS", "100000"))
-#: scrape.do Hobby.
-SCRAPEDO_CONCURRENCY = int(os.getenv("SCRAPEDO_CONCURRENCY", "10"))
-SCRAPEDO_MONTHLY_CREDITS = int(os.getenv("SCRAPEDO_MONTHLY_CREDITS", "250000"))
 #: Pages per host per sweep. 1 credit per page PLUS 1 per PDF page, so the
 #: worst case is this times (1 + FETCH_PDF_MAX_PAGES) and the sweep budget is
 #: checked against that ceiling before the crawl job is submitted -- Firecrawl's
@@ -567,15 +657,55 @@ BRAVE_USD_PER_REQUEST = float(os.getenv("BRAVE_USD_PER_REQUEST", "0.005"))
 # Money, so Decimal: every figure here is compared against a ledger of
 # Decimal WalletCharge rows (apps/research/wallet.py).
 #: Spec 10.5 / decision 28: one student's search budget for one admission cycle.
-SEARCH_WALLET_USD = Decimal(os.getenv("SEARCH_WALLET_USD", "50"))
+#: $100, owner 2026-10-14 (was $50): one big first search, then small follow-ups.
+SEARCH_WALLET_USD = Decimal(os.getenv("SEARCH_WALLET_USD", "100"))
+#: Retail B2C student search wallet cap on PlatformAgency (299 AZN / 499 AZN pass):
+#: caps worst-case cold search COGS at $35 (~59.50 AZN) and 1 wallet per cycle.
+STUDENT_B2C_SEARCH_WALLET_USD = Decimal(os.getenv("STUDENT_B2C_SEARCH_WALLET_USD", "35"))
+STUDENT_B2C_SEARCH_WALLETS_PER_YEAR = int(os.getenv("STUDENT_B2C_SEARCH_WALLETS_PER_YEAR", "1"))
+#: What the first search may not spend, so follow-ups stay possible.
+SEARCH_FOLLOWUP_RESERVE_USD = Decimal(os.getenv("SEARCH_FOLLOWUP_RESERVE_USD", "10"))
 #: Owner check (plan decision 4): an edited intake must not mint a new wallet
 #: forever. A third intake inside 365 days reuses the newest wallet.
 SEARCH_WALLETS_PER_YEAR = int(os.getenv("SEARCH_WALLETS_PER_YEAR", "2"))
 #: Spec 10.5: a tap spends at most this share of what remains (recommended 0.5, §19).
 TAP_WALLET_SHARE = Decimal(os.getenv("TAP_WALLET_SHARE", "0.5"))
-TAP_MAX_PROVIDER_CALLS = int(os.getenv("TAP_MAX_PROVIDER_CALLS", "40"))
+#: Twice TAP_MAX_QUERIES: two providers make two calls per query. Follow-ups
+#: only; the first search is bounded by money, the plateau and its time cap.
+TAP_MAX_PROVIDER_CALLS = int(os.getenv("TAP_MAX_PROVIDER_CALLS", "60"))
+#: Queries one follow-up renders (spec 10.5). Each goes to Exa ($0.009 at 12
+#: results) and Brave ($0.005), so 30 queries are about $0.42 of search. The
+#: first search is capped by money and the plateau rule instead.
+TAP_MAX_QUERIES = int(os.getenv("TAP_MAX_QUERIES", "30"))
 TAP_MAX_PAGES = int(os.getenv("TAP_MAX_PAGES", "30"))
+#: A follow-up's time cap; the first search has FIRST_SEARCH_MAX_SECONDS.
 TAP_MAX_SECONDS = int(os.getenv("TAP_MAX_SECONDS", "180"))
+#: The first search runs in the worker, in the background. Under ResearchQueue's
+#: VisibilityTimeout (900 s, infra/template.yaml): a run outlasting it would see
+#: SQS hand the same message to another worker mid-search.
+FIRST_SEARCH_MAX_SECONDS = int(os.getenv("FIRST_SEARCH_MAX_SECONDS", "840"))
+#: A FIRST search that runs out of FIRST_SEARCH_MAX_SECONDS saves its place and
+#: continues in a new job; money and the plateau end it, and this many
+#: continuations is only a runaway guard (it then ends TIME_CAP).
+FIRST_SEARCH_MAX_CONTINUATIONS = int(os.getenv("FIRST_SEARCH_MAX_CONTINUATIONS", "6"))
+#: Search requests a tap has in flight at once (owner, 2026-10-15). Under both
+#: providers' recorded limits: Exa 10 q/s (developer plan), Brave 50 q/s (Search
+#: plan) -- docs/superpowers/research/2026-08-30-live-search-review-1.md. A
+#: request asks its providers one after another, so each sees at most this many.
+TAP_PARALLEL_CALLS = int(os.getenv("TAP_PARALLEL_CALLS", "8"))
+#: The sweep's plateau rule, per query: stop when this many queries in a row
+#: bring fewer than FIRST_SEARCH_PLATEAU_MIN_NEW new hosts between them.
+FIRST_SEARCH_PLATEAU_BATCH = int(os.getenv("FIRST_SEARCH_PLATEAU_BATCH", "10"))
+FIRST_SEARCH_PLATEAU_MIN_NEW = int(os.getenv("FIRST_SEARCH_PLATEAU_MIN_NEW", "2"))
+#: The deep stage's results per query, Exa only (about $0.097 a call; Brave
+#: returns at most 20 per query).
+FIRST_SEARCH_DEEP_RESULTS = int(os.getenv("FIRST_SEARCH_DEEP_RESULTS", "100"))
+#: A query any student ran within this many days is not run again: its hosts
+#: are already in the catalogue (plan Task 4b reads it).
+TAP_QUERY_REUSE_DAYS = int(os.getenv("TAP_QUERY_REUSE_DAYS", "30"))
+#: Off until stage 2 is bound (plan Task 7): until then searches run by the
+#: operator command only, so no student's money buys hosts nothing reads.
+TAP_AUTOMATIC = os.getenv("TAP_AUTOMATIC", "") == "1"
 #: Taps per student per rolling day, counted from SearchTap rows (durable),
 #: never from apps/ratelimit.py's per-process cache.
 TAP_PER_DAY = int(os.getenv("TAP_PER_DAY", "2"))
@@ -602,6 +732,14 @@ PROVIDER_CALL_PREFLIGHT_USD = {
 #: because the real harness is bounded by money and its own stop rules, not a
 #: call count. A float because PassConfig.budget_usd is one.
 CELL_SWEEP_BUDGET_USD = float(os.getenv("CELL_SWEEP_BUDGET_USD", "5.0"))
+#: Off until the card reader's slice 3 serves the master's-only level rule: the
+#: level-free funder sentences (commit 07a196dd) would let undergraduate-only
+#: funders through. While False, no funder-family sweep runs (`sweep_organisations`
+#: refuses, `run_area_sweeps` marks the row UNAVAILABLE). Every family in
+#: `angles.PASS_SHAPES` is a funder sweep.
+FUNDER_SWEEP_LEVEL_CHECK_LIVE = (
+    os.getenv("FUNDER_SWEEP_LEVEL_CHECK_LIVE", "true").lower() == "true"
+)
 #: An area swept within this many days is not swept again on demand.
 CELL_SWEEP_COOLDOWN_DAYS = int(os.getenv("CELL_SWEEP_COOLDOWN_DAYS", "30"))
 #: How long `retry_due_fetches` holds a host's DomainLease for one re-entry.
@@ -623,6 +761,11 @@ MICROSOFT_OAUTH_CLIENT_SECRET = os.getenv("MICROSOFT_OAUTH_CLIENT_SECRET", "")
 #: apps/mailbox/oauth.py; it must match the redirect URI registered with both
 #: providers exactly, including the scheme.
 MAILBOX_OAUTH_REDIRECT_BASE = os.getenv("MAILBOX_OAUTH_REDIRECT_BASE", "")
+
+#: The KMS key portal passwords are encrypted under (infra: PortalCredentialsKey).
+#: Blank locally and in tests, where Secrets Manager's default key is used.
+PORTAL_SECRETS_KMS_KEY_ID = os.getenv("PORTAL_SECRETS_KMS_KEY_ID", "")
+
 
 def _providers(value: str) -> tuple[str, ...]:
     """Normalise a comma-separated MAILBOX_PROVIDERS value.
@@ -646,11 +789,32 @@ MAILBOX_PROVIDERS = _providers(os.getenv("MAILBOX_PROVIDERS", "MICROSOFT"))
 MAILBOX_PUSH_ENABLED = os.getenv("MAILBOX_PUSH_ENABLED", "") == "1"
 MAILBOX_QUEUE_URL = os.getenv("MAILBOX_QUEUE_URL", "test-mailbox-queue")
 
-#: The address deadline reminders are sent from. Empty by default and empty in
+#:The address deadline reminders are sent from. Empty by default and empty in
 #: production today: no company sending domain exists yet (owner, 2026-09-19),
 #: and an unset value is what keeps the channel dormant rather than failing.
 #: Setting it, plus an SES-backed EMAIL_BACKEND, is the whole switch-on.
 REMINDER_EMAIL_FROM = os.getenv("REMINDER_EMAIL_FROM", "")
+
+#: Launch gate for apps/documents/cv_verbs.py (CV design 2026-10-12 §5.1): a
+#: student's CV bullets go to Jev, through OpenRouter, only after the same DPA
+#: and terms review TRANSCRIPT_JEV_ENABLED waits for. Off: lines stay as written.
+CV_VERB_JEV_ENABLED = os.getenv("CV_VERB_JEV_ENABLED", "") == "1"
+
+#: The same budget, per ONE research-fit proposal rather than per sweep (design
+#: D15). Every page `propose_research_fit` reads is a billable vendor credit and
+#: `RESEARCH_FIT_DAILY_CEILING_USD` meters SEARCH spend only, so before this the
+#: fetch half was bounded by nothing but the per-student 20/hour call limiter --
+#: a count, not a dollar figure. (Why `MAX_PAGES_CLASSIFIED` does not bound it
+#: either is in `service.propose_research_fit`.)
+#: The numbers are that search space: 2 anchors x 2 domains x 2 queries x
+#: TOP_PAGES = 24 attempts at Firecrawl's 1 credit, and half of them escalating
+#: to scrape.do's 25-credit residue tier. About $0.055 a proposal at the plans
+#: priced on 2026-09-19 -- and the dollars, not the credits, are what the daily
+#: per-tenant ceiling now sees, because the budget's usd() is added to it.
+RESEARCH_FIT_FETCH_CREDITS = {
+    "FIRECRAWL": int(os.getenv("RESEARCH_FIT_FETCH_CREDITS_FIRECRAWL", "24")),
+    "SCRAPE_DO": int(os.getenv("RESEARCH_FIT_FETCH_CREDITS_SCRAPE_DO", "300")),
+}
 
 # Without this, apps.documents.europass_worker's "EuropassCallMade" log line
 # (and every other apps.* logger call) is dropped before it reaches any

@@ -5,10 +5,20 @@ from django.utils import timezone
 
 from apps.audit.identity import redact_identity
 from apps.audit.redaction import redact_student
+from apps.documents.evidence.refresh import reset as reset_evidence_refresh
+from apps.documents.models import (
+    CvFixRevert,
+    CVItemChoice,
+    CVRelevanceAnswer,
+    DocumentReading,
+    EvidenceReading,
+)
 from apps.documents.storage import delete_student_documents
 from apps.funding.models import AuditEvent
+from apps.funding.probability import purge_student_outcome_calibration_records
 from apps.mailbox.secrets import delete_student_mailbox_tokens
-from apps.portals.auth import delete_student_portal_credentials
+from apps.portals.credentials import delete_student_portal_credentials
+from apps.portals.models import PortalAnswer
 from apps.research.coverage import refresh_cell_coverage
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.db import set_local_tenant
@@ -37,102 +47,139 @@ class DeletionBlocked(RuntimeError):
     pass
 
 
+def _approve_deletion(request: DeletionRequest) -> None:
+    if request.legal_hold:
+        raise DeletionBlocked("legal hold prevents deletion")
+    if not RetentionPolicy.objects.filter(tenant_id=request.tenant_id).exists():
+        raise DeletionBlocked("no approved retention policy exists")
+    # After the guards, so a refused approval leaves no date behind.
+    request.execute_after = timezone.now() + DELETION_WINDOW
+
+
+def _execute_deletion(request: DeletionRequest) -> DeletionRequest:
+    # Before the state write: a storage failure must leave the request
+    # in APPROVED rather than recording an erasure that did not happen.
+    delete_student_documents(tenant_id=request.tenant_id, student_id=request.student_id)
+    # Same path, same rule. A student's portal logins outliving their
+    # erasure is the failure CLAUDE.md's Phase 3 rules name by hand.
+    delete_student_portal_credentials(
+        tenant_id=request.tenant_id, student_id=request.student_id
+    )
+    # Third on the same path, same rule: a live OAuth grant on the
+    # student's own mailbox is worse than a stale password, because it
+    # keeps reading after the person is gone.
+    delete_student_mailbox_tokens(
+        tenant_id=request.tenant_id, student_id=request.student_id
+    )
+    # Last, and in one transaction with the state write. Purging S3
+    # first is load-bearing: delete_student_documents reads object_key
+    # to find the objects, and redaction empties it. The S3 purge is
+    # idempotent, so a redaction failure here is safe to retry.
+    #
+    # tenant_transaction sets app.tenant_id because several of these tables are
+    # FORCE ROW LEVEL SECURITY on app.tenant_id and the runtime role is
+    # NOBYPASSRLS; tenant_scope is a contextvar and never reaches Postgres.
+    # Without it the UPDATEs match zero rows and EXECUTED is written over data
+    # nothing touched.
+    with transaction.atomic():
+        set_local_tenant(request.tenant_id)
+        # Before redaction, not after: every subject would become "" and
+        # collide on cvfixrevert_one_per_subject. Inside this block for
+        # the reason PortalAnswer's delete is -- FORCE RLS.
+        CvFixRevert.objects.filter(student_id=request.student_id).delete()
+        redact_student(
+            tenant_id=request.tenant_id, student_id=request.student_id
+        )
+        # Derived and ML rows reference the student only through this,
+        # with CASCADE, so deleting it is how an erasure reaches data
+        # the redaction walk never sees. Nothing writes it yet; the
+        # delete exists before the data by design.
+        Pseudonym.objects.filter(student_id=request.student_id).delete()
+        # The student's own typed answers (owner, 2026-10-09). Inside
+        # this block for the reason set_local_tenant is: the table is
+        # FORCE RLS, and outside it the DELETE matches zero rows and
+        # says nothing.
+        PortalAnswer.objects.filter(student_id=request.student_id).delete()
+        # Digests of the student's CV lines and their relevance answers
+        # (plan decision 20). Inside this block for the same reason as
+        # PortalAnswer: FORCE RLS, and outside it the DELETE matches
+        # zero rows and says nothing.
+        CVRelevanceAnswer.objects.filter(student_id=request.student_id).delete()
+        CVItemChoice.objects.filter(student_id=request.student_id).delete()
+        # A document read's values (spec 2026-10-12 §8): about the person,
+        # inside this block for the FORCE RLS reason PortalAnswer is.
+        DocumentReading.objects.filter(student_id=request.student_id).delete()
+        # The student's repo and thesis readings (CV evidence spec §9). Inside
+        # this block for the same reason: FORCE RLS, and outside it the DELETE
+        # matches zero rows and says nothing.
+        EvidenceReading.objects.filter(student_id=request.student_id).delete()
+        # And the refresh's cache state: the unknown-login key holds the
+        # typed login for seven days.
+        reset_evidence_refresh(request.student_id)
+        # Before the identity scrub, and load-bearing twice over.
+        # middleware.py:64 resolves a request's tenant with
+        # filter(user_id=..., active=True), so leaving this True lets an
+        # erased person keep reaching the agency that erased them. It
+        # also poisons redact_identity's guard, which counts active
+        # memberships: a tombstone left active reads as a live
+        # relationship forever.
+        request.student.active = False
+        request.student.save(update_fields=["active"])
+        # None means the login was scrubbed. An IdentityRetention
+        # means it was deliberately kept, and says which of three
+        # reasons -- one lawful, two a misconfiguration someone must
+        # fix. Recording both is what keeps EXECUTED honest.
+        retention = redact_identity(
+            user_id=request.student.user_id,
+            membership_role=request.student.role,
+        )
+        request.identity_retained = retention is not None
+        request.identity_retained_reason = retention.value if retention else ""
+        request.state = "EXECUTED"
+        request.save(
+            update_fields=["state", "identity_retained", "identity_retained_reason"]
+        )
+        # Last, and deliberately after redact_student: the walk has
+        # already run, so these rows are not caught by it. They are the
+        # only durable record that an erasure ran at all -- state is a
+        # current-value field, and redaction rewrites the row around it.
+        # Auditing is also what makes redact_identity's guard a lawful
+        # cross-tenant read rather than an unrecorded one
+        # (`phased requirements.md` §349).
+        AuditEvent.objects.create(
+            actor=None, event="deletion.executed", object_id=request.id
+        )
+        if request.identity_retained:
+            # Its own row rather than a flag: this is the case a
+            # reviewer has to be able to find by query.
+            AuditEvent.objects.create(
+                actor=None, event="deletion.identity_retained", object_id=request.id
+            )
+        # The tenant's demand-cell counts, rebuilt without this student
+        # (now inactive, above). CellCoverage has no student relation,
+        # so neither the redaction walk nor the Pseudonym cascade can
+        # reach it: an erased person leaves it by RECOMPUTATION, and a
+        # count cell of 1 is a person. In this per-erasure transaction
+        # so an erasure never commits with the old counts standing.
+        # EXECUTED is reached only from `execute_due_erasures`, on the
+        # worker side: the rebuild reads the served catalogue, which
+        # runtime_web holds no grant on.
+        refresh_cell_coverage(request.tenant_id)
+        purge_student_outcome_calibration_records(
+            tenant_id=request.tenant_id,
+            student_id=request.student_id,
+        )
+    return request
+
+
 def advance_deletion(request: DeletionRequest, target_state: str) -> DeletionRequest:
     if target_state not in _TRANSITIONS.get(request.state, set()):
         raise DeletionBlocked(f"cannot move from {request.state} to {target_state}")
     with tenant_scope(request.tenant_id):
-        if target_state == "APPROVED":
-            if request.legal_hold:
-                raise DeletionBlocked("legal hold prevents deletion")
-            if not RetentionPolicy.objects.filter(tenant_id=request.tenant_id).exists():
-                raise DeletionBlocked("no approved retention policy exists")
-            # After the guards, so a refused approval leaves no date behind.
-            request.execute_after = timezone.now() + DELETION_WINDOW
         if target_state == "EXECUTED":
-            # Before the state write: a storage failure must leave the request
-            # in APPROVED rather than recording an erasure that did not happen.
-            delete_student_documents(tenant_id=request.tenant_id, student_id=request.student_id)
-            # Same path, same rule. A student's portal logins outliving their
-            # erasure is the failure CLAUDE.md's Phase 3 rules name by hand.
-            delete_student_portal_credentials(
-                tenant_id=request.tenant_id, student_id=request.student_id
-            )
-            # Third on the same path, same rule: a live OAuth grant on the
-            # student's own mailbox is worse than a stale password, because it
-            # keeps reading after the person is gone.
-            delete_student_mailbox_tokens(
-                tenant_id=request.tenant_id, student_id=request.student_id
-            )
-            # Last, and in one transaction with the state write. Purging S3
-            # first is load-bearing: delete_student_documents reads object_key
-            # to find the objects, and redaction empties it. The S3 purge is
-            # idempotent, so a redaction failure here is safe to retry.
-            #
-            # set_local_tenant because several of these tables are FORCE ROW
-            # LEVEL SECURITY on app.tenant_id and the runtime role is
-            # NOBYPASSRLS; tenant_scope is a contextvar and never reaches
-            # Postgres. Without it the UPDATEs match zero rows and EXECUTED is
-            # written over data nothing touched.
-            with transaction.atomic():
-                set_local_tenant(request.tenant_id)
-                redact_student(
-                    tenant_id=request.tenant_id, student_id=request.student_id
-                )
-                # Derived and ML rows reference the student only through this,
-                # with CASCADE, so deleting it is how an erasure reaches data
-                # the redaction walk never sees. Nothing writes it yet; the
-                # delete exists before the data by design.
-                Pseudonym.objects.filter(student_id=request.student_id).delete()
-                # Before the identity scrub, and load-bearing twice over.
-                # middleware.py:64 resolves a request's tenant with
-                # filter(user_id=..., active=True), so leaving this True lets an
-                # erased person keep reaching the agency that erased them. It
-                # also poisons redact_identity's guard, which counts active
-                # memberships: a tombstone left active reads as a live
-                # relationship forever.
-                request.student.active = False
-                request.student.save(update_fields=["active"])
-                # None means the login was scrubbed. An IdentityRetention
-                # means it was deliberately kept, and says which of three
-                # reasons -- one lawful, two a misconfiguration someone must
-                # fix. Recording both is what keeps EXECUTED honest.
-                retention = redact_identity(
-                    user_id=request.student.user_id,
-                    membership_role=request.student.role,
-                )
-                request.identity_retained = retention is not None
-                request.identity_retained_reason = retention.value if retention else ""
-                request.state = target_state
-                request.save(
-                    update_fields=["state", "identity_retained", "identity_retained_reason"]
-                )
-                # Last, and deliberately after redact_student: the walk has
-                # already run, so these rows are not caught by it. They are the
-                # only durable record that an erasure ran at all -- state is a
-                # current-value field, and redaction rewrites the row around it.
-                # Auditing is also what makes redact_identity's guard a lawful
-                # cross-tenant read rather than an unrecorded one
-                # (`phased requirements.md` §349).
-                AuditEvent.objects.create(
-                    actor=None, event="deletion.executed", object_id=request.id
-                )
-                if request.identity_retained:
-                    # Its own row rather than a flag: this is the case a
-                    # reviewer has to be able to find by query.
-                    AuditEvent.objects.create(
-                        actor=None, event="deletion.identity_retained", object_id=request.id
-                    )
-                # The tenant's demand-cell counts, rebuilt without this student
-                # (now inactive, above). CellCoverage has no student relation,
-                # so neither the redaction walk nor the Pseudonym cascade can
-                # reach it: an erased person leaves it by RECOMPUTATION, and a
-                # count cell of 1 is a person. In this per-erasure transaction
-                # so an erasure never commits with the old counts standing.
-                # EXECUTED is reached only from `execute_due_erasures`, on the
-                # worker side: the rebuild reads the served catalogue, which
-                # runtime_web holds no grant on.
-                refresh_cell_coverage(request.tenant_id)
-            return request
+            return _execute_deletion(request)
+        if target_state == "APPROVED":
+            _approve_deletion(request)
         request.state = target_state
         # execute_after is in update_fields for every transition, not just
         # APPROVED: omitting it would drop the assignment above with no error.

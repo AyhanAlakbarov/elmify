@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Elmify — Funded Master's Programmes &amp; Scholarships Abroad (Azerbaijan, Europe &amp; UK)</title>
+    <link>https://elmify.com</link>
+    <description>Updates on Azerbaijan State Program (Dövlət Proqramı 2022–2028), HTP, and funded European and UK master's programmes (MSc, MA, LLM, MRes — Bachelor's support coming soon) in English, Azerbaijani, and Russian.</description>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 01 Nov 2026 12:00:00 GMT</lastBuildDate>
+    <atom:link href="https://elmify.com/feed.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Elmify Launches First in Azerbaijan in English, Azerbaijani, and Russian</title>
+      <link>https://elmify.com/az</link>
+      <guid isPermaLink="true">https://elmify.com/az</guid>
+      <pubDate>Sun, 01 Nov 2026 12:00:00 GMT</pubDate>
+      <description>Elmify launches first in Azerbaijan across English (/), Azerbaijani (/az), and Russian (/ru), checking eligibility for Dövlət Proqramı (2022–2028), HTP / Stipendium Hungaricum, Erasmus Mundus, DAAD, Swedish Institute SISGP, Chevening, and NL Scholarship. Master's degrees are live today and Bachelor's support will be done soon.</description>
+    </item>
+    <item>
+      <title>How Elmify's Zero-Fabrication Master's Application Pipeline Works</title>
+      <link>https://elmify.com/#how</link>
+      <guid isPermaLink="true">https://elmify.com/#how</guid>
+      <pubDate>Thu, 15 Jan 2026 09:00:00 GMT</pubDate>
+      <description>Every admission and scholarship rule links to the exact sentence on the official university or funder webpage, and academic CVs, motivation letters, and referee briefs are generated strictly from student-confirmed facts.</description>
+    </item>
+  </channel>
+</rss>

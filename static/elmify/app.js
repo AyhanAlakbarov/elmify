@@ -10,6 +10,11 @@
     try { target = new URL(url, window.location.href); } catch (e) { return false; }
     if (target.origin !== window.location.origin) { return true; }
     return /^\/documents\/[0-9a-f-]{36}\//.test(target.pathname) || // file downloads
+      /^\/documents\/uploads\/[0-9a-f-]{36}\/download/.test(target.pathname) ||
+      /^\/staff\/prepared\/[0-9a-f-]{36}\/download/.test(target.pathname) ||
+      /^\/student\/documents\/fill-form\//.test(target.pathname) ||  // filled form download
+      /^\/student\/account\/export\//.test(target.pathname) ||       // personal data export
+      /^\/privacy\/export\//.test(target.pathname) ||                // GDPR data export download
       /^\/mailbox\/connect\//.test(target.pathname) ||               // Google / Microsoft sign-in
       /^\/accounts\/logout\//.test(target.pathname);
   }
@@ -35,14 +40,23 @@
   // which nav item is current, and the menu closes.
   // A followed link starts at the top of the new page; a posted form keeps the
   // reader where they were, so the card they just changed stays in view.
+  function closeMenu() {
+    document.body.classList.remove("menu-open");
+    document.querySelectorAll(".menu-toggle").forEach(function (btn) {
+      btn.setAttribute("aria-expanded", "false");
+    });
+  }
+
   document.addEventListener("htmx:afterSettle", function (event) {
     // Live search results land inside the open dialog: not a page change.
     if (event.detail && event.detail.target && event.detail.target.id === "palette-results") { return; }
-    document.body.classList.remove("menu-open");
+    closeMenu();
     var config = (event.detail && event.detail.requestConfig) || {};
-    if ((config.verb || "get").toLowerCase() === "get") { window.scrollTo(0, 0); }
-    var main = document.getElementById("main");
-    if (main) { main.focus({ preventScroll: true }); }
+    if ((config.verb || "get").toLowerCase() === "get") {
+      window.scrollTo(0, 0);
+      var main = document.getElementById("main");
+      if (main) { main.focus({ preventScroll: true }); }
+    }
   });
 
   document.addEventListener("click", function (event) {
@@ -53,7 +67,7 @@
       return;
     }
     if (document.body.classList.contains("menu-open") && !event.target.closest(".sidebar")) {
-      document.body.classList.remove("menu-open");
+      closeMenu();
     }
   });
 
@@ -119,7 +133,7 @@
       if (openPalette()) { event.preventDefault(); }
     }
     if (event.key === "Escape") {
-      document.body.classList.remove("menu-open");
+      closeMenu();
       // In a search box the browser's first Escape only clears the text; close the dialog at once.
       var dialog = document.getElementById("palette");
       if (dialog && dialog.open) { event.preventDefault(); closePalette(); }
@@ -167,6 +181,16 @@
   document.addEventListener("htmx:beforeRequest", function (event) {
     var verb = ((event.detail && event.detail.requestConfig && event.detail.requestConfig.verb) || "get").toLowerCase();
     document.body.classList.toggle("is-posting", verb !== "get");
+    var elt = event.detail && event.detail.elt;
+    if (verb === "get" && elt && elt.tagName === "A") {
+      var navGroup = elt.closest(".sidebar, .view-switch, .doc-tabs");
+      if (navGroup) {
+        navGroup.querySelectorAll('a[aria-current="page"]').forEach(function (a) {
+          a.removeAttribute("aria-current");
+        });
+        elt.setAttribute("aria-current", "page");
+      }
+    }
   });
 
   // A button shows it is working while its form is posting.
@@ -188,16 +212,118 @@ document.addEventListener("htmx:afterRequest", function (event) {
   }
 });
 
-// "Copy text": copies the element named by data-copy, and says so.
+// "Copy text": copies the element named by data-copy, and says so in-place without layout shift.
 document.addEventListener("click", function (event) {
   var button = event.target.closest && event.target.closest("button[data-copy]");
   if (!button) { return; }
   var source = document.getElementById(button.dataset.copy);
   var status = button.parentElement && button.parentElement.querySelector('[role="status"]');
   if (!source || !navigator.clipboard) { return; }
-  navigator.clipboard.writeText(source.innerText.trim()).then(function () {
+  var originalLabel = button.getAttribute("data-copy-label") || button.textContent;
+  button.setAttribute("data-copy-label", originalLabel);
+  button.style.minWidth = button.offsetWidth + "px";
+  var textToCopy = (typeof source.value === "string" ? source.value : source.innerText).trim();
+  navigator.clipboard.writeText(textToCopy).then(function () {
+    button.textContent = "Copied \u2713";
+    button.setAttribute("data-copied", "true");
     if (status) { status.textContent = "Copied."; }
+    clearTimeout(button._copyTimer);
+    button._copyTimer = setTimeout(function () {
+      button.textContent = originalLabel;
+      button.removeAttribute("data-copied");
+      if (status) { status.textContent = ""; }
+    }, 2000);
   }, function () {
     if (status) { status.textContent = "Could not copy. Select the text instead."; }
   });
+});
+
+// Progressive disclosure for multi-part gap-interview question groups:
+// follow-up questions stay hidden until the student starts answering the parent question.
+function syncGapGroups() {
+  document.querySelectorAll("[data-gap-group-parent]").forEach(function (parentEl) {
+    var slug = parentEl.getAttribute("data-gap-group-parent");
+    var parentInput = parentEl.querySelector("input");
+    if (!slug || !parentInput) { return; }
+    var children = document.querySelectorAll('[data-gap-group-child="' + slug + '"]');
+    var hasChildText = Array.prototype.some.call(children, function (c) {
+      var inp = c.querySelector("input");
+      return inp && inp.value.trim().length > 0;
+    });
+    var show = parentInput.value.trim().length > 0 || hasChildText;
+    children.forEach(function (c) { c.hidden = !show; });
+  });
+}
+document.addEventListener("DOMContentLoaded", syncGapGroups);
+document.addEventListener("htmx:afterSettle", syncGapGroups);
+document.addEventListener("input", function (event) {
+  if (event.target && event.target.closest && event.target.closest("[data-gap-group-parent]")) {
+    syncGapGroups();
+  }
+});
+
+// Client-side filter pills on the recommendation pack page (/student/recommendation/).
+document.addEventListener("click", function (event) {
+  var pill = event.target.closest && event.target.closest("button[data-pack-filter]");
+  if (!pill) { return; }
+  var bar = pill.closest(".pack-filter-bar");
+  if (!bar) { return; }
+  var filter = pill.getAttribute("data-pack-filter") || "all";
+  bar.querySelectorAll("button[data-pack-filter]").forEach(function (b) {
+    b.setAttribute("aria-pressed", b === pill ? "true" : "false");
+    b.classList.toggle("is-active", b === pill);
+  });
+  document.querySelectorAll(".pack-section").forEach(function (sec) {
+    var visibleInSec = 0;
+    var visibleInGrid = 0;
+    sec.querySelectorAll(".candidate").forEach(function (card) {
+      var match = false;
+      if (filter === "all") {
+        match = true;
+      } else if (filter === "picked") {
+        match = card.getAttribute("data-pack-picked") === "true";
+      } else if (filter.indexOf("kind:") === 0) {
+        match = card.getAttribute("data-pack-kind") === filter.slice(5);
+      } else if (filter.indexOf("country:") === 0) {
+        match = card.getAttribute("data-pack-country") === filter.slice(8);
+      } else if (filter.indexOf("tier:") === 0) {
+        match = card.getAttribute("data-pack-tier") === filter.slice(5);
+      }
+      card.hidden = !match;
+      var li = card.closest(".match-grid > li");
+      if (li) {
+        li.hidden = !match;
+        if (match) { visibleInGrid += 1; }
+      }
+      if (match) { visibleInSec += 1; }
+    });
+    var groupLabel = sec.querySelector(".group-label");
+    var matchGrid = sec.querySelector(".match-grid");
+    var quietLine = sec.querySelector(".quiet-line");
+    if (groupLabel) { groupLabel.hidden = visibleInGrid === 0; }
+    if (matchGrid) { matchGrid.hidden = visibleInGrid === 0; }
+    if (quietLine) { quietLine.hidden = filter === "kind:award"; }
+    sec.hidden = visibleInSec === 0;
+  });
+});
+
+// Fold open card disclosures (.card-remove, .card-more) when clicking Cancel,
+// clicking outside the disclosure, or pressing Escape.
+document.addEventListener("click", function (event) {
+  var closeBtn = event.target.closest && event.target.closest("[data-close-details]");
+  if (closeBtn) {
+    var details = closeBtn.closest("details");
+    if (details) { details.open = false; }
+    return;
+  }
+  document.querySelectorAll("details.card-remove[open], details.card-more[open]").forEach(function (d) {
+    if (!d.contains(event.target)) { d.open = false; }
+  });
+});
+document.addEventListener("keydown", function (event) {
+  if (event.key === "Escape") {
+    document.querySelectorAll("details.card-remove[open], details.card-more[open]").forEach(function (d) {
+      d.open = false;
+    });
+  }
 });

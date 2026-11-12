@@ -52,6 +52,27 @@ class Command(BaseCommand):
             help="how --funding readings are bought (item 15); batch waits for both vendors, "
             "up to 24 hours per batch (48 with a tie-break batch); standard until the gate is read",
         )
+        parser.add_argument(
+            "--with-closed-lists",
+            action="store_true",
+            help=(
+                "include synced 53-country ministry and funded excellence "
+                "graduate school closed lists"
+            ),
+        )
+        parser.add_argument(
+            "--with-national-databases",
+            action="store_true",
+            help=(
+                "include curated multi-tier national study & scholarship "
+                "databases for the country"
+            ),
+        )
+        parser.add_argument(
+            "--with-social-monitor",
+            action="store_true",
+            help="poll official ministry Telegram /s/ channels & bulletin pages for Master's calls",
+        )
 
     def handle(self, *_args: object, **options: object) -> None:
         # No --level: Program.DegreeLevel holds only MASTER, and resolve_program
@@ -112,7 +133,13 @@ class Command(BaseCommand):
                 report = run_discovery(
                     query,
                     default_sources(
-                        api_key=api_key, fetch=fetch, budget=budget, actor_id=tenant_id
+                        api_key=api_key,
+                        fetch=fetch,
+                        budget=budget,
+                        actor_id=tenant_id,
+                        include_closed_lists=bool(options["with_closed_lists"]),
+                        include_national_databases=bool(options["with_national_databases"]),
+                        include_social_monitor=bool(options["with_social_monitor"]),
                     ),
                     tenant_id=tenant_id,
                     store=S3ObjectStore(),

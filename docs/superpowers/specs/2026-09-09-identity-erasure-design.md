@@ -181,7 +181,7 @@ things it did not model, and two of them change the implementation.
    `tests/conftest.py::django_db_setup`, so a fresh clone still runs `pytest` unchanged.
    `tests/infra/test_template.py::test_no_migration_creates_a_bypassrls_role` keeps it out.
 
-   Removing the migration also removed `GRANT tehsil_erasure_guard TO migration_role`, which
+   Removing the migration also removed `GRANT elmify_erasure_guard TO migration_role`, which
    ownership transfer from a migration requires — see the residual-risk note below, which this
    closes rather than documents.
 
@@ -224,10 +224,10 @@ Both measured on PostgreSQL 17, not argued.
   `{=X/guard,guard=X/guard}` and `has_function_privilege('public', ..., 'EXECUTE') = true`; revoking
   before leaves `{guard=X/guard}` and `false`. The migration now revokes first and then *asserts* the
   outcome, because a silent no-op is the one failure this line cannot afford.
-- **`GRANT tehsil_erasure_guard TO migration_role` is a `SET ROLE` away from `BYPASSRLS`.** The grant
+- **`GRANT elmify_erasure_guard TO migration_role` is a `SET ROLE` away from `BYPASSRLS`.** The grant
   is structurally required — Postgres will not transfer ownership to a role the caller is not a
   member of — but the earlier claim that role attributes "are not inherited through membership" was
-  half an answer. `SET ROLE tehsil_erasure_guard` is one statement. This is not new capability, since
+  half an answer. `SET ROLE elmify_erasure_guard` is one statement. This is not new capability, since
   that credential owns every table and can `ALTER TABLE ... NO FORCE ROW LEVEL SECURITY` outright,
   but it is a quieter path, and the `NOSUPERUSER`/`NOBYPASSRLS` check on `migration_role` does not
   close it. Recorded rather than removed; removing it means creating the function from an admin
@@ -235,7 +235,7 @@ Both measured on PostgreSQL 17, not argued.
   the guard missing.
 
 Also measured and fixed: `ALTER FUNCTION ... OWNER TO` requires the *new owner* to hold `CREATE` on
-the schema. Without `GRANT CREATE ON SCHEMA public TO tehsil_erasure_guard` in the bootstrap, the
+the schema. Without `GRANT CREATE ON SCHEMA public TO elmify_erasure_guard` in the bootstrap, the
 migration fails at deploy time with `permission denied for schema public` — invisible to CI, which
 migrates as a superuser and skips the check. Verified end to end by replaying the migration SQL
 verbatim under a `NOSUPERUSER NOINHERIT NOBYPASSRLS` migration role.

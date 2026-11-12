@@ -104,7 +104,7 @@ What changes is that on the far side, `169.254.170.2` has nothing to give.
 | `apps/research/discovery.py` | `retrieve_official_source`'s browser branch becomes an HTTP call to the service instead of an in-process render. `render_with_scrapling` itself is unchanged and moves nowhere. |
 | `BrowserSecurityGroup` | New. Ingress only from `WorkerSecurityGroup` on the service port. |
 | `BrowserTaskDefinition` / `BrowserService` | New. **No `TaskRoleArn` at all.** Cloud Map registration. |
-| `BrowserNamespace` / `BrowserDiscoveryService` | New `AWS::ServiceDiscovery::*` pair giving `browser.tehsil.internal`. |
+| `BrowserNamespace` / `BrowserDiscoveryService` | New `AWS::ServiceDiscovery::*` pair giving `browser.elmify.internal`. |
 | `Dockerfile` `browser` stage | Gets `patchright install`; the `worker` stage **loses** it. |
 
 ## Decision: a synchronous internal HTTP call, not a queue
@@ -253,9 +253,9 @@ rather than a data problem, and it requires already being inside the VPC.
 
 ## Service discovery
 
-`AWS::ServiceDiscovery::PrivateDnsNamespace` (`tehsil.internal`) plus an
+`AWS::ServiceDiscovery::PrivateDnsNamespace` (`elmify.internal`) plus an
 `AWS::ServiceDiscovery::Service` registered on the ECS service, giving an A record at
-`browser.tehsil.internal` that tracks the task IP. Two resources and a ~$0.50/month
+`browser.elmify.internal` that tracks the task IP. Two resources and a ~$0.50/month
 private hosted zone.
 
 Rejected: an internal NLB (per-hour cost for one consumer and one backend), and passing a

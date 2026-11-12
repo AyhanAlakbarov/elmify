@@ -12,7 +12,7 @@ Excluded from a default run by ``addopts = "-m 'not live'"``; select with
 ``-m live``. Skipped cleanly when a key is absent.
 
     FIRECRAWL_API_KEY=... SCRAPEDO_API_KEY=... \\
-      POSTGRES_DB=tehsil_fetch_engine_core uv run pytest \\
+      POSTGRES_DB=elmify_fetch_engine_core uv run pytest \\
       tests/research/test_fetch_live.py -m live -v
 
 **Two halves, and they assert different things.** The five tests at the top pin

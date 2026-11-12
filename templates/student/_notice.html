@@ -1,0 +1,6 @@
+<section aria-labelledby="notice-title">
+  <h3 id="notice-title">{{ notice.title }}</h3>
+  <p>{{ notice.intro }}</p>
+  <ul>{% for label, text in notice.points %}<li><strong>{{ label }}</strong> {{ text }}</li>{% endfor %}</ul>
+  <p><em>{{ notice.footer }}</em></p>
+</section>

@@ -1352,3 +1352,111 @@ def test_the_eval_corpus_has_no_wrong_action_and_few_abstentions(capsys):
     assert wrong == []
     assert format_undecided <= 1
     assert advisory_undecided <= math.ceil(0.3 * n_advisory)
+
+
+# --- spec 2026-10-12 §6.4 step 2: an unclear sentence keeps its readings -------
+
+
+def test_an_undecided_rule_saves_what_each_reading_said():
+    samples = [_sample(rules=[(0, "max_pages", 2)]), _sample(rules=[(0, "max_pages", 3)]),
+               _sample(rules=[(0, "max_pages", 3)])]
+    [rule] = decide((_PAGES,), samples, source_url=_SRC).rules
+    assert (rule.key, rule.value) == ("undecided", "max_pages")
+    assert (rule.readings.key, rule.readings.values) == ("max_pages", (2, 3))
+
+
+def test_a_choice_inside_one_reading_saves_both_values():
+    choice = Candidate(text="Two or three pages at most.", heading="", europass=False)
+    samples = [_sample(rules=[(0, "max_pages", 2), (0, "max_pages", 3)]),
+               _sample(rules=[(0, "max_pages", 2)]), _sample(rules=[(0, "max_pages", 2)])]
+    [rule] = decide((choice,), samples, source_url=_SRC).rules
+    assert rule.readings.values == (2, 3)
+
+
+def test_a_disputed_key_the_merge_does_not_read_saves_no_readings():
+    """Final review I1. Only a limit, a ban or a personal item is ever read
+    from its readings (requirement_list step 2); an unclear language is for
+    information whatever the readings said, so nothing is saved for it."""
+    choice = Candidate(text="Your CV in German or English.", heading="", europass=False)
+    samples = [_sample(rules=[(0, "language", "de"), (0, "language", "en")]),
+               _sample(rules=[(0, "language", "de")]), _sample(rules=[(0, "language", "de")])]
+    [rule] = decide((choice,), samples, source_url=_SRC).rules
+    assert (rule.key, rule.value, rule.readings) == ("undecided", "language", None)
+
+
+def test_a_language_line_with_fourteen_readings_is_one_undecided_rule_not_a_crash():
+    """Final review I1, the probe input: one reading listed every EU code it
+    could, two said "en". SavedReadings holds ten values, so this raised
+    ValidationError out of decide and lost the whole page."""
+    eu = Candidate(text="Your CV may be written in any official EU language.", heading="",
+                   europass=False)
+    codes = ["bg", "cs", "da", "de", "el", "en", "es", "et", "fi", "fr", "ga", "hr", "hu", "it"]
+    samples = [_sample(rules=[(0, "language", c) for c in codes]),
+               _sample(rules=[(0, "language", "en")]), _sample(rules=[(0, "language", "en")])]
+    [rule] = decide((eu,), samples, source_url=_SRC).rules
+    assert (rule.key, rule.value, rule.readings) == ("undecided", "language", None)
+
+
+def test_more_than_ten_readings_of_a_limit_save_none_rather_than_crash():
+    many = [(0, "max_pages", n) for n in range(1, 12)]
+    samples = [_sample(rules=many), _sample(rules=[(0, "max_pages", 2)]),
+               _sample(rules=[(0, "max_pages", 2)])]
+    [rule] = decide((_PAGES,), samples, source_url=_SRC).rules
+    assert (rule.key, rule.value, rule.readings) == ("undecided", "max_pages", None)
+
+
+def test_a_reading_of_true_and_one_of_one_are_two_readings():
+    """Final review I2: `True == 1`, so the == dedup kept whichever came first
+    -- and a lone True is no page count, so the line lost its real reading."""
+    samples = [_sample(rules=[(0, "max_pages", True)]), _sample(rules=[(0, "max_pages", 1)]),
+               _sample(rules=[(0, "max_pages", 1)])]
+    [rule] = decide((_PAGES,), samples, source_url=_SRC).rules
+    assert rule.readings.values == (True, 1)
+
+
+def test_an_abstained_page_still_saves_the_readings_of_its_unclear_lines():
+    """Ledger, fix-before-merge: a europass dispute abstains the whole page,
+    and the max_pages line's undecided rule is then written by `abstain`, not
+    by the per-line loop -- it must carry its readings all the same."""
+    samples = [
+        _sample(formats=[(0, "required")], rules=[(1, "max_pages", 2)]),
+        _sample(formats=[(0, "not_required")], rules=[(1, "max_pages", 3)]),
+        _sample(formats=[(0, "required")], rules=[(1, "max_pages", 3)]),
+    ]
+    decision = decide((_EU, _PAGES), samples, source_url=_SRC)
+    assert decision.abstained is True
+    [pages] = [r for r in decision.rules if r.rule_id.startswith("PAGE-1-")]
+    assert (pages.value, pages.readings.key, pages.readings.values) == (
+        "max_pages", "max_pages", (2, 3))
+
+
+def test_a_third_party_line_saves_no_readings():
+    """Review focus 1. The readings disagree, so nothing AGREED is withheld and
+    no `third_party` marker is written -- but the sentence is still about the
+    supervisor's CV, and its two pages must never become the student's."""
+    supervisor = Candidate(text="Short CV (max. 2 pages) from this academic supervisor.",
+                           heading="", europass=False, third_party=True)
+    samples = [_sample(rules=[(0, "max_pages", 2)]), _sample(rules=[(0, "max_pages", 3)]),
+               _sample(rules=[(0, "max_pages", 2)])]
+    assert [r.readings for r in decide((supervisor,), samples, source_url=_SRC).rules] == [None]
+
+
+def test_a_dispute_that_is_not_a_constraint_saves_no_readings():
+    samples = [
+        _sample(directives=[(0, "include", "education.ects_credits", None)]),
+        _sample(directives=[(0, "emphasise", "experience", None)]),
+        _sample(directives=[(0, "include", "education.ects_credits", None)]),
+    ]
+    [rule] = decide((_PAGES,), samples, source_url=_SRC).rules
+    assert (rule.value, rule.readings) == ("directive", None)
+
+
+def test_one_reading_alone_saves_no_readings():
+    """Ruling P1: a value only one reading gave is a stray vote, not a reading
+    of the sentence, so it is never saved for the stricter-reading step."""
+    quiet = [(0, "none", None, None)]
+    samples = [_sample(rules=[(0, "max_pages", 2)]), _sample(directives=quiet),
+               _sample(directives=quiet)]
+    [rule] = decide((_PAGES,), samples, source_url=_SRC).rules
+    assert (rule.key, rule.value) == ("undecided", "max_pages")
+    assert rule.readings is None

@@ -186,7 +186,7 @@ def list_checks(
     watched.
     """
     document = _get_json(
-        f"https://api.firecrawl.dev/v2/monitor/{monitor_id}/checks",
+        f"{_BASE}/monitor/{monitor_id}/checks",
         _headers(api_key),
         get=get,
     )

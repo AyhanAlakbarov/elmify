@@ -14,7 +14,10 @@ export function Button({ href, variant = "primary", size = "md", children, class
     "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-full font-semibold",
     "transition-[background-color,border-color,color,transform] duration-200 active:scale-[0.98]",
   ].join(" ");
-  const sizes = size === "lg" ? "h-12 px-6 text-body01" : "h-10 px-5 text-body02";
+  const sizes =
+    size === "lg"
+      ? "h-12 px-6 text-body01"
+      : "h-9 px-3.5 text-caption01 sm:h-10 sm:px-5 sm:text-body02";
   const looks = {
     primary: "bg-brand text-on-brand hover:bg-brand-strong",
     secondary: "border border-border-strong bg-surface text-foreground hover:border-foreground",

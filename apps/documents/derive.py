@@ -48,7 +48,7 @@ from .constraints import (
     _quote,
     check_directive_shape,
 )
-from .grammar import _IMPLAUSIBLE_CAP, _IMPLAUSIBLE_MAX, Rule, Slotted
+from .grammar import _FILE_TERMS, _IMPLAUSIBLE_CAP, _IMPLAUSIBLE_MAX, Rule, Slotted
 from .grammar_questions import AskFn
 from .letter_shape import (
     _SAFE_FONT_FAMILY,
@@ -58,6 +58,7 @@ from .letter_shape import (
     apply_derived_shape,
 )
 from .letter_terms import TERMS, detect_language, numbers_on_line
+from .requirement_list import saved_readings
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,8 @@ class Candidate:
     third_party: bool = False
     cv: bool = True
     letter: bool = False
+    #: Recalled only by _FILE_TERMS: no CV, letter or reference word on the line.
+    file_only: bool = False
 
 
 #: Scripts written without spaces, where every neighbouring character is a
@@ -220,6 +223,7 @@ def candidates(
     """
     pattern = _document_pattern(language)
     found: list[Candidate] = []
+    file_only: list[Candidate] = []
     seen: set[str] = set()
     for line, heading, _is_heading in marked_lines(page_text):
         # The "- " is readable_text's structure signal for the model's
@@ -232,12 +236,17 @@ def candidates(
         cv = bool(europass or _CV_TERMS.search(line))
         letter = bool(pattern and pattern.search(key))
         reference = bool(_REFERENCE_TERMS.search(line))
-        if (cv or letter or reference) and key not in seen:
+        file = bool(_FILE_TERMS.search(line))
+        if (cv or letter or reference or file) and key not in seen:
             seen.add(key)
-            found.append(Candidate(
+            candidate = Candidate(
                 text=line, heading=heading, europass=europass,
                 third_party=bool(_THIRD_PARTY.search(line)), cv=cv, letter=letter,
-            ))
+                file_only=not (cv or letter or reference),
+            )
+            # A file-only line (a "Brochure (PDF, 1 MB)" footer) goes after every
+            # other candidate, so the cap below cuts it first.
+            (found if cv or letter or reference else file_only).append(candidate)
     for text in sorted(statements):
         key = normalize(text)
         if key not in seen:
@@ -246,9 +255,12 @@ def candidates(
                 text=text.strip(), heading="", europass="europass" in key,
                 third_party=bool(_THIRD_PARTY.search(text)), cv=True, letter=True,
             ))
+    found.extend(file_only)
     if len(found) > _MAX_CANDIDATES:
+        dropped_file_only = sum(c.file_only for c in found[_MAX_CANDIDATES:])
         logger.warning(
-            "page yielded %d candidates; judging the first %d", len(found), _MAX_CANDIDATES
+            "page yielded %d candidates; judging the first %d (%d of the dropped are file-only)",
+            len(found), _MAX_CANDIDATES, dropped_file_only,
         )
         return tuple(found[:_MAX_CANDIDATES])
     return tuple(found)
@@ -670,6 +682,11 @@ class Outcome:
     constraints: tuple[tuple[str, object], ...] = ()
     directive: tuple[str, str | None, str | None] | None = None
     disputed: tuple[str, ...] = ()
+    #: Per disputed constraint key, every value any reading gave (spec
+    #: 2026-10-12 §6.4 step 2). Empty on a third-party or unjudged line: a
+    #: reading about someone else's document is never a stricter reading of
+    #: the applicant's.
+    readings: tuple[tuple[str, tuple[object, ...]], ...] = ()
 
 
 #: A vote a reading cast against itself: two values for one constraint key
@@ -734,6 +751,8 @@ def outcomes(candidates: tuple[Candidate, ...], samples: list[Derivations]) -> d
             elif len(per_format) > 1:
                 format_votes.append("__DUP__")
         rule_votes: dict[str, list[object]] = defaultdict(list)
+        said: dict[str, dict[str, object]] = defaultdict(dict)
+        gave: dict[str, int] = defaultdict(int)
         for s in samples:
             per_sample: dict[str, list[object]] = defaultdict(list)
             for d in s.rules:
@@ -743,6 +762,13 @@ def outcomes(candidates: tuple[Candidate, ...], samples: list[Derivations]) -> d
                 # Two values for one key in ONE sample states a choice (the
                 # Göttingen "German or English" case); it counts as dissent.
                 rule_votes[key].append(values[0] if len(values) == 1 else ("CHOICE",))
+                # A choice's values are each a reading: "two or three pages"
+                # read stricter is two.
+                # By repr, as _agreed_by_all votes: `True == 1`, so an ==
+                # dedup kept whichever came first (final review I2).
+                for v in values:
+                    said[key].setdefault(repr(v), v)
+                gave[key] += 1
         # `none` is absence, not a vote, so a sample that answered with a
         # constraint alone agrees with it -- it must never look like dissent.
         # Same rule as above: more than one non-`none` directive for this
@@ -815,9 +841,19 @@ def outcomes(candidates: tuple[Candidate, ...], samples: list[Derivations]) -> d
             result[i] = Outcome(kind="unjudged", disputed=tuple(disputed))
             continue
         if disputed:
+            # `elsewhere`, not "third_party" in disputed: that marker is only
+            # added when something AGREED had to be withheld, and a disputed
+            # limit on a supervisor's CV sentence agrees on nothing. Ruling P1:
+            # only where EVERY reading gave a value -- a lone value beside
+            # silent readings is a stray vote, never a rule.
+            readings = () if elsewhere else tuple(
+                (key, tuple(said[key].values())) for key in disputed
+                if said.get(key) and gave[key] == len(samples)
+            )
             result[i] = Outcome(
                 kind="undecided", format_action=format_action, format_required=format_required,
                 constraints=tuple(agreed_rules), directive=directive, disputed=tuple(disputed),
+                readings=readings,
             )
             continue
         kind: _OUTCOME_KIND
@@ -849,10 +885,13 @@ class Decision:
     #: rule_sinks.to_referee's records. Only the grammar reads them; the
     #: frontier judge has no referee questions and leaves this empty.
     referee: tuple[dict[str, object], ...] = ()
+    #: rule_sinks.to_file_rules' records; the grammar alone reads them.
+    file_rules: tuple[dict[str, object], ...] = ()
 
 
 def _surfaced(
-    index: int, key: str, value: str, candidate: Candidate, source_url: str
+    index: int, key: str, value: str, candidate: Candidate, source_url: str,
+    readings: tuple[object, ...] = (),
 ) -> ConstraintRule:
     # The id names the FIELD in question, not the key. One sentence can be
     # undecided on several things at once, and constraints._MULTI_KEYS slots
@@ -868,6 +907,10 @@ def _surfaced(
         rule_text=_quote(candidate.text),
         source_url=source_url,
         scope="PROGRAMME",
+        # `value` names the disputed constraint key whenever readings exist:
+        # outcomes() keys them by the same disputed entry. Kept only where the
+        # merge reads them, and never more than SavedReadings holds.
+        readings=saved_readings(value, readings),
     )
 
 
@@ -909,8 +952,11 @@ def decide(
         ]
         return Decision(
             abstained=True, format_value=any_v, confidence=Program.CVFormatConfidence.UNDECIDED,
-            rules=tuple(_surfaced(i, "undecided", value, candidates[i], source_url)
-                        for i, value in unsettled),
+            rules=tuple(
+                _surfaced(i, "undecided", value, candidates[i], source_url,
+                          readings=dict(per[i].readings).get(value, ()))
+                for i, value in unsettled
+            ),
             directives=(),
         )
 
@@ -938,7 +984,8 @@ def decide(
                 scope="PROGRAMME",
             ))
         for item in o.disputed:
-            rules.append(_surfaced(i, "undecided", item, candidates[i], source_url))
+            rules.append(_surfaced(i, "undecided", item, candidates[i], source_url,
+                                   readings=dict(o.readings).get(item, ())))
         if o.directive and o.directive[0] in ("include", "order", "emphasise"):
             action, target, value = o.directive
             directives.append({
@@ -1037,6 +1084,81 @@ def _document_required_decision(votes: list[str]) -> str:
     if votes and all(v == "not_required" for v in votes):
         return "NOT_REQUIRED"
     return "UNSTATED"
+
+
+def _apply_verdict_length_bound(
+    verdict: LetterVerdict,
+    candidate: Candidate,
+    *,
+    corroborated_cap_measures: set[Literal["words", "characters", "pages"]],
+    floors: dict[str, int],
+    caps: dict[str, int],
+    stated: dict[str, dict[str, str]],
+    source_url: str,
+) -> None:
+    key = _MEASURE_KEY.get(verdict.length_measure)
+    # Verified per verdict, independently: a reading whose figure is
+    # not on the page is dropped even when another reading's figure
+    # for the same measure is. See _number_is_on_the_page's own
+    # comment for why this must never be loosened.
+    if (
+        key is None
+        or verdict.length_number is None
+        or not _number_is_on_the_page(verdict.length_number, candidate.text)
+    ):
+        return
+    number = verdict.length_number
+    if verdict.length_bound == "minimum":
+        if number > _IMPLAUSIBLE_MAX[key]:
+            # An absurd floor blocks every letter for the programme --
+            # see _IMPLAUSIBLE_MAX's own comment. Reject only this
+            # floor; the default target applies in its place.
+            logger.warning(
+                "ignoring an implausible %s floor of %s on a programme page",
+                key,
+                number,
+            )
+        elif key != "words":
+            # Fix round 1, finding 5: LetterShape.min_chars now HAS
+            # a column (Part A), so "no column carries it" is false
+            # for `chars`. What is still true: this frontier
+            # fallback path does not write a character floor --
+            # only `min_pages` has no sink at all, and a `chars`
+            # floor found this way is dropped along with it rather
+            # than fed through validate_shape_bounds/target_word_count
+            # the way the decision-driven grammar's min_chars is.
+            logger.warning(
+                "ignoring a stated %s floor: this fallback path does not write it",
+                key,
+            )
+        else:
+            # The floor is kept if ANY reading found one: shipping
+            # under a stated minimum is a rejection (HBKU, M-091).
+            new_floor = max(floors.get(key, 0), number)
+            if new_floor != floors.get(key):
+                stated[f"min_{key}"] = {"text": candidate.text, "source_url": source_url}
+            floors[key] = new_floor
+        return
+    if (
+        verdict.length_bound in ("maximum", "approximate")
+        and verdict.length_measure in corroborated_cap_measures
+    ):
+        if number < _IMPLAUSIBLE_CAP[key] or number > _IMPLAUSIBLE_MAX[key]:
+            # A misread digit, not a requirement -- see
+            # _IMPLAUSIBLE_CAP's and _IMPLAUSIBLE_MAX's own comments.
+            # Reject only this cap; the default target applies in its
+            # place.
+            logger.warning(
+                "ignoring an implausible %s cap of %s on a programme page",
+                key,
+                number,
+            )
+        else:
+            # Approximate never creates a floor; it is read as a cap.
+            new_cap = min(caps.get(key, number), number)
+            if new_cap != caps.get(key):
+                stated[f"max_{key}"] = {"text": candidate.text, "source_url": source_url}
+            caps[key] = new_cap
 
 
 def decide_letter_shape(
@@ -1148,66 +1270,15 @@ def decide_letter_shape(
         }
 
         for verdict in verdicts:
-            key = _MEASURE_KEY.get(verdict.length_measure)
-            # Verified per verdict, independently: a reading whose figure is
-            # not on the page is dropped even when another reading's figure
-            # for the same measure is. See _number_is_on_the_page's own
-            # comment for why this must never be loosened.
-            verified = key is not None and _number_is_on_the_page(
-                verdict.length_number, candidate.text
+            _apply_verdict_length_bound(
+                verdict,
+                candidate,
+                corroborated_cap_measures=corroborated_cap_measures,
+                floors=floors,
+                caps=caps,
+                stated=stated,
+                source_url=source_url,
             )
-            if key and verified and verdict.length_number is not None:
-                number = verdict.length_number
-                if verdict.length_bound == "minimum":
-                    if number > _IMPLAUSIBLE_MAX[key]:
-                        # An absurd floor blocks every letter for the programme --
-                        # see _IMPLAUSIBLE_MAX's own comment. Reject only this
-                        # floor; the default target applies in its place.
-                        logger.warning(
-                            "ignoring an implausible %s floor of %s on a programme page",
-                            key,
-                            number,
-                        )
-                    elif key != "words":
-                        # Fix round 1, finding 5: LetterShape.min_chars now HAS
-                        # a column (Part A), so "no column carries it" is false
-                        # for `chars`. What is still true: this frontier
-                        # fallback path does not write a character floor --
-                        # only `min_pages` has no sink at all, and a `chars`
-                        # floor found this way is dropped along with it rather
-                        # than fed through validate_shape_bounds/target_word_count
-                        # the way the decision-driven grammar's min_chars is.
-                        logger.warning(
-                            "ignoring a stated %s floor: this fallback path does not write it",
-                            key,
-                        )
-                    else:
-                        # The floor is kept if ANY reading found one: shipping
-                        # under a stated minimum is a rejection (HBKU, M-091).
-                        new_floor = max(floors.get(key, 0), number)
-                        if new_floor != floors.get(key):
-                            record(f"min_{key}", candidate)
-                        floors[key] = new_floor
-                elif (
-                    verdict.length_bound in ("maximum", "approximate")
-                    and verdict.length_measure in corroborated_cap_measures
-                ):
-                    if number < _IMPLAUSIBLE_CAP[key] or number > _IMPLAUSIBLE_MAX[key]:
-                        # A misread digit, not a requirement -- see
-                        # _IMPLAUSIBLE_CAP's and _IMPLAUSIBLE_MAX's own comments.
-                        # Reject only this cap; the default target applies in its
-                        # place.
-                        logger.warning(
-                            "ignoring an implausible %s cap of %s on a programme page",
-                            key,
-                            number,
-                        )
-                    else:
-                        # Approximate never creates a floor; it is read as a cap.
-                        new_cap = min(caps.get(key, number), number)
-                        if new_cap != caps.get(key):
-                            record(f"max_{key}", candidate)
-                        caps[key] = new_cap
             if verdict.signed_declaration:
                 signed = True
                 record("signed_declaration", candidate)
@@ -1433,6 +1504,7 @@ def _read_by_grammar(
         resolve_conflicts,
         to_constraint_rules,
         to_directives,
+        to_file_rules,
         to_letter_shape,
         to_notes,
         to_referee,
@@ -1464,6 +1536,7 @@ def _read_by_grammar(
         ),
         directives=to_directives(rules, source_url=source_url),
         referee=to_referee(rules, source_url=source_url),
+        file_rules=to_file_rules(rules, source_url=source_url),
     )
     return decision, to_letter_shape(rules, source_url=source_url, page=page)
 
@@ -1537,11 +1610,15 @@ def derive_page_rules(
     found = candidates(page_text, statements, language=language)
     source_url = snapshot.final_url
     by_grammar = False
+    # A page whose only matches are file lines (a "Brochure (PDF, 1 MB)" footer)
+    # says nothing about the CV: it keeps the empty page's CV semantics.
+    file_only = bool(found) and all(c.file_only for c in found)
+    empty = Decision(
+        abstained=False, format_value=Program.CVFormatRequirement.ANY,
+        confidence=Program.CVFormatConfidence.NO_CV_FOUND, rules=(), directives=(),
+    )
     if not found:
-        decision = Decision(
-            abstained=False, format_value=Program.CVFormatRequirement.ANY,
-            confidence=Program.CVFormatConfidence.NO_CV_FOUND, rules=(), directives=(),
-        )
+        decision = empty
         shape = LetterShape()
     else:
         try:
@@ -1549,15 +1626,26 @@ def derive_page_rules(
                 found, language=language, source_url=source_url, budget=budget, client=client,
             )
             by_grammar = True
+            if file_only:
+                decision = replace(
+                    decision, abstained=False, format_value=empty.format_value,
+                    confidence=empty.confidence,
+                )
         except DecisionsUnavailable as error:
-            if error.kind != "not_configured" or parser is None or claude is None:
+            if error.kind != "not_configured":
                 raise
-            logger.warning("derive: no decision provider configured; reading %s with the "
-                           "frontier judge", source_url)
-            decision, shape = _read_by_judge(
-                found, parser=parser, claude=claude, program_id=str(program.id),
-                source_url=source_url,
-            )
+            if file_only:
+                # No provider, nothing to judge: file and referee facts stand.
+                decision, shape = empty, LetterShape()
+            elif parser is None or claude is None:
+                raise
+            else:
+                logger.warning("derive: no decision provider configured; reading %s with "
+                               "the frontier judge", source_url)
+                decision, shape = _read_by_judge(
+                    found, parser=parser, claude=claude, program_id=str(program.id),
+                    source_url=source_url,
+                )
     fields: dict[str, object] = {
         "cv_constraints": [r.model_dump(mode="json") for r in decision.rules],
         "cv_directives": list(decision.directives),
@@ -1567,6 +1655,7 @@ def derive_page_rules(
         # leaves the last grammar read standing rather than wiping it; a page
         # with no candidates at all states none.
         fields["referee_requirements"] = list(decision.referee)
+        fields["file_rules"] = list(decision.file_rules)
     if not program.cv_format_verified_for_cycle:
         fields["cv_format_requirement"] = decision.format_value
         fields["cv_format_confidence"] = decision.confidence

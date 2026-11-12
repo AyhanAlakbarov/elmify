@@ -16,17 +16,18 @@ import hashlib
 import re
 import time
 from collections import defaultdict, deque
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from functools import partial
-from typing import NamedTuple
+from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from django.utils import timezone
 
 from apps.funding.models import (
+    FundingOpportunity,
     OfficialEvidenceClaim,
     OfficialSource,
     OfficialSourceSnapshot,
@@ -36,6 +37,7 @@ from apps.funding.models import (
 from apps.ratelimit import rate_limited
 
 from .batch_reading import BatchClients, PageRead, read_funding_batched
+from .card_funding.seek import proven_or_verified_zone
 from .catalog import pool_claims, resolve_program, write_catalog_entry
 from .discovery import (
     DiscoveryQuery,
@@ -71,9 +73,11 @@ from .funding_reader import (
     write_funding_decision,
     write_holder_decision,
 )
+from .funding_terms import funding_terms
 from .harvest import content_digest, official_url_from_catalogue_page
 from .hosts import registrable_domain
 from .model_cost import CostMeter, ReadingTier
+from .pointers import record_pointers
 from .reader import is_shell, readable_text
 from .resolution.writers import file_host_unreachable, withdraw_host_unreachable
 from .search import EntityExpansionSource, SearchSource, funding_links
@@ -104,7 +108,9 @@ SOURCE_TYPES = {
 #: what FUNDING_PATH_TERMS is for -- pulls in /international-studies/phd and
 #: its children, which would otherwise write a doctoral stipend and a
 #: "Master's required" eligibility claim onto the master's row.
-_DEGREE_LEVEL_PATH_TERMS = frozenset({"phd", "doctoral", "postdoc", "graduate"})
+_DEGREE_LEVEL_PATH_TERMS = frozenset(
+    {"phd", "doctoral", "postdoc", "graduate", "bachelor", "bachelors", "bsc"}
+)
 
 
 def _names_another_degree(url: str) -> bool:
@@ -224,13 +230,40 @@ class PacedFetch:
 
 
 def default_sources(
-    *, api_key: str, fetch: Callable[..., FetchResult], budget: RunBudget, actor_id: UUID
+    *,
+    api_key: str,
+    fetch: Callable[..., FetchResult],
+    budget: RunBudget,
+    actor_id: UUID,
+    include_closed_lists: bool = False,
+    include_national_databases: bool = False,
+    include_social_monitor: bool = False,
 ) -> list[LeadSource]:
     # No DAAD International Programmes adapter: the 2026-08-27 access-terms
     # review could not establish that DAAD's published terms permit automated
     # retrieval, and the design's rule is that such an adapter is not written
     # at all. See docs/superpowers/research/2026-08-27-seed-source-access-terms.md.
     sources: list[LeadSource] = [replace(EACEA_ERASMUS_MUNDUS, fetch=fetch)]
+    if include_closed_lists:
+        from .closed_lists import ClosedListSource
+
+        for slug in (
+            "all_53_ministries_and_agencies",
+            "funded_excellence_graduate_schools",
+            "baku_ankara_embassies_and_missions",
+            "cofunded_and_foundation_scholarships",
+            "igo_consortium_universal_funding",
+            "regional_and_statutory_master_aid",
+        ):
+            sources.append(ClosedListSource(slug=slug, filter_by_country=True))
+    if include_national_databases:
+        from .national_databases import NationalDatabasesSource
+
+        sources.append(NationalDatabasesSource())
+    if include_social_monitor:
+        from .social_monitor import MinistrySocialMonitorSource
+
+        sources.append(MinistrySocialMonitorSource(fetch_html=fetch))
     if api_key:
         # Search supplies ORGANISATIONS to entity expansion; it is never a source in
         # its own right. Entity expansion demotes the organisation query to
@@ -359,20 +392,23 @@ def _fund_page(
     counters: FundingCounts,
     tier: ReadingTier = ReadingTier.STANDARD,
     deferred: list[_PendingRead] | None = None,
-) -> None:
+) -> list[PointerLead]:
     """Read one written page for funding and write what the line judge decides.
 
     Called only once the page has a catalog row, so a blocked page never
     pays for a model call. In a batch run (`deferred` is a list) the paid-for
     read is queued, and `finish` writes it once the batch returns.
     """
-    # Catalogue leads only: a search lead's page could serve a real
-    # institution's award from any host. Lift this only once an
-    # INSTITUTION-scope row's origin is checked against official_website.
+    # Catalogue leads or verified-origin university programme pages: a raw open-web
+    # search lead on an unverified host is not read as the institution's own voice
+    # unless its domain is verified (RECOGNISED verdict, REGISTERED closed-list body,
+    # or registry-verified academic/government zone).
     if parser is None or claude is None:
-        return
-    if not (lead.can_support_claim and lead.one_programme_per_site):
-        return
+        return []
+    if not lead.can_support_claim:
+        return []
+    if not (lead.one_programme_per_site or proven_or_verified_zone(source.canonical_url) is True):
+        return []
     # The shell floor is a property of the whole page, not of one vocabulary's selection.
     whole_page = readable_text(page, terms=None)
     if is_shell(whole_page, page.body):
@@ -383,7 +419,7 @@ def _fund_page(
         # marked funding-read.
         snapshot.readability = OfficialSourceSnapshot.Readability.SHELL
         snapshot.save(update_fields=["readability"])
-        return
+        return []
     chunks = funding_chunks(readable_text(page, terms=_FUNDING_TERMS, select_only_over_cap=False))
     if not _pay_for_funding(
         FUNDING_READS * len(chunks), budget=budget, degraded=degraded, actor=actor,
@@ -391,7 +427,7 @@ def _fund_page(
     ):
         # A cut-short read would overwrite a served row with a partial one.
         degraded.append(f"funding read cut short, nothing written: {source.canonical_url}")
-        return
+        return []
     meter = CostMeter()
 
     def finish(read: FundingReadResult) -> list[PointerLead]:
@@ -413,14 +449,15 @@ def _fund_page(
         # A row this page alone supported and this read no longer decides is the
         # page having changed, not an award that still stands (spec 3.5.4).
         counters.withdrawn += withdraw_unread(source, snapshot, decided)
-        return []
+        counters.pointer_leads += len(read.pointer_leads)
+        return list(read.pointer_leads)[:10]
 
     if deferred is not None:
         deferred.append(
             _PendingRead(source.canonical_url, PageRead(str(source.id), chunks, meter), finish)
         )
-        return
-    finish(
+        return []
+    return finish(
         read_funding(
             parser, claude, source_id=str(source.id), chunks=chunks, meter=meter, tier=tier,
             # The tie-break call cannot be reserved with the other three: whether a
@@ -541,6 +578,7 @@ def run_discovery(
     funding_claude: MessagesAPI | None = None,
     reading_tier: ReadingTier = ReadingTier.STANDARD,
     funding_batch: BatchClients | None = None,
+    card_reader: Callable[[Program, str], Sequence[FundingOpportunity]] | None = None,
     dry_run: bool = False,
     now: datetime | None = None,
 ) -> DiscoveryReport:
@@ -572,11 +610,61 @@ def run_discovery(
     pointer_names: list[tuple[str, str]] = []
     pointer_seen: set[str] = set()
 
-    def take_pointers(pointers: list[PointerLead]) -> None:
+    def take_pointers(pointers: list[PointerLead], page_url: str) -> None:
         for pointer in pointers:
             if pointer.name.casefold() not in pointer_seen:
                 pointer_seen.add(pointer.name.casefold())
                 pointer_names.append((pointer.name, pointer.holder))
+        # Kept, not only printed (spec 2026-09-27 4.7): each name becomes a
+        # `pointer` register row, which the resolver reads.
+        record_pointers(
+            pointers, page_url=page_url, fallback_country=query.country_code, now=now
+        )
+
+    def record_written_page(
+        write_res: Any,
+        *,
+        page_lead: ResearchLead,
+        page_source: OfficialSource,
+        page_snapshot: OfficialSourceSnapshot,
+        fetched_page: FetchResult,
+        allow_card_reader: bool = False,
+    ) -> None:
+        nonlocal written, unreadable_dates
+        written += 1
+        unreadable_dates += write_res.unreadable_dates
+        if page_lead.can_support_claim:
+            from .programme_scraper import scrape_fetched_programme_page
+
+            scrape_fetched_programme_page(
+                write_res.program,
+                source=page_source,
+                snapshot=page_snapshot,
+                html=fetched_page.body,
+                evidence_strength=page_lead.evidence_strength,
+                visibility=page_lead.visibility,
+                now=now,
+            )
+        take_pointers(
+            fund(
+                fetched_page,
+                program=write_res.program,
+                lead=page_lead,
+                source=page_source,
+                snapshot=page_snapshot,
+            ),
+            page_source.canonical_url,
+        )
+        if (
+            allow_card_reader
+            and card_reader is not None
+            and page_lead.can_support_claim
+            and readable_text(fetched_page, terms=funding_terms()).strip()
+        ):
+            card_opps = card_reader(write_res.program, page_source.canonical_url)
+            funding.served += sum(1 for opp in card_opps if opp.served)
+        if write_res.program.provision_type == Program.ProvisionType.JOINT:
+            joint_programs.add(write_res.program.id)
 
     # A queue, not a list: a fetched page can add funding pages from its own
     # host to the back of it (see the hop below).
@@ -788,7 +876,8 @@ def run_discovery(
                     budget=run_budget, degraded=degraded, actor=actor,
                     extraction_calls_per_hour=extraction_calls_per_hour, now=now,
                     counters=funding, tier=reading_tier, deferred=deferred,
-                )
+                ),
+                source.canonical_url,
             )
             continue
         try:
@@ -844,11 +933,14 @@ def run_discovery(
             _degrade(degraded, source.canonical_url, "no evidence for a catalog row")
             blocked += 1
             continue
-        written += 1
-        unreadable_dates += result.unreadable_dates
-        fund(page, program=result.program, lead=lead, source=source, snapshot=snapshot)
-        if result.program.provision_type == Program.ProvisionType.JOINT:
-            joint_programs.add(result.program.id)
+        record_written_page(
+            result,
+            page_lead=lead,
+            page_source=source,
+            page_snapshot=snapshot,
+            fetched_page=page,
+            allow_card_reader=True,
+        )
     for group, pages in held.items():
         merged = pool_claims(tuple(pooled[group]))
         # The group's front door, not pages[0]'s: the front door can resolve
@@ -882,14 +974,13 @@ def run_discovery(
                 _degrade(degraded, held_page.source.canonical_url, "no evidence for a catalog row")
                 blocked += 1
                 continue
-            written += 1
-            unreadable_dates += result.unreadable_dates
-            fund(
-                held_page.page, program=result.program, lead=held_page.lead,
-                source=held_page.source, snapshot=held_page.snapshot,
+            record_written_page(
+                result,
+                page_lead=held_page.lead,
+                page_source=held_page.source,
+                page_snapshot=held_page.snapshot,
+                fetched_page=held_page.page,
             )
-            if result.program.provision_type == Program.ProvisionType.JOINT:
-                joint_programs.add(result.program.id)
     if deferred and funding_batch is not None:
         # Possibly hours. Nothing in this function holds a transaction open
         # (autocommit between writes), and nothing may start one around this.
@@ -911,7 +1002,7 @@ def run_discovery(
                 if pending.page.meter is not None:
                     funding.add_cost(pending.page.meter)
                 continue
-            take_pointers(pending.finish(read))
+            take_pointers(pending.finish(read), pending.url)
     if contradicted:
         # A refusal is never a silence (§2.6): these are hosts whose own pages
         # state different facts, which is a page problem for a human to read.

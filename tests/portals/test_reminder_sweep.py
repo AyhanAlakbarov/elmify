@@ -229,7 +229,7 @@ def test_a_student_with_no_address_still_gets_the_dashboard_rung(
     dashboard is the channel that always works."""
     from django.core import mail
 
-    settings.REMINDER_EMAIL_FROM = "reminders@tehsil.example"
+    settings.REMINDER_EMAIL_FROM = "reminders@elmify.example"
     with tenant_scope(agency_a.id):
         membership_a.application_email = ""
         membership_a.save(update_fields=["application_email"])

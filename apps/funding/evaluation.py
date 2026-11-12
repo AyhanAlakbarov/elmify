@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -26,6 +26,7 @@ from apps.funding.conditions import (  # noqa: F401
     open_routes,
     unevaluable_condition_reasons,
 )
+from apps.funding.eligibility import _normalize_language
 from apps.funding.validity import Evidence
 from apps.reference_data import ISO_3166_ALPHA2_CODES
 
@@ -267,17 +268,21 @@ def duration_category(duration_months: int) -> Literal["ONE_YEAR", "TWO_YEAR"]:
 
 
 def _teaching_language_gate(profile: StudentProfileSnapshot, candidate: CandidateFacts) -> bool:
-    accepted = {language.casefold() for language in profile.acceptable_teaching_languages}
-    return any(language.casefold() in accepted for language in candidate.teaching_languages)
+    accepted = {_normalize_language(language) for language in profile.acceptable_teaching_languages}
+    return any(
+        _normalize_language(language) in accepted for language in candidate.teaching_languages
+    )
 
 
 def _language_evidence_gate(profile: StudentProfileSnapshot, candidate: CandidateFacts) -> bool:
     if not candidate.language_evidence_required:
         return True
-    accepted = {language.casefold() for language in profile.acceptable_teaching_languages}
+    accepted = {_normalize_language(language) for language in profile.acceptable_teaching_languages}
+    candidate_langs = {_normalize_language(language) for language in candidate.teaching_languages}
+    target_langs = (accepted & candidate_langs) if candidate_langs else accepted
     deadline = candidate.language_evidence_deadline or candidate.application_deadline
     for evidence in profile.language_evidence:
-        if evidence.language.casefold() not in accepted:
+        if _normalize_language(evidence.language) not in target_langs:
             continue
         if deadline is None or evidence.available_by <= deadline:
             return True
@@ -293,7 +298,9 @@ def _constraint_satisfied(constraint: ProfileConstraint, candidate: CandidateFac
             candidate.location_key.casefold(),
         }
     if constraint.kind == "LANGUAGE":
-        return value in {language.casefold() for language in candidate.teaching_languages}
+        return _normalize_language(value) in {
+            _normalize_language(language) for language in candidate.teaching_languages
+        }
     if constraint.kind == "FIELD":
         return value in candidate.field_of_study.casefold()
     if constraint.kind == "DURATION":
@@ -329,7 +336,10 @@ def _nationality_admission_gate(profile: StudentProfileSnapshot, candidate: Cand
 
 
 def _mandatory_funding_route_gate(
-    profile: StudentProfileSnapshot, candidate: CandidateFacts
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    *,
+    today: date | None = None,
 ) -> bool:
     if profile.funding_dependency != "MANDATORY":
         return True
@@ -337,7 +347,7 @@ def _mandatory_funding_route_gate(
         benefit.is_current
         and benefit.accessibility == "ORDINARY"
         and benefit.eligibility_confidence == "VERIFIED"
-        and benefit_applies(benefit, candidate, profile)
+        and benefit_applies(benefit, candidate, profile, today=today)
         for benefit in candidate.benefits
     )
 
@@ -390,13 +400,86 @@ HARD_GATES: tuple[HardGate, ...] = (
 )
 
 
+def _has_profile_flag(profile: StudentProfileSnapshot, flag: str) -> bool:
+    target = flag.strip().upper()
+    return any(
+        c.kind == "OTHER" and c.value.strip().upper() == target
+        for c in (*profile.non_negotiables, *profile.negotiable_preferences)
+    )
+
+
+def _wants_top_universities_only(profile: StudentProfileSnapshot) -> bool:
+    return _has_profile_flag(profile, "TOP_UNIVERSITIES_ONLY")
+
+
+def _strict_top_universities_only(profile: StudentProfileSnapshot) -> bool:
+    return any(
+        c.kind == "OTHER" and c.value.strip().upper() == "TOP_UNIVERSITIES_ONLY"
+        for c in profile.non_negotiables
+    )
+
+
+def has_post_admission_gov_scholarship(profile: StudentProfileSnapshot) -> bool:
+    return _has_profile_flag(profile, "GOV_SCHOLARSHIP_AFTER_ADMISSION")
+
+
+def post_admission_gov_scheme_for_candidate(
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    awards: Sequence[AwardCandidateFacts] = (),
+    *,
+    today: date | None = None,
+) -> str | None:
+    """Return the admission-contingent post-admission scholarship scheme name if
+    the student opted into post-admission government/external funding and the
+    foreign programme qualifies dynamically on fit/selectivity."""
+    if not has_post_admission_gov_scholarship(profile):
+        return None
+    if (
+        candidate.program_country_code
+        and profile.nationality
+        and candidate.program_country_code.upper() == profile.nationality.upper()
+    ):
+        return None
+    from apps.funding.probability import is_selective_candidate
+
+    acad = candidate.dimension_scores.get("ACADEMIC_FIT", Decimal("0"))
+    prog = candidate.dimension_scores.get("PROGRAM_FIT", Decimal("0"))
+    if not (
+        is_selective_candidate(candidate)
+        or (acad >= Decimal("80") and prog >= Decimal("80"))
+    ):
+        return None
+    ref_today = today or date.today()
+    for award in awards:
+        if (
+            award.card is not None
+            and award.card.tuition == "FULL"
+            and award.card.living == "FULL"
+            and award.country_code
+            and profile.nationality
+            and award.country_code.upper() == profile.nationality.upper()
+            and evaluate_award(profile, award, today=ref_today).outcome
+            in ("ELIGIBLE", "POSSIBLY_ELIGIBLE_REVIEW")
+        ):
+            return award.name
+    return "Post-Admission Government Scholarship"
+
+
 def applicable_dimensions(profile: StudentProfileSnapshot) -> frozenset[EvaluationDimension]:
+    unconstrained_self_funded = (
+        profile.funding_dependency == "OPTIONAL" and profile.self_funding_capacity is None
+    ) or (
+        profile.funding_dependency in {"OPTIONAL", "IMPORTANT"}
+        and _has_profile_flag(profile, "NO_FUNDING_NEEDED")
+    )
     dimensions: set[EvaluationDimension] = {
         "ACADEMIC_FIT",
         "PROGRAM_FIT",
         "CAREER_FIT",
-        "AFFORDABILITY",
     }
+    if not unconstrained_self_funded:
+        dimensions.add("AFFORDABILITY")
     if profile.duration_preference != "NONE":
         dimensions.add("DURATION")
     if profile.research_interests:
@@ -424,7 +507,8 @@ def redistribute_weights(
 def _affordability_score(affordability: AffordabilityResult) -> Decimal:
     if affordability.baseline_cost <= 0:
         return Decimal("100")
-    ratio = affordability.gap / affordability.baseline_cost
+    # What the student must still find: a gap their own money covers is affordable.
+    ratio = affordability.shortfall / affordability.baseline_cost
     score = (Decimal("1") - ratio) * Decimal("100")
     return max(Decimal("0"), min(Decimal("100"), score))
 
@@ -437,6 +521,27 @@ def score_dimensions(
     scores: dict[EvaluationDimension, Decimal] = dict(candidate.dimension_scores)
     scores["AFFORDABILITY"] = _affordability_score(affordability)
 
+    if (
+        "DURATION" in scores
+        and profile.duration_preference == "ONE_YEAR"
+        and profile.duration_flexibility == "WEIGHTED"
+        and duration_category(candidate.duration_months) == "TWO_YEAR"
+        and "FUNDING" in profile.longer_program_justifications
+        and (affordability.covered > 0 or affordability.conditional_savings > 0)
+    ):
+        scores["DURATION"] = max(scores["DURATION"], Decimal("85"))
+
+    _pref_kind_to_dim: dict[str, EvaluationDimension] = {
+        "LOCATION": "MOBILITY_FIT",
+        "LANGUAGE": "ACADEMIC_FIT",
+        "FIELD": "PROGRAM_FIT",
+        "DURATION": "DURATION",
+    }
+    for pref in profile.negotiable_preferences:
+        dim = _pref_kind_to_dim.get(pref.kind)
+        if dim is not None and dim in scores and _constraint_satisfied(pref, candidate):
+            scores[dim] = min(Decimal("95"), scores[dim] + Decimal("5"))
+
     dimensions = tuple(
         DimensionScore(dimension=dim, score=scores[dim], weight=weights[dim])
         for dim in sorted(applicable)
@@ -446,7 +551,9 @@ def score_dimensions(
     return EvaluationScores(overall=overall, dimensions=dimensions, critical_values=critical_values)
 
 
-def _below_bar_reasons(scores: EvaluationScores) -> tuple[str, ...]:
+def _below_bar_reasons(
+    scores: EvaluationScores, *, strict_top: bool = False
+) -> tuple[str, ...]:
     """Why an eligible candidate is not recommended, in the numbers behind it.
 
     "Weaker fit" on its own sends a student looking for a bar they failed
@@ -464,34 +571,191 @@ def _below_bar_reasons(scores: EvaluationScores) -> tuple[str, ...]:
         for dimension in scores.dimensions
         if dimension.score < _BALANCED_DIMENSION_BAR
     )
+    if strict_top:
+        reasons.extend(
+            f"{dimension.dimension} scores {dimension.score:.0f}, below the "
+            f"{_BALANCED_OVERALL_BAR:.0f} required for top-tier programmes"
+            for dimension in scores.dimensions
+            if dimension.dimension in {"ACADEMIC_FIT", "PROGRAM_FIT"}
+            and _BALANCED_DIMENSION_BAR <= dimension.score < _BALANCED_OVERALL_BAR
+        )
     return tuple(reasons)
 
 
+#: The one gate winnable funding may stand in for (`evaluate`).
+_MANDATORY_FUNDING_GATE = next(
+    gate for gate in HARD_GATES if gate.passes is _mandatory_funding_route_gate
+)
+
+
+def needs_selective_funding(
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    *,
+    today: date | None = None,
+) -> bool:
+    """True for a programme a mandatory-funding student can afford only by
+    winning selective funding: it passed `evaluate` without a guaranteed route."""
+    return profile.funding_dependency == "MANDATORY" and not _mandatory_funding_route_gate(
+        profile, candidate, today=today
+    )
+
+
+def _programme_money_closes_the_gap(
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    rates: RateTable,
+    *,
+    today: date | None = None,
+) -> bool:
+    """The programme's own selective funding, if all of it were won, pays what
+    guaranteed money and the student's own do not. A programme with no cost
+    rows never qualifies: its gap is unknown, not zero."""
+    from apps.funding.affordability import calculate_affordability
+
+    money = calculate_affordability(profile, candidate, rates, today=today)
+    return (
+        money.baseline_cost > 0
+        and money.conditional_savings > 0
+        and money.shortfall - money.conditional_savings <= 0
+    )
+
+
+def _strip_undecidable_secondary_routes(
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    rates: RateTable,
+    *,
+    schemes: tuple[str, ...] = (),
+    today: date | None = None,
+) -> CandidateFacts:
+    """When a candidate has both a clean open funding route and a secondary
+    route with an undecidable condition, strip the undecidable route so it
+    neither excludes the programme nor counts as unverified coverage."""
+    routes = open_routes(profile, candidate, today=today)
+    undecidable_route_ids = {
+        condition.benefit_id
+        for condition in candidate.applicant_conditions
+        if condition.benefit_id in routes
+        and _decision_for(condition, profile, today=today).outcome == "UNDECIDABLE"
+    }
+    if not undecidable_route_ids or (not (routes - undecidable_route_ids) and not schemes):
+        return candidate
+    clean_candidate = candidate.model_copy(
+        update={
+            "benefits": tuple(
+                b for b in candidate.benefits if b.id not in undecidable_route_ids
+            ),
+            "applicant_conditions": tuple(
+                c
+                for c in candidate.applicant_conditions
+                if c.benefit_id not in undecidable_route_ids
+            ),
+        }
+    )
+    if (
+        _mandatory_funding_route_gate(profile, clean_candidate, today=today)
+        or schemes
+        or _programme_money_closes_the_gap(profile, clean_candidate, rates, today=today)
+    ):
+        return clean_candidate
+    return candidate
+
+
 def evaluate(
-    profile: StudentProfileSnapshot, candidate: CandidateFacts, rates: RateTable
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    rates: RateTable,
+    *,
+    schemes: tuple[str, ...] = (),
+    today: date | None = None,
 ) -> RecommendationOutcome:
-    failures = tuple(gate.reason for gate in HARD_GATES if not gate.passes(profile, candidate))
+    """`schemes`: the eligible, full-cover scholarships that pay for this
+    programme (`schemes_paying_for`), which the caller holds and this
+    function does not."""
+    gov_scheme = post_admission_gov_scheme_for_candidate(
+        profile, candidate, today=today
+    )
+    if gov_scheme is not None and gov_scheme not in schemes:
+        schemes = (*schemes, gov_scheme)
+    failing = [
+        gate
+        for gate in HARD_GATES
+        if not (
+            _mandatory_funding_route_gate(profile, candidate, today=today)
+            if gate is _MANDATORY_FUNDING_GATE
+            else gate.passes(profile, candidate)
+        )
+    ]
+    # Owner, 2026-10-24: a mandatory-funding student also sees a programme that
+    # selective funding, if won, would pay for -- labelled conditional by the
+    # pack, never counted as coverage. Only when that gate is the ONE failure.
+    if failing == [_MANDATORY_FUNDING_GATE] and (
+        schemes or _programme_money_closes_the_gap(profile, candidate, rates, today=today)
+    ):
+        failing = []
+    failures = tuple(gate.reason for gate in failing)
     if failures:
         # A gate's reason is static text; the condition that shut a route is not. Append
         # it so an excluded candidate says which scheme closed and on what bar.
         return RecommendationOutcome(
-            "NOT_ELIGIBLE", failures + closed_route_reasons(profile, candidate), None
+            "NOT_ELIGIBLE",
+            failures + closed_route_reasons(profile, candidate, today=today),
+            None,
         )
+
+    effective_candidate = _strip_undecidable_secondary_routes(
+        profile, candidate, rates, schemes=schemes, today=today
+    )
 
     from apps.funding.affordability import calculate_affordability
 
-    affordability = calculate_affordability(profile, candidate, rates)
-    scores = score_dimensions(profile, candidate, affordability)
+    affordability = calculate_affordability(profile, effective_candidate, rates, today=today)
+    scores = score_dimensions(profile, effective_candidate, affordability)
 
-    if profile.strategy == "BALANCED":
-        qualifies = (
-            scores.overall >= _BALANCED_OVERALL_BAR
-            and min(scores.critical_values) >= _BALANCED_DIMENSION_BAR
+    top_only = _wants_top_universities_only(profile)
+    strict_top = _strict_top_universities_only(profile)
+    post_admit_gov = has_post_admission_gov_scholarship(profile)
+    if profile.strategy == "BALANCED" or top_only or post_admit_gov:
+        selective_covers_gap = bool(
+            (top_only or post_admit_gov)
+            and (
+                schemes
+                or _programme_money_closes_the_gap(
+                    profile, effective_candidate, rates, today=today
+                )
+            )
         )
+        if selective_covers_gap:
+            non_aff = [
+                d.score for d in scores.dimensions if d.dimension != "AFFORDABILITY"
+            ]
+            avg_non_aff = (
+                sum(non_aff, Decimal("0")) / Decimal(len(non_aff))
+                if non_aff
+                else Decimal("0")
+            )
+            qualifies = (
+                avg_non_aff >= _BALANCED_OVERALL_BAR
+                and (min(non_aff) if non_aff else Decimal("0")) >= _BALANCED_DIMENSION_BAR
+            )
+        else:
+            qualifies = (
+                scores.overall >= _BALANCED_OVERALL_BAR
+                and min(scores.critical_values) >= _BALANCED_DIMENSION_BAR
+            )
+        if qualifies and strict_top:
+            acad_score = candidate.dimension_scores.get("ACADEMIC_FIT", Decimal("0"))
+            prog_score = candidate.dimension_scores.get("PROGRAM_FIT", Decimal("0"))
+            qualifies = (
+                acad_score >= _BALANCED_OVERALL_BAR
+                and prog_score >= _BALANCED_OVERALL_BAR
+            )
     else:
         # ponytail: StudentProfileSnapshot has no dedicated "required affordability
         # threshold" field. The mandatory-funding hard gate already requires a verified
-        # ordinary route whenever funding is mandatory, so funding-first has no
+        # ordinary route, or selective funding that would pay if won (above), whenever
+        # funding is mandatory, so funding-first has no
         # universal per-dimension or per-gap minimum beyond hard gates (matches P1-6);
         # the remaining gap only drives ranking order, not eligibility. Revisit if a
         # concrete threshold field is ever added to the profile schema.
@@ -500,13 +764,19 @@ def evaluate(
     # A condition no profile field can decide is neither a pass nor a fail. Passing it
     # silently offers a route that may be shut; failing it silently hides one that may
     # be open. Both are wrong, so it becomes a consultant's task.
-    review_reasons = unevaluable_condition_reasons(profile, candidate)
+    review_reasons = unevaluable_condition_reasons(
+        profile, effective_candidate, today=today
+    )
     # Review first: a bar only a human can judge is the more useful thing to
     # report about a candidate that is also merely weak.
     if review_reasons:
         return RecommendationOutcome("POSSIBLY_ELIGIBLE_REVIEW", review_reasons, scores)
     if not qualifies:
-        return RecommendationOutcome("ELIGIBLE_BELOW_FIT_BAR", _below_bar_reasons(scores), scores)
+        return RecommendationOutcome(
+            "ELIGIBLE_BELOW_FIT_BAR",
+            _below_bar_reasons(scores, strict_top=strict_top),
+            scores,
+        )
     return RecommendationOutcome("ELIGIBLE", (), scores)
 
 
@@ -550,6 +820,13 @@ class AwardCandidateFacts:
     #: The card's own fields (spec 10.4). None only for a fact built by hand in
     #: a test; award_facts always sets it.
     card: AwardCard | None = None
+    #: Which programmes this award can pay for, by the same rule the page groups
+    #: by (`grouping.funds`): its own programme list, its institution, or its
+    #: country. Set by the spine from catalogue rows; blank links nothing.
+    scope: str = "HOLDER"
+    institution_id: str = ""
+    country_code: str = ""
+    pays_for_program_ids: frozenset[str] = frozenset()
 
     # `HasFundingRoutes` wants these three; an award is anchored to a holder,
     # not to a place, so its scope-matching is GLOBAL and they are blank.
@@ -591,19 +868,27 @@ def evaluate_award(
     the worse failure.
     """
     from apps.funding.conditions import failed_conditions, undecidable_conditions
-    from apps.funding.validity import cycle_validity, select_deadline
+    from apps.funding.cycle_evidence import deadline_student
+    from apps.funding.validity import (
+        cycle_validity,
+        default_intake_start_for_country,
+        select_deadline,
+    )
 
-    shut = failed_conditions(profile, award.applicant_conditions)
+    shut = failed_conditions(profile, award.applicant_conditions, today=today)
     if shut:
         return RecommendationOutcome("NOT_ELIGIBLE", shut, None)
 
     target_intake = str(profile.intended_intake.year)
-    student: dict[str, object] = {
-        "nationality": profile.nationality,
-        "country_of_residence": profile.country_of_residence,
-    }
+    student = deadline_student(profile.nationality, profile.country_of_residence)
     validity = cycle_validity(
-        award.evidence, student=student, target_intake=target_intake, today=today
+        award.evidence,
+        student=student,
+        target_intake=target_intake,
+        today=today,
+        intake_starts_on=default_intake_start_for_country(
+            award.country_code, profile.intended_intake.year, today=today
+        ),
     )
     if validity in ("SUSPENDED", "ENDED"):
         quote = award.evidence.contrary_intake or target_intake
@@ -628,7 +913,64 @@ def evaluate_award(
             None,
         )
 
-    review = undecidable_conditions(profile, award.applicant_conditions)
+    review = undecidable_conditions(profile, award.applicant_conditions, today=today)
     if review:
         return RecommendationOutcome("POSSIBLY_ELIGIBLE_REVIEW", review, None)
     return RecommendationOutcome("ELIGIBLE", (), None)
+
+
+def scheme_pays_for(
+    award: AwardCandidateFacts, candidate: CandidateFacts, *, home_country: str
+) -> bool:
+    """Whether a scholarship can pay for this programme, by the rule the page
+    groups by (`apps/funding/grouping.py::funds`): its own programme list, its
+    institution, its country, or anywhere. One exception: a scheme from the
+    student's own country is never linked by country, because a home
+    government's scheme (the State Programme, HTP) pays for study ABROAD and
+    its country is the holder's, not the destination."""
+    if candidate.program_id in award.pays_for_program_ids:
+        return True
+    if award.scope == "INSTITUTION":
+        return bool(award.institution_id) and award.institution_id == candidate.institution_id
+    if award.scope in ("HOLDER", "COUNTRY"):
+        return (
+            bool(award.country_code)
+            and award.country_code != home_country
+            and award.country_code == candidate.program_country_code
+        )
+    return award.scope == "GLOBAL"
+
+
+def schemes_paying_for(
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    awards: Sequence[AwardCandidateFacts],
+    *,
+    today: date,
+) -> tuple[str, ...]:
+    """The scholarships that would pay for this programme in full if won
+    (owner, 2026-10-24): the student is eligible (or queued for human review on
+    an undecidable bar such as an unextracted country list), the card states
+    FULL tuition and FULL living, and the scheme links to the programme. Names,
+    in order."""
+    from apps.funding.probability import is_post_admission_gov_scholarship
+
+    names = [
+        award.name
+        for award in awards
+        if award.card is not None
+        and award.card.tuition == "FULL"
+        and award.card.living == "FULL"
+        and scheme_pays_for(award, candidate, home_country=profile.nationality)
+        and evaluate_award(profile, award, today=today).outcome
+        in ("ELIGIBLE", "POSSIBLY_ELIGIBLE_REVIEW")
+    ]
+    gov_scheme = post_admission_gov_scheme_for_candidate(
+        profile, candidate, awards, today=today
+    )
+    if gov_scheme is not None and not any(
+        is_post_admission_gov_scholarship(n, home_country=profile.nationality)
+        for n in names
+    ):
+        names.append(gov_scheme)
+    return tuple(names)

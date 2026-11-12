@@ -56,15 +56,7 @@ class Command(BaseCommand):
 
 
 def _mark(url: str, status: str) -> None:
-    # INERT IN PRODUCTION TODAY, and silently so (CLAUDE.md, RLS failure mode 1).
-    # `funding_officialsourcesnapshot` carries `shared_catalog_select` (SELECT,
-    # everyone) and `runtime_engine_write` (INSERT, `runtime_engine`) and
-    # NO UPDATE policy -- `apps/funding/migrations/0006_official_snapshots.py`.
-    # funding/0049 repointed that write policy to `runtime_engine` (the role
-    # this command runs as on the worker) and dropped `catalog_ingestion`, so
-    # the writing role now exists; the UPDATE policy still does not. Under
-    # `runtime_engine` this UPDATE is legal SQL matching zero rows, so nothing
-    # is marked STALE and no error is raised. No test can see it: the test role
-    # bypasses RLS. Closing it needs an UPDATE policy `TO runtime_engine`.
-    # Until then this command reports work it did not do.
+    # funding/0067 gives `runtime_engine` an UPDATE policy (`runtime_engine_update`)
+    # and a column-level UPDATE grant on `retrieval_status` while keeping the
+    # archived evidence columns immutable.
     OfficialSourceSnapshot.objects.filter(final_url=url).update(retrieval_status=status)

@@ -67,7 +67,7 @@ class FakeSecrets:
 
 
 def test_the_path_is_reconstructible_from_what_erasure_holds() -> None:
-    assert secret_id(TENANT, STUDENT, "GOOGLE") == f"tehsil/mailbox/{TENANT}/{STUDENT}/GOOGLE"
+    assert secret_id(TENANT, STUDENT, "GOOGLE") == f"elmify/mailbox/{TENANT}/{STUDENT}/GOOGLE"
 
 
 def test_a_token_round_trips() -> None:
@@ -108,7 +108,7 @@ def test_a_missing_token_is_none_and_the_log_carries_no_token(caplog) -> None:
         )
 
     assert str(STUDENT) not in caplog.text
-    assert "tehsil/mailbox" not in caplog.text
+    assert "elmify/mailbox" not in caplog.text
 
 
 def test_erasure_destroys_both_providers_and_never_lists() -> None:

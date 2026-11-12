@@ -79,7 +79,10 @@ def test_signup_with_an_existing_email_in_any_case_is_refused(
     assert _post(client, domain_a.host).status_code == 302
     client.logout()
     response = _post(client, domain_a.host, email="AYSEL@example.COM")
+    body = response.content.decode()
     assert response.status_code == 400
+    assert "already exists" not in body
+    assert "Unable to complete sign-up with these details" in body
     assert get_user_model().objects.count() == 1
 
 
@@ -96,6 +99,14 @@ def test_legal_page_shows_the_current_text(client, domain_a, published):
     url = reverse("privacy-legal", args=["terms"]) + "?lang=az"
     response = client.get(url, HTTP_HOST=domain_a.host)
     assert response.status_code == 200 and b"terms v1" in response.content
+    terms_alias = client.get(
+        reverse("privacy-legal", args=["terms_of_service"]), HTTP_HOST=domain_a.host
+    )
+    assert terms_alias.status_code == 200 and b"terms v1" in terms_alias.content
+    privacy_alias = client.get(
+        reverse("privacy-legal", args=["privacy_notice"]), HTTP_HOST=domain_a.host
+    )
+    assert privacy_alias.status_code == 200 and b"privacy_notice_agency v1" in privacy_alias.content
     unknown = client.get(reverse("privacy-legal", args=["cookies"]), HTTP_HOST=domain_a.host)
     assert unknown.status_code == 404
 

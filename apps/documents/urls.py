@@ -1,14 +1,26 @@
 from django.urls import path
 
-from . import api, review, views, workspace, writing
+from . import api, referee_package, referee_views, review, storage, views, workspace, writing
 
 urlpatterns = [
+    path("documents/drafts/<uuid:draft_id>/view", storage.draft_view, name="documents-draft-view"),
+    path(
+        "documents/uploads/<uuid:document_id>/view",
+        storage.upload_view,
+        name="documents-upload-view",
+    ),
+    path(
+        "documents/uploads/<uuid:document_id>/download",
+        storage.staff_download_upload,
+        name="documents-staff-download-upload",
+    ),
     path(
         "documents/<uuid:draft_id>/<str:filename>",
         views.download_document,
         name="documents-download",
     ),
     path("student/gap-interview/", views.gap_interview, name="student-gap-interview"),
+    path("student/transcript/", views.transcript_check_page, name="student-transcript-check"),
     path("student/documents/", views.documents_page, name="student-documents"),
     path("student/writing/", writing.writing_page, name="student-writing"),
     path(
@@ -30,14 +42,84 @@ urlpatterns = [
     ),
     path("student/documents/submit/", views.submit_document, name="student-document-submit"),
     path(
+        "student/documents/fill-form/",
+        views.fill_application_form,
+        name="student-document-fill-form",
+    ),
+    path(
+        "student/documents/cv-changes/",
+        views.settle_cv_changes,
+        name="student-cv-changes",
+    ),
+    path(
+        "student/documents/cv-fixes/",
+        views.cv_fix_decision,
+        name="student-cv-fix",
+    ),
+    path(
         "student/documents/<uuid:document_id>/expiry/",
         views.document_expiry,
         name="student-document-expiry",
     ),
+    path("student/documents/facts/<uuid:fact_id>/correct/", views.correct_fact_view,
+         name="student-fact-correct"),
+    path("student/documents/readings/<uuid:reading_id>/use/", views.adopt_value,
+         name="student-document-value-adopt"),
+    path("student/documents/readings/<uuid:reading_id>/keep/", views.keep_value,
+         name="student-document-value-keep"),
+    path("student/documents/facts/<uuid:fact_id>/merge/", views.merge_document,
+         name="student-document-merge"),
+    path("student/documents/facts/<uuid:fact_id>/different-degree/",
+         views.different_degree_view, name="student-different-degree"),
+    path("student/documents/id-documents/<uuid:document_id>/primary/",
+         views.choose_id_document, name="student-id-document-primary"),
     path(
         "student/documents/requests/<uuid:signal_id>/",
         views.document_request,
         name="student-document-request",
+    ),
+    path("student/referees/", referee_views.referees_page, name="student-referees"),
+    path("student/referees/add/", referee_views.referee_add, name="student-referee-add"),
+    path(
+        "student/referees/from-cv/<uuid:fact_id>/",
+        referee_views.referee_from_cv,
+        name="student-referee-from-cv",
+    ),
+    path(
+        "student/referees/<uuid:referee_id>/edit/",
+        referee_views.referee_edit,
+        name="student-referee-edit",
+    ),
+    path(
+        "student/referees/<uuid:referee_id>/status/",
+        referee_views.referee_status,
+        name="student-referee-status",
+    ),
+    path("student/referees/plan/", referee_views.referee_plan_page, name="student-referee-plan"),
+    path(
+        "student/referees/plan/propose/",
+        referee_views.referee_propose,
+        name="student-referee-propose",
+    ),
+    path(
+        "student/referees/plan/add/",
+        referee_views.referee_request_add,
+        name="student-referee-request-add",
+    ),
+    path(
+        "student/referees/requests/<uuid:request_id>/remove/",
+        referee_views.referee_request_remove,
+        name="student-referee-request-remove",
+    ),
+    path(
+        "student/referees/<uuid:referee_id>/package/",
+        referee_package.referee_package,
+        name="student-referee-package",
+    ),
+    path(
+        "student/referees/requests/<uuid:request_id>/state/",
+        referee_package.referee_request_state,
+        name="student-referee-request-state",
     ),
     path("api/auth/login", api.auth_login, name="api-auth-login"),
     path("api/auth/logout", api.auth_logout, name="api-auth-logout"),
@@ -47,7 +129,13 @@ urlpatterns = [
         api.upload_status,
         name="api-documents-upload-status",
     ),
+    path("api/documents/github-login", api.github_login, name="api-documents-github-login"),
     path("api/documents/transcript", api.transcript, name="api-documents-transcript"),
+    path(
+        "api/documents/transcript/crop/<uuid:reading_id>/<str:ref>",
+        storage.transcript_crop,
+        name="api-documents-transcript-crop",
+    ),
     path(
         "api/documents/facts/candidates",
         api.fact_candidates,
@@ -61,5 +149,10 @@ urlpatterns = [
         "api/documents/drafts/<uuid:draft_id>/approve",
         api.approve,
         name="api-documents-draft-approve",
+    ),
+    path(
+        "api/documents/drafts/<uuid:draft_id>/put-back",
+        api.put_back,
+        name="api-documents-draft-put-back",
     ),
 ]

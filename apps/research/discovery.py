@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import posixpath
 import unicodedata
 from collections.abc import Callable, Iterable, Iterator
@@ -12,6 +13,8 @@ from .domains import is_catalogue
 from .egress import SourceBlocked
 from .fetch import FetchBudgetExhausted, FetchedPage, SweepBudget, fetch_page
 from .fetch.types import SERVED, Outcome
+
+logger = logging.getLogger(__name__)
 
 
 class LeadBudgetExceeded(RuntimeError):
@@ -99,7 +102,20 @@ class ResearchLead:
         canonical = canonicalize_url(url)
         # The host decides, not the caller. A search hit on a catalogue is a
         # catalogue lead: it routes research and cannot support a claim (§7.2).
-        if is_catalogue(urlsplit(canonical).hostname or ""):
+        # Dual-role official national agencies (DAAD, Campus France, GKS Study
+        # in Korea, MEXT Study in Japan, EACEA, etc.) stay authoritative when
+        # the lead is for a scholarship/funder (`for_scholarship=True`), while
+        # remaining routing catalogues on programme leads.
+        for_scholarship = (
+            source_type.upper() in {"SCHOLARSHIP", "FUNDER"}
+            and funding_family in {
+                "GOVERNMENT_SCHOLARSHIP",
+                "MULTILATERAL",
+                "PRIVATE_FOUNDATION",
+                "AFFINITY_OR_DIASPORA",
+            }
+        )
+        if is_catalogue(urlsplit(canonical).hostname or "", for_scholarship=for_scholarship):
             source_type = "AGGREGATOR"
         aggregator = source_type.upper() == "AGGREGATOR"
         ecosystem_clue = evidence_strength == "ECOSYSTEM_CLUE"
@@ -314,10 +330,16 @@ def _tagged(
             if source.awards_jointly:
                 tagged = replace(tagged, awards_jointly=True)
             yield tagged
-    except (LeadBudgetExceeded, SourceBlocked):
+    except (LeadBudgetExceeded, SourceBlocked) as error:
         # Degrade, do not abort: the leads other sources already produced in
         # this round are still good (design §2.6). One catalogue's listing page
         # being down is not a reason to lose the other three sources' work.
+        logger.warning(
+            "lead source %s degraded (%s: %s)",
+            source.name,
+            type(error).__name__,
+            error,
+        )
         if on_degraded is not None:
             on_degraded(source.name)
 

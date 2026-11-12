@@ -936,3 +936,139 @@ def test_an_off_schema_claude_reply_is_paid_for_not_lost():
     readings = judge(FakeResponses(_answer()), claude, source_id="s", chunk=CHUNK, meter=meter)
     assert len(readings) == 2
     assert (meter.lost, meter.unmetered, len(meter.usages)) == (0, 1, 2)
+
+
+def test_chemoinformatics_cross_heading_and_cross_kind_negation_suspends_2027_2029_intake():
+    overview = Line(
+        "Erasmus Mundus Joint Master scholarships cover full tuition and a EUR 1,400/month stipend.",
+        "Overview",
+    )
+    scholarship_section = Line(
+        "The recruitment of the 2027-2029 student intake will be without scholarship.",
+        "Scholarship",
+    )
+    chunk = (overview, scholarship_section)
+    v_yes = verdict(
+        0,
+        offered="YES",
+        kind="I5_FUNDED_DUAL_DEGREE",
+        scope="PROGRAM",
+        money_form="GRANT",
+        tuition="FULL",
+        living="FULL",
+        applies_to="UNSTATED",
+        name="Erasmus Mundus Joint Master Scholarship",
+    )
+    v_no = verdict(
+        1,
+        offered="NO",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        money_form="UNSTATED",
+        tuition="UNSTATED",
+        living="UNSTATED",
+        applies_to="2027-2029",
+        name="UNSTATED",
+    )
+    result = awards(line_outcomes(chunk, [_reading(v_yes, v_no)] * 3))
+    assert len(result.decisions) == 1
+    decision = result.decisions[0]
+    assert decision.agreement == "AGREED"
+    assert decision.offered == "NO"
+    assert decision.applies_to == "2027-2029"
+    assert decision.disputed == ()
+    assert decision.tuition == "FULL"
+    assert decision.living == "FULL"
+    assert scholarship_section.text in decision.quotes
+
+
+def test_negation_with_intake_on_line_beats_positive_line_inheriting_intake_from_heading():
+    pos = Line(
+        "Erasmus Mundus scholarships cover participation costs and living allowance.",
+        "Admissions 2027-2029",
+    )
+    neg = Line(
+        "The recruitment of the 2027-2029 student intake will be without scholarship.",
+        "Admissions 2027-2029",
+    )
+    chunk = (pos, neg)
+    v_yes = verdict(
+        0,
+        offered="YES",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        money_form="GRANT",
+        tuition="FULL",
+        living="FULL",
+        applies_to="2027-2029",
+    )
+    v_no = verdict(
+        1,
+        offered="NO",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        money_form="UNSTATED",
+        tuition="UNSTATED",
+        living="UNSTATED",
+        applies_to="2027-2029",
+    )
+    result = awards(line_outcomes(chunk, [_reading(v_yes, v_no)] * 3))
+    assert len(result.decisions) == 1
+    decision = result.decisions[0]
+    assert decision.agreement == "AGREED"
+    assert decision.offered == "NO"
+    assert decision.applies_to == "2027-2029"
+
+
+def test_grant_negation_spares_separate_tuition_waiver_group():
+    em_pos = Line(
+        "Erasmus Mundus scholarships provide EUR 1,400/month and full participation costs.",
+        "Erasmus Mundus Scholarship",
+    )
+    em_neg = Line(
+        "No Erasmus Mundus scholarships are available for the 2027-2029 student intake.",
+        "Scholarship Notice",
+    )
+    waiver_pos = Line(
+        "Consortium tuition fee waivers remain available for the 2027-2029 intake.",
+        "Consortium Tuition Waiver",
+    )
+    chunk = (em_pos, em_neg, waiver_pos)
+    v_em_yes = verdict(
+        0,
+        offered="YES",
+        kind="I5_FUNDED_DUAL_DEGREE",
+        scope="PROGRAM",
+        money_form="GRANT",
+        tuition="FULL",
+        living="FULL",
+        applies_to="UNSTATED",
+    )
+    v_em_no = verdict(
+        1,
+        offered="NO",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        money_form="GRANT",
+        tuition="UNSTATED",
+        living="UNSTATED",
+        applies_to="2027-2029",
+    )
+    v_waiver_yes = verdict(
+        2,
+        offered="YES",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        money_form="FEE_WAIVER",
+        tuition="PARTIAL",
+        living="NONE",
+        applies_to="2027-2029",
+    )
+    result = awards(line_outcomes(chunk, [_reading(v_em_yes, v_em_no, v_waiver_yes)] * 3))
+    assert len(result.decisions) == 2
+    by_form = {d.money_form: d for d in result.decisions}
+    assert by_form["GRANT"].offered == "NO"
+    assert by_form["GRANT"].applies_to == "2027-2029"
+    assert by_form["FEE_WAIVER"].offered == "YES"
+    assert by_form["FEE_WAIVER"].applies_to == "2027-2029"
+

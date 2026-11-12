@@ -28,7 +28,7 @@ still makes the two roles LOGIN with passwords and grants CONNECT.
 
 Who creates the two roles depends on who runs this. A SUPERUSER (dev, CI, the
 test database) gets them created here NOLOGIN if absent -- cluster-global, so
-race-safely. Anyone else -- production's `tehsil_migration` -- is refused
+race-safely. Anyone else -- production's `elmify_migration` -- is refused
 before anything is created, when either role is missing: "run
 scripts/create_runtime_role.sql as the admin role, then re-run the migration".
 Letting a non-superuser create them would be permanent: on PG16+ only a role
@@ -45,7 +45,7 @@ have policies naming it; then DROP ROLE fails, the role is left for that
 database, and this one is asserted to reference it nowhere.
 
 EXECUTE on `user_has_active_membership` is not granted here and cannot be: the
-function is created after migrations, and owned by `tehsil_erasure_guard`, by
+function is created after migrations, and owned by `elmify_erasure_guard`, by
 `scripts/create_erasure_guard.sql`, which grants it to `runtime_engine` only
 (the worker's `execute_due_erasures` is its one caller). No other function needs a grant (trigger functions are executable by
 PUBLIC and are checked at CREATE TRIGGER, not when they fire).

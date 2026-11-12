@@ -28,7 +28,7 @@ Each sweep pass is **one query per provider at `numResults=100`** (Exa) or ten p
 Two passes, two providers, four calls per country. The saturation cell ran 99 queries on one cell and
 did not saturate; the sweep runs two and is described in its own docstring as "a probe, not a sweep".
 
-**What came back (sweep #2, TR, `tehsil_sweep_tr2`):** 447 URLs seen, 214 novel registrable domains,
+**What came back (sweep #2, TR, `elmify_sweep_tr2`):** 447 URLs seen, 214 novel registrable domains,
 72 on `.tr`. Of those 72, hand-labelled: 14 government, 10 university, 28 foundation/other, **20 noise**
 — 15 newspapers (`hurriyet`, `sabah`, `milliyet`, `cumhuriyet`, `star`, `yeniakit`…) and 5 scholarship
 blogs. By provider: Exa 113 URLs / 49 `.tr` / 13 labelled noise; Brave 132 / 39 / 10. The 142 non-`.tr`
@@ -98,7 +98,7 @@ From `api-dashboard.search.brave.com` (query docs, operators, Goggles; 2026-09-2
 - **Goggles can be passed inline** in the `goggles` query parameter (`$boost=3,site=dev.to`, rules
   separated by `%0A`), up to three per request; hosting on GitHub/Gist and registering at
   `search.brave.com/goggles/create` is the *other* option, not the only one. `brave.py`'s comment that
-  the Goggle waits on hosting is wrong; `tehsil-funders.goggle` can ship today, inline.
+  the Goggle waits on hosting is wrong; `elmify-funders.goggle` can ship today, inline.
 - A keyword engine matches terms, so the useful query is the vocabulary a foundation's own scholarship
   page contains — `intitle:vakfı "burs başvurusu"`, `inbody:"yüksek lisans" burs vakfı -haber` — not
   a sentence describing the page.

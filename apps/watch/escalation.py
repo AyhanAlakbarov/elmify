@@ -60,20 +60,27 @@ def _pending() -> QuerySet[Notification]:
     ).exclude(being_erased("recipient"))
 
 
+def _escalate_notification_safely(
+    tenant_id: UUID, notification_id: UUID, moment: datetime
+) -> bool:
+    try:
+        with tenant_transaction(tenant_id):
+            return _escalate_one(notification_id, moment)
+    except Exception:
+        logger.exception("EscalationFailed notification=%s", notification_id)
+        return False
+
+
 def escalate_for_tenant(tenant_id: UUID, *, now: datetime | None = None) -> int:
     moment = now or timezone.now()
     with tenant_scope(tenant_id):
         with tenant_transaction(tenant_id):
             pending = list(_pending().values_list("id", flat=True))
-        raised = 0
-        for notification_id in pending:
-            try:
-                with tenant_transaction(tenant_id):
-                    if _escalate_one(notification_id, moment):
-                        raised += 1
-            except Exception:
-                logger.exception("EscalationFailed notification=%s", notification_id)
-        return raised
+        return sum(
+            1
+            for notification_id in pending
+            if _escalate_notification_safely(tenant_id, notification_id, moment)
+        )
 
 
 def _escalate_one(notification_id: UUID, moment: datetime) -> bool:

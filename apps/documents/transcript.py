@@ -13,10 +13,11 @@ from __future__ import annotations
 import json
 import re
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field
@@ -53,8 +54,9 @@ CourseStatus = Literal["COMPLETED", "IN_PROGRESS", "SUPERSEDED_ATTEMPT"]
 _PERSONAL_LABEL = re.compile(
     r"family name|given name|first name|last name|surname|full name|patronymic|"
     r"date of birth|place of birth|birth date|student (?:id|no|number)|identification number|"
-    r"passport|national id|^\s*(?:student\s+)?name\s*:|"
-    r"soyad|doğum|dogum|kimlik|öğrenci no|öğrenci numara|atasının adı|baba adı|^\s*adı\s*:|"
+    r"passport|\bnational id\b|^\s*(?:student\s+)?name\s*:|"
+    r"soyad|doğum|dogum|t\.?\s*c\.?\s*kimlik|kimlik\s*(?:no|numara)|\bkimlik\s*:|"
+    r"öğrenci no|öğrenci numara|atasının adı|baba adı|^\s*adı\s*:|"
     r"şəxsiyyət|fin kod|"
     r"фамилия|\bимя\b|отчество|\bф\.?\s?и\.?\s?о\b|дата рождения|место рождения|паспорт|"
     r"зач[её]тной книжки",
@@ -126,6 +128,19 @@ class Highlight(BaseModel):
 
 
 @dataclass(frozen=True)
+class RowOrigin:
+    """Where a cut row was printed: the page's slot, the table's place on that page and the
+    row's place in that table -- counted before anything was dropped, so they index the stored
+    page's `tables` and `cell_regions` -- and the column of each cell read ("title", "credits",
+    "grade")."""
+
+    slot: int
+    table: int
+    row: int
+    cells: dict[str, int]
+
+
+@dataclass(frozen=True)
 class Row:
     """One course-table row as code cut it and Jev labelled it.
 
@@ -139,6 +154,14 @@ class Row:
     credits: str
     grade: str
     status: CourseStatus | None
+    #: None for a row stored before origins were kept.
+    origin: RowOrigin | None = None
+
+
+def row_from_json(stored: dict[str, Any]) -> Row:
+    """A row as `TranscriptReading.rows` stores it (`asdict`), back into a Row."""
+    origin = stored.get("origin")
+    return Row(**{**stored, "origin": RowOrigin(**origin) if origin else None})
 
 
 @dataclass(frozen=True)
@@ -238,6 +261,31 @@ def personal_names(student: Membership) -> frozenset[str]:
     )
 
 
+def transcript_owner_matches(
+    pages: tuple[OcrPage, ...],
+    known_names: Iterable[str],
+    *,
+    allow_unlabeled_continuation: bool = False,
+) -> bool:
+    """True when the transcript's OCR text names the student, or no full name is locked yet."""
+    from .id_reading import owner_matches_document_text
+
+    norm_pages = _normalised(pages)
+    all_texts = [
+        text
+        for page in norm_pages
+        for text in (*page.lines, *(cell for table in page.tables for row in table for cell in row))
+    ]
+    full_text = "\n".join(all_texts)
+    if owner_matches_document_text(full_text, known_names):
+        return True
+    if allow_unlabeled_continuation:
+        has_name_header = bool(_learned(norm_pages)) or any(_has_label(t) for t in all_texts)
+        if not has_name_header:
+            return True
+    return False
+
+
 #: The word or two a document prints right after one of its own labels: "Фамилия Иванов",
 #: "Surname: Aliyev". Learned first, so a page header repeating the name without a label --
 #: every page of the Russian specimen carries one, in Cyrillic, which no Latin account name
@@ -291,8 +339,13 @@ def _names_in(text: str, names: frozenset[str]) -> bool:
     return bool(names) and len(found) >= min(2, len(names))
 
 
+#: A kept table's page (its position in `pages`), its place on that page, and the original
+#: index of each row kept.
+_TableOrigin = tuple[int, int, list[int]]
+
+
 def _minimised(pages: tuple[OcrPage, ...], names: frozenset[str]) -> tuple[
-    list[str], list[list[list[str]]], list[list[list[float | None]]]
+    list[str], list[list[list[str]]], list[list[list[float | None]]], list[_TableOrigin]
 ]:
     pages = _normalised(pages)
     names = names | _learned(pages)
@@ -308,31 +361,42 @@ def _minimised(pages: tuple[OcrPage, ...], names: frozenset[str]) -> tuple[
         lines.append(line)
     tables: list[list[list[str]]] = []
     confidences: list[list[list[float | None]]] = []
-    for page in pages:
+    origins: list[_TableOrigin] = []
+    for page_index, page in enumerate(pages):
         # No grid (a text-layer page, or a caller that never set one): no cell has a doubt.
         page_conf = page.cell_confidence or tuple(
             tuple(tuple(None for _ in row) for row in table) for table in page.tables
         )
-        for table, table_conf in zip(page.tables, page_conf, strict=True):
+        for table_index, (table, table_conf) in enumerate(
+            zip(page.tables, page_conf, strict=True)
+        ):
             kept: list[list[str]] = []
             kept_conf: list[list[float | None]] = []
+            kept_rows: list[int] = []
             drop_next = False
-            for row, row_conf in zip(table, table_conf, strict=True):
+            for row_index, (row, row_conf) in enumerate(zip(table, table_conf, strict=True)):
                 labelled = any(_has_label(cell) for cell in row)
+                non_empty = [cell for cell in row if cell.strip()]
+                row_of_labels = bool(non_empty) and (
+                    sum(_has_label(cell) for cell in non_empty) >= 2
+                    or all(_label_ends(cell) for cell in non_empty)
+                )
                 # A date alone does not drop a course row -- an exam-date column is ordinary
                 # (review round 2, item 1: dropping the row emptied every course after it). The
                 # date is masked the same way a six-digit ID is; only a label, a name match, or
                 # sitting under a row of labels drops the whole row.
                 should_drop = drop_next or labelled or _names_in(" ".join(row), names)
-                drop_next = labelled
+                drop_next = row_of_labels
                 if should_drop:
                     continue
                 kept.append([_ID_NUMBER.sub("#", _DATE.sub("#", cell)) for cell in row])
                 kept_conf.append(list(row_conf))
+                kept_rows.append(row_index)
             if kept:
                 tables.append(kept)
                 confidences.append(kept_conf)
-    return lines, tables, confidences
+                origins.append((page_index, table_index, kept_rows))
+    return lines, tables, confidences, origins
 
 
 def _candidates(lines: list[str]) -> tuple[list[tuple[str, int]], list[tuple[date, str, int]]]:
@@ -387,6 +451,7 @@ class _Cut:
     where: dict[str, int]
     #: Azure's confidence per cell, aligned with `cells`; None where there is none.
     confs: list[float | None]
+    origin: RowOrigin
 
     def cell(self, kind: str) -> str:
         return self.cells[self.where[kind]] if kind in self.where else ""
@@ -399,28 +464,39 @@ class _Cut:
         )
 
 
+_ORIGIN_CELLS = {"course_title": "title", "credits": "credits", "grade": "grade"}
+
+
 def _course_rows(
     tables: list[list[list[str]]],
     kinds: list[list[str]],
     confidences: list[list[list[float | None]]],
+    origins: list[tuple[int, int, list[int]]],
 ) -> list[_Cut]:
     """Every row of every course block, block after block, so a side-by-side layout reads its
-    left semester to the end before its right one."""
+    left semester to the end before its right one. `origins` holds, per table, its slot, its
+    place on the page and each row's original index."""
     cut: list[_Cut] = []
-    for table, table_kinds, table_conf in zip(tables, kinds, confidences, strict=True):
+    for table, table_kinds, table_conf, (slot, table_index, row_indexes) in zip(
+        tables, kinds, confidences, origins, strict=True
+    ):
         for group in _groups(table_kinds):
             where: dict[str, int] = {}
             for offset, position in enumerate(group):
                 where.setdefault(table_kinds[position], offset)
             if "course_title" not in where:
                 continue
+            columns = {
+                name: group[where[kind]] for kind, name in _ORIGIN_CELLS.items() if kind in where
+            }
             cut += [
                 _Cut(
                     [row[position] for position in group],
                     where,
                     [conf[position] for position in group],
+                    RowOrigin(slot, table_index, row_index, columns),
                 )
-                for row, conf in zip(table, table_conf, strict=True)
+                for row, conf, row_index in zip(table, table_conf, row_indexes, strict=True)
             ]
     return cut
 
@@ -431,6 +507,21 @@ def _unsure(answer: Answer) -> bool:
 
 def _norm(title: str) -> str:
     return " ".join(title.casefold().split())
+
+
+def courses_of(rows: Iterable[Row]) -> tuple[TranscriptCourse, ...]:
+    """The courses a reading's rows hold, as the record keeps them -- the reader's rows, or the
+    rows with a student's fixes applied (transcript_check.effective_rows)."""
+    return tuple(
+        TranscriptCourse(
+            title=_clip(row.title, 200),
+            credits=number(row.credits),
+            grade=_clip(row.grade, 50) or None,
+            status=row.status,
+        )
+        for row in rows
+        if row.kind == "course" and row.status is not None and row.title.strip()
+    )
 
 
 def _clip(text: str, limit: int) -> str:
@@ -474,10 +565,18 @@ def check_gates() -> None:
 
 
 def read_from_pages(
-    pages: tuple[OcrPage, ...], names: frozenset[str], *, client: Client | None = None
+    pages: tuple[OcrPage, ...],
+    names: frozenset[str],
+    *,
+    client: Client | None = None,
+    slots: tuple[int, ...] | None = None,
 ) -> Reading:
-    """Turn read pages into a Reading: minimise, ask Jev, copy what it chose (module docstring)."""
-    lines, tables, confidences = _minimised(pages, names)
+    """Turn read pages into a Reading: minimise, ask Jev, copy what it chose (module docstring).
+    `slots` are the pages' `TranscriptPage.slot`s, recorded in each row's origin; without them a
+    page is numbered by its place, from 1."""
+    slots = slots or tuple(range(1, len(pages) + 1))
+    lines, tables, confidences, kept = _minimised(pages, names)
+    origins = [(slots[page], table, rows) for page, table, rows in kept]
     lines = lines[:_MAX_CANDIDATES]
     numbers, dates = _candidates(lines)
 
@@ -530,7 +629,7 @@ def read_from_pages(
         if not qid.startswith("column:") and _unsure(answer):
             doubts[Highlight(kind="unsure", scope="field", ref=qid)] = None
 
-    cut = _course_rows(tables, kinds, confidences)
+    cut = _course_rows(tables, kinds, confidences, origins)
     if len(cut) > _MAX_ROWS:
         raise UnsupportedUpload("more table rows than one transcript holds")
     labels: dict[str, Answer] = {}
@@ -581,7 +680,15 @@ def read_from_pages(
         ):
             doubts[Highlight(kind="low_confidence", scope="row", ref=str(i))] = None
         rows.append(
-            Row(i, kind, row.cell("course_title"), row.cell("credits"), row.cell("grade"), status)
+            Row(
+                i,
+                kind,
+                row.cell("course_title"),
+                row.cell("credits"),
+                row.cell("grade"),
+                status,
+                row.origin,
+            )
         )
 
     def picked(qid: str) -> str | None:
@@ -604,16 +711,7 @@ def read_from_pages(
         chosen = picked(qid)
         return None if chosen is None else dates[int(chosen[1:])][0]
 
-    courses = tuple(
-        TranscriptCourse(
-            title=_clip(row.title, 200),
-            credits=number(row.credits),
-            grade=_clip(row.grade, 50) or None,
-            status=row.status,
-        )
-        for row in rows
-        if row.kind == "course" and row.status is not None and row.title.strip()
-    )
+    courses = courses_of(rows)
     if len(courses) > 150:
         raise UnsupportedUpload("more courses than one transcript holds")
     country = picked("country")

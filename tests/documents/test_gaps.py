@@ -9,6 +9,7 @@ from apps.documents.gaps import (
     GapQuestion,
     Kind,
     UnanswerableQuestion,
+    abbreviated_names,
     absent_sections,
     answer_questions,
     education_completeness,
@@ -656,13 +657,12 @@ def test_a_field_the_ledger_already_carries_is_not_asked_for(student, program_fa
 
 
 def test_a_target_whose_key_the_category_does_not_carry_is_skipped(student, program_factory):
-    """answer_questions refuses a key the category lacks; asking it would be
-    a question nobody can answer.
+    """A directive naming a section the student holds no fact for asks nothing.
 
-    `personal.date_of_birth` is a real _INCLUDE_TARGETS entry the IDENTITY
-    category does not carry -- the case this actually guards. It used to name
-    `education.not_a_field`, which PageDirective now rejects on read, so the
-    skip could never have been reached by a stored row.
+    This no longer reaches the payload_keys skip: since 2026-10-12 IDENTITY
+    carries date_of_birth (a passport writes it), so every `personal.*` target
+    is a key its category carries. It passes because the student holds no
+    IDENTITY row -- there is no person to ask about, so nothing is asked.
     """
     make_fact(student, VerifiedFact.Category.EDUCATION, dict(_DEGREE))
     programme = program_factory(cv_directives=[{
@@ -678,6 +678,41 @@ def test_gap_questions_include_the_programmes_questions_when_one_is_given(studen
     kinds = [q.kind for q in gap_questions(student, programme=programme)]
     assert Kind.PROGRAMME_REQUIRED in kinds
     assert Kind.PROGRAMME_REQUIRED not in [q.kind for q in gap_questions(student)]
+
+
+def test_gap_questions_include_active_cv_draft_requirement_list_directives(student):
+    from apps.documents.models import DocumentDraft
+    from apps.documents.requirement_list import Requirement, RequirementList
+
+    make_fact(student, VerifiedFact.Category.EDUCATION, dict(_DEGREE))
+    req_list = RequirementList(
+        items=(
+            Requirement(
+                document="cv",
+                key="include",
+                value="education.ects_credits",
+                force="strict",
+                origin="programme",
+                sentence="State your ECTS credits.",
+                source_url="https://programme.example/cv",
+            ),
+        )
+    )
+    DocumentDraft.objects.create(
+        tenant=student.tenant,
+        student=student,
+        kind=DocumentDraft.Kind.CV,
+        version=1,
+        content={},
+        status=DocumentDraft.Status.DRAFT,
+        requirements=req_list.model_dump(mode="json"),
+        destination_label="ETH Zurich MSc Computer Science",
+    )
+
+    prog_qs = [q for q in gap_questions(student) if q.kind == Kind.PROGRAMME_REQUIRED]
+    assert len(prog_qs) == 1
+    assert prog_qs[0].payload_key == "ects_credits"
+    assert "ETH Zurich MSc Computer Science asks: State your ECTS credits." in prog_qs[0].evidence
 
 
 def test_a_programme_requiring_a_location_per_post_asks_for_the_missing_one(
@@ -1889,3 +1924,291 @@ def test_a_refused_gap_answer_carries_no_cause_holding_the_students_words(studen
     assert caught.value.__cause__ is None
     assert caught.value.__suppress_context__ is True
     assert "depression" not in str(caught.value)
+
+
+def _passport_rows(student):
+    """What a passport read leaves in the ledger: one IDENTITY row per key and an
+    ID_DOCUMENT row, all under the document's source_ref, all confirmed."""
+    from django.utils import timezone
+
+    ref = "document:00000000-0000-0000-0000-000000000001"
+    for category, payload in (
+        (VerifiedFact.Category.IDENTITY, {"date_of_birth": "1998-03-14"}),
+        (VerifiedFact.Category.IDENTITY, {"citizenship": "Azerbaijan"}),
+        (VerifiedFact.Category.IDENTITY, {"surname": "ƏLIYEVA"}),
+        (VerifiedFact.Category.ID_DOCUMENT, {"number": "C01X00T47", "document_type": "passport"}),
+    ):
+        VerifiedFact.objects.create(
+            student=student, category=category, payload=payload,
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT, source_ref=ref,
+            confirmed_by=student, confirmed_at=timezone.now(), created_by=student,
+        )
+
+
+def test_a_passport_alone_is_not_a_cv_to_ask_about(student):
+    """Final review, item 2: the CV detectors read "any fact exists" as "a CV was
+    ingested", so a student who uploaded only a passport got eleven questions
+    about a CV that does not exist."""
+    _passport_rows(student)
+    assert gap_questions(student) == ()
+    assert gap_notes(student) == ()
+
+
+def test_a_programme_question_about_the_person_is_asked_once(student, program_factory):
+    """Final review, item 5: programme_required iterated every IDENTITY row, so a
+    passport's one-key rows each became "What is the phone for this entry?"."""
+    make_fact(student, VerifiedFact.Category.IDENTITY, {"full_name": "Nərmin Əliyeva"})
+    _passport_rows(student)
+    programme = _programme_asking(program_factory, "personal.phone", "Give a phone number.")
+
+    [question] = programme_required(student, programme)
+
+    assert question.prompt == "What is the phone for Nərmin Əliyeva?"
+
+
+def _applying(agency, student, pattern):
+    from uuid import uuid4
+
+    from apps.portals.models import Application
+
+    return Application.objects.create(
+        tenant=agency, student=student, program_id=uuid4(),
+        kit_file_rules=[{"document": "CV", "field": "name_pattern", "value": pattern}],
+    )
+
+
+def test_a_name_rule_with_name_parts_asks_for_surname_and_given_name(student, agency_a):
+    make_fact(student, VerifiedFact.Category.IDENTITY,
+              {"full_name": "Aysel Məmmədova", "email": "a@b.az", "phone": "1"})
+    _applying(agency_a, student, "{given_name}_{surname}_CV.pdf")
+    asked = [q for q in gap_questions(student) if q.kind is Kind.NAME_PARTS]
+    assert sorted((q.payload_key, q.prompt) for q in asked) == [
+        ("given_name", "Your given name(s) exactly as in your passport."),
+        ("surname", "Your surname exactly as in your passport (Latin letters)."),
+    ]
+
+
+def test_no_name_parts_are_asked_when_no_rule_needs_them(student, agency_a):
+    make_fact(student, VerifiedFact.Category.IDENTITY,
+              {"full_name": "Aysel Məmmədova", "email": "a@b.az", "phone": "1"})
+    _applying(agency_a, student, "{full_name}_CV.pdf")
+    assert not [q for q in gap_questions(student) if q.kind is Kind.NAME_PARTS]
+
+
+def test_answering_name_parts_writes_them_and_names_the_file(student, agency_a, monkeypatch):
+    from apps.portals import prepare
+
+    make_fact(student, VerifiedFact.Category.IDENTITY,
+              {"full_name": "Aysel Məmmədova", "email": "a@b.az", "phone": "1"})
+    application = _applying(agency_a, student, "{given_name}_{surname}_CV.pdf")
+    queued = []
+    monkeypatch.setattr(prepare, "queue_for_student",
+                        lambda tenant_id, student_id: queued.append((tenant_id, student_id)))
+    answers = {"surname": "Məmmədova", "given_name": "Aysel"}
+    asked = [q for q in gap_questions(student) if q.kind is Kind.NAME_PARTS]
+    answer_questions([(q, answers[q.payload_key]) for q in asked], student=student)
+    tip = unsuperseded_facts(student).get(category=VerifiedFact.Category.IDENTITY)
+    assert tip.confirmed_at is None and tip.payload["surname"] == "Məmmədova"
+    assert queued == [(agency_a.id, student.id)]
+    assert not [q for q in gap_questions(student) if q.kind is Kind.NAME_PARTS]
+    assert prepare.file_name(
+        "{given_name}_{surname}_CV.pdf", full_name="", fallback="x.pdf", extension=".pdf",
+        surname="Məmmədova", given_name="Aysel",
+    ) == ("Aysel_Memmedova_CV.pdf", "")
+    del application
+
+
+def _identity(student, *, confirmed, tier=VerifiedFact.SourceTier.STUDENT_STATEMENT):
+    from django.utils import timezone
+
+    return VerifiedFact.objects.create(
+        student=student, category=VerifiedFact.Category.IDENTITY,
+        payload={"full_name": "A B", "email": "typo@b.az", "phone": "1"},
+        source_tier=tier, source_ref="upload:cv", created_by=student,
+        confirmed_by=student if confirmed else None,
+        confirmed_at=timezone.now() if confirmed else None,
+    )
+
+
+def _answer_surname(student, value="Bb"):
+    (q,) = [q for q in gap_questions(student)
+            if q.kind is Kind.NAME_PARTS and q.payload_key == "surname"]
+    return answer_questions([(q, value)], student=student)
+
+
+def test_a_name_part_on_an_unconfirmed_tip_confirms_nothing(student, agency_a, monkeypatch):
+    from apps.portals import prepare
+    from apps.portals.profile import verified_values
+
+    monkeypatch.setattr(prepare, "queue_for_student", lambda *_: None)
+    _identity(student, confirmed=False)
+    _applying(agency_a, student, "{surname}_CV.pdf")
+    (row,) = _answer_surname(student)
+    assert row.confirmed_at is None
+    values = verified_values(student)
+    assert not any(k.startswith("identity.") for k in values)
+
+
+def test_a_name_part_on_a_confirmed_tip_keeps_its_confirmation(student, agency_a, monkeypatch):
+    from apps.portals import prepare
+    from apps.portals.profile import verified_values
+
+    monkeypatch.setattr(prepare, "queue_for_student", lambda *_: None)
+    _identity(student, confirmed=True)
+    _applying(agency_a, student, "{surname}_CV.pdf")
+    _answer_surname(student)
+    values = verified_values(student)
+    assert values["identity.surname"] == "Bb" and values["identity.email"] == "typo@b.az"
+
+
+def test_an_over_long_name_part_is_refused_without_the_input(student, agency_a):
+    _identity(student, confirmed=True)
+    _applying(agency_a, student, "{surname}_CV.pdf")
+    with pytest.raises(UnanswerableQuestion) as caught:
+        _answer_surname(student, "x" * 101)
+    assert "xxx" not in str(caught.value) and caught.value.__cause__ is None
+    assert caught.value.__suppress_context__
+
+
+def test_an_authoritative_identity_is_not_asked_for_name_parts(student, agency_a):
+    _identity(student, confirmed=True, tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT)
+    _applying(agency_a, student, "{surname}_CV.pdf")
+    assert not [q for q in gap_questions(student) if q.kind is Kind.NAME_PARTS]
+
+
+def test_a_passport_supplies_the_name_parts_a_file_name_needs(student, agency_a):
+    """Where file-name questions meet passport reading: a passport holds the name parts on
+    its own one-key IDENTITY rows, not on the row that holds full_name."""
+    from django.utils import timezone
+
+    make_fact(student, VerifiedFact.Category.IDENTITY, {"full_name": "Nərmin Əliyeva"})
+    _passport_rows(student)  # holds the surname
+    _applying(agency_a, student, "{given_name}_{surname}_CV.pdf")
+
+    def asked():
+        return [q.payload_key for q in gap_questions(student) if q.kind is Kind.NAME_PARTS]
+
+    assert asked() == ["given_name"]
+    VerifiedFact.objects.create(
+        student=student, category=VerifiedFact.Category.IDENTITY,
+        payload={"given_names": "NƏRMIN"},
+        source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+        source_ref="document:00000000-0000-0000-0000-000000000001",
+        confirmed_by=student, confirmed_at=timezone.now(), created_by=student,
+    )
+    assert asked() == []
+
+
+def _degree_fact(student, degree="B.Sc. of Chem. Eng.", institution="UFAZ"):
+    from django.utils import timezone
+
+    return VerifiedFact.objects.create(
+        student=student,
+        category=VerifiedFact.Category.EDUCATION,
+        payload={
+            "degree_as_awarded": degree,
+            "institution_original": institution,
+            "start_date": "2019-09-01",
+            "end_date": "2023-06-30",
+        },
+        source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+        source_ref="upload:test",
+        confirmed_by=student,
+        confirmed_at=timezone.now(),
+        created_by=student,
+    )
+
+
+def test_an_abbreviated_degree_and_institution_are_asked_for_in_full(student, agency_a):
+    with tenant_scope(agency_a.id):
+        _degree_fact(student)
+        questions = abbreviated_names(student)
+    assert [(q.kind, q.payload_key) for q in questions] == [
+        (Kind.ABBREVIATED_NAME, "degree_as_awarded"),
+        (Kind.ABBREVIATED_NAME, "institution_original"),
+    ]
+
+
+def test_a_full_name_is_not_asked(student, agency_a):
+    with tenant_scope(agency_a.id):
+        _degree_fact(student, "Bachelor of Chemical Engineering", "ADA University")
+        assert abbreviated_names(student) == ()
+
+
+def test_a_name_retyped_unchanged_is_remembered_and_not_asked_again(student, agency_a):
+    with tenant_scope(agency_a.id):
+        fact = _degree_fact(student, "Bachelor of Chemical Engineering", "UFAZ")
+        [question] = abbreviated_names(student)
+        assert answer_questions([(question, "UFAZ")], student=student) == ()
+        assert abbreviated_names(student) == ()
+        assert not VerifiedFact.objects.filter(supersedes=fact).exists()
+
+
+def test_an_overlong_full_title_is_refused_before_it_is_stored(student, agency_a):
+    with tenant_scope(agency_a.id):
+        _degree_fact(student)
+        question = abbreviated_names(student)[0]
+        with pytest.raises(UnanswerableQuestion):
+            answer_questions([(question, "B" * 201)], student=student)
+
+
+def test_the_question_sits_after_the_degree_detail_questions(student, agency_a):
+    with tenant_scope(agency_a.id):
+        _degree_fact(student)
+        kinds = [q.kind for q in gap_questions(student)]
+    assert kinds.index(Kind.ABBREVIATED_NAME) > kinds.index(Kind.MISSING_DEGREE_DETAIL)
+
+
+_ETH = {
+    "rule_id": "PAGE-4-cv_start", "key": "cv_start", "value": {"start": "upper_secondary"},
+    "enforcement": "ADVISORY_HIGH_RISK",
+    "rule_text": "Begin with your UPPER SECONDARY SCHOOL GRADUATION.", "scope": "PROGRAMME",
+}
+
+
+def _education_fact(student, degree, institution):
+    from django.utils import timezone
+
+    from apps.documents.models import VerifiedFact
+
+    return VerifiedFact.objects.create(
+        student=student, category=VerifiedFact.Category.EDUCATION,
+        payload={"degree_as_awarded": degree, "institution_original": institution},
+        source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT, source_ref="upload:test",
+        confirmed_by=student, confirmed_at=timezone.now(), created_by=student,
+    )
+
+
+@pytest.mark.django_db
+def test_a_page_starting_at_school_asks_for_the_school(agency_a, membership_a, program_factory):
+    from apps.documents.gaps import upper_secondary_required
+    from apps.tenancy.context import tenant_scope
+
+    programme = program_factory(cv_constraints=[_ETH])
+    with tenant_scope(agency_a.id):
+        _education_fact(membership_a, "BSc Chemistry", "ADA University")
+        questions = upper_secondary_required(membership_a, programme)
+    assert [q.payload_key for q in questions] == ["institution_original", "degree_as_awarded"]
+    assert {q.slug for q in questions} == {"upper-secondary"}
+    assert "UPPER SECONDARY" in questions[0].evidence
+
+
+@pytest.mark.django_db
+def test_a_school_on_file_asks_nothing(agency_a, membership_a, program_factory):
+    from apps.documents.gaps import upper_secondary_required
+    from apps.tenancy.context import tenant_scope
+
+    programme = program_factory(cv_constraints=[_ETH])
+    with tenant_scope(agency_a.id):
+        _education_fact(membership_a, "Attestat", "Baku School No. 6")
+        assert upper_secondary_required(membership_a, programme) == ()
+
+
+@pytest.mark.django_db
+def test_a_page_without_the_rule_asks_nothing(agency_a, membership_a, program_factory):
+    from apps.documents.gaps import upper_secondary_required
+    from apps.tenancy.context import tenant_scope
+
+    with tenant_scope(agency_a.id):
+        assert upper_secondary_required(membership_a, program_factory()) == ()
+

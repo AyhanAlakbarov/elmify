@@ -26,7 +26,7 @@
 - The application-inbox onboarding step (§6): there is no dashboard.
 - Gmail: not offered in the pilot.
 - Owner decisions: one inbox per provider; reading untagged Junk in an application inbox (progress.md Task 6 owner question).
-- A trigger for the fill run. Nothing in `extension/src` injects the content script or sends it `{"type": "start"}` (only `content/index.ts:176` listens for it), so `run()` — and everything this plan adds to it — is reached today only through the e2e suite's `__tehsil_run` hook. The trigger belongs to the dashboard that does not exist (glass-box PR #126).
+- A trigger for the fill run. Nothing in `extension/src` injects the content script or sends it `{"type": "start"}` (only `content/index.ts:176` listens for it), so `run()` — and everything this plan adds to it — is reached today only through the e2e suite's `__elmify_run` hook. The trigger belongs to the dashboard that does not exist (glass-box PR #126).
 - `PortalForm.signup_map` (glass-box decision 13): unbuilt; see decision 1.
 - Promoting a disputed status automatically, or requiring agreement between tenants: a human uses `set_tag_status`.
 
@@ -34,9 +34,9 @@
 
 - Work in `/home/orkhan/Desktop/mailbox-port`, branch `claude/mailbox-port`. Always `git -C /home/orkhan/Desktop/mailbox-port …`; the shell's cwd resets to the main repo and a bare `git commit` lands on the wrong branch.
 - Start from the branch tip *after* the controller's in-flight fix to `apps/mailbox/oauth.py` / `sync.py` lands. Every edit to `sync.py` in this plan is anchored on quoted code, not on line numbers; if an anchor moved, apply the same change at the anchor's new place.
-- Test DB: prefix every pytest/manage.py command with `POSTGRES_DB=tehsil_mailbox_port`.
-- Lint `uv run ruff check .` only — **never `ruff format`**. Types `uv run mypy apps config`. Security `uv run bandit -q -c pyproject.toml -r apps config`. Migrations `POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations --check --dry-run`. Line length 100.
-- Extension: `npm --prefix extension ci` once, then `npm --prefix extension run check` (typecheck + build) after every TypeScript change. Extension tests: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_bundle.py -q` and `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q` (the `extension` marker is excluded by `pyproject.toml`'s `addopts`; without `-m extension` those tests silently do not run).
+- Test DB: prefix every pytest/manage.py command with `POSTGRES_DB=elmify_mailbox_port`.
+- Lint `uv run ruff check .` only — **never `ruff format`**. Types `uv run mypy apps config`. Security `uv run bandit -q -c pyproject.toml -r apps config`. Migrations `POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations --check --dry-run`. Line length 100.
+- Extension: `npm --prefix extension ci` once, then `npm --prefix extension run check` (typecheck + build) after every TypeScript change. Extension tests: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_bundle.py -q` and `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q` (the `extension` marker is excluded by `pyproject.toml`'s `addopts`; without `-m extension` those tests silently do not run).
 - **The extension types, the student clicks.** No bundle may contain `.click(`, `MouseEvent`, `PointerEvent`, `requestSubmit` or `.submit(`; `content.js` may not contain the substrings `press`, `doubleClick`, `dragAndDrop`, `scrollTo` — **including inside user-facing strings** (`test_extension_bundle.py` scans the built text). A `FocusEvent` is allowed.
 - `apps/portals/` modules other than `ext_api.py` and `models.py` must not contain the string `SUBMITTED`; no `apps/portals/*.py` may contain `fingerprint`, `residential` or the other words in `tests/portals/test_boundary.py::BANNED`.
 - Every new device route uses `ext_api._device_endpoint` (device token + `deletion_lock_target`), calls `_limit(...)` first, resolves the application with `_application_for`, and wraps every tenant read/write in `tenant_transaction`.
@@ -256,7 +256,7 @@ def test_an_unknown_status_is_refused_by_the_database():
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_tag_outcomes.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_tag_outcomes.py -q`
 Expected: FAIL — `ImportError: cannot import name 'plain_of'` / `TypeError: PortalAccount() got unexpected keyword arguments` for `registered_at`, and `Unknown command: 'set_tag_status'`.
 
 - [ ] **Step 3: Models and migration**
@@ -317,7 +317,7 @@ with
         ]
 ```
 
-Run `POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations portals --name tag_outcomes`. If it adds a `('tenancy', …)` dependency, delete it (the same spurious edge `0019_portal_accounts.py` documents). The file must read:
+Run `POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations portals --name tag_outcomes`. If it adds a `('tenancy', …)` dependency, delete it (the same spurious edge `0019_portal_accounts.py` documents). The file must read:
 
 ```python
 # Generated by Django 5.2.17 on 2026-09-27
@@ -550,7 +550,7 @@ In `apps/audit/redaction.py`, replace `    "portals.PortalAccount": ("portal_hos
 
 - [ ] **Step 6: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_tag_outcomes.py tests/portals/test_tags.py tests/audit/test_redaction_classification.py -q && POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations --check --dry-run`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_tag_outcomes.py tests/portals/test_tags.py tests/audit/test_redaction_classification.py -q && POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations --check --dry-run`
 Expected: 24 passed; "No changes detected". (`test_tags.py::test_a_portal_that_rejects_tags_gets_the_plain_address` still passes: that account is unregistered.)
 
 - [ ] **Step 7: Commit**
@@ -749,7 +749,7 @@ def test_another_student_s_application_is_404(
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_ext_address.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_ext_address.py -q`
 Expected: FAIL — `KeyError: 'plain_email'` and 404 on every `/address` POST.
 
 - [ ] **Step 3: Timings and the two registration helpers**
@@ -927,7 +927,7 @@ In `apps/portals/urls.py`, add as the last entry of `urlpatterns`:
 
 - [ ] **Step 6: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_ext_address.py tests/portals/test_tags.py tests/portals/test_packet.py tests/portals/test_kit.py tests/portals/test_ext_api.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_ext_address.py tests/portals/test_tags.py tests/portals/test_packet.py tests/portals/test_kit.py tests/portals/test_ext_api.py -q`
 Expected: all PASS (86 at the time of writing).
 
 - [ ] **Step 7: Commit**
@@ -1228,7 +1228,7 @@ def test_a_rate_limited_check_still_says_wait(
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_ext_registration.py tests/portals/test_ext_mailbox_check.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_ext_registration.py tests/portals/test_ext_mailbox_check.py -q`
 Expected: FAIL — every `/registration` call 404s; `test_a_lost_grant_is_told_apart_from_a_rate_limit` gets 429.
 
 - [ ] **Step 3: Learning a sender the student named**
@@ -1401,7 +1401,7 @@ In `apps/portals/urls.py`, add as the last entry:
 
 - [ ] **Step 5: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_ext_registration.py tests/portals/test_ext_mailbox_check.py tests/mailbox/test_filter.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_ext_registration.py tests/portals/test_ext_mailbox_check.py tests/mailbox/test_filter.py -q`
 Expected: all PASS.
 
 - [ ] **Step 6: Commit**
@@ -1555,7 +1555,7 @@ def test_a_set_shared_status_survives_the_mail(registering):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox/test_registration_mail.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox/test_registration_mail.py -q`
 Expected: FAIL — `assert 'UNKNOWN' == 'KEEPS'` (and `== 'STRIPS'`); the three "says nothing" tests pass already, which is correct.
 
 - [ ] **Step 3: Implement**
@@ -1657,7 +1657,7 @@ Why the untagged branch compares `domain` (the matched allowlist key) with `awai
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox -q`
 Expected: all PASS (217 at the time of writing, including every plan-2 tagged-mail test — those now also record KEEPS, which none of them contradicts).
 
 - [ ] **Step 5: Commit**
@@ -1798,7 +1798,7 @@ def test_a_snapshot_offers_the_portal_address_and_forbids_it(
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_snapshot_learn.py tests/portals/test_ext_api.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_snapshot_learn.py tests/portals/test_ext_api.py -q`
 Expected: FAIL — `TypeError: learn_from_snapshot() got an unexpected keyword argument 'optional_fields'` and `KeyError: 'optional_fields'`.
 
 - [ ] **Step 3: Implement**
@@ -1867,7 +1867,7 @@ with
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals -q`
 Expected: all PASS, including `tests/portals/test_learn.py` (proof that `learn_form` was not touched).
 
 - [ ] **Step 5: Commit**
@@ -1893,7 +1893,7 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 2's `plain_email` in the packet and its `address` route (reached through the worker in Task 7).
-- Produces: content → worker message `{type: "address", applicationId, event: "given"}` or `{type: "address", applicationId, event: "rejected", evidence: "form" | "after_submit" | "student"}`; content-script message listener case `{type: "use_plain_address"}`; test hook `window.__tehsil_use_plain`; `retype(item: VerifiedEntry, value: string): void`; `checkAddress(item, plain, cameBackRejected): Promise<"kept" | "rejected" | "rejected_after_submit" | "unclear">`; `looksRejected(element: HTMLElement): boolean`.
+- Produces: content → worker message `{type: "address", applicationId, event: "given"}` or `{type: "address", applicationId, event: "rejected", evidence: "form" | "after_submit" | "student"}`; content-script message listener case `{type: "use_plain_address"}`; test hook `window.__elmify_use_plain`; `retype(item: VerifiedEntry, value: string): void`; `checkAddress(item, plain, cameBackRejected): Promise<"kept" | "rejected" | "rejected_after_submit" | "unclear">`; `looksRejected(element: HTMLElement): boolean`.
 
 - [ ] **Step 1: Fixtures**
 
@@ -2049,7 +2049,7 @@ def test_the_plain_address_button_types_it_and_says_it_was_the_student(
     page.goto(f"{fixture_server}/plain_form.html")
     _run_with_stubbed_messaging(page, {"packet": _email_packet(fixture_server)})
 
-    page.evaluate("() => window.__tehsil_use_plain()")
+    page.evaluate("() => window.__elmify_use_plain()")
     sent = page.evaluate("() => window.__sent")
 
     assert page.input_value("#em") == PLAIN
@@ -2058,8 +2058,8 @@ def test_the_plain_address_button_types_it_and_says_it_was_the_student(
 
 - [ ] **Step 3: Run to verify failure**
 
-Run: `npm --prefix extension ci && npm --prefix extension run check && POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q`
-Expected: the five new tests FAIL (`ValueError: not enough values to unpack` on the missing `address` message; `window.__tehsil_use_plain is not a function`); the existing ones PASS.
+Run: `npm --prefix extension ci && npm --prefix extension run check && POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q`
+Expected: the five new tests FAIL (`ValueError: not enough values to unpack` on the missing `address` message; `window.__elmify_use_plain is not a function`); the existing ones PASS.
 
 - [ ] **Step 4: `address.ts` and `retype`**
 
@@ -2303,15 +2303,15 @@ In the `chrome.runtime.onMessage` listener, after the `"start"` line, add:
     if (message?.type === "use_plain_address") void usePlainAddress();
 ```
 
-After the `__tehsil_run` hook line, add:
+After the `__elmify_run` hook line, add:
 
 ```ts
-(globalThis as Record<string, unknown>)["__tehsil_use_plain"] = usePlainAddress;
+(globalThis as Record<string, unknown>)["__elmify_use_plain"] = usePlainAddress;
 ```
 
 - [ ] **Step 6: Run to verify pass**
 
-Run: `npm --prefix extension run check && POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_bundle.py -q && POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q`
+Run: `npm --prefix extension run check && POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_bundle.py -q && POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q`
 Expected: typecheck and build clean; all PASS. If `test_the_content_script_types_only_the_allowed_methods` fails on `press`, a user-facing string contains it — reword the string, never the test.
 
 - [ ] **Step 7: Commit**
@@ -2464,7 +2464,7 @@ def test_the_address_report_uses_only_the_server_s_evidence_words() -> None:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `npm --prefix extension run check && POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_bundle.py -q && POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q`
+Run: `npm --prefix extension run check && POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_bundle.py -q && POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q`
 Expected: FAIL — `KeyError: 'permissions'`-free assertion `'alarms' in [...]` fails; the panel tests time out waiting for `#registration` / `#use-plain`.
 
 - [ ] **Step 3: Manifest, API and types**
@@ -2740,7 +2740,7 @@ document.getElementById("use-plain")?.addEventListener("click", () => {
 
 - [ ] **Step 6: Run to verify pass**
 
-Run: `npm --prefix extension run check && POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_bundle.py -q && POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q`
+Run: `npm --prefix extension run check && POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_bundle.py -q && POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q`
 Expected: all PASS (38 across both files at the time of writing). The worker itself cannot be driven from pytest — the bundle checks are the evidence for it, as they already are for `/ext/actions`.
 
 - [ ] **Step 7: Commit**
@@ -2869,10 +2869,10 @@ def test_the_mail_measures_the_tag_behind_the_policy(
 
 - [ ] **Step 2: Run, then prove the RLS test can fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_ext_rls.py tests/mailbox/test_tagged_rls.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_ext_rls.py tests/mailbox/test_tagged_rls.py -q`
 Expected: PASS.
 
-Negative control (do not commit it): in `apps/mailbox/sync.py` dedent the line `awaiting = _awaiting_registration(connection.membership, timezone.now())` by one level so it runs outside the `with tenant_transaction(...)` block, rerun `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox/test_tagged_rls.py tests/mailbox/test_registration_mail.py -q`, and confirm exactly `test_the_mail_measures_the_tag_behind_the_policy` FAILS while `test_registration_mail.py` still passes (the superuser suite cannot see it — measured while writing this plan). Restore the line; `git -C /home/orkhan/Desktop/mailbox-port diff apps/mailbox/sync.py` must show nothing from this step.
+Negative control (do not commit it): in `apps/mailbox/sync.py` dedent the line `awaiting = _awaiting_registration(connection.membership, timezone.now())` by one level so it runs outside the `with tenant_transaction(...)` block, rerun `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox/test_tagged_rls.py tests/mailbox/test_registration_mail.py -q`, and confirm exactly `test_the_mail_measures_the_tag_behind_the_policy` FAILS while `test_registration_mail.py` still passes (the superuser suite cannot see it — measured while writing this plan). Restore the line; `git -C /home/orkhan/Desktop/mailbox-port diff apps/mailbox/sync.py` must show nothing from this step.
 
 - [ ] **Step 3: Whole-branch gates**
 
@@ -2880,13 +2880,13 @@ Run:
 
 ```bash
 cd /home/orkhan/Desktop/mailbox-port
-POSTGRES_DB=tehsil_mailbox_port uv run pytest -q
-POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q
+POSTGRES_DB=elmify_mailbox_port uv run pytest -q
+POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_extension_e2e.py -m extension -q
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -q -c pyproject.toml -r apps config
-POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations --check --dry-run
-POSTGRES_DB=tehsil_mailbox_port uv run python manage.py check
+POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_mailbox_port uv run python manage.py check
 npm --prefix extension run check
 grep -rn "SUBMITTED" apps/portals --include=*.py | grep -v -e "ext_api.py" -e "models.py" -e "/migrations/"
 ```

@@ -2,10 +2,10 @@
 set -Eeuo pipefail
 umask 077
 
-EXPECTED_PROFILE="tehsil-sandbox"
+EXPECTED_PROFILE="elmify-sandbox"
 EXPECTED_REGION="eu-central-1"
-STACK_NAME="tehsil-phase1-validation"
-REPOSITORY_NAME="tehsil-phase1-validation-probe"
+STACK_NAME="elmify-phase1-validation"
+REPOSITORY_NAME="elmify-phase1-validation-probe"
 CONTROLLED_OUTPUT="docs/validation/controlled-egress.md"
 SQS_OUTPUT="docs/validation/sqs-fair-queue.md"
 RUN_OUTPUT="docs/validation/aws-boundary-run.md"
@@ -77,19 +77,19 @@ preflight() {
   [[ "$(aws_cli sts get-caller-identity --query 'Account != null && Arn != null' --output text)" == "True" ]]
   [[ "$(stack_count)" == "0" ]]
   [[ "$(repository_count)" == "0" ]]
-  [[ "$(aws_cli logs describe-log-groups --log-group-name-prefix "/tehsil/validation/${STACK_NAME}/" --query 'length(logGroups)' --output text)" == "0" ]]
+  [[ "$(aws_cli logs describe-log-groups --log-group-name-prefix "/elmify/validation/${STACK_NAME}/" --query 'length(logGroups)' --output text)" == "0" ]]
 }
 
 publish_image() {
   echo "Deploy: publishing immutable probe image"
   REPOSITORY_URI="$(aws_cli ecr create-repository \
     --repository-name "$REPOSITORY_NAME" \
-    --tags Key=Project,Value=tehsil-agent Key=Purpose,Value=aws-boundary-validation \
+    --tags Key=Project,Value=elmify Key=Purpose,Value=aws-boundary-validation \
     --query 'repository.repositoryUri' --output text)"
   local registry="${REPOSITORY_URI%%/*}"
   aws_cli ecr get-login-password | docker_cli login --username AWS --password-stdin "$registry" >/dev/null 2>&1
-  docker_cli build --platform linux/amd64 --target web --tag tehsil-agent:aws-boundary . >/dev/null 2>&1
-  docker_cli tag tehsil-agent:aws-boundary "${REPOSITORY_URI}:validation" >/dev/null 2>&1
+  docker_cli build --platform linux/amd64 --target web --tag elmify:aws-boundary . >/dev/null 2>&1
+  docker_cli tag elmify:aws-boundary "${REPOSITORY_URI}:validation" >/dev/null 2>&1
   docker_cli push "${REPOSITORY_URI}:validation" >/dev/null 2>&1
   IMAGE_DIGEST="$(aws_cli ecr describe-images --repository-name "$REPOSITORY_NAME" \
     --image-ids imageTag=validation --query 'imageDetails[0].imageDigest' --output text)"
@@ -110,7 +110,7 @@ deploy_stack() {
     --template-file infra/template.yaml \
     --parameter-overrides "ProbeImage=${PROBE_IMAGE}" \
     --capabilities CAPABILITY_IAM \
-    --tags Project=tehsil-agent Purpose=aws-boundary-validation >/dev/null
+    --tags Project=elmify Purpose=aws-boundary-validation >/dev/null
   QUEUE_URL="$(stack_output ResearchQueueUrl)"
   CLUSTER_ARN="$(stack_output ProbeClusterArn)"
 }
@@ -166,7 +166,7 @@ stop_run_timeout() {
 
 stack_is_owned() {
   [[ "$(aws_cli cloudformation describe-stacks --stack-name "$STACK_NAME" \
-    --query "Stacks[0].Tags[?Key=='Project'].Value | [0]" --output text)" == "tehsil-agent" ]] &&
+    --query "Stacks[0].Tags[?Key=='Project'].Value | [0]" --output text)" == "elmify" ]] &&
   [[ "$(aws_cli cloudformation describe-stacks --stack-name "$STACK_NAME" \
     --query "Stacks[0].Tags[?Key=='Purpose'].Value | [0]" --output text)" == "aws-boundary-validation" ]]
 }
@@ -176,7 +176,7 @@ repository_is_owned() {
   repository_arn="$(aws_cli ecr describe-repositories --repository-names "$REPOSITORY_NAME" \
     --query 'repositories[0].repositoryArn' --output text)"
   [[ "$(aws_cli ecr list-tags-for-resource --resource-arn "$repository_arn" \
-    --query "tags[?Key=='Project'].Value | [0]" --output text)" == "tehsil-agent" ]] &&
+    --query "tags[?Key=='Project'].Value | [0]" --output text)" == "elmify" ]] &&
   [[ "$(aws_cli ecr list-tags-for-resource --resource-arn "$repository_arn" \
     --query "tags[?Key=='Purpose'].Value | [0]" --output text)" == "aws-boundary-validation" ]]
 }
@@ -217,7 +217,7 @@ audit_absence() {
     --filters Name=tag:aws:cloudformation:stack-name,Values="$STACK_NAME" \
     --query 'length(Addresses)' --output text)" == "0" ]] || failed=1
   [[ "$(aws_cli logs describe-log-groups \
-    --log-group-name-prefix "/tehsil/validation/${STACK_NAME}/" \
+    --log-group-name-prefix "/elmify/validation/${STACK_NAME}/" \
     --query 'length(logGroups)' --output text)" == "0" ]] || failed=1
   [[ "$(aws_cli ecs describe-clusters --clusters "${STACK_NAME}-probe" \
     --query "length(clusters[?status=='ACTIVE'])" --output text)" == "0" ]] || failed=1

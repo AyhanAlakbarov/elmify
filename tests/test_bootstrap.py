@@ -22,7 +22,7 @@ def test_every_declared_python_version_agrees() -> None:
     bump to python:3.14-slim landed while `requires-python` stayed ">=3.12,<3.13",
     uv built .venv/lib/python3.12 inside a 3.14 image, and the container could not
     import Django at all -- every stage, not just one. Nothing reported it,
-    because until the portal-sandbox job existed CI never built an image, and
+    because until an image-building CI job existed CI never built an image, and
     the suite runs against the host's interpreter either way.
 
     Same shape as test_the_database_major_matches_the_postgres_the_tests_run_on
@@ -74,7 +74,13 @@ def test_every_provider_key_defaults_to_empty() -> None:
     at import time on a developer machine."""
     from django.conf import settings
 
-    for name in ("EXA_API_KEY", "BRAVE_API_KEY", "TAVILY_API_KEY", "FIRECRAWL_API_KEY"):
+    for name in (
+        "EXA_API_KEY",
+        "BRAVE_API_KEY",
+        "TAVILY_API_KEY",
+        "FIRECRAWL_API_KEY",
+        "OPENALEX_API_KEY",
+    ):
         assert isinstance(getattr(settings, name), str)
 
 

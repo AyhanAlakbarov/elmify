@@ -26,16 +26,77 @@ not do:
 
 from __future__ import annotations
 
+import operator
+import re
+from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import reduce
 from uuid import UUID
 
 from django.conf import settings
-from django.db.models import QuerySet
+from django.db.models import Case, Exists, IntegerField, OuterRef, Q, QuerySet, Value, When
 
+from apps.accounts.field_taxonomy import PRESERVED_SHORT_TOKENS, resolve_field_taxonomy
 from apps.accounts.schemas import StudentProfileSnapshot
-from apps.funding.models import FundingOpportunity, Program
+from apps.funding.evaluation import _wants_top_universities_only
+from apps.funding.models import (
+    FundingOpportunity,
+    FundingOpportunityProgram,
+    Program,
+    ProgramStatement,
+)
 from apps.research.models import Organisation, OrganisationDomain, ProvenanceVerdict
 from apps.research.provenance import WAITING_REASONS, Verdict
+
+_FIELD_STOP_WORDS = frozenset(
+    {
+        "a", "an", "and", "at", "by", "degree", "for", "from", "in", "into",
+        "ma", "master", "masters", "meng", "msc", "of", "on", "or", "program",
+        "programme", "studies", "the", "to", "with",
+    }
+)
+
+
+def _phrase_tokens(phrase: str) -> list[str]:
+    return [
+        token
+        for token in re.findall(r"[a-z0-9+#]+", phrase.casefold())
+        if (len(token) >= 3 or token in PRESERVED_SHORT_TOKENS) and token not in _FIELD_STOP_WORDS
+    ]
+
+
+def _word_or_substring_q(term: str) -> Q:
+    cleaned = term.strip()
+    if len(cleaned) <= 3:
+        return Q(name__iregex=rf"(^|[^a-zA-Z0-9]){re.escape(cleaned)}([^a-zA-Z0-9]|$)")
+    return Q(name__icontains=cleaned)
+
+
+def _field_filter(target_field: str, research_interests: Sequence[str] = ()) -> Q:
+    resolution = resolve_field_taxonomy(target_field, research_interests)
+    phrases = tuple(
+        dict.fromkeys(
+            p
+            for p in (
+                target_field.strip(),
+                *resolution.canonical_degree_titles,
+                *(i.strip() for i in research_interests if i and i.strip()),
+            )
+            if p
+        )
+    )
+    query = _word_or_substring_q(target_field)
+    for phrase in phrases:
+        query |= _word_or_substring_q(phrase)
+        tokens = _phrase_tokens(phrase)
+        if len(tokens) >= 2:
+            query |= reduce(operator.and_, (_word_or_substring_q(token) for token in tokens))
+        elif len(tokens) == 1:
+            query |= _word_or_substring_q(tokens[0])
+    for parent in resolution.parent_fields:
+        if parent:
+            query |= _word_or_substring_q(parent)
+    return query
 
 
 @dataclass(frozen=True)
@@ -102,10 +163,25 @@ def candidate_pool(
     `limit` is required and has no default: an unbounded pool is an unbounded
     evaluation, and every caller should have had to think about the number.
     """
-    programs = Program.objects.filter(name__icontains=profile.target_field)
+    resolution = resolve_field_taxonomy(profile.target_field, profile.research_interests)
+    programs = Program.objects.filter(
+        _field_filter(profile.target_field, profile.research_interests),
+        degree_level="MASTER",
+    )
     if profile.excluded_countries:
-        programs = programs.exclude(country_code__in=profile.excluded_countries)
+        programs = programs.exclude(country_code__in=profile.excluded_countries).exclude(
+            awarding_institutions__country_code__in=profile.excluded_countries
+        )
     awards = FundingOpportunity.objects.filter(scope_type="HOLDER", served=True)
+    if profile.excluded_countries:
+        home_code = (profile.nationality or "").upper()
+        excluded_award_countries = [
+            c for c in profile.excluded_countries if c.upper() != home_code
+        ]
+        if excluded_award_countries:
+            awards = awards.exclude(
+                country_code__in=excluded_award_countries
+            ).exclude(organisation__country_code__in=excluded_award_countries)
     # Any suspension at all, on `suspension_quote` rather than a year match on
     # `suspended_for`. The quote is the marker: a suspension naming no intake
     # leaves `suspended_for` blank and is still a suspension (that field's own
@@ -132,11 +208,137 @@ def candidate_pool(
         programs = programs.filter(evidence_institutional=True, evidence_domain__in=recognised)
         awards = awards.filter(holder_domain__in=recognised)
 
-    # Ordered by a stable key so `limit` takes the same rows on every call. Any
-    # deterministic order will do here -- there is no ranking at this stage, and
-    # pretending otherwise would put scoring in two places.
-    chosen = tuple(programs.order_by("canonical_key")[:limit])
-    chosen_awards = tuple(awards.order_by("canonical_key")[:limit])
+    # Ordered by allowed-country match, teaching-language match, exact/canonical
+    # title match, then parent-field fallback and canonical_key, so `limit` takes
+    # eligible country/language degrees and specialized degrees ahead of generic ones
+    # without hard-filtering preferences when the catalogue is sparse.
+    exact_q = _word_or_substring_q(profile.target_field)
+    for title in resolution.canonical_degree_titles:
+        exact_q |= _word_or_substring_q(title)
+    if resolution.parent_fields and resolution.preferred_track_keywords:
+        parent_q = reduce(
+            operator.or_, (_word_or_substring_q(p) for p in resolution.parent_fields)
+        )
+        track_q = reduce(
+            operator.or_, (_word_or_substring_q(kw) for kw in resolution.preferred_track_keywords)
+        )
+        exact_q |= parent_q & track_q
+    country_priority = (
+        Case(
+            When(country_code__in=profile.allowed_countries, then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+        if profile.allowed_countries
+        else Value(0, output_field=IntegerField())
+    )
+    lang_variants = sorted(
+        {
+            variant
+            for lang in profile.acceptable_teaching_languages
+            if lang and lang.strip()
+            for variant in (
+                lang.strip(),
+                lang.strip().title(),
+                lang.strip().lower(),
+                lang.strip().upper(),
+            )
+        }
+    )
+    lang_priority = (
+        Case(
+            When(teaching_languages__overlap=lang_variants, then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+        if lang_variants
+        else Value(0, output_field=IntegerField())
+    )
+    duration_priority = (
+        Case(
+            When(
+                Q(duration_months__lte=12)
+                if profile.duration_preference == "ONE_YEAR"
+                else Q(duration_months__gt=12),
+                then=Value(0),
+            ),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+        if profile.duration_flexibility == "NON_NEGOTIABLE"
+        and profile.duration_preference in ("ONE_YEAR", "TWO_YEAR")
+        else Value(0, output_field=IntegerField())
+    )
+    wants_top_tier = _wants_top_universities_only(profile)
+    top_tier_priority = (
+        Case(
+            When(
+                Q(provision_type=Program.ProvisionType.JOINT)
+                | Q(academic_track=Program.AcademicTrack.RESEARCH)
+                | Exists(
+                    FundingOpportunityProgram.objects.filter(
+                        program_id=OuterRef("pk")
+                    )
+                )
+                | Exists(
+                    ProgramStatement.objects.filter(
+                        program_id=OuterRef("pk"),
+                        kind=ProgramStatement.Kind.COMPETENCY,
+                    )
+                ),
+                then=Value(0),
+            ),
+            default=Value(1),
+            output_field=IntegerField(),
+        )
+        if wants_top_tier
+        else Value(0, output_field=IntegerField())
+    )
+    chosen = tuple(
+        programs.annotate(
+            _in_allowed_country=country_priority,
+            _in_teaching_lang=lang_priority,
+            _in_duration=duration_priority,
+            _exact_field=Case(
+                When(exact_q, then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            ),
+            _top_tier_priority=top_tier_priority,
+        ).order_by(
+            "_in_allowed_country",
+            "_in_teaching_lang",
+            "_in_duration",
+            "_exact_field",
+            "_top_tier_priority",
+            "canonical_key",
+        )[:limit]
+    )
+    corridor_countries = {
+        code
+        for code in (
+            profile.nationality,
+            profile.country_of_residence,
+            *profile.allowed_countries,
+            *(program.country_code for program in chosen),
+        )
+        if code
+    }
+    if corridor_countries:
+        awards = awards.annotate(
+            _corridor_match=Case(
+                When(
+                    Q(country_code__in=corridor_countries)
+                    | Q(organisation__country_code__in=corridor_countries),
+                    then=Value(0),
+                ),
+                default=Value(1),
+                output_field=IntegerField(),
+            )
+        ).order_by("_corridor_match", "canonical_key")
+    else:
+        awards = awards.order_by("canonical_key")
+    chosen_awards = tuple(awards[:limit])
 
     reason = ""
     if not chosen and not chosen_awards:

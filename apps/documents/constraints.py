@@ -56,6 +56,20 @@ _CONSTRAINT_KEYS = Literal[
     "max_chars_incl_spaces",
     "max_chars_excl_spaces",
     "font",
+    #: Spec 2026-10-12 §8. `photo_required` is read apart from photo_allowed,
+    #: which stores "required" and "allowed" alike as True. `cv_scope` is
+    #: "complete" or "relevant_only"; `cv_start` is {"milestone":
+    #: "upper_secondary" | "first_degree" | None, "years": int | None}.
+    "photo_required",
+    #: Spec §8: how much of the applicant's history the CV covers, read off a
+    #: programme page by the grammar's `coverage` operation (grammar.py).
+    #: cv_scope "complete" | "relevant_only"; cv_start {"start": "upper_secondary"
+    #: | "first_degree" | "last_n_years", "years": n}; cv_item_cap {"section":
+    #: one of CAP_SECTIONS, "max": n}. Applied at generation (selection.py),
+    #: checked at render.
+    "cv_scope",
+    "cv_start",
+    "cv_item_cap",
 ]
 
 #: Every key a stored rule may carry, as a set. The corpus loader
@@ -71,9 +85,11 @@ class Enforcement(StrEnum):
 
 
 #: Keys that hold one rule PER SENTENCE rather than one per programme.
-#: resolve_rules merges programme rules by key; for these two the quote is
-#: the rule, and two quotes must both reach the student.
-_MULTI_KEYS = frozenset({"undecided", "unapplied"})
+#: resolve_rules merges programme rules by key; for these the quote is the
+#: rule (undecided, unapplied), or two sentences may each state one and the
+#: reader settles them (the coverage keys: coverage.coverage_of keeps the
+#: side that keeps more), so both must reach their reader.
+_MULTI_KEYS = frozenset({"undecided", "unapplied", "cv_scope", "cv_start", "cv_item_cap"})
 
 
 #: Which tier answered. The catalog's five scopes plus PROGRAMME, which is
@@ -122,6 +138,27 @@ def _quote(text: str) -> str:
     return text[: QUOTE_MAX_CHARS - len(_CLIPPED)] + _CLIPPED
 
 
+#: The most values one SavedReadings holds. A sentence read as more is for
+#: information, never a crash (requirement_list.saved_readings).
+READINGS_MAX = 10
+
+
+class SavedReadings(BaseModel):
+    """What each reading of an unclear sentence said, kept on its `undecided`
+    rule (spec 2026-10-12 §6.4 step 2) so the requirement list can take the
+    stricter reading without re-reading the page.
+
+    `key` is the constraint key the readings disagreed about; `values` holds
+    every value any reading gave for it, in the order first seen. Only ever
+    on an `undecided` rule (ConstraintRule._readings_only_on_undecided).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    key: _CONSTRAINT_KEYS
+    values: tuple[object, ...] = Field(min_length=1, max_length=READINGS_MAX)
+
+
 class ConstraintRule(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -136,6 +173,16 @@ class ConstraintRule(BaseModel):
     #: this field existed would fail to load without one. "" is honest about
     #: those -- it says "nobody recorded a tier", not "universal".
     scope: _SCOPE = ""
+    #: Each reading's value, on an `undecided` rule only. Left out of the dump
+    #: when absent, so every row written before this field (and every rule
+    #: that has none) serialises exactly as it did.
+    readings: SavedReadings | None = Field(default=None, exclude_if=lambda v: v is None)
+
+    @model_validator(mode="after")
+    def _readings_only_on_undecided(self) -> ConstraintRule:
+        if self.readings is not None and self.key != "undecided":
+            raise ValueError("only an undecided rule carries readings")
+        return self
 
 
 def rules_from_program(program: Any) -> tuple[ConstraintRule, ...]:
@@ -166,6 +213,12 @@ _INCLUDE_TARGETS: tuple[str, ...] = (
     "education.class_rank",
     "education.degree_english",
     "education.institution_english",
+    "education.relevant_coursework",
+    "education.medium_of_instruction",
+    "education.city",
+    "education.country",
+    "education.supervisor",
+    "education.funding",
     "experience.supervisor",
     # A programme that asks for these can now be asked back. R-061 is BINDING
     # and says it in as many words -- Europubhealth+: "per experience, city +
@@ -180,6 +233,7 @@ _INCLUDE_TARGETS: tuple[str, ...] = (
     "experience.city",
     "experience.country",
     "research.supervisor",
+    "research.funding",
     "personal.date_of_birth",
     "personal.citizenship",
     "personal.sex",
@@ -200,6 +254,16 @@ _SECTIONS: tuple[str, ...] = (
 _ORDER_TARGETS: tuple[str, ...] = _SECTIONS + ("cv",)
 #: The directions an `order` directive may take -- PageDirective.value's Literal.
 _ORDER_DIRECTIONS: tuple[str, ...] = ("chronological", "reverse_chronological")
+
+#: The sections a programme's own cap (cv_item_cap) may trim. Education,
+#: languages, references and gap statements are absent on purpose: a cap can
+#: never remove a degree (spec §8) or a period the CV must account for.
+#: `volunteering` is unpaid experience (ExperienceEntry.unpaid), which prints
+#: under its own heading.
+CAP_SECTIONS: tuple[str, ...] = (
+    "experience", "volunteering", "research", "publications", "awards", "certifications",
+    "skills",
+)
 
 
 def check_directive_shape(action: str, target: str | None, value: str | None) -> None:
@@ -247,15 +311,16 @@ def directives_from_program(program: Any) -> tuple[PageDirective, ...]:
     return tuple(PageDirective.model_validate(item) for item in program.cv_directives)
 
 
-#: Least specific first. A later scope's rule replaces an earlier one for the
-#: same key. This is specificity, not strictness: DAAD's 3 pages beat the
-#: taught default of 2, because a funder's own published rule is the operative
-#: one, not the tightest one available.
-#: INSTITUTION sits between COUNTRY and FUNDER: a university's own published
-#: rule is more specific than its country's convention and less specific than
-#: the funder whose form the applicant is filling. It exists because the one
-#: published rule that names the CV outright -- Cambridge's AI prohibition
-#: (L-041) -- is a university's, and there was no scope that could hold it.
+#: Every catalog scope, least specific first. Since 2026-10-14 the order ranks
+#: OUR rules only (UNIVERSAL, TRACK, COUNTRY): among ours a later scope's rule
+#: replaces an earlier one for the same key -- specificity, not strictness.
+#: INSTITUTION and FUNDER rules are theirs, and the requirement list merges
+#: theirs by strictness (spec §6.4 step 4: the stricter value wins, carrying
+#: the strongest force of the rules it came from), so their place in this
+#: tuple decides nothing; they stay listed because a CatalogRule's scope_kind
+#: is checked against it. INSTITUTION exists because the one published rule
+#: that names the CV outright -- Cambridge's AI prohibition (L-041) -- is a
+#: university's, and there was no scope that could hold it.
 _SCOPE_ORDER = ("UNIVERSAL", "TRACK", "COUNTRY", "INSTITUTION", "FUNDER")
 
 
@@ -306,68 +371,41 @@ def resolve_track(program: Any, content: Any) -> str:
 
 
 def resolve_rules(program: Any, opportunity: Any, *, content: Any) -> tuple[ConstraintRule, ...]:
-    """The rules that apply to one programme-and-scholarship pair.
+    """The rules that apply to one programme-and-scholarship pair: the CV half
+    of its requirement list (spec 2026-10-12 §6.4), so render and the list
+    agree by construction.
 
-    Rules accumulate across scopes; when two set the same key, the more
-    specific scope wins. `opportunity=None` means a self-funded, direct
-    application -- the funder layer is simply absent, and universal, country
-    and track rules still apply.
+    Theirs (the programme's page, the funder, the institution) beat ours (the
+    universal, track and country rules), even when theirs is soft; among
+    theirs the stricter value wins per key; among ours the more specific scope
+    wins, as before. A merged rule carries the strongest enforcement of every
+    rule it came from, so a page sentence can never lower a BINDING rule's
+    enforcement -- the PII boundary render._blocked_by_content_only_rules
+    stands on. `opportunity=None` means a self-funded, direct application.
 
-    Track is derived the way render.py::_section_order already derives it, so
-    one CV cannot be research-track for ordering and taught-track for rules.
+    That protection is complete for THEIR BINDING rules only: among theirs the
+    stricter value wins, so a page `date_of_issue_required=False` leaves a
+    funder's True standing and the Europass egress stays refused. A BINDING
+    rule of OURS on a content-only key would NOT be protected -- a soft page
+    value beats it outright, keeps only its force, and a BINDING False is a
+    rule the pre-render gate lets through.
+    tests/documents/test_catalog_rules.py::test_no_seed_rule_of_ours_is_binding_on_a_content_only_key
+    keeps any such seed out until it has its own guard.
+
+    Our style rules held in code (render._UNIVERSAL_RULES) are not passed:
+    render appends them itself wherever nothing here set the key.
     """
     from apps.funding.models import CatalogRule
 
-    track = resolve_track(program, content)
-    chosen: dict[str, tuple[int, ConstraintRule]] = {}
-    # order_by is load-bearing, not cosmetic: the merge below keeps the last
-    # rule seen at a given rank, so two same-scope rules setting the same key
-    # would otherwise resolve by Postgres row order -- a render difference
-    # nothing in the code or the catalog would explain.
-    for row in CatalogRule.objects.order_by("rule_id"):
-        if not _scope_matches(row, program=program, opportunity=opportunity, track=track):
-            continue
-        rank = _SCOPE_ORDER.index(row.scope_kind)
-        existing = chosen.get(row.key)
-        if existing is None or rank >= existing[0]:
-            chosen[row.key] = (rank, ConstraintRule.model_validate({
-                "rule_id": row.rule_id,
-                "key": row.key,
-                "value": row.value,
-                "enforcement": row.enforcement,
-                "rule_text": row.rule_text,
-                "source_url": row.source_url,
-                # The rank decides which rule wins and was then thrown away,
-                # so a warning could not say whether a page limit came from
-                # the funder, the country or a programme page a model read.
-                "scope": row.scope_kind,
-            }))
-    # A programme's own rules are the most specific there are, so they win on
-    # rank -- but NEVER downwards in enforcement. A BINDING rule is a funder's
-    # published requirement; an advisory one is a hint, and a hint must not be
-    # able to delete a requirement.
-    #
-    # This became load-bearing the moment cv_constraints got its first
-    # automated writer (derive.py::derive_page_rules, 2026-09-12). Every
-    # derived rule is ADVISORY_HIGH_RISK, and four of the seven derivable keys
-    # have BINDING seeds. Without this guard, a sentence a model read off a
-    # third-party programme page silently downgraded a funder's BINDING rule
-    # for every tenant -- and `date_of_issue_required` is the one that bites:
-    # render.py::_blocked_by_content_only_rules only inspects BINDING rules, so
-    # the downgrade stopped it blocking the EUROPASS_API branch and shipped a
-    # student's name, date of birth and history to europa.eu on a render that
-    # had previously been refused before any egress.
-    #
-    # Specificity still applies everywhere it is safe: an advisory programme
-    # rule on a key nothing BINDING covers is kept as before.
-    for rule in rules_from_program(program) if program is not None else ():
-        existing = chosen.get(rule.key)
-        if (
-            existing is not None
-            and existing[1].enforcement == Enforcement.BINDING
-            and rule.enforcement != Enforcement.BINDING
-        ):
-            continue
-        slot = rule.rule_id if rule.key in _MULTI_KEYS else rule.key
-        chosen[slot] = (len(_SCOPE_ORDER), rule)
-    return tuple(rule for _rank, rule in chosen.values())
+    from .requirement_list import build_requirements
+
+    # order_by is load-bearing, not cosmetic: among OUR rules the merge keeps
+    # the last one seen at a given scope rank, and among theirs the `first`
+    # row (font, letter fields) keeps the first and an irreconcilable key lists
+    # its sides in this order -- otherwise both would follow Postgres row order.
+    return build_requirements(
+        program,
+        opportunity,
+        catalog=CatalogRule.objects.order_by("rule_id"),
+        track=resolve_track(program, content),
+    ).cv_rules()

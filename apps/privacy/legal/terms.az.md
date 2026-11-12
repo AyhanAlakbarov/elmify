@@ -4,7 +4,7 @@ DRAFT — translation for legal review, not yet approved.
 
 ## Xidmət
 
-Tehsil tələbələrə proqramları və maliyyələşdirməni tapmaqda, CV və motivasiya məktubları kimi sənədləri hazırlamaqda və xaricdəki universitetlərə və fondlara müraciətləri hazırlamaqda kömək edən proqram təminatı təqdim edir. Bu şərtlər hesab yaratdığınız və xidmətdən istifadə etdiyiniz zaman tətbiq olunur.
+Elmify tələbələrə proqramları və maliyyələşdirməni tapmaqda, CV və motivasiya məktubları kimi sənədləri hazırlamaqda və xaricdəki universitetlərə və fondlara müraciətləri hazırlamaqda kömək edən proqram təminatı təqdim edir. Bu şərtlər hesab yaratdığınız və xidmətdən istifadə etdiyiniz zaman tətbiq olunur.
 
 ## Öhdəlikləriniz
 
@@ -16,7 +16,7 @@ Tehsil tələbələrə proqramları və maliyyələşdirməni tapmaqda, CV və m
 
 ## Müraciət haqları
 
-Müraciət haqlarını birbaşa universitetlərə və fondlara ödəyirsiniz. Tehsil onları sizin adınızdan yığmır və ödənişinizin tərəfi deyil.
+Müraciət haqlarını birbaşa universitetlərə və fondlara ödəyirsiniz. Elmify onları sizin adınızdan yığmır və ödənişinizin tərəfi deyil.
 
 ## Zəmanət verilmir
 
@@ -38,4 +38,4 @@ Bu şərtlər əhəmiyyətli şəkildə dəyişdikdə yeni versiya növbəti gir
 
 Bu şərtlərə Azərbaycan Respublikasının qanunvericiliyi tətbiq olunur.
 
-Əlaqə: privacy@tehsil.example
+Əlaqə: privacy@elmify.example

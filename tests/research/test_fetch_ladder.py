@@ -886,3 +886,90 @@ def test_a_hostname_too_long_for_its_column_is_recorded_truncated_not_raised() -
 
     assert page.outcome is Outcome.INVALID
     assert len(FetchAttempt.objects.get(url=url[:2048]).host) == 253
+
+
+def test_a_deadline_hands_each_rung_the_time_left_and_ends_the_ladder_at_it() -> None:
+    """The single-page funding read waits on this ladder (owner, 2026-10-13: 30 s in all)."""
+    seen = []
+
+    def firecrawl(url, *, api_key, tag=None, actions=False, profile=None, request_id=None,
+                  screenshot=False, timeout_s=None):
+        seen.append(timeout_s)
+        return _page(Outcome.FETCHED)
+
+    providers = {**_providers(), "firecrawl": firecrawl}
+    page = fetch_page("https://e.test/a", providers=providers, timeout_s=20.0)
+    assert page.outcome is Outcome.FETCHED and 0 < seen[0] <= 20.0
+
+    spent = fetch_page("https://e.test/a", providers=_providers(firecrawl=_explode),
+                       timeout_s=0.0)
+    assert (spent.outcome, spent.reason) == (Outcome.UNREACHABLE, "deadline")
+    assert FetchAttempt.objects.filter(reason="deadline").count() == 1
+    assert not HostProfile.objects.filter(host="e.test", blocked_until__isnull=False).exists()
+
+
+def test_a_deadline_never_schedules_a_retry_nor_waits_for_the_archive() -> None:
+    """Ruling P2: a retry delivers to nobody (retry_due_fetches persists no snapshot), so a
+    read someone waits on ends at rung 4 -- no RETRY_SCHEDULED row, no archive."""
+    providers = {"firecrawl": _blocked, "scrapedo": _blocked, "archive": _explode}
+    page = fetch_page("https://e.test/fresh", providers=providers, timeout_s=30.0)
+    # The time did not run out: the ladder's own reason, never "deadline" (Ruling T7 I1).
+    assert (page.outcome, page.reason) == (Outcome.BLOCKED, "blocked")
+    rows = FetchAttempt.objects.filter(url="https://e.test/fresh")
+    assert not rows.filter(outcome=str(Outcome.RETRY_SCHEDULED)).exists()
+    assert sorted(rows.values_list("rung", flat=True)) == [1, 3, 4, 5]
+
+    def down(url, **kwargs):
+        return _page(Outcome.UNREACHABLE, credits=0, rung=kwargs.get("rung", 1))
+
+    providers = {"firecrawl": down, "scrapedo": down, "archive": _explode}
+    unreachable = fetch_page("https://e.test/down", providers=providers, timeout_s=30.0)
+    assert (unreachable.outcome, unreachable.reason) == (Outcome.UNREACHABLE, "unreachable")
+    assert not FetchAttempt.objects.filter(outcome=str(Outcome.RETRY_SCHEDULED)).exists()
+
+
+def test_no_rung_starts_without_time_to_finish_and_only_then_is_the_reason_deadline(
+        monkeypatch) -> None:
+    """Ruling T7 I1 and minor (c): "deadline" means the time ran out -- a rung with less than
+    MIN_RUNG_S left is not started. An injected clock, never a sleep (Ruling P11)."""
+    import apps.research.fetch as fetch_module
+
+    assert fetch_page("https://e.test/short", providers=_providers(firecrawl=_explode),
+                      timeout_s=fetch_module.MIN_RUNG_S - 0.5).reason == "deadline"
+
+    now = [100.0]
+    monkeypatch.setattr(fetch_module, "time", type("Clock", (), {
+        "monotonic": staticmethod(lambda: now[0])}))
+
+    def slow_block(url, **kwargs):
+        now[0] += 9.5  # rung 1 and rung 3 take 19 of the 20 seconds
+        return _blocked(url, **kwargs)
+
+    providers = {"firecrawl": slow_block, "scrapedo": slow_block, "archive": _explode}
+    page = fetch_page("https://e.test/slow", providers=providers, timeout_s=20.0)
+    assert (page.outcome, page.reason, page.rung) == (Outcome.BLOCKED, "deadline", 4)
+    rows = FetchAttempt.objects.filter(url="https://e.test/slow")
+    assert sorted(rows.values_list("rung", flat=True)) == [1, 3, 4]
+    assert not rows.filter(outcome=str(Outcome.RETRY_SCHEDULED)).exists()
+
+
+def test_no_scrape_do_rung_starts_with_less_than_its_floor(monkeypatch) -> None:
+    """Final minor (b): scrape.do documents no minimum `timeout` and bills a 400 as a success,
+    so under a deadline no scrape.do rung starts with less than MIN_SCRAPEDO_S left -- 4 s is
+    enough for a Firecrawl rung (MIN_RUNG_S) and not for this one."""
+    import apps.research.fetch as fetch_module
+
+    now = [100.0]
+    monkeypatch.setattr(fetch_module, "time", type("Clock", (), {
+        "monotonic": staticmethod(lambda: now[0])}))
+
+    def slow_block(url, **kwargs):
+        now[0] += 16.0  # rung 1 leaves 4 s of 20
+        return _blocked(url, **kwargs)
+
+    providers = {"firecrawl": slow_block, "scrapedo": _explode, "archive": _explode}
+    assert fetch_module.MIN_RUNG_S < 4.0 < fetch_module.MIN_SCRAPEDO_S
+    page = fetch_page("https://e.test/floor", providers=providers, timeout_s=20.0)
+    assert (page.outcome, page.reason, page.rung) == (Outcome.BLOCKED, "deadline", 3)
+    rows = FetchAttempt.objects.filter(url="https://e.test/floor")
+    assert sorted(rows.values_list("rung", flat=True)) == [1, 3]

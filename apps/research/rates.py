@@ -118,7 +118,12 @@ def current_rates(*, fetch: Fetch = fetch_data_file, today: date | None = None) 
     if cached is not None:
         try:
             table = _decode(cached)
-        except (ValueError, KeyError, TypeError):
+        except (ValueError, KeyError, TypeError) as error:
+            logger.warning(
+                "rate cache decode failed (%s: %s); fetching fresh rates",
+                type(error).__name__,
+                error,
+            )
             table = None
         if table is not None and _fresh(table, today):
             return table

@@ -12,6 +12,16 @@ for.
 It prints counts and ONE example URL per group, never a tenant, a student or a
 letter: these rows are catalogue data about programmes, and nothing here
 touches a tenant table.
+
+**Operator-run by design; it has no EventBridge rule and wants none.** The
+spec's own words are that "the next research pass runs after specs 2 and 3
+are written (owner, 2026-09-19)" -- so this is read by a human deciding the
+next column, a pull rather than a sweep. It writes nothing and escalates
+nothing, so a timer would only put counts in CloudWatch with no reader, which
+is not the same as closing the loop. What WOULD close it without someone
+remembering is a consultant task raised when a group crosses the threshold --
+a different change from a schedule, and not one this command should grow by
+accident.
 """
 
 from __future__ import annotations

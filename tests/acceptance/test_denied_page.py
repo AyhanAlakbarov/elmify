@@ -74,6 +74,19 @@ def test_profile_without_student_membership_renders_denied_page(
 
 @pytest.mark.frontend
 @pytest.mark.django_db
+def test_support_grant_without_platform_admin_role_renders_denied_page(
+    client, domain_a, user_a, membership_a
+) -> None:
+    """concierge.views.admin_support_grant: requires PLATFORM_ADMIN role."""
+    client.force_login(user_a)
+    assert_denied_page(
+        client.get("/admin/support-grant/", HTTP_HOST=domain_a.host),
+        "no active membership for this role",
+    )
+
+
+@pytest.mark.frontend
+@pytest.mark.django_db
 def test_support_grant_gate_renders_denied_page(
     client, agency_a, domain_a, user_a, membership_a
 ) -> None:

@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-18-funder-reader-fetch-tiers-and-resolution-queue-design.md` §3 (A) and §7a D.4; **§3.5 cycle verification → Tasks 8–10, added 2026-09-18 evening** (a student sees only awards verified for their intake). Measurement it answers: `2026-09-17-role-routed-discovery-design.md` §4.13c (2 served in 58 funder hosts).
 
-**Base branch:** `claude/programme-funding-reader` at `baae74d`. The reader does not exist on `master` or on `claude/program-page-reader`. Work in a **fresh worktree of that branch** (`git worktree add ../reader-holder claude/programme-funding-reader`), never in `.worktrees/funding-reader`, which another session owns. Test database: `POSTGRES_DB=tehsil_reader_holder` (memory: never share a test DB between sessions).
+**Base branch:** `claude/programme-funding-reader` at `baae74d`. The reader does not exist on `master` or on `claude/program-page-reader`. Work in a **fresh worktree of that branch** (`git worktree add ../reader-holder claude/programme-funding-reader`), never in `.worktrees/funding-reader`, which another session owns. Test database: `POSTGRES_DB=elmify_reader_holder` (memory: never share a test DB between sessions).
 
 ## Global Constraints
 
@@ -97,7 +97,7 @@ def test_the_question_defines_holder_own_and_every_holder_value():
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_judge.py -q -k "holder or HOLDER"
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_judge.py -q -k "holder or HOLDER"
 ```
 
 Expected: `ValidationError` on unexpected field `holder` / `ImportError: _HOLDERS`.
@@ -175,7 +175,7 @@ Add `"holder"` to `_DECIDED` (so a disagreement on holder is a disputed field) a
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_judge.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_judge.py -q
 ```
 
 Expected: all pass, including the existing 39 — the new field has a default, so existing verdict fixtures still validate.
@@ -262,7 +262,7 @@ and return `FundingReadResult(tuple(decisions), pointers, negations, noise, tupl
 - [ ] **Step 4: Run, lint, commit**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_judge.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_judge.py -q
 git add apps/research/funding_judge.py tests/research/test_funding_judge.py
 git commit -m "reader: a pointer is a lead, not a dropped count
 
@@ -370,7 +370,7 @@ In `read_funding`, per chunk:
 - [ ] **Step 4: Run, lint, commit**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_judge.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_judge.py -q
 git add apps/research/funding_judge.py tests/research/test_funding_judge.py
 git commit -m "reader: a fourth reading breaks a 2-1 tie on offered, and only that
 
@@ -599,7 +599,7 @@ def write_holder_decision(
 - [ ] **Step 5: Run the reader tests and the migration check**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_reader.py tests/research/test_funding_judge.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_reader.py tests/research/test_funding_judge.py -q
 uv run python manage.py makemigrations --check --dry-run
 uv run ruff check apps/funding/models.py apps/research/funding_reader.py apps/funding/migrations/0035_holder_axis.py
 uv run mypy apps/research/funding_reader.py apps/funding/models.py
@@ -763,7 +763,7 @@ def _fund_holder_page(
 - [ ] **Step 4: Run, lint, type-check, migration check, commit**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_pipeline_funding.py tests/research/test_funding_judge.py tests/research/test_funding_reader.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_pipeline_funding.py tests/research/test_funding_judge.py tests/research/test_funding_reader.py -q
 uv run ruff check apps/research/pipeline.py apps/research/hosts.py tests/research/test_pipeline_funding.py && uv run mypy apps/research/pipeline.py
 git add apps/research/pipeline.py apps/research/hosts.py tests/research/test_pipeline_funding.py pyproject.toml uv.lock
 git commit -m "pipeline: a funder page is read for the money it holds, and its pointers come back as names
@@ -813,7 +813,7 @@ def test_the_two_openai_readings_share_an_identical_prefix(monkeypatch):
 - [ ] **Step 4: Run, lint, commit**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_judge.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_judge.py -q
 git add apps/research/funding_judge.py apps/research/extraction.py tests/research/test_funding_judge.py
 git commit -m "reader: the three readings share one cached prefix
 
@@ -867,7 +867,7 @@ The command is the 2026-09-18 harness made permanent: for each host, `fetch_offi
 - [ ] **Step 4: Run the gate**
 
 ```bash
-set -a; . ~/.config/tehsil_agent/openai.env; . ~/.config/tehsil_agent/anthropic.env; set +a
+set -a; . ~/.config/elmify/openai.env; . ~/.config/elmify/anthropic.env; set +a
 uv run python manage.py funding_yield --hosts docs/research/2026-09-18-yield-hosts.txt
 ```
 
@@ -880,7 +880,7 @@ Two more runs, each its own table beside §4.13c so nothing is confounded with A
 1. `--fetch firecrawl` — same hosts, pages fetched by Firecrawl `/scrape` (`proxy: "auto"`, markdown) instead of our egress. Report: hosts recovered that the egress refused (of the 8), pages read per host, statements > 0 on the shell pages, credits spent. This is B's gate, measured on the same list.
 2. `--json-read` — Firecrawl's JSON format with a `LineVerdict`-shaped schema plus a `quote` per verdict; every quote checked mechanically against the same call's markdown (a quote not on the page is dropped, as in the reader); then side by side with the three-reading judge: served set, agreed set, cost per host, and **30 hand-checked awards** for precision. Record which of §4.4's three outcomes it is. ≈ 530 credits, inside the free tier.
 
-Firecrawl key: `~/.config/tehsil_agent/firecrawl.env` (mode 600). Nothing from either run is written to the database — the command stays pure.
+Firecrawl key: `~/.config/elmify/firecrawl.env` (mode 600). Nothing from either run is written to the database — the command stays pure.
 
 - [ ] **Step 5: Commit**
 

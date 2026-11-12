@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from pypdf import PdfReader
-from pypdf.errors import PyPdfError
+from pypdf.errors import PdfReadError, PyPdfError
 
 from apps.concierge.documents import DocumentUnavailable, apply_scan_result, register
 from apps.documents.ingestion import (
@@ -198,12 +198,14 @@ def test_extract_text_refuses_a_corrupt_archive():
 # reproduced corruptions that pypdf 6.16.1 is confirmed (below) to raise
 # ValueError and AttributeError for, not "some corrupt PDF or other" -- most
 # random byte flips raise PyPdfError, which was already caught before this
-# fix.
+# fix. pypdf 6.21.2 wraps the first one's ValueError in PdfReadError; the
+# second blob was re-found by the same fuzzing on 6.21.2 (seeds 0-2, 900
+# PDFs, the only AttributeError among them) and raises it on 6.19.0 too.
 _VALUE_ERROR_PDF = base64.b64decode(
     "JVBERi0xLjMKJeLjz9MKMSkwIG9iago8PAovUHJvZHVjZXLWKHB5cGRmKQo+jAplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyATQjAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXhhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMjAwIDIwMCBdCi9QYXJlbnQgMiAwblIKPj4KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMMg0IDAwMDAwIG4gCjAwMDAwMDAxMTMgjTAwMDAgbiAKMDAwMDAwMDE2MiAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDUKL1Jvb3QgMyAwIFIKL0luZm8gMSAwIFIKPj4Kc3RhcnR4cmVmTDI1NgolJUVPRgo="
 )
 _ATTRIBUTE_ERROR_PDF = base64.b64decode(
-    "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgoLbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgbwBqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWfjcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpykJveCBbIDAuMCAwLjAgMjAwIDIwMCBdCi9QYXJlbnQgMiAwIFIKPj4KZW5kb2KKCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjWDMzUgZiAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDU0IDAwMDAwIG40CjAwMDAwMDAxMTMgMDAwMDAgbiAKMDA9MDAwMDE2MiAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9TaXplIDUKL1Jvb3QUyyAwIFIKL0luZm8gMSAwIFIKPj4Kc3RhcnR4cmVmCjI1NgolJUVPRgo="
+    "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZIVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRLYmreNCAwIG9iago8PAovVHlwZSAvUDNnZQovUmVzb3VyY2VzIDw8Cj4+Ci9NZWRpYUJveCBbIDAuMCAwLjAgMjAwIPQwMCBdCi9QYXJlbnQgMqkwIFIKPj4KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDCAMDAgNjU1MzUgaCAKMDAwMDAwMDAxNSAwMDAwMCBuIAowMDAwMDAwMDU0IDAwMDAwIG4gCjAwMDAwMDAxMTMgMDAwMDAgbiAKMDAwMDAlMDE2MiAwMDAwMCBuIAp0cmFpbGVyCjI8Ci9TaXplIDUKL1Jvb3QgMyAwIFIKL0luZm8gMSAwIFIKPj4Kc3RhcnR4cmVmCjI1NgolJUVPRgo="
 )
 
 
@@ -214,22 +216,25 @@ def test_pdf_corruption_pins_which_exceptions_pypdf_actually_raises():
     ValueError 8 times, both escaping PyPdfError. This pins that premise
     directly against the reader, so a pypdf upgrade that changes these
     exception types fails loudly here instead of silently reopening the gap.
-    """
-    # Re-measured on pypdf 6.21.2 (2026-10-25): BOTH blobs are now wrapped in
-    # pypdf's own PdfReadError ("startxref not found", "Invalid object in
-    # /Pages"). The wider catch in _PDF_READ_ERRORS stays as defence: only these
-    # two of the 300 measured blobs are pinned, and the others were not re-run.
-    with pytest.raises(PyPdfError):
-        PdfReader(io.BytesIO(_VALUE_ERROR_PDF)).pages[0].extract_text()
 
-    with pytest.raises(PyPdfError):
+    Re-measured on pypdf 6.21.2 (2026-10-25, 900 corrupted PDFs through
+    pdf_text): AttributeError once, ValueError never, nothing escaping
+    PdfUnreadable. The first blob now raises PdfReadError from the ValueError.
+    """
+    with pytest.raises(PdfReadError) as value_excinfo:
+        PdfReader(io.BytesIO(_VALUE_ERROR_PDF)).pages[0].extract_text()
+    assert isinstance(value_excinfo.value.__cause__, ValueError)
+
+    with pytest.raises(AttributeError) as attribute_excinfo:
         PdfReader(io.BytesIO(_ATTRIBUTE_ERROR_PDF)).pages[0].extract_text()
+    assert not isinstance(attribute_excinfo.value, PyPdfError)
 
 
 def test_extract_text_converts_pypdf_value_error_to_unsupported_upload():
     """The fix: without it, this ValueError killed the document worker's task
     mid-transaction instead of quarantining the upload (see
-    _PDF_READ_ERRORS)."""
+    _PDF_READ_ERRORS). Since pypdf 6.21.2 the blob arrives as PdfReadError;
+    it must quarantine either way."""
     with pytest.raises(UnsupportedUpload):
         extract_text(_VALUE_ERROR_PDF)
 
@@ -445,6 +450,9 @@ def test_ingestion_keeps_the_name_it_extracted(agency_a, django_user_model, fake
             # compared. Without it here, a number the applicant gave us was
             # extracted and then dropped before the ledger.
             "phone": None,
+            # surname is passport-only: typed on the dashboard or read from a
+            # passport, never built from a CV (verification.PASSPORT_ONLY_IDENTITY_KEYS).
+            "given_name": None,
             "linkedin_url": None,
             "github_url": None,
             "website_url": None,
@@ -753,3 +761,223 @@ def test_a_gap_line_on_an_upload_becomes_a_timeline_fact(
         assert len(timeline) == 1
         assert timeline[0].payload["statement"] == "Full-time carer for a family member."
         assert timeline[0].confirmed_by is None
+
+
+def _cv_with(*degrees):
+    client = _openai_client()
+    client.responses.parse.return_value.output_parsed = _content().model_copy(update={
+        "education": tuple(EducationEntry(degree_as_awarded=degree, institution_original=name)
+                           for name, degree in degrees)})
+    return client
+
+
+def _held_degree(student, **payload):
+    from django.utils import timezone
+
+    return VerifiedFact.objects.create(
+        student=student, category="EDUCATION", source_tier="STUDENT_STATEMENT",
+        payload={"institution_original": "Example U", "degree_as_awarded": "BSc", **payload},
+        source_ref="transcript:x", confirmed_by=student, confirmed_at=timezone.now(),
+        created_by=student)
+
+
+def _degrees_of(student):
+    return list(VerifiedFact.objects.filter(student=student, category="EDUCATION")
+                .order_by("created_at"))
+
+
+def test_a_cv_after_the_transcript_names_the_degree_it_taught_us_once(
+    agency_a, django_user_model, fake_store
+):
+    # Transcript plan 3b Task 7: the transcript left its own wording as aliases.
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-alias")
+        held = _held_degree(student, aliases=["Beispiel Universität", "Bakalavr"])
+        document = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        ingest_uploaded_cv(document=document, student=student, store=fake_store,
+                           client=_cv_with(("Beispiel Universität", "Bakalavr")))
+        assert _degrees_of(student) == [held]
+
+
+def test_a_cv_degree_that_may_be_one_already_held_says_so(agency_a, django_user_model,
+                                                          fake_store):
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-ask")
+        held = _held_degree(student)
+        document = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        ingest_uploaded_cv(document=document, student=student, store=fake_store,
+                           client=_cv_with(("Other Institute", "Bachelor")))
+        _held, claim = _degrees_of(student)
+        assert claim.payload["possible_duplicate_of"] == str(held.id)
+        assert claim.confirmed_by is None
+
+
+def test_two_degrees_on_one_cv_are_not_each_others_duplicate(agency_a, django_user_model,
+                                                             fake_store):
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-two")
+        document = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        ingest_uploaded_cv(document=document, student=student, store=fake_store,
+                           client=_cv_with(("ADA University", "BA"),
+                                           ("Khazar University", "BA")))
+        assert [d.payload.get("possible_duplicate_of") for d in _degrees_of(student)] == [
+            None, None]
+
+
+def test_a_possible_duplicate_is_held_back_until_the_student_says_different(
+    agency_a, django_user_model, fake_store
+):
+    # Final review finding 6: the marker was written and never read.
+    from apps.documents.confirmation import confirm_facts
+    from apps.documents.degree_match import different_degree
+    from apps.documents.verification import confirm_candidates
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-held")
+        _held_degree(student)
+        document = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        ingest_uploaded_cv(document=document, student=student, store=fake_store,
+                           client=_cv_with(("Other Institute", "Bachelor")))
+        _held, claim = _degrees_of(student)
+        assert claim not in confirm_candidates(student)
+        assert confirm_facts(student=student, fact_ids=[claim.id], actor=student) == 0
+        added = different_degree(student=student, fact_id=claim.id)
+        assert added.supersedes_id == claim.id and "possible_duplicate_of" not in added.payload
+        assert added in confirm_candidates(student)
+
+
+# --- Stage 2: a newer CV replaces older facts ---------------------------------
+
+
+def _confirm_all(student):
+    from django.utils import timezone
+
+    VerifiedFact.objects.filter(student=student).update(
+        confirmed_by=student, confirmed_at=timezone.now()
+    )
+
+
+def _second_upload(agency, student, fake_store, content):
+    from apps.documents.ingestion import ingest_uploaded_cv as ingest
+
+    client = _openai_client()
+    client.responses.parse.return_value.output_parsed = content
+    document = promoted_upload(register(agency.id, student.id, mode="ADD"), fake_store, _pdf())
+    return document, ingest(document=document, student=student, client=client, store=fake_store)
+
+
+def test_a_reupload_with_one_changed_date_leaves_one_current_fact(
+    agency_a, django_user_model, fake_store
+):
+    from apps.documents.verification import unsuperseded_facts
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-reupload")
+        first = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        ingest_uploaded_cv(
+            document=first, student=student, client=_openai_client(), store=fake_store
+        )
+        _confirm_all(student)
+        degree = _content().education[0].model_copy(update={"end_date": date(2024, 6, 30)})
+        _, written = _second_upload(
+            agency_a, student, fake_store, _content().model_copy(update={"education": (degree,)})
+        )
+        current = list(
+            unsuperseded_facts(student).filter(category=VerifiedFact.Category.EDUCATION)
+        )
+    assert len(written) == 1
+    assert len(current) == 1
+    assert current[0].payload["end_date"] == "2024-06-30"
+    assert current[0].supersedes is not None
+    assert current[0].supersedes.payload["end_date"] is None
+    assert current[0].confirmed_by is None
+
+
+def test_reuploading_the_same_cv_writes_nothing(agency_a, django_user_model, fake_store):
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-same")
+        first = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        ingest_uploaded_cv(
+            document=first, student=student, client=_openai_client(), store=fake_store
+        )
+        _confirm_all(student)
+        before = VerifiedFact.objects.filter(student=student).count()
+        _, written = _second_upload(agency_a, student, fake_store, _content())
+        assert written == ()
+        assert VerifiedFact.objects.filter(student=student).count() == before
+
+
+def test_the_first_upload_still_writes_every_entry(agency_a, django_user_model, fake_store):
+    """Unchanged behaviour on an empty ledger: three entries, three candidates."""
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-first")
+        document = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        facts = ingest_uploaded_cv(
+            document=document, student=student, client=_openai_client(), store=fake_store
+        )
+    assert len(facts) == 3
+    assert all(fact.supersedes_id is None for fact in facts)
+
+
+def test_the_reader_is_not_taught_that_a_thesis_is_a_role(
+    agency_a, django_user_model, fake_store
+):
+    """S-037a: the old prompt gave "Master's Thesis" and "Summer Fellowship" as
+    example roles, which taught the model to file a thesis as a job."""
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-thesis")
+        document = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        client = _openai_client()
+        ingest_uploaded_cv(document=document, student=student, client=client, store=fake_store)
+        prompt = "".join(
+            str(message["content"])
+            for call in client.responses.parse.call_args_list
+            for message in call.kwargs["input"]
+        )
+    assert '"Master\'s Thesis"' not in prompt
+    assert '"Summer Fellowship"' not in prompt
+    assert "A thesis or dissertation is not a role" in prompt
+
+
+def test_certifications_are_read_into_their_own_category():
+    from apps.documents.ingestion import _SECTIONS
+    from apps.documents.models import VerifiedFact
+
+    assert ("certifications", VerifiedFact.Category.CERTIFICATION) in _SECTIONS
+
+
+def test_the_reader_files_military_service_as_a_gap_statement():
+    import inspect
+
+    from apps.documents import ingestion
+
+    source = inspect.getsource(ingestion)
+    assert "military service" in source
+    assert "is a timeline entry, never an experience entry" in source
+
+
+def test_uploading_a_friends_cv_is_refused_with_owner_mismatch_and_alerts_counsellor(
+    agency_a, django_user_model, counselor_membership, fake_store
+):
+    from apps.concierge.models import Notification
+    from apps.tenancy.models import CounselorAssignment
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "i-friend")
+        student.user.first_name, student.user.last_name = "Narmin", "Aliyeva"
+        student.user.save()
+        CounselorAssignment.objects.create(
+            tenant=agency_a, counselor=counselor_membership, student=student
+        )
+        document = promoted_upload(register(agency_a.id, student.id), fake_store, _pdf())
+        with pytest.raises(UnsupportedUpload, match="owner_mismatch"):
+            ingest_uploaded_cv(
+                document=document, student=student, client=_openai_client(), store=fake_store
+            )
+        assert VerifiedFact.objects.filter(student=student).count() == 0
+        assert Notification.objects.filter(
+            roadmap_item__student=student, recipient=counselor_membership
+        ).exists()
+
+
+

@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-typed-decisions-and-multilingual-sources-design.md` — this plan is its §15 plan 1. Read §3 (what Jev is and the contract), §4 (the decision table), §6 (the grammar, acting, ambiguity, notes, unapplied, templates), §9 (security), §9a (operations) and §11 (the gates) before starting. They are the argument for every task below.
 
-**Base branch:** `claude/fetch-spec-refresh`, rebased onto `origin/master` at 40f8400 on 2026-09-23. Work in a fresh worktree: `git worktree add ../decision-layer claude/fetch-spec-refresh`. Test database: `POSTGRES_DB=tehsil_decisions` — never share a test DB between sessions (CLAUDE.md).
+**Base branch:** `claude/fetch-spec-refresh`, rebased onto `origin/master` at 40f8400 on 2026-09-23. Work in a fresh worktree: `git worktree add ../decision-layer claude/fetch-spec-refresh`. Test database: `POSTGRES_DB=elmify_decisions` — never share a test DB between sessions (CLAUDE.md).
 
 ## Reconciliation with master 40f8400 — 2026-09-23, read before Task 1
 
@@ -55,7 +55,7 @@ stays a separate class in `decisions.py`: one means "a search index did not answ
 - **`extra="forbid"` on every schema, a cap on every model call, a rate limit on every caller.** The repo's LLM baseline (`~/.config/ai_rules/rules/engineering.md`, CLAUDE.md "LLM/AI security"). `apps/research/extraction.py` is the reference pattern.
 - **Keys from the environment only.** `TYPESAFE_API_KEY` never has a settings default and never appears in a log line or an exception message.
 - **Never run `ruff format`** in this repo — it is a lint-only gate and `ruff format` churns 26 files (CLAUDE.md).
-- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_decisions uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
+- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=elmify_decisions uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
 - **RLS is verified against a `NOBYPASSRLS` role or it is not verified.** The test role bypasses RLS, so a passing test proves nothing about a policy; use the `runtime_connection` fixture (`tests/tenancy/test_database_isolation.py`) or `rls_enforced_orm` (`tests/conftest.py`). CLAUDE.md, "Row-level security: what actually filters a query".
 - **Migration numbers, and a collision to expect.** `research` is at `0003_organisation_register`
   on master (2026-09-23, 40f8400 — `0003` was taken by the Organisation register after this plan
@@ -284,7 +284,7 @@ def test_a_question_set_is_refused_over_the_state_token_ceiling():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/research/test_decisions.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/research/test_decisions.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.decisions'`
 
 - [ ] **Step 3: Write the module**
@@ -686,7 +686,7 @@ DECISIONS_RUN_TOKENS = int(os.getenv("DECISIONS_RUN_TOKENS", "20000000"))
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/research/test_decisions.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/research/test_decisions.py -v`
 Expected: 11 passed
 
 - [ ] **Step 5: Run the checks**
@@ -763,7 +763,7 @@ resolves conftest fixtures by name — and widen its grant to the tables a runti
 `tests/tenancy/test_database_isolation.py` then imports nothing new and its own cases keep passing —
 run them first to prove the move changed no behaviour:
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/tenancy/test_database_isolation.py -v`
 Expected: unchanged, all pass.
 
 **`docs/superpowers/plans/2026-09-22-fetch-engine-core.md` Task 2 needs the same move** for
@@ -849,7 +849,7 @@ def test_it_is_in_the_shared_tables_list():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/research/test_decision_record_rls.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/research/test_decision_record_rls.py -v`
 Expected: FAIL with `ImportError: cannot import name 'DecisionRecord'`
 
 - [ ] **Step 3: Write the model and its migrations**
@@ -910,7 +910,7 @@ class DecisionRecord(models.Model):
 Generate the table migration, then write the policy migration by hand:
 
 ```bash
-POSTGRES_DB=tehsil_decisions uv run python manage.py makemigrations research --name decision_record
+POSTGRES_DB=elmify_decisions uv run python manage.py makemigrations research --name decision_record
 ```
 
 ```python
@@ -963,12 +963,12 @@ absent, and every shared catalog table since has used it. Do not create it again
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/research/test_decision_record_rls.py tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/research/test_decision_record_rls.py tests/tenancy/test_database_isolation.py -v`
 Expected: all pass
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_decisions uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_decisions uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean, "No changes detected"
 
 - [ ] **Step 6: Commit**
@@ -1119,7 +1119,7 @@ def test_an_unavailable_provider_is_not_swallowed():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/research/test_decisions_cache.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/research/test_decisions_cache.py -v`
 Expected: FAIL with `ImportError: cannot import name 'month_tokens_spent'`
 
 - [ ] **Step 3: Extend the module**
@@ -1288,7 +1288,7 @@ def ask(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/research/ -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/research/ -v`
 Expected: all pass, including Task 1's file unchanged
 
 - [ ] **Step 5: Run the checks**
@@ -1436,7 +1436,7 @@ def test_units_and_sections_are_not_invented_here():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_grammar_types.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_grammar_types.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.grammar'`
 
 - [ ] **Step 3: Write the vocabulary**
@@ -1662,7 +1662,7 @@ SINKS: frozenset[str] = frozenset(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_grammar_types.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_grammar_types.py -v`
 Expected: 10 passed
 
 - [ ] **Step 5: Run the checks**
@@ -1839,7 +1839,7 @@ def test_a_long_page_is_chunked_rather_than_truncated():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_grammar_slots.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_grammar_slots.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.grammar_questions'`
 
 - [ ] **Step 3: Write the questions**
@@ -2048,7 +2048,7 @@ def _ask(state, questions, **kwargs) -> dict[str, Answer]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_grammar_slots.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_grammar_slots.py -v`
 Expected: 8 passed
 
 - [ ] **Step 5: Run the checks**
@@ -2356,7 +2356,7 @@ def test_a_sentence_about_no_document_yields_nothing_at_all():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_grammar_values.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_grammar_values.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.grammar_values'`
 
 - [ ] **Step 3: Write the value questions**
@@ -2865,7 +2865,7 @@ def language_candidates(text: str) -> tuple[tuple[str, str], ...]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_grammar_values.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_grammar_values.py -v`
 Expected: 13 passed
 
 - [ ] **Step 5: Run the checks**
@@ -3004,7 +3004,7 @@ def test_two_topics_are_both_kept():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_rule_conflicts.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_rule_conflicts.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.rule_sinks'`
 
 - [ ] **Step 3: Write the resolver**
@@ -3103,7 +3103,7 @@ def resolve_conflicts(rules: Sequence[Rule]) -> tuple[Rule, ...]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_rule_conflicts.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_rule_conflicts.py -v`
 Expected: 8 passed
 
 - [ ] **Step 5: Run the checks**
@@ -3309,7 +3309,7 @@ def test_a_letter_rule_is_not_a_cv_constraint():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_rule_sinks_cv.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_rule_sinks_cv.py -v`
 Expected: FAIL with `ImportError: cannot import name 'to_constraint_rules'`
 
 - [ ] **Step 3: Write the projection**
@@ -3473,7 +3473,7 @@ def format_decision(rules: Sequence[Rule]) -> tuple[str, str]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_rule_sinks_cv.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_rule_sinks_cv.py -v`
 Expected: 15 passed
 
 - [ ] **Step 5: Run the checks**
@@ -3626,7 +3626,7 @@ def test_a_font_family_that_is_not_plain_latin_text_is_dropped():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_rule_sinks_letter.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_rule_sinks_letter.py -v`
 Expected: FAIL with `ImportError: cannot import name 'to_letter_shape'`
 
 - [ ] **Step 3: Write the letter projection**
@@ -3752,7 +3752,7 @@ def _letter_style(value: str, rule: Rule, state) -> None:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_rule_sinks_letter.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_rule_sinks_letter.py -v`
 Expected: 10 passed
 
 - [ ] **Step 5: Run the checks**
@@ -4020,7 +4020,7 @@ def test_derive_makes_no_frontier_model_call():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_derive_grammar.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_derive_grammar.py -v`
 Expected: FAIL — `derive_page_rules() got an unexpected keyword argument 'client'`
 
 - [ ] **Step 3: Rewrite `derive_page_rules` and delete the judge**
@@ -4206,7 +4206,7 @@ Keep and re-point at the stubbed decision layer: `test_one_read_switches_the_for
 
 - [ ] **Step 5: Run the whole suite**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest`
 Expected: all green. This is the first task where the catalog path runs on the decision layer, so a failure here is a real regression, not a fixture problem.
 
 - [ ] **Step 6: Run the checks**
@@ -4392,12 +4392,12 @@ def test_the_forty_eight_row_format_gate():
 - [ ] **Step 3: Run the gates**
 
 ```bash
-POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_grammar_gate.py -v
+POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_grammar_gate.py -v
 ```
 Expected: 4 passed, 1 deselected. **If gate 7 fails, the grammar is short an operation — add it to `grammar.py`, give it a sink, and re-run. That is the gate working, not the test being wrong.**
 
 ```bash
-TYPESAFE_API_KEY=... POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_grammar_gate.py -m live -v
+TYPESAFE_API_KEY=... POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_grammar_gate.py -m live -v
 ```
 Expected: pass, with the two printed lists empty or nearly so. **Record the two counts in the commit message.** If the action bar is missed, the shipped threshold moves up before anything else proceeds — §6.2's bar is a starting value and this is the measurement that sets it.
 
@@ -4567,7 +4567,7 @@ def test_a_programme_with_no_statements_is_skipped(program_factory, monkeypatch)
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_rederive_rules.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_rederive_rules.py -v`
 Expected: FAIL with `CommandError: Unknown command: 'rederive_rules'`
 
 - [ ] **Step 3: Write the command**
@@ -4690,7 +4690,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/test_rederive_rules.py -v`
+Run: `POSTGRES_DB=elmify_decisions uv run pytest tests/documents/test_rederive_rules.py -v`
 Expected: 5 passed
 
 - [ ] **Step 5: Rewrite the record**
@@ -4705,7 +4705,7 @@ In `docs/superpowers/specs/2026-09-13-format-decision-guarantee-design.md`, exte
 
 - [ ] **Step 6: Run everything**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_decisions uv run pytest && uv run bandit -c pyproject.toml -r apps config && uv run pip-audit && POSTGRES_DB=tehsil_decisions uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_decisions uv run pytest && uv run bandit -c pyproject.toml -r apps config && uv run pip-audit && POSTGRES_DB=elmify_decisions uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean
 
 - [ ] **Step 7: Commit**
@@ -4821,7 +4821,7 @@ moving it would change what the letter cites. Keep the module docstring's DPA se
 - [ ] **Step 3: Verify**
 
 ```bash
-POSTGRES_DB=tehsil_decisions uv run pytest tests/documents/research_fit/ -v
+POSTGRES_DB=elmify_decisions uv run pytest tests/documents/research_fit/ -v
 uv run ruff check apps config tests scripts && uv run mypy apps config
 ```
 

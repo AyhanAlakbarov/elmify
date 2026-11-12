@@ -3,7 +3,7 @@
 **Date:** 2026-08-11
 **Status:** Approved for implementation planning; no AWS deployment is authorized by this document alone
 **Region:** `eu-central-1`
-**AWS CLI profile:** `tehsil-sandbox`
+**AWS CLI profile:** `elmify-sandbox`
 
 ## Goal
 
@@ -20,7 +20,7 @@ Run the existing Phase 1 controlled-egress and SQS fair-queue harnesses once in 
 ## Fixed constraints
 
 - Use only `eu-central-1`.
-- Use the existing `tehsil-sandbox` profile and its temporary login session; create no long-lived access keys.
+- Use the existing `elmify-sandbox` profile and its temporary login session; create no long-lived access keys.
 - Keep the zero-spend budget and Free Tier alerts enabled.
 - Treat `$2 USD` as an operational ceiling, not a guaranteed hard cap.
 - Start teardown no later than 30 minutes after the first billable resource is created.
@@ -95,11 +95,11 @@ Add one small Bash controller because the job is primarily a sequence of existin
 The controller must:
 
 - use `set -Eeuo pipefail` and `umask 077`;
-- require explicit `AWS_PROFILE=tehsil-sandbox` and `AWS_REGION=eu-central-1`;
+- require explicit `AWS_PROFILE=elmify-sandbox` and `AWS_REGION=eu-central-1`;
 - reject any other profile or region;
 - use fixed validation-only stack and repository names;
 - abort if either name already exists, rather than deleting or adopting an unknown resource;
-- tag the stack and ECR repository with `Project=tehsil-agent` and `Purpose=aws-boundary-validation`;
+- tag the stack and ECR repository with `Project=elmify` and `Purpose=aws-boundary-validation`;
 - register an idempotent `EXIT`, `INT`, and `TERM` cleanup trap before the first AWS write;
 - run under `timeout --signal=TERM 30m`; its `TERM` handler starts cleanup and may continue beyond the 30-minute creation-to-teardown deadline until deletion is proven;
 - suppress or sanitize AWS CLI and Docker output that contains login material, account IDs, repository URIs, or raw ARNs;
@@ -221,7 +221,7 @@ The live run is successful only when the two probe documents say `passed`, the r
 The user-facing sequence after the implementation plan is approved is intentionally short:
 
 1. Keep the computer online and Docker running.
-2. Renew `aws login --profile tehsil-sandbox` only if the temporary session has expired.
+2. Renew `aws login --profile elmify-sandbox` only if the temporary session has expired.
 3. Review the read-only preflight summary; it will not display account identifiers.
 4. Give the final go/no-go before ECR creation.
 5. Leave the terminal running while the agent reports deploy, probe, and cleanup progress.

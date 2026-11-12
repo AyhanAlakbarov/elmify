@@ -17,17 +17,21 @@ Deploys or updates the Phase 1 one-region stack (`infra/template.yaml`) for
    deploy to a new account, check Service Quotas: new accounts start with a reduced
    Lambda memory quota and `OcrFunction` asks for 10,240 MB. Request the increase the week
    before the first deploy; if it is refused, deploy at 8,192 MB (spec §3.1).
+   Ship `OcrImage` with or before the `web`/`worker` images, on the first deploy and on
+   every deploy that changes `ocr/`: a worker paired with an older parser merges whole
+   transcripts instead of only their current pages. The owner actions no test can check
+   are in `docs/launch-checklist.md`.
 2. Create/confirm the Route53 hosted zone for the environment's domain and
    fill in `HostedZoneId` and `DomainName` in the parameters file.
 3. Fill in `DjangoAllowedHosts` with the environment's tenant domain
-   suffix(es), leading dot (e.g. `.tehsil-agent.example`).
+   suffix(es), leading dot (e.g. `.elmify.example`).
 4. **The first deploy is a loop, and its first pass fails by design.**
    `scripts/deploy.sh` runs the stack deploy and then the migration task back
    to back, and on a new database nothing the migration needs exists yet:
 
    1. Run `scripts/deploy.sh <env>`. The stack deploy creates the `Database`
       resource (master credential auto-managed in Secrets Manager); the
-      migration task then fails -- `tehsil_migration` does not exist, so it
+      migration task then fails -- `elmify_migration` does not exist, so it
       cannot log in (or, if it does exist, `funding/0049_catalog_grants`
       refuses with "run scripts/create_runtime_role.sql as the admin role, then
       re-run the migration" and creates nothing). The script exits non-zero.
@@ -44,16 +48,16 @@ Deploys or updates the Phase 1 one-region stack (`infra/template.yaml`) for
       psql "host=<DatabaseEndpointAddress> dbname=<DBName> user=<DBMasterUsername> sslmode=require"
       ```
       ```sql
-      CREATE ROLE tehsil_migration LOGIN CREATEROLE NOSUPERUSER NOBYPASSRLS;
-      \password tehsil_migration      -- the value in MigrationDatabaseSecret
-      GRANT CREATE ON SCHEMA public TO tehsil_migration;
+      CREATE ROLE elmify_migration LOGIN CREATEROLE NOSUPERUSER NOBYPASSRLS;
+      \password elmify_migration      -- the value in MigrationDatabaseSecret
+      GRANT CREATE ON SCHEMA public TO elmify_migration;
       ```
 
       Then, in the same admin session's shell, bootstrap the two runtime roles:
 
       ```bash
       psql "host=<DatabaseEndpointAddress> dbname=<DBName> user=<DBMasterUsername> sslmode=require" \
-        -v migration_role=tehsil_migration \
+        -v migration_role=elmify_migration \
         -f scripts/create_runtime_role.sql
       ```
    3. Run `scripts/deploy.sh <env>` again. The migration now finds both runtime
@@ -74,12 +78,12 @@ Deploys or updates the Phase 1 one-region stack (`infra/template.yaml`) for
    gives that option to its creator alone. So the admin must create both roles:
    0049 refuses to create them unless it runs as a superuser (dev, CI, tests),
    which is what makes the first pass above fail safely instead of stranding
-   two roles nobody but `tehsil_migration` could ever make logins. Were they
+   two roles nobody but `elmify_migration` could ever make logins. Were they
    created by the migration role anyway, the script refuses with "run this
    script as the admin role BEFORE the first migrate". The RDS master user is
    not a superuser, so there is no way round this except a superuser.
 
-   `tehsil_migration` (used only by the one-off migration task via
+   `elmify_migration` (used only by the one-off migration task via
    `MigrationDatabaseSecret`, created in step 2) must be `NOSUPERUSER
    NOBYPASSRLS`, and hold `CREATEROLE` (historical migrations create and 0049
    drops the old `catalog_ingestion` role). The script refuses a migration role
@@ -91,7 +95,7 @@ Deploys or updates the Phase 1 one-region stack (`infra/template.yaml`) for
 
    Set the passwords to match the generated secrets: `runtime_engine`'s from
    `EngineDatabaseSecret`, `runtime_web`'s from `WebDatabaseSecret`,
-   `tehsil_migration`'s from `MigrationDatabaseSecret`. Each task definition's
+   `elmify_migration`'s from `MigrationDatabaseSecret`. Each task definition's
    execution role reads only its own secret (`WebExecutionRole` reads only
    `WebDatabaseSecret`).
 
@@ -159,7 +163,7 @@ Deploys or updates the Phase 1 one-region stack (`infra/template.yaml`) for
    cross-tenant erasure guard. It grants `EXECUTE` to `runtime_engine` only —
    the one caller is the worker's `execute_due_erasures` — and takes no psql
    variables. It is not a migration because only a role that
-   already has `BYPASSRLS` may create one with it, and `tehsil_migration` has
+   already has `BYPASSRLS` may create one with it, and `elmify_migration` has
    neither — see the script's header:
 
    ```bash
@@ -170,10 +174,10 @@ Deploys or updates the Phase 1 one-region stack (`infra/template.yaml`) for
    Skipping it scrubs nothing wrongly, but it is not free. `redact_identity`
    raises `UndefinedFunction` the first time an erasure runs — after
    `advance_deletion` has already called `delete_student_documents` and
-   `delete_student_portal_credentials`, both irreversible and both *outside*
+   `delete_student_mailbox_tokens`, both irreversible and both *outside*
    the transaction. The request stays `APPROVED` and the login is untouched, so
-   nothing is falsely recorded as erased; that student's documents and portal
-   credentials are gone regardless.
+   nothing is falsely recorded as erased; that student's documents and mailbox
+   grants are gone regardless.
 
    The script also states the privileges it needs in its own header. **They have
    not been verified against a real RDS master user, which is not a superuser** —
@@ -210,7 +214,7 @@ This runs, in order:
 
 1. `aws cloudformation deploy` with `infra/parameters/<env>.json`.
 2. A one-off `aws ecs run-task` of `MigrationTaskDefinition` (runs
-   `manage.py migrate` as the `tehsil_migration` role); the script fails
+   `manage.py migrate` as the `elmify_migration` role); the script fails
    loudly if the task's exit code is nonzero.
 3. `manage.py check --deploy --settings=config.settings.production`.
 4. `aws ecs update-service --force-new-deployment` for `worker`, **waited to
@@ -298,7 +302,7 @@ attached yet — wire them to a notification topic when one exists.
     measured, and a placeholder is never read while `MAILBOX_PROVIDERS` excludes GOOGLE:
 
     ```bash
-    aws secretsmanager create-secret --name tehsil/mailbox/oauth-client \
+    aws secretsmanager create-secret --name elmify/mailbox/oauth-client \
       --secret-string '{"microsoft":"<value>","google":"unused"}'
     ```
 
@@ -360,7 +364,7 @@ pinned list revision is what admits, so a skipped run delays a change, never adm
 terminal one, and both tables are write-restricted to `runtime_engine` (the
 `runtime_engine_write` policies, repointed from the dropped `catalog_ingestion`
 by `apps/funding/migrations/0049_catalog_grants.py`). Every task definition
-except web, portal and migration — worker, Europass worker, document worker,
+except web and migration — worker, Europass worker, document worker,
 mailbox worker — runs as `DATABASE_ROLE=runtime_engine`, and the commands run on
 `WorkerTaskDefinition`, so `discover`, `fetch_ladder`,
 `funding_yield` and `retry_due_fetches` need nothing special. The earlier
@@ -423,8 +427,8 @@ before any command logic runs — the same failure shape as a missing queue URL
 --settings=config.settings.production` by hand, as `scripts/deploy.sh` does,
 needs `CACHE_URL` exported locally too — a gap that already existed for
 `DJANGO_SECRET_KEY` and the queue URLs and is not new here).
-`CacheSecurityGroup` admits exactly the web, worker and portal security groups
-(the same three `DatabaseSecurityGroup` admits), never the OCR function's.
+`CacheSecurityGroup` admits exactly the web and worker security groups
+(the same two `DatabaseSecurityGroup` admits), never the OCR function's.
 
 **One node, no failover, by design for now** (`NumCacheClusters: 1`, no
 `AutomaticFailoverEnabled`) — a pilot-scale ceiling, not a final answer: the

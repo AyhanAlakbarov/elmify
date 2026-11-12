@@ -30,9 +30,9 @@ Ranked. The ranking is situation-specific and the situation is unusual: **the sa
 legal roles.** `phased requirements.md:687` requires the platform to "support direct-to-student
 service and white-label agency sales from the same platform", so:
 
-- On an **agency tenant**, the agency is the data controller and Tehsil is the processor. The
+- On an **agency tenant**, the agency is the data controller and Elmify is the processor. The
   student is a third party to that contract, with paid work in flight.
-- On **Tehsil's own tenant**, Tehsil is the controller and the student is the paying customer.
+- On **Elmify's own tenant**, Elmify is the controller and the student is the paying customer.
 
 The mechanics of erasure are identical on both. The obligations around them are not. A student
 deleting their account here is also not a student deleting a note-taking app: they may hold a live
@@ -41,7 +41,7 @@ application to a university with a deadline.
 1. **Never destroy work the student did not mean to destroy.** They may hold a live application to a
    university with a deadline. Erasure is their right; a one-click path to it that does not tell them
    what they are giving up is a trap, not a feature.
-2. **One flow, two legal roles, no branch.** Every path must be correct whether Tehsil is controller
+2. **One flow, two legal roles, no branch.** Every path must be correct whether Elmify is controller
    or processor. A branch on "which kind of tenant is this" is a silent legal failure waiting to
    happen — a wrong branch is invisible until a regulator finds it. Default to the strictest reading
    on both channels rather than tailoring behaviour to one.
@@ -76,18 +76,18 @@ student has already been shown, because `execute_after` is stored (see below).
 **The agency is notified, not consulted.** Decided 2026-09-10. The student's click is the decision;
 the agency finds out.
 
-On a **direct-to-student tenant** this needs no justification beyond the ordinary: Tehsil is the
+On a **direct-to-student tenant** this needs no justification beyond the ordinary: Elmify is the
 controller and the customer is closing their own account.
 
-On an **agency tenant** it is Tehsil, the processor, acting on a decision that formally belongs to
+On an **agency tenant** it is Elmify, the processor, acting on a decision that formally belongs to
 the controller. That is lawful as a **standing documented instruction**, which means
 `tenancy.AgencyDataUseAgreementVersion` has to carry that term. A paperwork obligation, not a code
 one, recorded here so a pilot does not discover it.
 
 **The code does not branch on the difference, and must not start.** Criterion 2: one flow, both
 roles. The notification is the owner screen below, and it needs no `Agency` flag for "this tenant is
-Tehsil's own, do not notify" — it is the same obligation discharged two ways, the agency's
-notification on one channel and Tehsil's own operations queue on the other. A boolean to suppress it
+Elmify's own, do not notify" — it is the same obligation discharged two ways, the agency's
+notification on one channel and Elmify's own operations queue on the other. A boolean to suppress it
 would buy nothing and introduce exactly the branch this criterion forbids.
 
 ## The flow
@@ -588,7 +588,7 @@ requires a separate approved agreement and an applicable lawful basis.
 
 - **Agency tenants:** `tenancy.AgencyDataUseAgreementVersion` — `permitted_purposes`,
   `eligible_categories`, `lawful_basis_review_state`, `revoked_at`. Built.
-- **Direct-to-student tenants:** the student's own consent, given to Tehsil as controller. **No model
+- **Direct-to-student tenants:** the student's own consent, given to Elmify as controller. **No model
   exists for this.** `documents.ConsentEvent` is not it — that records who approved a document for
   use, which is a different consent entirely. This is a real gap in the opt-in pipeline and belongs
   to its spec, not this one.
@@ -685,7 +685,7 @@ everything after it is additive.
 - **No per-record legal hold, and none is needed.** See "Two kinds of retention" above.
 - **No agency-initiated erasure.** An agency closing its account, or tenant termination
   (`phased requirements.md:320`), is a different operation over a different subject.
-- **No cross-tenant console.** Tehsil staff reach these pages on the agency's own host through the
+- **No cross-tenant console.** Elmify staff reach these pages on the agency's own host through the
   existing `SupportGrant`, which already works. No platform change.
 - **No ML pipeline.** `Pseudonym` gets a model and an `on_delete` contract, nothing more. The §6.1
   extraction path, its banding and suppression, the schema assessment, the agreement gate and the

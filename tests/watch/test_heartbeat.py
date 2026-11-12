@@ -40,6 +40,7 @@ def test_every_scheduled_job_is_watched():
         "send_due_reminders": timedelta(hours=2),
         "watch_applications": timedelta(hours=2),
         "sync_mailboxes": timedelta(hours=13),
+        "fetch_cbar_rates": timedelta(hours=26),
     }
 
 

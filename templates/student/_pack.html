@@ -1,33 +1,56 @@
+{% load cv_countries dashboard %}
 <div id="pack">
   {% if pack %}
     <div class="pack-summary">
-      <span class="badge badge-brand">{% if pack.published_at %}Your list, version {{ pack.version }}{% else %}Version {{ pack.version }}{% endif %}</span>
-      {% for currency, total in totals.items %}<span class="pack-gap">Total still to cover: <strong>{{ total }} {{ currency }}</strong></span>{% endfor %}
+      <p><span class="badge badge-brand">{% if pack.published_at %}Approved v{{ pack.version }}{% else %}Version {{ pack.version }}{% endif %}</span></p>
+      {% for currency, total in totals.items %}<p class="pack-gap">Total funding gap: {{ total }} {{ currency }}</p>{% endfor %}
     </div>
+    {% if pack.coverage.sentence %}
+      <details class="pack-coverage">
+        <summary>Search coverage details</summary>
+        <p class="muted">{{ pack.coverage.sentence }}</p>
+      </details>
+    {% endif %}
     {% if pending_line %}<p role="status">{{ pending_line }}</p>{% endif %}
     {% if error and not error_form %}<p role="alert">{{ error }}</p>{% endif %}
-
-    <h2 class="section-title">Your matches</h2>
-    {% for group in groups %}{% include "student/_funding_group.html" with in_pack=True %}{% empty %}<p class="quiet-line">No matches in your list yet.</p>{% endfor %}
-
-    {% if other_groups %}
-      <h2 class="section-title">Other options</h2>
-      {% for group in other_groups %}{% include "student/_funding_group.html" with in_pack=False %}{% endfor %}
+    {% if groups or other_groups %}
+      <div class="pack-filter-bar" role="toolbar" aria-label="Filter programmes and scholarships">
+        <span class="pack-filter-label">Filter</span>
+        <button type="button" class="pack-filter-pill is-active" data-pack-filter="all" aria-pressed="true">All</button>
+        <button type="button" class="pack-filter-pill" data-pack-filter="picked" aria-pressed="false">In my applications</button>
+        <button type="button" class="pack-filter-pill" data-pack-filter="kind:programme" aria-pressed="false">Programmes</button>
+        <button type="button" class="pack-filter-pill" data-pack-filter="kind:award" aria-pressed="false">Scholarships</button>
+        <button type="button" class="pack-filter-pill" data-pack-filter="tier:Safety" aria-pressed="false">Safety</button>
+        <button type="button" class="pack-filter-pill" data-pack-filter="tier:Target" aria-pressed="false">Target</button>
+        <button type="button" class="pack-filter-pill" data-pack-filter="tier:Reach" aria-pressed="false">Reach</button>
+        {% for cc in countries %}
+          <button type="button" class="pack-filter-pill" data-pack-filter="country:{{ cc }}" aria-pressed="false">{{ cc|flag }}{{ cc }}</button>
+        {% endfor %}
+      </div>
     {% endif %}
-
+    <div class="pack-section-head">
+      <h2>Your pack</h2>
+      <p class="muted">Your recommended shortlist of scholarships and degree programmes, grouped by funding source.</p>
+    </div>
+    {% for group in groups %}{% include "student/_funding_group.html" with in_pack=True %}{% endfor %}
+    <div class="pack-section-head">
+      <h2>Other options</h2>
+      <p class="muted">Additional eligible matches you can add or swap into your shortlist at any time.</p>
+    </div>
+    {% for group in other_groups %}{% include "student/_funding_group.html" with in_pack=False %}{% endfor %}
     <section class="panel ask-panel" aria-labelledby="named-heading">
       <div>
-        <h2 id="named-heading">Ask us to check a programme</h2>
+        <h2 id="named-heading">Ask us to consider a programme</h2>
         <p class="muted">Found a programme yourself? Name it and our AI checks it against your profile.</p>
       </div>
       <form method="post" action="{% url 'student-consider-named-program' %}" class="inline-ask">
         {% csrf_token %}
+        {% if error and error_form == "named-program" %}<p role="alert" id="program-name-error">{{ error }}</p>{% endif %}
         <p>
           <label for="program-name">Programme name</label>
-          <input type="text" id="program-name" name="program_name" maxlength="150" autocomplete="off" placeholder="MSc Data Science, University of Tartu…" value="{{ form_values.program_name|default:'' }}"{% if error and error_form == "named-program" %} aria-describedby="program-name-error" aria-invalid="true"{% endif %}>
-          {% if error and error_form == "named-program" %}<span class="field-error" role="alert" id="program-name-error">{{ error }}</span>{% endif %}
+          <input type="text" id="program-name" name="program_name" maxlength="150" autocomplete="off" placeholder="MSc Data Science, University of Tartu…" value="{{ form_values.program_name|default:'' }}"{% if error and error_form == "named-program" %} aria-describedby="program-name-error"{% endif %}>
         </p>
-        <button type="submit">Check this programme</button>
+        <button type="submit">Ask</button>
       </form>
     </section>
   {% endif %}

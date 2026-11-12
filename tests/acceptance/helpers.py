@@ -3,6 +3,36 @@ from dataclasses import dataclass
 
 from django.test import Client
 
+_MONEY = {"application_budget", "self_funding_capacity", "budget_stretch"}
+_RECORDS = {
+    "academic_history": (
+        "institution", "country_code", "qualification", "field", "grade", "grading_scale",
+        "completed_on", "expected_completion",
+    ),
+    "language_evidence": ("language", "level", "evidence_type", "available_by"),
+}
+
+
+def answer_post(key: str, value: object) -> dict[str, object]:
+    """The form data the questionnaire page posts for one answer: money as its two
+    inputs (amount, currency), a degree or language rows as their inputs, everything
+    else as one `value`."""
+    if key in _MONEY:
+        money = value if isinstance(value, dict) else {}
+        return {
+            "key": key,
+            "value_0": money.get("amount", ""),
+            "value_1": money.get("currency", ""),
+        }
+    if key in _RECORDS:
+        parts = _RECORDS[key]
+        records = value if isinstance(value, list) else []
+        flat = [record.get(part) or "" for record in records for part in parts]
+        width = 8 if key == "academic_history" else 12
+        flat = (flat + [""] * width)[:width]
+        return {"key": key, **{f"value_{i}": item for i, item in enumerate(flat)}}
+    return {"key": key, "value": json.dumps(value) if isinstance(value, (dict, list)) else value}
+
 
 def complete_consultation(client: Client, *, host: str):
     answers = (
@@ -15,6 +45,7 @@ def complete_consultation(client: Client, *, host: str):
         ("intended_intake", "2027-09-01"),
         ("funding_dependency", "MANDATORY"),
         ("application_budget", {"amount": "150.00", "currency": "EUR"}),
+        ("budget_stretch", ""),
         ("career_intent", "PHD"),
         ("acceptable_teaching_languages", "English"),
         ("language_evidence", []),
@@ -35,11 +66,7 @@ def complete_consultation(client: Client, *, host: str):
         ("additional_notes", ""),
     )
     for key, value in answers:
-        response = client.post(
-            "/student/profile/",
-            {"key": key, "value": json.dumps(value) if isinstance(value, (dict, list)) else value},
-            HTTP_HOST=host,
-        )
+        response = client.post("/student/profile/", answer_post(key, value), HTTP_HOST=host)
         assert response.status_code == 200
     return response
 

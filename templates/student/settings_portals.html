@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Portal logins{% endblock %}
+{% block content %}
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/student/settings/">Settings</a><span aria-hidden="true">/</span><span>Portal logins</span></nav>
+  <div class="page-head">
+    <div>
+      <h1>Portal logins</h1>
+      <p>The co-pilot creates your account on each university portal and logs in for you. You can always log in yourself with these details.</p>
+    </div>
+  </div>
+  {% if error %}<p role="alert" class="note note-error">{{ error }}</p>{% endif %}
+  {% for browser in browsers %}
+    <section class="panel" aria-labelledby="browser-{{ browser.id }}">
+      <h2 id="browser-{{ browser.id }}">A browser waiting for you</h2>
+      <p>A browser connected on {{ browser.redeemed_at|date:"j M Y, H:i" }} cannot log in to portals for you yet. If it is yours, allow it with your Elmify password. If it is not, remove it under Settings › Browser extension.</p>
+      <form method="post" action="{% url 'student-settings-portal-browser-allow' browser.id %}">
+        {% csrf_token %}
+        <p>
+          <label for="allow-{{ browser.id }}">Your Elmify password</label>
+          <input type="password" id="allow-{{ browser.id }}" name="password" autocomplete="current-password" required>
+        </p>
+        <button type="submit">Allow this browser</button>
+      </form>
+    </section>
+  {% endfor %}
+  {% for account in accounts %}
+    <article class="panel" aria-labelledby="portal-{{ account.id }}">
+      <h2 id="portal-{{ account.id }}">{{ account.portal_host }}</h2>
+      <p>Email: {{ account.address }}</p>
+      {% if account.student_managed_at %}
+        <p>You manage this login yourself. We do not keep its password.</p>
+      {% elif account.password_held_at %}
+        {% if shown == account.id %}
+          <p>Password: <code>{{ password }}</code></p>
+        {% else %}
+          <p>Password: ••••••••</p>
+          <form method="post" action="{% url 'student-settings-portal-reveal' account.id %}">
+            {% csrf_token %}
+            <p>
+              <label for="confirm-{{ account.id }}">Your Elmify password, to show it</label>
+              <input type="password" id="confirm-{{ account.id }}" name="password" autocomplete="current-password" required>
+            </p>
+            <button type="submit">Show password</button>
+          </form>
+        {% endif %}
+        <form method="post" action="{% url 'student-settings-portal-takeover' account.id %}" class="row-actions">
+          {% csrf_token %}
+          <button type="submit" class="btn-quiet">I changed my password</button>
+        </form>
+      {% else %}
+        <p>No password kept: the co-pilot has not signed you up here.</p>
+      {% endif %}
+    </article>
+  {% empty %}
+    <section class="panel">
+      <p class="empty">No portal accounts yet.</p>
+    </section>
+  {% endfor %}
+{% endblock %}

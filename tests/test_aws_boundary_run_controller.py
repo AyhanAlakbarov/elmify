@@ -29,7 +29,7 @@ def _run_sourced(
         env={
             **os.environ,
             "TRACE": str(trace),
-            "AWS_PROFILE": "tehsil-sandbox",
+            "AWS_PROFILE": "elmify-sandbox",
             "AWS_REGION": "eu-central-1",
             "AWS_BOUNDARY_CONTROLLER_SESSION": "1" if session else "",
         },
@@ -46,11 +46,11 @@ def test_controller_has_bounded_private_cleanup_contract() -> None:
     for fragment in (
         "set -Eeuo pipefail",
         "umask 077",
-        'EXPECTED_PROFILE="tehsil-sandbox"',
+        'EXPECTED_PROFILE="elmify-sandbox"',
         'EXPECTED_REGION="eu-central-1"',
         "trap finish EXIT",
         "trap 'exit 124' INT TERM",
-        "Project=tehsil-agent",
+        "Project=elmify",
         "Purpose=aws-boundary-validation",
         "--cleanup-only",
         "--preflight-only",
@@ -63,9 +63,9 @@ def test_controller_has_bounded_private_cleanup_contract() -> None:
     assert "get-login-password" in source
     assert "--password-stdin" in source
     for fragment in (
-        'LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/flow"',
+        'LogGroupName: !Sub "/elmify/validation/${AWS::StackName}/flow"',
         'ClusterName: !Sub "${AWS::StackName}-probe"',
-        'LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/probe"',
+        'LogGroupName: !Sub "/elmify/validation/${AWS::StackName}/probe"',
     ):
         assert fragment in template
 
@@ -227,7 +227,7 @@ def test_sigterm_still_runs_cleanup(tmp_path: Path) -> None:
         env={
             **os.environ,
             "TRACE": str(trace),
-            "AWS_PROFILE": "tehsil-sandbox",
+            "AWS_PROFILE": "elmify-sandbox",
             "AWS_REGION": "eu-central-1",
         },
         stdout=subprocess.PIPE,
@@ -370,17 +370,17 @@ def test_audit_absence_accumulates_all_predicate_failures(tmp_path: Path) -> Non
         "stack",
         "repository",
         "aws ec2 describe-nat-gateways --filter "
-        "Name=tag:aws:cloudformation:stack-name,Values=tehsil-phase1-validation "
+        "Name=tag:aws:cloudformation:stack-name,Values=elmify-phase1-validation "
         "--query length(NatGateways[?State!='deleted']) --output text",
         "aws ec2 describe-vpc-endpoints --filters "
-        "Name=tag:aws:cloudformation:stack-name,Values=tehsil-phase1-validation "
+        "Name=tag:aws:cloudformation:stack-name,Values=elmify-phase1-validation "
         "--query length(VpcEndpoints) --output text",
         "aws ec2 describe-addresses --filters "
-        "Name=tag:aws:cloudformation:stack-name,Values=tehsil-phase1-validation "
+        "Name=tag:aws:cloudformation:stack-name,Values=elmify-phase1-validation "
         "--query length(Addresses) --output text",
         "aws logs describe-log-groups --log-group-name-prefix "
-        "/tehsil/validation/tehsil-phase1-validation/ --query length(logGroups) "
+        "/elmify/validation/elmify-phase1-validation/ --query length(logGroups) "
         "--output text",
-        "aws ecs describe-clusters --clusters tehsil-phase1-validation-probe "
+        "aws ecs describe-clusters --clusters elmify-phase1-validation-probe "
         "--query length(clusters[?status=='ACTIVE']) --output text",
     ]

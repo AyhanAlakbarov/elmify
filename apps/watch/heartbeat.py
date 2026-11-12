@@ -27,6 +27,8 @@ EXPECTED_JOBS: dict[str, timedelta] = {
     "send_due_reminders": timedelta(hours=2),
     "watch_applications": timedelta(hours=2),
     "sync_mailboxes": timedelta(hours=13),
+    #: Daily; 26 h tolerates one late start (lanes spec §7.6).
+    "fetch_cbar_rates": timedelta(hours=26),
 }
 
 

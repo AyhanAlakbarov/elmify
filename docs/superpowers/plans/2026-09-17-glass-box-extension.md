@@ -147,14 +147,14 @@ Expected: FAIL — `extension/dist/manifest.json is missing` (the `CI` guard is 
 
 ```json
 {
-  "name": "tehsil-copilot",
+  "name": "elmify-copilot",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit",
-    "package": "node build.mjs && cd dist && zip -r ../tehsil-copilot.zip .",
+    "package": "node build.mjs && cd dist && zip -r ../elmify-copilot.zip .",
     "check": "npm run typecheck && npm run build"
   },
   "devDependencies": {
@@ -222,11 +222,11 @@ await cp("icons", "dist/icons", { recursive: true });
 ```json
 {
   "manifest_version": 3,
-  "name": "Tehsil Application Co-pilot",
+  "name": "Elmify Application Co-pilot",
   "version": "0.1.0",
   "description": "Fills your application form in your own browser. You press Submit.",
   "background": { "service_worker": "service_worker.js" },
-  "action": { "default_title": "Tehsil co-pilot" },
+  "action": { "default_title": "Elmify co-pilot" },
   "side_panel": { "default_path": "panel.html" },
   "permissions": ["storage", "scripting", "activeTab", "sidePanel"],
   "host_permissions": [],
@@ -328,7 +328,7 @@ Append to `.gitignore`:
 
 ```
 extension/dist/
-extension/tehsil-copilot.zip
+extension/elmify-copilot.zip
 ```
 
 (`node_modules/` is already ignored at the repository root.)
@@ -358,12 +358,12 @@ Add to `.github/workflows/ci.yml`, as a sibling of `test:`:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_DB: tehsil
-          POSTGRES_USER: tehsil
-          POSTGRES_PASSWORD: tehsil
+          POSTGRES_DB: elmify
+          POSTGRES_USER: elmify
+          POSTGRES_PASSWORD: elmify
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U tehsil"
+          --health-cmd "pg_isready -U elmify"
           --health-interval 2s
           --health-timeout 2s
           --health-retries 15
@@ -2142,7 +2142,7 @@ Expected: FAIL — the file does not exist.
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Tehsil co-pilot</title>
+    <title>Elmify co-pilot</title>
   </head>
   <body>
     <!-- SHOULD BE DONE BY AYKHAN: this markup is a functional placeholder.
@@ -2428,7 +2428,7 @@ def _verify_in_page(page, entries):
     test_ext_api.py, and mixing them in here would make a failure ambiguous.
     """
     page.add_script_tag(path=str(DIST / "content.js"))
-    return page.evaluate("(entries) => window.__tehsil_verify(entries)", entries)
+    return page.evaluate("(entries) => window.__elmify_verify(entries)", entries)
 
 
 @pytest.mark.extension
@@ -2494,7 +2494,7 @@ def test_a_challenge_page_is_detected(browser_context, fixture_server) -> None:
     page = browser_context.new_page()
     page.goto(f"{fixture_server}/challenge.html")
     page.add_script_tag(path=str(DIST / "content.js"))
-    assert page.evaluate("() => window.__tehsil_detect_challenge()")["kind"] == "recaptcha"
+    assert page.evaluate("() => window.__elmify_detect_challenge()")["kind"] == "recaptcha"
 
 
 @pytest.mark.extension
@@ -2511,7 +2511,7 @@ def test_a_snapshot_of_a_filled_form_carries_no_value(browser_context, fixture_s
     page.fill("#gn", "Leyla")
     page.fill("#em", "leyla@example.org")
     page.add_script_tag(path=str(DIST / "content.js"))
-    snapshot = page.evaluate("() => window.__tehsil_snapshot()")
+    snapshot = page.evaluate("() => window.__elmify_snapshot()")
 
     assert snapshot["controls"], "the snapshot found no controls"
     for control in snapshot["controls"]:
@@ -2531,7 +2531,7 @@ def test_nothing_the_extension_does_submits_the_form(browser_context, fixture_se
     page.evaluate("() => { window.__submitted = false; document.forms[0].addEventListener('submit', () => { window.__submitted = true; }); }")
     page.add_script_tag(path=str(DIST / "content.js"))
     page.evaluate(
-        "(entries) => window.__tehsil_fill(window.__tehsil_verify(entries))",
+        "(entries) => window.__elmify_fill(window.__elmify_verify(entries))",
         [{"selector": "#gn", "method": "fill", "value": "Leyla", "profile_field": "personal.given_name"}],
     )
     assert page.input_value("#gn") == "Leyla"
@@ -2554,16 +2554,16 @@ Add `import type { VerifiedEntry } from "./verify.js";` and `import type { Packe
 // A VerifiedEntry carries an HTMLElement, which page.evaluate cannot return --
 // it serializes to nothing and the assertion reads a silent {}. The hook
 // projects each verdict to the three fields the tests assert on instead.
-(globalThis as Record<string, unknown>)["__tehsil_verify"] = (entries: PacketField[]) =>
+(globalThis as Record<string, unknown>)["__elmify_verify"] = (entries: PacketField[]) =>
   verifyEntries(entries).map((item: VerifiedEntry) => ({
     profile_field: item.entry.profile_field,
     ok: item.ok,
     reason: item.reason,
   }));
-(globalThis as Record<string, unknown>)["__tehsil_fill"] = (entries: PacketField[]) =>
+(globalThis as Record<string, unknown>)["__elmify_fill"] = (entries: PacketField[]) =>
   fillVerified(verifyEntries(entries), new Set());
-(globalThis as Record<string, unknown>)["__tehsil_detect_challenge"] = detectChallenge;
-(globalThis as Record<string, unknown>)["__tehsil_snapshot"] = () => buildSnapshot(document);
+(globalThis as Record<string, unknown>)["__elmify_detect_challenge"] = detectChallenge;
+(globalThis as Record<string, unknown>)["__elmify_snapshot"] = () => buildSnapshot(document);
 ```
 
 **Note for the executor, and a limit worth knowing:** `page.add_script_tag` injects into
@@ -2611,7 +2611,7 @@ git commit -m "test(extension): three pages where filling must not happen, and o
 - [ ] `uv run mypy apps config` — clean.
 - [ ] `uv run bandit -c pyproject.toml -r apps config` — clean.
 - [ ] `uv run python manage.py makemigrations --check --dry-run` — no pending migration (task 2 changes a Pydantic model, not a Django one; a migration here means something else was touched).
-- [ ] `uv run pytest -q` — the whole suite, with a per-worktree database: `POSTGRES_DB=tehsil_glassbox uv run pytest -q`.
+- [ ] `uv run pytest -q` — the whole suite, with a per-worktree database: `POSTGRES_DB=elmify_glassbox uv run pytest -q`.
 - [ ] `uv run pytest tests/portals/test_extension_e2e.py -m extension -q` — the browser suite.
 - [ ] `git diff master --stat` — confirm the Python surface is `apps/portals/packets.py` plus tests, and nothing else.
 
@@ -2656,7 +2656,7 @@ git commit -m "test(extension): three pages where filling must not happen, and o
   `no_field_map` response names the page, `ExtError` carries a refusal's body so the worker can pass
   it on, and `run()` checks the origin before `buildSnapshot`. An absent `form_url` refuses too — a
   server too old to name the page cannot say what we are looking at. `run()` is now reachable from
-  the e2e suite through `__tehsil_run` with `chrome.runtime.sendMessage` stubbed, so three tests
+  the e2e suite through `__elmify_run` with `chrome.runtime.sendMessage` stubbed, so three tests
   assert on the messages a real run sent, including the positive control.
 
 ## Risks this plan carries into production

@@ -9,6 +9,7 @@ from apps.documents.models import VerifiedFact
 from apps.documents.ocr import OcrPage
 from apps.documents.transcript import (
     Highlight,
+    RowOrigin,
     TranscriptContent,
     TranscriptCourse,
     TranscriptReadingDisabled,
@@ -17,6 +18,7 @@ from apps.documents.transcript import (
     number,
     personal_names,
     read_from_pages,
+    row_from_json,
 )
 from apps.research.decisions import Answer, DecisionsUnavailable
 from apps.tenancy.context import tenant_scope
@@ -653,3 +655,62 @@ def test_transcript_reading_is_refused_until_the_azure_launch_gate_is_on(
     settings.TRANSCRIPT_AZURE_ENABLED = False
     with pytest.raises(TranscriptReadingDisabled, match="TRANSCRIPT_AZURE_ENABLED"):
         check_gates()
+
+
+def _origin(reading, title):
+    return next(row for row in reading.rows if row.title == title).origin
+
+
+def test_a_cut_row_records_its_page_table_row_and_cells(agency_a, membership_a, fake_store):
+    pages = (_page(lines=LINES), _page(COURSES, lines=()))
+    reading = read_from_pages(pages, frozenset(), client=_jev(), slots=(4, 7))
+    assert _origin(reading, "Organic Chemistry I") == RowOrigin(
+        slot=7, table=0, row=2, cells={"title": 1, "credits": 2, "grade": 3}
+    )
+
+
+def test_without_slots_a_page_is_numbered_by_its_place(agency_a, membership_a, fake_store):
+    reading = _read(agency_a, membership_a, fake_store, _page(COURSES))
+    assert _origin(reading, "Thesis").slot == 1 and _origin(reading, "Thesis").row == 7
+
+
+def test_an_origin_counts_rows_and_tables_the_minimiser_dropped(
+    agency_a, membership_a, fake_store
+):
+    names = frozenset({"aysel", "mammadova"})
+    page = _page(
+        (("Aysel Mammadova", "x"),),
+        (HEADER, ("", "Aysel Mammadova", "", ""), ("PHY101", "Physics", "5", "80")),
+    )
+    reading = _read(agency_a, membership_a, fake_store, page, names=names)
+    assert _origin(reading, "Physics") == RowOrigin(
+        slot=1, table=1, row=2, cells={"title": 1, "credits": 2, "grade": 3}
+    )
+
+
+def test_rows_stored_before_origins_existed_still_load():
+    stored = {"index": 0, "kind": "course", "title": "X", "credits": "6", "grade": "A",
+              "status": None}
+    assert row_from_json(stored).origin is None
+
+
+def test_a_stored_row_loads_back_with_its_origin(agency_a, membership_a, fake_store):
+    from dataclasses import asdict
+
+    row = next(r for r in _read(agency_a, membership_a, fake_store, _page(COURSES)).rows
+               if r.title == "Programming")
+    assert row_from_json(json.loads(json.dumps(asdict(row)))) == row
+
+
+def test_transcript_owner_matches_accepts_transliterated_owner_and_rejects_friend():
+    from apps.documents.transcript import transcript_owner_matches
+
+    page_owner = _page(
+        COURSES, lines=("Tələbə: Əliyeva Nərmin Rauf qızı", "Bakı Dövlət Universiteti")
+    )
+    page_friend = _page(
+        COURSES, lines=("Student Name: Kamran Hasanov", "Bakı Dövlət Universiteti")
+    )
+    assert transcript_owner_matches((page_owner,), ["Narmin Aliyeva"]) is True
+    assert transcript_owner_matches((page_friend,), ["Narmin Aliyeva"]) is False
+

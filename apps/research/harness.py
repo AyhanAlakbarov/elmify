@@ -250,7 +250,10 @@ def _ask(
     novel: list[tuple[Organisation, SweepDiscovery]] = []
     for url in provider.search(request, meter=state.meter):
         seen += 1
-        if is_catalogue(urlsplit(url).hostname or ""):
+        if is_catalogue(
+            urlsplit(url).hostname or "",
+            for_scholarship=config.family != "UNIVERSITY_WIDE",
+        ):
             # The exclusion parameter is a request, not a guarantee (the first
             # live TR sweep wrote twelve denylisted hosts as funders).
             denied += 1

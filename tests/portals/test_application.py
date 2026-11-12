@@ -43,3 +43,16 @@ def test_application_steps_record_an_ordered_audit_trail(agency_a, membership_a)
             detail={"ok": True},
         )
         assert [s.sequence for s in application.steps.order_by("sequence")] == [1, 2]
+
+
+def test_a_cv_status_outside_the_choices_is_refused(agency_a, membership_a):
+    from uuid import uuid4
+
+    from django.db import IntegrityError, transaction
+
+    from apps.portals.models import Application
+
+    with tenant_scope(agency_a.id), pytest.raises(IntegrityError), transaction.atomic():
+        Application.objects.create(
+            tenant=agency_a, student=membership_a, program_id=uuid4(), cv_status="BOGUS"
+        )

@@ -1,0 +1,3184 @@
+{
+ "corrections": {
+  "added": 30,
+  "dropped": 1
+ },
+ "items": {
+  "DIASPORA_AFFINITY": [
+   "Q133004",
+   "Q15911314",
+   "Q48204",
+   "Q1685451"
+  ],
+  "EMPLOYER": [
+   "Q783794",
+   "Q6881511"
+  ],
+  "NATIONAL_GOVERNMENT": [
+   "Q192350",
+   "Q327333"
+  ],
+  "POLITICAL_FOUNDATION": [
+   "Q104832689"
+  ],
+  "PRIVATE_FOUNDATION": [
+   "Q157031",
+   "Q708676"
+  ],
+  "RELIGIOUS": [
+   "Q1530022"
+  ]
+ },
+ "query": "SELECT ?kind ?word ?lang ?rank WHERE {{\n  VALUES ?kind {{ {items} }}\n  {{ ?kind rdfs:label ?word . BIND(0 AS ?rank) }}\n  UNION {{ ?kind skos:altLabel ?word . BIND(1 AS ?rank) }}\n  BIND(LANG(?word) AS ?lang)\n}}",
+ "retrieved_on": "2026-10-13",
+ "source": "https://query.wikidata.org/sparql",
+ "words": {
+  "DIASPORA_AFFINITY": {
+   "ab": [
+    "Адиаспора"
+   ],
+   "af": [
+    "Diaspora"
+   ],
+   "ar": [
+    "شتات",
+    "رابطة",
+    "جمعية تطوعية",
+    "جمعية طلابية",
+    "الشتات",
+    "جمعية نفع عام",
+    "مجتمع الطلاب",
+    "مجتمع طلاب",
+    "مجتمع طلابي",
+    "منظمة طلابي",
+    "منظمة طلابية",
+    "نادي طلابي",
+    "نادي طلبة"
+   ],
+   "arz": [
+    "شتات",
+    "جمعيه تطوعيه"
+   ],
+   "ast": [
+    "Diáspora",
+    "asociación",
+    "organización d'estudiantes"
+   ],
+   "az": [
+    "ictimai birlik",
+    "diaspora",
+    "könüllü assosiasiya",
+    "assosiasiya",
+    "dərnək"
+   ],
+   "ba": [
+    "диаспора",
+    "ассоциация",
+    "берләшмә",
+    "йәмғиәт",
+    "союз"
+   ],
+   "be": [
+    "дыяспара",
+    "асацыяцыя",
+    "студэнцкае таварыства",
+    "саюз",
+    "таварыства"
+   ],
+   "be-tarask": [
+    "дыяспара",
+    "задзіночаньне",
+    "асацыяцыя",
+    "студэнцкае таварыства",
+    "дыяспары",
+    "зьвяз",
+    "таварыства",
+    "студэнцкая арганізацыя",
+    "студэнцкая асацыяцыя"
+   ],
+   "bg": [
+    "диаспора",
+    "сдружение",
+    "асоциация"
+   ],
+   "bn": [
+    "বিক্ষিপ্ত উদ্বাসন",
+    "সমিতি",
+    "ছাত্র সংগঠন"
+   ],
+   "br": [
+    "diaspora",
+    "Klub"
+   ],
+   "bs": [
+    "Dijaspora",
+    "asocijacija"
+   ],
+   "ca": [
+    "diàspora",
+    "associació",
+    "associació voluntària",
+    "organització d'estudiants",
+    "entitat d'estudiants",
+    "organització estudiantil",
+    "student organization"
+   ],
+   "ch": [
+    "otganisasión"
+   ],
+   "ckb": [
+    "تاراوگەنشین"
+   ],
+   "cs": [
+    "diaspora",
+    "sdružení",
+    "spolek",
+    "studentská organizace",
+    "asociace",
+    "dobrovolnický spolek"
+   ],
+   "cv": [
+    "Диаспора"
+   ],
+   "cy": [
+    "Diaspora",
+    "cymdeithas",
+    "mudiad gwirfoddol",
+    "cymdeithas fyfyrwyr",
+    "alltudiaeth",
+    "ddiaspora",
+    "diasbora",
+    "gwasgariad"
+   ],
+   "da": [
+    "diaspora",
+    "forening",
+    "frivillig organisation",
+    "studenterorganisation",
+    "udlændighed",
+    "studenterforening",
+    "studentforening"
+   ],
+   "de": [
+    "Diaspora",
+    "Verein",
+    "Freiwilligenverein",
+    "Studentenverband",
+    "Assoziation",
+    "Verband",
+    "Verbindung",
+    "Verbund",
+    "freiwillige Vereinigung",
+    "Studdentenverband",
+    "Studierendeninitiative"
+   ],
+   "de-at": [
+    "Studentenverband",
+    "Studdentenverband",
+    "Studierendeninitiative"
+   ],
+   "de-ch": [
+    "Freiwilligen-Verein",
+    "Studentenverband",
+    "Freiwillige Vereinigung",
+    "Studdentenverband",
+    "Studierendeninitiative"
+   ],
+   "dtp": [
+    "koisaan"
+   ],
+   "el": [
+    "διασπορά",
+    "σωματείο",
+    "εθελοντικός οργανισμός",
+    "φοιτητική οργάνωση",
+    "σύλλογος",
+    "σύνδεσμος",
+    "εθελοντικό σωματείο",
+    "εθελοντικός σύλλογος"
+   ],
+   "en": [
+    "diaspora",
+    "association",
+    "voluntary association",
+    "student society",
+    "common-interest association",
+    "registered association",
+    "society",
+    "unincorporated association",
+    "voluntary organization",
+    "student association",
+    "student club",
+    "university club",
+    "university society"
+   ],
+   "en-ca": [
+    "voluntary association",
+    "Student society",
+    "common-interest association",
+    "voluntary organisation"
+   ],
+   "en-gb": [
+    "voluntary association",
+    "student society",
+    "common-interest association",
+    "voluntary organisation"
+   ],
+   "eo": [
+    "diasporo",
+    "asocio",
+    "volontula asocio",
+    "studenta organizaĵo"
+   ],
+   "es": [
+    "diáspora",
+    "asociación",
+    "asociación voluntaria",
+    "organización estudiantil",
+    "diásporas",
+    "asociacion sin animo de lucro",
+    "asociacion sin fin de lucro",
+    "asociacion voluntaria",
+    "asociación sin fin de lucro",
+    "asociación sin ánimo de lucro",
+    "entidad sin animo de lucro",
+    "entidad sin fin de lucro",
+    "entidad sin ánimo de lucro",
+    "organizacion no lucrativa",
+    "organizacion sin animo de lucro",
+    "organizacion sin fin de lucro",
+    "organización no lucrativa",
+    "organización sin fin de lucro",
+    "organización sin ánimo de lucro",
+    "asociacion de estudiantes",
+    "asociacion estudiantil",
+    "asociación de estudiantes",
+    "asociación estudiantil",
+    "organizacion de estudiantes",
+    "organizacion estudiantil",
+    "organización de estudiantes",
+    "sociedad universitaria"
+   ],
+   "et": [
+    "diasporaa",
+    "ühing",
+    "selts",
+    "üliõpilasorganisatsioon",
+    "assotsiatsioon",
+    "organisatsioon",
+    "tudengiorganisatsioon"
+   ],
+   "eu": [
+    "diaspora",
+    "elkarte",
+    "irabazi asmorik gabeko elkartea",
+    "ikasleen elkartea"
+   ],
+   "fa": [
+    "پراکنده",
+    "اجتماع داوطلبانه",
+    "انجمن دانشجویی",
+    "دیاسپورا",
+    "دیاسپوراها",
+    "اتحاد داوطلبانه",
+    "اجتماع منافع مشترک",
+    "سازمان داوطلبانه",
+    "گروه داوطلبانه"
+   ],
+   "fi": [
+    "diaspora",
+    "yhdistys",
+    "opiskelijajärjestö",
+    "järjestö",
+    "seura",
+    "vapaaehtoisjärjestö"
+   ],
+   "fr": [
+    "diaspora",
+    "association",
+    "association à but non lucratif",
+    "organisation étudiante",
+    "diasporas",
+    "association a buts non lucratifs",
+    "association à buts non lucratifs",
+    "associations sans but lucratif",
+    "associations à but non lucratif",
+    "association d'étudiants",
+    "association étudiante"
+   ],
+   "fy": [
+    "Diaspora",
+    "feriening"
+   ],
+   "ga": [
+    "diaspóra",
+    "cumann",
+    "eagraíocht shaorálach"
+   ],
+   "gd": [
+    "comann oileanach",
+    "comann nan oileanach"
+   ],
+   "gl": [
+    "diáspora",
+    "asociación",
+    "organización estudantil",
+    "organización",
+    "asociación de estudiantes",
+    "asociación estudantil",
+    "organización de estudiantes"
+   ],
+   "gsw": [
+    "Diaspora",
+    "Verband",
+    "Freiwilligen-Verein",
+    "Organisazion",
+    "Verbindig",
+    "Verein"
+   ],
+   "gv": [
+    "reagheydys arryltagh"
+   ],
+   "ha": [
+    "Yan kasashen waje"
+   ],
+   "haw": [
+    "hui"
+   ],
+   "he": [
+    "פזורה",
+    "אגודה",
+    "עמותה",
+    "ארגון סטודנטים",
+    "תפוצה",
+    "איגוד",
+    "התאחדות התנדבותית",
+    "התאחדות וולנטרית"
+   ],
+   "hi": [
+    "विकीर्णन",
+    "voluntary association"
+   ],
+   "hr": [
+    "Dijaspora",
+    "udruga"
+   ],
+   "hsb": [
+    "diaspora",
+    "zwjazk",
+    "towarstwo",
+    "asociacija",
+    "organizacija",
+    "zjednoćenstwo"
+   ],
+   "hu": [
+    "diaszpóra",
+    "szövetség",
+    "önkéntes társulás",
+    "diákszervezet",
+    "egyesület",
+    "egyesülés",
+    "egylet",
+    "társaság",
+    "társulás",
+    "nonprofit egyesület",
+    "nonprofit szervezet",
+    "diákegyesület",
+    "diákklub",
+    "diákszövetség",
+    "egyetemi egyesület",
+    "egyetemi klub",
+    "egyetemi szervezet",
+    "egyetemi szövetség",
+    "hallgatói egyesület",
+    "hallgatói szervezet",
+    "hallgatói szövetség"
+   ],
+   "hy": [
+    "սփյուռք",
+    "միություն",
+    "ընկերություն",
+    "ասոցիացիա, միություն"
+   ],
+   "hyw": [
+    "Սփիւռք"
+   ],
+   "ia": [
+    "Diaspora",
+    "association",
+    "club",
+    "societate"
+   ],
+   "id": [
+    "diaspora",
+    "perkumpulan",
+    "Perhimpunan sukarela",
+    "himpunan mahasiswa",
+    "asosiasi",
+    "organisasi mahasiswa"
+   ],
+   "ilo": [
+    "diaspora"
+   ],
+   "io": [
+    "Disperseso (antropologio)",
+    "klubo"
+   ],
+   "is": [
+    "Félagasamtök"
+   ],
+   "isv-cyrl": [
+    "диаспора"
+   ],
+   "isv-latn": [
+    "diaspora"
+   ],
+   "it": [
+    "diaspora",
+    "associazione",
+    "associazione studentesca",
+    "Associazione riconosciuta",
+    "Associazioni riconosciute",
+    "associazione di volontariato",
+    "organizzazione studentesca"
+   ],
+   "ja": [
+    "ディアスポラ",
+    "社団",
+    "結社",
+    "学生会",
+    "協会",
+    "任意団体",
+    "権利能力なき社団"
+   ],
+   "ka": [
+    "დიასპორა",
+    "ასოციაცია"
+   ],
+   "kab": [
+    "Tiddukla tamazɣalt"
+   ],
+   "kk": [
+    "Диаспора",
+    "Клуб"
+   ],
+   "kl": [
+    "association"
+   ],
+   "kn": [
+    "ಡಯಾಸ್ಪೋರಾ",
+    "ಸಂಘ"
+   ],
+   "ko": [
+    "디아스포라",
+    "협회",
+    "조합",
+    "학생 단체",
+    "조합원"
+   ],
+   "ku": [
+    "Diyaspora",
+    "komele"
+   ],
+   "ky": [
+    "Диаспора"
+   ],
+   "la": [
+    "Diaspora",
+    "associatio voluntaria"
+   ],
+   "lb": [
+    "Veräin",
+    "Fräiwellegeveräin"
+   ],
+   "lfn": [
+    "asosia"
+   ],
+   "lmo": [
+    "assuciaziù"
+   ],
+   "lt": [
+    "diaspora",
+    "asociacija",
+    "registruotoji draugija",
+    "sąjunga"
+   ],
+   "lv": [
+    "diaspora",
+    "asociācija",
+    "biedrība",
+    "studentu asociācija",
+    "apvienība",
+    "savienība",
+    "brīvprātīga apvienība",
+    "studentu biedrība",
+    "studentu sabiedrība"
+   ],
+   "mi": [
+    "rōpū"
+   ],
+   "mk": [
+    "дијаспора",
+    "здружение",
+    "студентска организација",
+    "асоцијација"
+   ],
+   "ml": [
+    "ഡയസ്പൊറ",
+    "വിദ്യാർത്ഥി സംഘടന"
+   ],
+   "mnw": [
+    "ဒါင်ယာတ်သပဝ်ရာ ကေုာံ ပရေင်ကၠောအ်က္ဍပယျဵု"
+   ],
+   "ms": [
+    "diaspora",
+    "persatuan",
+    "persatuan sukarela",
+    "persatuan pelajar",
+    "pertubuhan pelajar"
+   ],
+   "ms-arab": [
+    "ڤرساتوان",
+    "ڤرساتوان سوکاريلا",
+    "ڤرساتوان ڤلاجر"
+   ],
+   "mt": [
+    "diaspora",
+    "organizazzjoni voluntarja",
+    "għaqda voluntarja"
+   ],
+   "my": [
+    "ကျောင်းသားအဖွဲ့အစည်း"
+   ],
+   "mzn": [
+    "انجمن"
+   ],
+   "nb": [
+    "diaspora",
+    "forening",
+    "studentforening",
+    "frivillig forening",
+    "studentorganisasjon",
+    "studentsamfunn"
+   ],
+   "nds-nl": [
+    "diaspora"
+   ],
+   "nl": [
+    "diaspora",
+    "vereniging",
+    "vrijwilligersorganisatie",
+    "studentenvereniging",
+    "associatie",
+    "dispuut",
+    "sociëteit",
+    "studentensociëteit"
+   ],
+   "nn": [
+    "diaspora",
+    "samskipnad",
+    "fellesskap",
+    "foreining"
+   ],
+   "oc": [
+    "associacion"
+   ],
+   "pa": [
+    "ਡਾਇਆਸਪੋਰਾ"
+   ],
+   "pap": [
+    "diáspora"
+   ],
+   "pl": [
+    "diaspora",
+    "stowarzyszenie",
+    "organizacja studencka",
+    "towarzystwo"
+   ],
+   "ps": [
+    "خواره ولسونه (ډیاسپورا)"
+   ],
+   "pt": [
+    "diáspora",
+    "associação",
+    "organização estudantil",
+    "associação de interesse comum",
+    "organização voluntária"
+   ],
+   "pt-br": [
+    "associação",
+    "confederação",
+    "federação",
+    "organização",
+    "união"
+   ],
+   "ro": [
+    "diaspora",
+    "asociație",
+    "asociație voluntară",
+    "societate de studenți",
+    "diasporă",
+    "asociaţie",
+    "organizație de voluntariat",
+    "asociație de studenți",
+    "organizație de studenți"
+   ],
+   "ru": [
+    "диаспора",
+    "ассоциация",
+    "добровольная ассоциация",
+    "студенческое общество",
+    "добровольное объединение",
+    "некоммерческое партнёрство",
+    "общество",
+    "союз",
+    "федерация",
+    "студенческая ассоциация",
+    "студенческая организация"
+   ],
+   "rue": [
+    "Диаспора"
+   ],
+   "sat": [
+    "ᱜᱟᱶᱛᱟ"
+   ],
+   "scn": [
+    "Diàspora"
+   ],
+   "se": [
+    "diaspora",
+    "searvi"
+   ],
+   "sh": [
+    "Dijaspora",
+    "Udruženje"
+   ],
+   "shn": [
+    "ၸုမ်းလုၵ်ႈႁဵၼ်း"
+   ],
+   "si": [
+    "ඩයස්පෝරා"
+   ],
+   "sk": [
+    "Diaspora",
+    "združenie",
+    "spolok",
+    "Diaspóra",
+    "asociácia"
+   ],
+   "sl": [
+    "diaspora",
+    "združenje",
+    "prostovoljsko združenje",
+    "študentsko združenje",
+    "razseljenstvo",
+    "društvo",
+    "organizacija",
+    "prostovoljno društvo",
+    "prostovoljsko društvo",
+    "študentska zveza",
+    "študentski klub",
+    "študentsko društvo"
+   ],
+   "sm": [
+    "fa'alapotopotoga"
+   ],
+   "smn": [
+    "diaspora",
+    "servi"
+   ],
+   "sms": [
+    "diaspora",
+    "õhttõs"
+   ],
+   "so": [
+    "Qurbajoog"
+   ],
+   "sq": [
+    "diasporë"
+   ],
+   "sr": [
+    "дијаспора",
+    "асоцијација",
+    "удружење",
+    "студентско удружење",
+    "друштво",
+    "организација",
+    "студентска организација"
+   ],
+   "sr-ec": [
+    "Дијаспора"
+   ],
+   "sr-el": [
+    "Dijaspora"
+   ],
+   "sv": [
+    "diaspora",
+    "förening",
+    "frivillig förening",
+    "studentorganisation",
+    "klubb",
+    "sällskap"
+   ],
+   "syl": [
+    "ꠍꠣꠔ꠆ꠞ ꠡꠝꠣꠎ"
+   ],
+   "ta": [
+    "விரிந்து பரவிய புலம்பெயர் இனம்",
+    "அமைப்பு",
+    "தன்னார்வ அமைப்பு",
+    "மாணவர் அமைப்பு",
+    "கழகம்",
+    "கூட்டமைப்பு",
+    "சங்கம்"
+   ],
+   "te": [
+    "samajamlo vidyarthula pathra"
+   ],
+   "tg": [
+    "Диаспора",
+    "Анҷуман"
+   ],
+   "th": [
+    "การพลัดถิ่น",
+    "สมาคม",
+    "สมาคมโดยสมัครใจ",
+    "Diaspora",
+    "Diasporic",
+    "ผู้พลัดถิ่น",
+    "องค์กร",
+    "สมาคมจดทะเบียน",
+    "สมาคมที่มีผลประโยชน์ร่วมกัน",
+    "สมาคมที่ไม่มีหน่วยงาน",
+    "สังคม",
+    "องค์กรโดยสมัครใจ"
+   ],
+   "tl": [
+    "Diaspora"
+   ],
+   "tr": [
+    "dernek",
+    "diaspora",
+    "birlik",
+    "hayır kurumları",
+    "öğrenci topluluğu",
+    "Diyaspora",
+    "Kopuntu",
+    "gönüllü kuruluşlar",
+    "gönüllü organizasyon",
+    "hayır kurumu",
+    "kayıtlı dernek",
+    "kâr amacı gütmeyen dernek",
+    "ortak çıkar ilişkisi",
+    "toplum",
+    "tüzel kişiliği olmayan dernek",
+    "öğrenci derneği"
+   ],
+   "tt": [
+    "Диаспора",
+    "ассоциация"
+   ],
+   "uk": [
+    "діаспора",
+    "асоціація",
+    "студентське товариство",
+    "діаспори",
+    "діяспора",
+    "асоціація (організація)",
+    "союз",
+    "спілка",
+    "студентська асоціація",
+    "студентська організація"
+   ],
+   "ur": [
+    "انتشار",
+    "ایسوسی ایشن",
+    "آزادی اجتماع"
+   ],
+   "uz": [
+    "Diaspora"
+   ],
+   "vec": [
+    "diàspora",
+    "asociasion"
+   ],
+   "vi": [
+    "diaspora",
+    "hiệp hội",
+    "hiệp hội tự nguyện",
+    "hội nhóm sinh viên",
+    "di cư không tự nguyện",
+    "người di cư",
+    "hiệp hội lợi ích chung",
+    "tổ chức tự nguyện",
+    "câu lạc bộ sinh viên",
+    "hội đoàn sinh viên",
+    "tổ chức sinh viên"
+   ],
+   "war": [
+    "Diaspora"
+   ],
+   "wuu": [
+    "流散"
+   ],
+   "yi": [
+    "גלות",
+    "גולה",
+    "חוץ לארץ"
+   ],
+   "yue": [
+    "流散",
+    "學生組織"
+   ],
+   "zh": [
+    "流散",
+    "协会",
+    "協會",
+    "學生組織",
+    "僑居",
+    "學生團體"
+   ],
+   "zh-cn": [
+    "流散",
+    "协会",
+    "学生组织"
+   ],
+   "zh-hans": [
+    "流散",
+    "协会",
+    "学生组织"
+   ],
+   "zh-hant": [
+    "流散",
+    "協會",
+    "學生組織",
+    "僑居"
+   ],
+   "zh-hk": [
+    "流散",
+    "協會",
+    "學生組織"
+   ],
+   "zh-mo": [
+    "協會",
+    "學生組織"
+   ],
+   "zh-my": [
+    "协会",
+    "学生组织"
+   ],
+   "zh-sg": [
+    "流散",
+    "协会",
+    "学生组织"
+   ],
+   "zh-tw": [
+    "流散",
+    "協會",
+    "學生組織"
+   ]
+  },
+  "EMPLOYER": {
+   "af": [
+    "maatskappy",
+    "onderneming"
+   ],
+   "an": [
+    "Interpresa"
+   ],
+   "ar": [
+    "شركة",
+    "مقاولة",
+    "مؤسسة",
+    "مؤسسة تجارية"
+   ],
+   "ary": [
+    "شركة"
+   ],
+   "ast": [
+    "empresa"
+   ],
+   "az": [
+    "şirkət"
+   ],
+   "azb": [
+    "شیرکت"
+   ],
+   "ba": [
+    "компания",
+    "предприятие",
+    "фирма"
+   ],
+   "ban": [
+    "Pautsahaan"
+   ],
+   "bar": [
+    "Gsejschaft"
+   ],
+   "be": [
+    "фірма",
+    "прадпрыемства"
+   ],
+   "be-tarask": [
+    "кампанія",
+    "прадпрыемства"
+   ],
+   "bew": [
+    "matskepé"
+   ],
+   "bg": [
+    "компания",
+    "предприятие",
+    "търговско дружество",
+    "фирма"
+   ],
+   "bn": [
+    "কোম্পানি"
+   ],
+   "br": [
+    "embregerezh"
+   ],
+   "bs": [
+    "kompanija",
+    "preduzeće"
+   ],
+   "ca": [
+    "societat",
+    "empresa",
+    "companyia"
+   ],
+   "cdo": [
+    "gŭng-sĭ"
+   ],
+   "ckb": [
+    "کۆمپانیا"
+   ],
+   "co": [
+    "impresa",
+    "azienda"
+   ],
+   "cs": [
+    "společnost",
+    "podnik",
+    "firma"
+   ],
+   "cv": [
+    "йĕркелĕм"
+   ],
+   "cy": [
+    "cwmni",
+    "menter"
+   ],
+   "da": [
+    "selskab",
+    "foretagende",
+    "kompagni"
+   ],
+   "de": [
+    "Gesellschaft",
+    "Unternehmen",
+    "Compagnie",
+    "Kompanie",
+    "Personenverband",
+    "Personenvereinigung"
+   ],
+   "diq": [
+    "Vırazgah"
+   ],
+   "el": [
+    "εταιρεία",
+    "επιχείρηση",
+    "εταιρία",
+    "σία",
+    "συντροφία"
+   ],
+   "en": [
+    "company",
+    "enterprise",
+    "firm",
+    "business enterprise",
+    "business enterprises",
+    "companies",
+    "enterprise company",
+    "enterprise firm",
+    "enterprises",
+    "firms",
+    "undertaking",
+    "undertakings"
+   ],
+   "en-ca": [
+    "company"
+   ],
+   "en-gb": [
+    "company"
+   ],
+   "en-us": [
+    "enterprise"
+   ],
+   "eo": [
+    "kompanio",
+    "entrepreno"
+   ],
+   "es": [
+    "compañía",
+    "empresa",
+    "compañía comercial"
+   ],
+   "et": [
+    "äriühing",
+    "ettevõte"
+   ],
+   "eu": [
+    "konpainia",
+    "enpresa"
+   ],
+   "fa": [
+    "شرکت"
+   ],
+   "fi": [
+    "yhtiö",
+    "yritys"
+   ],
+   "fo": [
+    "fyritøka"
+   ],
+   "fr": [
+    "compagnie",
+    "entreprise",
+    "société",
+    "boîte",
+    "business",
+    "firme"
+   ],
+   "frp": [
+    "Entreprêsa"
+   ],
+   "ga": [
+    "comhlacht",
+    "fiontar",
+    "cuideachta"
+   ],
+   "gl": [
+    "sociedade",
+    "empresa",
+    "compañía"
+   ],
+   "gsw": [
+    "Undernäme",
+    "Firma"
+   ],
+   "gu": [
+    "કંપની"
+   ],
+   "gv": [
+    "colught",
+    "ventyr"
+   ],
+   "ha": [
+    "kamfani",
+    "ma'aikata"
+   ],
+   "haw": [
+    "hui"
+   ],
+   "he": [
+    "חברה",
+    "חברה מסחרית"
+   ],
+   "hi": [
+    "कंपनी",
+    "उद्यम",
+    "निगम"
+   ],
+   "hr": [
+    "trgovačko društvo",
+    "poduzeće"
+   ],
+   "hsb": [
+    "towarstwo",
+    "předewzaće",
+    "kompanija"
+   ],
+   "ht": [
+    "Antrepriz"
+   ],
+   "hu": [
+    "cég",
+    "vállalkozás",
+    "egyesület",
+    "gazdasági társaság",
+    "személyegyesülés",
+    "társaság",
+    "társulat",
+    "vállalat"
+   ],
+   "hy": [
+    "ձեռնարկություն",
+    "Ձեռնարկություններ"
+   ],
+   "hyw": [
+    "ձեռնարկութիւն"
+   ],
+   "ia": [
+    "interprisa",
+    "firma"
+   ],
+   "iba": [
+    "kompeni"
+   ],
+   "id": [
+    "perusahaan",
+    "badan usaha",
+    "firma"
+   ],
+   "io": [
+    "kompanio",
+    "Entraprezo"
+   ],
+   "is": [
+    "félag"
+   ],
+   "isv-cyrl": [
+    "компанија",
+    "фирма"
+   ],
+   "isv-latn": [
+    "kompanija",
+    "firma"
+   ],
+   "it": [
+    "società",
+    "impresa",
+    "compagnia",
+    "impresa commerciale",
+    "imprese",
+    "imprese commerciali"
+   ],
+   "ja": [
+    "会社",
+    "事業者",
+    "事業主体",
+    "事業体",
+    "業者"
+   ],
+   "jam": [
+    "kompini"
+   ],
+   "ka": [
+    "კომპანია",
+    "საწარმო"
+   ],
+   "kaa": [
+    "kompaniya",
+    "mákeme"
+   ],
+   "kk": [
+    "фирма",
+    "Кәсіпорын"
+   ],
+   "kk-arab": [
+    "فىيرما"
+   ],
+   "kk-cyrl": [
+    "фирма"
+   ],
+   "kk-latn": [
+    "fïrma"
+   ],
+   "kn": [
+    "ಕಂಪನಿ/ಸಂಘ"
+   ],
+   "ko": [
+    "회사",
+    "기업"
+   ],
+   "ks": [
+    "کمپنی"
+   ],
+   "ku": [
+    "dada pardarî",
+    "pargîdanî",
+    "şirket"
+   ],
+   "ku-latn": [
+    "pargîdanî",
+    "şirket"
+   ],
+   "ky": [
+    "фирма"
+   ],
+   "la": [
+    "corporatio",
+    "coeptus",
+    "corporatio mercatoria"
+   ],
+   "lb": [
+    "Entreprise",
+    "Gesellschaft"
+   ],
+   "lld": [
+    "Firma"
+   ],
+   "lmo": [
+    "impresa"
+   ],
+   "lt": [
+    "įmonė",
+    "bendrovė"
+   ],
+   "lv": [
+    "komercsabiedrība",
+    "sabiedrība",
+    "kompānija",
+    "uzņēmējsabiedrība",
+    "firma",
+    "uzņēmums"
+   ],
+   "lzh": [
+    "公司",
+    "企業"
+   ],
+   "mhr": [
+    "ыштыквер"
+   ],
+   "mi": [
+    "kamupene"
+   ],
+   "min": [
+    "parusahoan"
+   ],
+   "mk": [
+    "трговско друштво",
+    "претпријатие"
+   ],
+   "ml": [
+    "എന്റര്പ്രൈസ്"
+   ],
+   "mnw": [
+    "ရုင်စက်"
+   ],
+   "mr": [
+    "कंपनी",
+    "उद्यम"
+   ],
+   "ms": [
+    "syarikat",
+    "perusahaan",
+    "firma",
+    "bidang usaha",
+    "perusahaan perniagaan"
+   ],
+   "ms-arab": [
+    "شريکت",
+    "ڤراوسهاءن"
+   ],
+   "mt": [
+    "kumpanija"
+   ],
+   "my": [
+    "အင်တာပရိုက်စ်",
+    "ကုမ္ပဏီ",
+    "အန်တာပရိုက်စ်"
+   ],
+   "nan": [
+    "kong-si"
+   ],
+   "nb": [
+    "selskap",
+    "foretak",
+    "forening",
+    "frivillighet",
+    "klubb"
+   ],
+   "ne": [
+    "कम्पनी",
+    "कम्पनि",
+    "निकाय"
+   ],
+   "nl": [
+    "vennootschap",
+    "onderneming",
+    "bedrijf"
+   ],
+   "nn": [
+    "selskap"
+   ],
+   "oc": [
+    "Entrepresa"
+   ],
+   "or": [
+    "କମ୍ପାନୀ"
+   ],
+   "os": [
+    "компани"
+   ],
+   "ota": [
+    "شركت"
+   ],
+   "pa": [
+    "ਕੰਪਨੀ"
+   ],
+   "pl": [
+    "spółka",
+    "przedsiębiorstwo"
+   ],
+   "ps": [
+    "ملتون"
+   ],
+   "pt": [
+    "empresa",
+    "sociedade anônima"
+   ],
+   "pt-br": [
+    "empresa",
+    "sociedade",
+    "companhia"
+   ],
+   "qu": [
+    "ruruchina",
+    "hatun ruruchi",
+    "hirma",
+    "kumpaniya",
+    "kurpurasyun",
+    "llamk'a masichanakuy",
+    "qhatu masichanakuy"
+   ],
+   "rm": [
+    "interpresa"
+   ],
+   "ro": [
+    "companie",
+    "întreprindere",
+    "firmă",
+    "societate",
+    "firme",
+    "întreprindere comercială"
+   ],
+   "ru": [
+    "компания",
+    "предприятие",
+    "фирма"
+   ],
+   "rup": [
+    "cumpanie"
+   ],
+   "scn": [
+    "azzenna",
+    "mprisa",
+    "imprisa"
+   ],
+   "sco": [
+    "company",
+    "enterprise"
+   ],
+   "sd": [
+    "ڪمپني"
+   ],
+   "se": [
+    "fitnodat"
+   ],
+   "sh": [
+    "kompanija"
+   ],
+   "shi": [
+    "tamssntit"
+   ],
+   "si": [
+    "සමාගම"
+   ],
+   "sk": [
+    "podnik"
+   ],
+   "sl": [
+    "družba",
+    "podjetje",
+    "firma",
+    "združenje oseb"
+   ],
+   "smn": [
+    "seervâs"
+   ],
+   "sms": [
+    "põõrǥâs"
+   ],
+   "so": [
+    "shirkad"
+   ],
+   "sq": [
+    "kompani",
+    "ndërmarrje",
+    "firmë",
+    "shenja dalluese",
+    "Ndërmarrje të biznesit"
+   ],
+   "sr": [
+    "предузеће",
+    "ентерпрајс",
+    "компанија"
+   ],
+   "sr-ec": [
+    "предузеће"
+   ],
+   "sr-el": [
+    "preduzeće"
+   ],
+   "sv": [
+    "bolag",
+    "företag"
+   ],
+   "sw": [
+    "kampuni"
+   ],
+   "ta": [
+    "நிறுவனம்"
+   ],
+   "te": [
+    "కంపెనీ"
+   ],
+   "tg": [
+    "ширкат"
+   ],
+   "th": [
+    "บริษัท",
+    "องค์กร"
+   ],
+   "tl": [
+    "kompanya"
+   ],
+   "tok": [
+    "kulupu esun"
+   ],
+   "tr": [
+    "şirket",
+    "ticari işletme",
+    "kar amaçlı şirket",
+    "kâr amaçlı şirket"
+   ],
+   "tt": [
+    "ширкәт",
+    "предприятие",
+    "firma",
+    "kompaniä",
+    "oyışması",
+    "şirkät",
+    "фирма"
+   ],
+   "tt-cyrl": [
+    "кәсәбә"
+   ],
+   "uk": [
+    "фірма",
+    "підприємство",
+    "компанія"
+   ],
+   "ur": [
+    "کمپنی",
+    "انٹرپرائز",
+    "فرم",
+    "کو۔"
+   ],
+   "uz": [
+    "kompaniya",
+    "korxona",
+    "аirma"
+   ],
+   "vec": [
+    "socetà",
+    "inpreza"
+   ],
+   "vi": [
+    "công ty",
+    "doanh nghiệp",
+    "doanh thương",
+    "hãng",
+    "hãng kinh doanh",
+    "xí nghiệp"
+   ],
+   "vls": [
+    "Vennootschap"
+   ],
+   "wuu": [
+    "公司"
+   ],
+   "yi": [
+    "פירמע",
+    "אונטערנעמונג"
+   ],
+   "yo": [
+    "ilé-iṣé",
+    "òwò"
+   ],
+   "yue": [
+    "公司",
+    "企業"
+   ],
+   "za": [
+    "gunghswh"
+   ],
+   "zgh": [
+    "ⵜⴰⵎⵙⵙⵓⵔⵜ (ⵜⴰⵎⵙⵙⵏⵜⵉⵜ)"
+   ],
+   "zh": [
+    "公司",
+    "工商企业",
+    "事业者",
+    "企业",
+    "企業"
+   ],
+   "zh-cn": [
+    "公司",
+    "工商企业"
+   ],
+   "zh-hans": [
+    "公司",
+    "工商企业",
+    "事业者"
+   ],
+   "zh-hant": [
+    "公司",
+    "工商企業"
+   ],
+   "zh-hk": [
+    "公司"
+   ],
+   "zh-mo": [
+    "公司"
+   ],
+   "zh-my": [
+    "公司"
+   ],
+   "zh-sg": [
+    "公司"
+   ],
+   "zh-tw": [
+    "公司",
+    "工商企業",
+    "商業組織"
+   ],
+   "zu": [
+    "umshumanqa"
+   ]
+  },
+  "NATIONAL_GOVERNMENT": {
+   "af": [
+    "regeringsagentskap"
+   ],
+   "ak": [
+    "Asuɛyɛ"
+   ],
+   "ar": [
+    "وزارة",
+    "مؤسسة حكومية",
+    "الوزارة",
+    "وزارات",
+    "وزاره",
+    "إدارة حكومية",
+    "منشأة حكومية",
+    "وكالة حكومية"
+   ],
+   "arz": [
+    "وزاره",
+    "مؤسسه حكوميه",
+    "وزارة"
+   ],
+   "ast": [
+    "ministeriu",
+    "organismu públicu",
+    "axencia estatal",
+    "axencia pública"
+   ],
+   "az": [
+    "nazirlik",
+    "dövlət qurumu"
+   ],
+   "azb": [
+    "باخانلیق"
+   ],
+   "ba": [
+    "министрлыҡ",
+    "йәмәғәт власы органы",
+    "дәүләт власы органы"
+   ],
+   "be": [
+    "міністэрства",
+    "орган улады"
+   ],
+   "be-tarask": [
+    "міністэрства",
+    "дзяржаўны орган",
+    "орган улады"
+   ],
+   "bg": [
+    "министерство",
+    "държавна институция"
+   ],
+   "bn": [
+    "মন্ত্রণালয়",
+    "সরকারি সংস্থা",
+    "মন্ত্রী বিভাগ",
+    "মন্ত্রীবর্গ",
+    "মন্ত্রীমণ্ডলী",
+    "সরকারী মন্ত্রণালয়"
+   ],
+   "br": [
+    "ministrerezh",
+    "aozadur foran",
+    "ajañs publik",
+    "aozadur gouarnamantel",
+    "aozadur publik",
+    "ensavadur publik"
+   ],
+   "bs": [
+    "ministarstvo",
+    "vladina agencija"
+   ],
+   "bxr": [
+    "Яаман"
+   ],
+   "ca": [
+    "ministeri",
+    "agència governamental",
+    "Departament ministerial",
+    "organisme governamental",
+    "organisme públic"
+   ],
+   "ch": [
+    "dipåttamento"
+   ],
+   "ckb": [
+    "وەزارەت",
+    "دامەزراوەی میری"
+   ],
+   "cs": [
+    "ministerstvo",
+    "orgán státní správy",
+    "Ministerstva",
+    "úřad"
+   ],
+   "cv": [
+    "Министăрлăх"
+   ],
+   "cy": [
+    "llywodraeth",
+    "asiantaeth lywodraethol",
+    "asiantaeth y llywodraeth"
+   ],
+   "da": [
+    "ministerium",
+    "offentlig myndighed",
+    "Ministerie",
+    "Ministeriet",
+    "departement",
+    "myndighed",
+    "nævn",
+    "råd",
+    "statslig myndighed",
+    "styrelse"
+   ],
+   "de": [
+    "Ministerium",
+    "Behörde",
+    "Ministerien",
+    "Amt",
+    "Regierungsbehörde",
+    "Verwaltungsbehörde",
+    "Verwaltungsinstanz",
+    "staatliche Behörde",
+    "öffentliche Behörde"
+   ],
+   "dtp": [
+    "komontirian"
+   ],
+   "el": [
+    "υπουργείο",
+    "κρατική υπηρεσία"
+   ],
+   "en": [
+    "ministry",
+    "government agency",
+    "government ministries",
+    "government ministry",
+    "line ministry",
+    "ministries",
+    "gov agency",
+    "government body",
+    "government entity",
+    "government unit"
+   ],
+   "en-gb": [
+    "government department",
+    "government agency",
+    "government body"
+   ],
+   "eo": [
+    "ministerio",
+    "registara organizaĵo"
+   ],
+   "es": [
+    "ministerio",
+    "organismo público",
+    "Secretaria de Estado",
+    "Secretaría de Estado",
+    "departamento ministerial",
+    "ministerial",
+    "ministerios",
+    "agencia de gobierno",
+    "agencia gubernamental",
+    "agencia pública",
+    "entidad de gobierno",
+    "entidad gubernamental"
+   ],
+   "et": [
+    "ministeerium",
+    "asutus"
+   ],
+   "eu": [
+    "ministerio",
+    "erakunde autonomo",
+    "organismo autonomo"
+   ],
+   "fa": [
+    "وزارت",
+    "سازمان دولتی"
+   ],
+   "fi": [
+    "ministeriö",
+    "viranomainen",
+    "viranomaiset"
+   ],
+   "fo": [
+    "málaráð",
+    "stjórnardeild"
+   ],
+   "fr": [
+    "ministère",
+    "agence publique",
+    "département ministériel",
+    "ministere",
+    "ministères",
+    "sinistère",
+    "agence gouvernementale",
+    "agences publiques",
+    "organisme public"
+   ],
+   "ga": [
+    "aireacht",
+    "gníomhaireacht rialtais",
+    "gníomhaireacht"
+   ],
+   "gl": [
+    "ministerio",
+    "axencia gobernamental",
+    "axencia estatal",
+    "axencia gubernamental",
+    "axencia pública",
+    "organismo autónomo",
+    "organismo autónomo administrativo"
+   ],
+   "gv": [
+    "jantys reiltys"
+   ],
+   "haw": [
+    "ʻoihana"
+   ],
+   "he": [
+    "משרד ממשלתי",
+    "רשות ממשלתית",
+    "משרד ממשלה",
+    "גוף ממשלתי",
+    "סוכנות ממשלתית"
+   ],
+   "hi": [
+    "मंत्रालय",
+    "सरकारी संस्थान"
+   ],
+   "hr": [
+    "ministarstvo"
+   ],
+   "hsb": [
+    "ministerstwo",
+    "zarjad"
+   ],
+   "hu": [
+    "minisztérium",
+    "állami szerv",
+    "hatóság",
+    "kormányhatóság",
+    "kormányhivatal",
+    "állami hivatal"
+   ],
+   "hy": [
+    "նախարարություն",
+    "պետական մարմին",
+    "իշխանության մարմին",
+    "պետական իշխանության մարմին"
+   ],
+   "ia": [
+    "Ministerio",
+    "agentia governamental"
+   ],
+   "id": [
+    "kementerian",
+    "lembaga negara",
+    "badan pemerintahan",
+    "entitas pemerintah",
+    "instansi pemerintah",
+    "lembaga pemerintah",
+    "lembaga pemerintahan",
+    "lembaga pengelola publik",
+    "lembaga pengelola umum",
+    "lembaga publik"
+   ],
+   "ig": [
+    "Ụlọ ọrụ Gọọmenti"
+   ],
+   "ilo": [
+    "ahensia ti gobierno"
+   ],
+   "io": [
+    "Ministerio"
+   ],
+   "is": [
+    "Ráðuneyti"
+   ],
+   "it": [
+    "ministero",
+    "agenzia governativa",
+    "dicastero",
+    "Ufficio statale",
+    "agenzia",
+    "agenzia di diritto pubblico",
+    "agenzia pubblica",
+    "entità governativa"
+   ],
+   "ja": [
+    "政府機関",
+    "省庁",
+    "政府団体",
+    "政府当局",
+    "政府組織"
+   ],
+   "jv": [
+    "kamentrian"
+   ],
+   "ka": [
+    "სამინისტრო",
+    "საჯარო ხელისუფლება",
+    "სააგენტო",
+    "სამთავრობო სააგენტო"
+   ],
+   "kk": [
+    "министрлік"
+   ],
+   "kk-arab": [
+    "مىينىيسترلىك"
+   ],
+   "kk-cn": [
+    "مىينىيسترلىك"
+   ],
+   "kk-cyrl": [
+    "Министрлік"
+   ],
+   "kk-kz": [
+    "Министрлік"
+   ],
+   "kk-latn": [
+    "Mïnïstrlik"
+   ],
+   "kk-tr": [
+    "Mïnïstrlik"
+   ],
+   "ko": [
+    "부처",
+    "정부 기관",
+    "관서",
+    "관청",
+    "정부기관"
+   ],
+   "krc": [
+    "Министрлик"
+   ],
+   "ks": [
+    "سَرکٲرؠ ایجنسی"
+   ],
+   "ky": [
+    "Министрлик"
+   ],
+   "la": [
+    "ministerium",
+    "agentia gubernimentalis"
+   ],
+   "lb": [
+    "Ministère",
+    "ëffentlech Verwaltung",
+    "ëffentlech Administratioun"
+   ],
+   "lmo": [
+    "agenzia del governo"
+   ],
+   "lo": [
+    "ກະຊວງ",
+    "ອຳນາດບໍລິຫານ"
+   ],
+   "lt": [
+    "ministerija",
+    "valdžios institucija"
+   ],
+   "lv": [
+    "ministrija",
+    "valdības aģentūra",
+    "valsts aģentūra"
+   ],
+   "mdf": [
+    "Министерствась"
+   ],
+   "mi": [
+    "manatū"
+   ],
+   "mk": [
+    "министерство",
+    "владин орган",
+    "владина агенција",
+    "државен орган",
+    "државна агенција"
+   ],
+   "ml": [
+    "സർക്കാർ വിഭാഗം",
+    "സർക്കാർ സേന"
+   ],
+   "mn": [
+    "Төрийн байгууллага"
+   ],
+   "mni": [
+    "ꯂꯩꯉꯥꯛꯀꯤ ꯑꯦꯖꯦꯟꯁꯤ"
+   ],
+   "mr": [
+    "मंत्रालय",
+    "सरकारी संस्था"
+   ],
+   "ms": [
+    "kementerian",
+    "badan kerajaan",
+    "kementerian kerajaan",
+    "kementerian pemerintah",
+    "agensi kerajaan",
+    "agensi pemerintah",
+    "badan pemerintah",
+    "entiti kerajaan",
+    "entiti pemerintah"
+   ],
+   "ms-arab": [
+    "کمنترين",
+    "اݢينسي کراجاءن"
+   ],
+   "mt": [
+    "ministeru"
+   ],
+   "my": [
+    "ဝန်ကြီးဌာန"
+   ],
+   "nb": [
+    "departement",
+    "ministerium",
+    "etat"
+   ],
+   "nds": [
+    "Ministerium"
+   ],
+   "nl": [
+    "ministerie",
+    "overheidsagentschap",
+    "departement",
+    "agentschap",
+    "overheidsdienst"
+   ],
+   "nn": [
+    "departement",
+    "etat",
+    "ministerium"
+   ],
+   "oc": [
+    "agéncia governamentala",
+    "agéncia de dret public",
+    "agéncia publica",
+    "ofici estatal"
+   ],
+   "os": [
+    "министрад"
+   ],
+   "pl": [
+    "ministerstwo",
+    "instytucja państwowa"
+   ],
+   "ps": [
+    "وزارت"
+   ],
+   "pt": [
+    "ministério",
+    "agência governamental",
+    "ministerio"
+   ],
+   "pt-br": [
+    "ministério",
+    "agência governamental"
+   ],
+   "rm": [
+    "departament"
+   ],
+   "rmf": [
+    "ministeriumos"
+   ],
+   "ro": [
+    "minister",
+    "agenție guvernamentală",
+    "agenție publică",
+    "entitate guvernamentală",
+    "organism guvernamental"
+   ],
+   "ru": [
+    "министерство",
+    "орган публичной власти",
+    "общественный орган власти",
+    "орган власти",
+    "орган государственной власти",
+    "федеральный орган государственной власти"
+   ],
+   "sco": [
+    "meenistry",
+    "govrenment agency"
+   ],
+   "se": [
+    "ministeriija",
+    "eiseválddit",
+    "virgeoapmahaččat"
+   ],
+   "sh": [
+    "ministarstvo",
+    "vladina agencija"
+   ],
+   "sk": [
+    "ministerstvo",
+    "orgán štátnej správy"
+   ],
+   "sl": [
+    "ministrstvo",
+    "državni organ",
+    "državni urad",
+    "vladna agencija",
+    "vladni organ",
+    "vladni urad"
+   ],
+   "sm": [
+    "matāgaluega"
+   ],
+   "smn": [
+    "ministeriö",
+    "esivääldi",
+    "virgeomâhááh"
+   ],
+   "sms": [
+    "ministeria",
+    "veʹrǧǧneeʹǩǩ"
+   ],
+   "sq": [
+    "ministri"
+   ],
+   "sr": [
+    "министарство",
+    "јавна агенција",
+    "Министарства",
+    "Јавне агенција",
+    "Јавне агенције"
+   ],
+   "sr-ec": [
+    "министарство",
+    "јавна агенција",
+    "владино одељење",
+    "државни орган",
+    "државни субјект"
+   ],
+   "sr-el": [
+    "ministarstvo",
+    "javna agencija"
+   ],
+   "sv": [
+    "departement",
+    "ministerium",
+    "myndighet",
+    "ministerier",
+    "regeringsdepartement"
+   ],
+   "sw": [
+    "Wizara"
+   ],
+   "ta": [
+    "அரசு அமைப்பு"
+   ],
+   "te": [
+    "మంత్రిత్వ శాఖ"
+   ],
+   "tg": [
+    "Вазорат"
+   ],
+   "th": [
+    "กระทรวง",
+    "หน่วยงานราชการ"
+   ],
+   "tl": [
+    "ahensya ng pamahalaan",
+    "ahensiya ng gobyerno",
+    "ahensiya ng pamahalaan",
+    "ahensya ng gobyerno"
+   ],
+   "tr": [
+    "bakanlık",
+    "kamu kurumu",
+    "hükumet bakanlığı",
+    "devlet dairesi",
+    "devlet kurumu",
+    "resmi daire",
+    "resmi kurum"
+   ],
+   "tt": [
+    "министрлык"
+   ],
+   "tt-cyrl": [
+    "министрлык"
+   ],
+   "uk": [
+    "міністерство",
+    "орган державної влади",
+    "органи влади",
+    "органи державної влади"
+   ],
+   "ur": [
+    "وزارت",
+    "سرکاری تنظیم"
+   ],
+   "uz": [
+    "Vazirlik"
+   ],
+   "vec": [
+    "ministero",
+    "ajensia goernamentałe",
+    "degastero",
+    "departemento ministeriałe",
+    "dicastero",
+    "ministeriałe",
+    "ministri",
+    "segretaria de stato"
+   ],
+   "vi": [
+    "bộ chính phủ",
+    "cơ quan công quyền",
+    "cơ quan chính phủ",
+    "cơ quan chính quyền",
+    "cơ quan nhà nước"
+   ],
+   "wa": [
+    "adjince do govienmint"
+   ],
+   "yi": [
+    "אגענטור"
+   ],
+   "yo": [
+    "aṣojú ìjọba",
+    "àgbájọ ìjọba"
+   ],
+   "yue": [
+    "政府機構"
+   ],
+   "zh": [
+    "政府機構",
+    "政府机关",
+    "政府機關",
+    "政府組織",
+    "政府部门"
+   ],
+   "zh-cn": [
+    "政府机构"
+   ],
+   "zh-hans": [
+    "政府机构"
+   ],
+   "zh-hant": [
+    "政府機構",
+    "政府單位",
+    "政府機關"
+   ],
+   "zh-hk": [
+    "政府機構"
+   ],
+   "zh-mo": [
+    "政府機構"
+   ],
+   "zh-my": [
+    "政府机构"
+   ],
+   "zh-sg": [
+    "政府机构"
+   ],
+   "zh-tw": [
+    "政府機關",
+    "政府單位",
+    "政府機構"
+   ],
+   "zu": [
+    "UMnyango (kahulumeni)"
+   ]
+  },
+  "POLITICAL_FOUNDATION": {
+   "ca": [
+    "fundació política"
+   ],
+   "de": [
+    "parteinahe Stiftung",
+    "Parteiakademie",
+    "Parteinahe Stiftungen",
+    "politische Stiftung",
+    "politische Stiftungen"
+   ],
+   "en": [
+    "party political foundation",
+    "party-affiliated foundation",
+    "political foundation"
+   ],
+   "eo": [
+    "partia fondaĵo"
+   ],
+   "es": [
+    "fundación política",
+    "fundaciones políticas"
+   ],
+   "fr": [
+    "fondation politique"
+   ],
+   "it": [
+    "fondazione politica"
+   ],
+   "nl": [
+    "politieke stichting"
+   ],
+   "pt": [
+    "fundação partidária de estudo e pesquisa",
+    "fundação partidária",
+    "fundações partidárias"
+   ],
+   "ro": [
+    "fundație politică",
+    "fundație politică de partid"
+   ],
+   "sl": [
+    "strankarska fundacija",
+    "politčna fundacija"
+   ]
+  },
+  "PRIVATE_FOUNDATION": {
+   "acm": [
+    "منظمة خيرية",
+    "مؤسسة خيرية"
+   ],
+   "ar": [
+    "مؤسسة",
+    "منظمة خيرية",
+    "المؤسسات الخيرية",
+    "المنظمات الخيرية",
+    "جمعيات خيرية",
+    "جمعية خيرية",
+    "مؤسسات خيرية",
+    "مؤسسة خيرية",
+    "منظمات خيرية"
+   ],
+   "arz": [
+    "مؤسسه خيريه",
+    "المؤسسات الخيريه",
+    "المنظمات الخيريه",
+    "جمعه خيريه",
+    "جمعيات خيريه",
+    "مؤسسات خيريه",
+    "منظمات خيريه"
+   ],
+   "ast": [
+    "fundación",
+    "fundación caritativa",
+    "fundación non llucrativa"
+   ],
+   "az": [
+    "fond",
+    "Vəqf",
+    "xeyriyyə təşkilatı"
+   ],
+   "ban": [
+    "Yayasan (nirlaba)"
+   ],
+   "bar": [
+    "Stiftung"
+   ],
+   "be": [
+    "фонд",
+    "дабрачынная арганізацыя",
+    "дабрачынны фонд"
+   ],
+   "be-tarask": [
+    "фундацыя",
+    "дабрачынная арганізацыя",
+    "фонд",
+    "гуманітарная арганізацыя"
+   ],
+   "bg": [
+    "фондация",
+    "благотворителна организация"
+   ],
+   "bn": [
+    "ফাউন্ডেশন (অলাভজনক)",
+    "দাতব্য সংস্থা",
+    "ফাউন্ডেশন"
+   ],
+   "bs": [
+    "fondacija",
+    "zadužbina",
+    "zaklada"
+   ],
+   "ca": [
+    "fundació",
+    "entitat benèfica",
+    "Fundació no lucrativa"
+   ],
+   "ckb": [
+    "ڕێکخراوەی خێرخوازی"
+   ],
+   "cs": [
+    "nadace",
+    "charitativní organizace",
+    "charita",
+    "dobročinná organizace"
+   ],
+   "csb": [
+    "Fùńdacjô"
+   ],
+   "cv": [
+    "Фонд"
+   ],
+   "cy": [
+    "sefydliad di-elw",
+    "elusen",
+    "sefydliad elusennol"
+   ],
+   "da": [
+    "fond",
+    "velgørende organisation",
+    "stiftelse",
+    "velgørenhedsorganisation"
+   ],
+   "de": [
+    "Stiftung",
+    "karitative Vereinigung",
+    "Foundation",
+    "gemeinnützige Stiftung",
+    "Wohltätigkeitsorganisation"
+   ],
+   "el": [
+    "ίδρυμα",
+    "φιλανθρωπική οργάνωση"
+   ],
+   "en": [
+    "foundation",
+    "charitable organization",
+    "charitable foundation",
+    "foundations",
+    "charitable organisation",
+    "charitable society",
+    "charities",
+    "charity",
+    "charity organisation",
+    "non-profit charitable organisation",
+    "non-profit charitable organization",
+    "public charity",
+    "благотворительное общество"
+   ],
+   "en-ca": [
+    "foundation"
+   ],
+   "en-gb": [
+    "foundation",
+    "charitable organisation"
+   ],
+   "en-us": [
+    "foundation",
+    "charitable organization"
+   ],
+   "eo": [
+    "fondaĵo",
+    "karitata organizaĵo",
+    "Fonduso",
+    "Bonfara organizo",
+    "Bonfaraj organizoj"
+   ],
+   "es": [
+    "fundación",
+    "asociación caritativa",
+    "Fundacion",
+    "fundacion caritativa",
+    "fundacion sin animo de lucro",
+    "fundacion sin fines de lucro",
+    "fundación caritativa",
+    "fundación sin fines de lucro",
+    "fundación sin ánimo de lucro",
+    "Asociacion caritativa",
+    "Asociacion de caridad",
+    "Asociación de caridad",
+    "Organizacion caritativa",
+    "Organización caritativa",
+    "entidad caritativa"
+   ],
+   "et": [
+    "sihtasutus"
+   ],
+   "eu": [
+    "fundazio",
+    "karitatezko erakunde",
+    "irabazteko asmorik gabeko fundazio",
+    "charity",
+    "erakunde filantropiko",
+    "karitatezko elkarte"
+   ],
+   "fa": [
+    "بنیاد",
+    "سازمان خیریه",
+    "بنگاه نیکوکاری",
+    "سازمان های خیریه"
+   ],
+   "fi": [
+    "säätiö",
+    "hyväntekeväisyysjärjestö"
+   ],
+   "fr": [
+    "fondation",
+    "association caritative",
+    "associations caritatives",
+    "caritative",
+    "oeuvre caritative",
+    "oeuvre de bienfaisance",
+    "organisation caritative",
+    "organisations caritatives",
+    "organisme de bienfaisance",
+    "Œuvre caritative",
+    "Œuvre de bienfaisance",
+    "Œuvres caritatives"
+   ],
+   "frr": [
+    "Stifting"
+   ],
+   "fy": [
+    "stifting"
+   ],
+   "ga": [
+    "fondúireacht",
+    "carthanas"
+   ],
+   "gd": [
+    "buidheann carthanais"
+   ],
+   "gl": [
+    "fundación",
+    "entidade filantrópica"
+   ],
+   "gsw": [
+    "Stiftig"
+   ],
+   "hak": [
+    "Kî-kîm-fi",
+    "Gi-gim-fui"
+   ],
+   "he": [
+    "קרן נדבנות",
+    "ארגון צדקה",
+    "קרן פילנתרופית",
+    "ארגון צדקה ללא מטרות רווח",
+    "עמותה",
+    "צדקה",
+    "צדקה ציבורית"
+   ],
+   "hi": [
+    "निधिसंस्था (लाभनिरपेक्ष)",
+    "परोपकारी संस्था",
+    "निधिसंस्था",
+    "दानी संस्था",
+    "परोपकारी संगठन"
+   ],
+   "hr": [
+    "zaklada"
+   ],
+   "hsb": [
+    "załožba"
+   ],
+   "hu": [
+    "alapítvány",
+    "jótékonysági szervezet",
+    "jótékony célú szervezet",
+    "jótékony szervezet",
+    "karitatív szervezet",
+    "közhasznú szervezet",
+    "segítő szervezet"
+   ],
+   "hy": [
+    "հիմնադրամ",
+    "բարեգործական կազմակերպություն",
+    "բարեգործական հիմնադրամ"
+   ],
+   "hyw": [
+    "հիմնարկ",
+    "բարեգործական կազմակերպութիւն"
+   ],
+   "ia": [
+    "Fundation"
+   ],
+   "id": [
+    "yayasan",
+    "Organisasi amal",
+    "Foundation"
+   ],
+   "ig": [
+    "Ntọala"
+   ],
+   "io": [
+    "Fonduro"
+   ],
+   "is": [
+    "sjóður",
+    "sjálfseignarstofnun"
+   ],
+   "it": [
+    "fondazione",
+    "associazione di beneficenza",
+    "organizzazione di beneficenza"
+   ],
+   "ja": [
+    "財団",
+    "慈善団体",
+    "非公開有限責任保証会社",
+    "チャリティ団体",
+    "公益団体",
+    "登録慈善団体",
+    "登録慈善行為"
+   ],
+   "ka": [
+    "ფონდი",
+    "საქველმოქმედო ორგანიზაცია"
+   ],
+   "kk": [
+    "Қор"
+   ],
+   "kk-arab": [
+    "ايىرباس"
+   ],
+   "kk-cn": [
+    "ايىرباس"
+   ],
+   "kk-cyrl": [
+    "Айырбас"
+   ],
+   "kk-kz": [
+    "Айырбас"
+   ],
+   "kk-latn": [
+    "Aýırbas"
+   ],
+   "kk-tr": [
+    "Aýırbas"
+   ],
+   "kn": [
+    "ಸಂಸ್ಥೆ"
+   ],
+   "ko": [
+    "재단",
+    "자선 단체",
+    "財團法人",
+    "재단 법인",
+    "재단법인",
+    "자선단체"
+   ],
+   "ku": [
+    "weqf"
+   ],
+   "kw": [
+    "aluseneth"
+   ],
+   "ky": [
+    "Фонд"
+   ],
+   "la": [
+    "institutum",
+    "caritas"
+   ],
+   "lb": [
+    "Stëftung",
+    "karitativ Associatioun",
+    "Fondatioun"
+   ],
+   "lt": [
+    "paramos fondas",
+    "fondas"
+   ],
+   "lv": [
+    "nodibinājumi",
+    "labdarības organizācija",
+    "fondi"
+   ],
+   "mi": [
+    "tūāpapa"
+   ],
+   "mk": [
+    "задолжбина",
+    "добротворна организација",
+    "фондација"
+   ],
+   "ms": [
+    "yayasan",
+    "pertubuhan amal",
+    "pertubuhan khairat"
+   ],
+   "ms-arab": [
+    "يايسن",
+    "ڤرتوبوهن عمل"
+   ],
+   "mt": [
+    "fondazzjoni"
+   ],
+   "nan": [
+    "Ki-kim-hōe"
+   ],
+   "nb": [
+    "stiftelse",
+    "veldedig organisasjon",
+    "allmennyttig stiftelse",
+    "ideell stiftelse",
+    "allmennyttig organisasjon",
+    "frivillig organisasjon"
+   ],
+   "nl": [
+    "stichting",
+    "goed doel",
+    "fondatie",
+    "charitatieve instelling",
+    "goede doelen",
+    "goededoelenorganisatie"
+   ],
+   "nn": [
+    "stifting",
+    "veldedig organisasjon"
+   ],
+   "oc": [
+    "organizacion filantròpica"
+   ],
+   "os": [
+    "фонд"
+   ],
+   "pap": [
+    "fundashon"
+   ],
+   "pl": [
+    "fundacja",
+    "organizacja charytatywna",
+    "organizacja humanitarna",
+    "organizacja opiekuńcza",
+    "organizacja pomocowa"
+   ],
+   "pnt": [
+    "ιμαρέτ"
+   ],
+   "pt": [
+    "fundação",
+    "entidade filantrópica",
+    "Instituição filantrópica",
+    "Instituições filantrópicas"
+   ],
+   "pt-br": [
+    "entidade filantrópica",
+    "Instituição filantrópica",
+    "caridade"
+   ],
+   "rm": [
+    "fundaziun"
+   ],
+   "ro": [
+    "fundație",
+    "organizație caritabilă",
+    "fundație caritabilă",
+    "fundații",
+    "asociație caritabilă"
+   ],
+   "ru": [
+    "фонд",
+    "благотворительная организация",
+    "Фонды",
+    "благотворительный фонд",
+    "благотворительное учреждение"
+   ],
+   "sco": [
+    "foondation",
+    "charitable organization"
+   ],
+   "se": [
+    "foanda"
+   ],
+   "sh": [
+    "fondacija",
+    "dobrotvorna organizacija",
+    "zadužbina",
+    "zaklada"
+   ],
+   "sk": [
+    "nadácia"
+   ],
+   "sl": [
+    "fundacija",
+    "dobrodelna organizacija",
+    "sklad",
+    "karitativna organizacija"
+   ],
+   "sma": [
+    "foente"
+   ],
+   "smn": [
+    "ruttârááju",
+    "pyeretovâlâšvuođâornijdâh",
+    "siäđus"
+   ],
+   "sms": [
+    "fondd"
+   ],
+   "sq": [
+    "Organizata e bamirësisë"
+   ],
+   "sr": [
+    "фондација",
+    "добротворна организација",
+    "задужбина",
+    "заклада",
+    "институција"
+   ],
+   "sr-ec": [
+    "Фондација",
+    "добротворна организација"
+   ],
+   "sr-el": [
+    "Fondacija",
+    "dobrotvorna organizacija"
+   ],
+   "sv": [
+    "stiftelse",
+    "välgörenhetsorganisation",
+    "fond",
+    "välgörenhet"
+   ],
+   "ta": [
+    "அறக்கட்டளை"
+   ],
+   "tg": [
+    "созмони хайрия"
+   ],
+   "th": [
+    "มูลนิธิ"
+   ],
+   "tk": [
+    "Wakyf"
+   ],
+   "tr": [
+    "vakıf",
+    "hayır kurumu"
+   ],
+   "tt": [
+    "фонд"
+   ],
+   "tt-cyrl": [
+    "фонд"
+   ],
+   "uk": [
+    "фонд",
+    "благодійна організація",
+    "фундація",
+    "благодійне товариство",
+    "доброчинна організація",
+    "харитативна організація"
+   ],
+   "ur": [
+    "فاؤنڈیشن"
+   ],
+   "uz": [
+    "jamgʻarmasi",
+    "xayriya tashkiloti"
+   ],
+   "vi": [
+    "quỹ",
+    "tổ chức từ thiện",
+    "quĩ",
+    "quĩ từ thiện",
+    "quỹ từ thiện",
+    "Tổ chức làm việc thiện"
+   ],
+   "wa": [
+    "soce di bénfjhance"
+   ],
+   "wuu": [
+    "基金会",
+    "慈善组织"
+   ],
+   "yue": [
+    "基金会",
+    "慈善團體"
+   ],
+   "za": [
+    "Gihginhvei"
+   ],
+   "zh": [
+    "基金会",
+    "慈善组织",
+    "一般財團法人",
+    "公益组织",
+    "慈善團體",
+    "慈善机构"
+   ],
+   "zh-cn": [
+    "基金会",
+    "慈善组织"
+   ],
+   "zh-hans": [
+    "基金会",
+    "慈善组织"
+   ],
+   "zh-hant": [
+    "基金會",
+    "慈善組織"
+   ],
+   "zh-hk": [
+    "基金會",
+    "慈善組織"
+   ],
+   "zh-sg": [
+    "基金会"
+   ],
+   "zh-tw": [
+    "基金會",
+    "慈善組織",
+    "慈善基金會"
+   ]
+  },
+  "RELIGIOUS": {
+   "ar": [
+    "منظمة دينية"
+   ],
+   "ast": [
+    "asociación relixosa",
+    "organización relixosa"
+   ],
+   "az": [
+    "dini qurum"
+   ],
+   "ba": [
+    "дини ойошма",
+    "дини берләшмә"
+   ],
+   "be": [
+    "рэлігійная арганізацыя",
+    "рэлігійнае аб'яднанне"
+   ],
+   "be-tarask": [
+    "рэлігійнае аб'яднаньне",
+    "рэлігійная арганізацыя"
+   ],
+   "bg": [
+    "Религиозна организация"
+   ],
+   "bn": [
+    "ধর্মীয় সংগঠন"
+   ],
+   "br": [
+    "aozadur relijiel"
+   ],
+   "ca": [
+    "organització religiosa",
+    "entitat religiosa"
+   ],
+   "cs": [
+    "náboženská organizace",
+    "církevní organizace"
+   ],
+   "cy": [
+    "sefydliad crefyddol"
+   ],
+   "da": [
+    "religiøs organisation"
+   ],
+   "de": [
+    "Glaubensgemeinschaft",
+    "Religionsgemeinschaft",
+    "Religionsgesellschaft",
+    "Religionsorganisation",
+    "religiöse Organisation"
+   ],
+   "el": [
+    "θρησκευτική οργάνωση"
+   ],
+   "en": [
+    "religious organization",
+    "faith community",
+    "religious body",
+    "religious organisation"
+   ],
+   "en-gb": [
+    "religious organisation"
+   ],
+   "en-us": [
+    "religious organization",
+    "faith community",
+    "religious body",
+    "religious organisation"
+   ],
+   "eo": [
+    "religia organizaĵo"
+   ],
+   "es": [
+    "organización religiosa",
+    "asociación religiosa",
+    "comunidad religiosa"
+   ],
+   "et": [
+    "usuline ühendus",
+    "usuline organisatsioon",
+    "usuühendus"
+   ],
+   "eu": [
+    "erlijio-erakunde",
+    "erlijio elkarte",
+    "erlijio erakunde",
+    "erlijio-elkarte"
+   ],
+   "fa": [
+    "سازمان مذهبی",
+    "نهاد معرفت دینی"
+   ],
+   "fi": [
+    "uskonnollinen järjestö",
+    "uskonnollinen organisaatio"
+   ],
+   "fr": [
+    "organisation religieuse",
+    "association cultuelle",
+    "communauté de foi"
+   ],
+   "ga": [
+    "eagraíocht reiligiúnach"
+   ],
+   "gl": [
+    "asociación relixiosa",
+    "comunidade relixiosa",
+    "organización relixiosa"
+   ],
+   "gu": [
+    "ધાર્મિક સંગઠન",
+    "ધાર્મિક સંસ્થા"
+   ],
+   "he": [
+    "ארגון דתי",
+    "אירגון דתי"
+   ],
+   "hi": [
+    "धार्मिक संगठन"
+   ],
+   "hr": [
+    "vjerska zajednica"
+   ],
+   "hu": [
+    "vallási szervezet"
+   ],
+   "hy": [
+    "կրոնական կազմակերպություն"
+   ],
+   "ia": [
+    "organisation religiose"
+   ],
+   "id": [
+    "organisasi keagamaan",
+    "organisasi religius"
+   ],
+   "is": [
+    "Trúfélag"
+   ],
+   "it": [
+    "organizzazione religiosa"
+   ],
+   "ja": [
+    "宗教団体",
+    "宗教組織",
+    "教団"
+   ],
+   "ka": [
+    "რელიგიური ორგანიზაცია"
+   ],
+   "kaa": [
+    "diniy shólkem"
+   ],
+   "kk": [
+    "Діни бірлестіктер"
+   ],
+   "ko": [
+    "교단"
+   ],
+   "ku": [
+    "rêxistina dînî"
+   ],
+   "ku-latn": [
+    "rêxistina dînî"
+   ],
+   "lb": [
+    "Reliounsgemeinschaft"
+   ],
+   "lt": [
+    "religinė bendruomenė"
+   ],
+   "lv": [
+    "reliģiska organizācija",
+    "reliģioza organizācija"
+   ],
+   "mi": [
+    "hāhi"
+   ],
+   "mk": [
+    "верска организација",
+    "религиозна организација"
+   ],
+   "ms": [
+    "pertubuhan agama",
+    "badan agama",
+    "organisasi agama"
+   ],
+   "ms-arab": [
+    "ڤرتوبوهن اݢام"
+   ],
+   "nb": [
+    "religiøs organisasjon"
+   ],
+   "nl": [
+    "geloofsgemeenschap",
+    "religieuze organisatie"
+   ],
+   "nqo": [
+    "ߣߊߡߎ߲ ߛߌ߲߬ߝߏ߲߬ߧߊ߬ߟߌ",
+    "ߣߊߡߎ߲ ߞߙߎߞߊ"
+   ],
+   "pap": [
+    "organisashon religioso"
+   ],
+   "pl": [
+    "związek wyznaniowy"
+   ],
+   "ps": [
+    "مذهبي سازمان"
+   ],
+   "pt": [
+    "organização religiosa"
+   ],
+   "pt-br": [
+    "organização religiosa"
+   ],
+   "rm": [
+    "cuminanza religiusa"
+   ],
+   "ro": [
+    "organizație religioasă"
+   ],
+   "ru": [
+    "религиозная организация",
+    "объединение верующих",
+    "религиозное объединение"
+   ],
+   "scn": [
+    "organizzazioni riliggiusa"
+   ],
+   "sco": [
+    "releegious organization"
+   ],
+   "sh": [
+    "vjerska organizacija",
+    "religijska organizacija",
+    "verska organizacija"
+   ],
+   "sk": [
+    "náboženská spoločnosť",
+    "náboženská organizácia"
+   ],
+   "sl": [
+    "religijska organizacija",
+    "verska organizacija"
+   ],
+   "sm": [
+    "ekalesia"
+   ],
+   "sr": [
+    "верска организација"
+   ],
+   "sr-ec": [
+    "верска организација"
+   ],
+   "sr-el": [
+    "verska organizacija"
+   ],
+   "sv": [
+    "religiös organisation"
+   ],
+   "syl": [
+    "ꠗꠞꠝꠤ ꠙꠔꠤꠡꠑꠣꠘ"
+   ],
+   "tg": [
+    "созмонҳои динӣ"
+   ],
+   "th": [
+    "องค์การศาสนา",
+    "องค์กรทางศาสนา",
+    "องค์กรศาสนา"
+   ],
+   "tr": [
+    "dini kurum",
+    "dinî yapı",
+    "dinî örgüt"
+   ],
+   "tt": [
+    "дини оешма"
+   ],
+   "uk": [
+    "релігійна організація",
+    "Релігійні організації"
+   ],
+   "ur": [
+    "مذہبی تنظیم"
+   ],
+   "uz": [
+    "Diniy tashkilot"
+   ],
+   "vec": [
+    "organizasion rełijoza"
+   ],
+   "vi": [
+    "tổ chức tôn giáo"
+   ],
+   "zh": [
+    "宗教团体"
+   ],
+   "zh-cn": [
+    "宗教团体"
+   ],
+   "zh-hant": [
+    "宗教團體",
+    "宗教組織"
+   ],
+   "zh-hk": [
+    "宗教團體"
+   ],
+   "zh-tw": [
+    "宗教團體",
+    "宗教組織"
+   ]
+  }
+ }
+}

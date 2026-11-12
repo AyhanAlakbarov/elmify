@@ -8,27 +8,31 @@ from uuid import UUID
 import boto3  # type: ignore[import-untyped]
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.http import Http404, HttpRequest, HttpResponse
+from django.views.decorators.http import require_GET
 
-from apps.concierge.documents import open_document, upload_prefix
+from apps.audit.staff_access import record_staff_access
+from apps.concierge.documents import DocumentUnavailable, open_document, upload_prefix
 from apps.concierge.models import DocumentVersion
+from apps.dashboard.locks import paused_reason
+from apps.portals.http import SERVED_TYPES, inert_response, inline_response
 from apps.reports.models import ConsultationReport
 from apps.research.storage import S3ObjectStore
 from apps.tenancy.context import current_tenant_id, tenant_scope
 from apps.tenancy.db import set_local_tenant, tenant_transaction
 from apps.tenancy.models import CounselorAssignment, Membership
 
-from .models import DocumentDraft
+from .models import DocumentDraft, TranscriptReading
 
 #: Objects live in EvidenceBucket beside the research snapshots, under the
 #: tenants/ prefix WebTaskRole and WorkerTaskRole are already scoped to.
 #: Tenant first, so one prefix delete or one IAM condition covers a tenant.
 _KEY_TEMPLATE = "tenants/{tenant_id}/students/{student_id}/documents/{draft_id}/{filename}"
-_SAFE_FILENAME = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
-_COUNSELOR_ROLES = frozenset(
-    {Membership.Role.COUNSELOR, Membership.Role.OWNER, Membership.Role.PLATFORM_ADMIN}
-)
+SAFE_FILENAME = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+#: Read a student by assignment. Not PLATFORM_ADMIN: Elmify staff read any student of the
+#: agency through `staff_may_view`, recorded, and an assignment changes nothing for them.
+_COUNSELOR_ROLES = frozenset({Membership.Role.COUNSELOR, Membership.Role.OWNER})
 
 
 class InvalidFilename(ValueError):
@@ -44,7 +48,7 @@ def _object_store() -> S3ObjectStore:
 
 
 def document_key(*, tenant_id: UUID, student_id: UUID, draft_id: UUID, filename: str) -> str:
-    if not _SAFE_FILENAME.match(filename) or ".." in filename:
+    if not SAFE_FILENAME.match(filename) or ".." in filename:
         raise InvalidFilename(f"unsafe document filename {filename!r}")
     return _KEY_TEMPLATE.format(
         tenant_id=tenant_id, student_id=student_id, draft_id=draft_id, filename=filename
@@ -55,7 +59,7 @@ def artefact_filename(variant: str) -> str:
     """The filename a rendered draft is stored under, for one variant.
 
     Names the variant, so two variants of one draft cannot overwrite each other
-    under the same key. Matches _SAFE_FILENAME above.
+    under the same key. Matches SAFE_FILENAME above.
 
     The web tier never calls this: it links to `DocumentDraft.rendered_filename`,
     which `store_document` records from the name actually written.
@@ -107,16 +111,66 @@ def _requesting_membership(request: HttpRequest) -> Membership | None:
     return Membership.objects.filter(user_id=request.user.pk, active=True).first()
 
 
-def _may_read(membership: Membership, draft: DocumentDraft) -> bool:
-    if draft.student_id == membership.id:
+def may_read_student(membership: Membership, student_id: UUID) -> bool:
+    if student_id == membership.id:
         return True
     if membership.role not in _COUNSELOR_ROLES:
         return False
     # Same gate as apps/funding/views.py::review -- a counselor sees the
     # students assigned to them, not every student in the tenant.
     return CounselorAssignment.objects.filter(
-        counselor=membership, student_id=draft.student_id, active=True
+        counselor=membership, student_id=student_id, active=True
     ).exists()
+
+
+def staff_may_view(membership: Membership, student: Membership) -> bool:
+    """Elmify staff may view and download any student's files in their agency, without a
+    SupportGrant (owner decision 2026-10-11), every access recorded by `admit`. Never a
+    paused student's: a deletion request or a stopped processing hides them from staff too.
+    Never an inactive one's: an erasure clears the pause and leaves the membership inactive,
+    and a partial erasure keeps the real name."""
+    return (
+        membership.role == Membership.Role.PLATFORM_ADMIN
+        and student.role == Membership.Role.STUDENT
+        and student.active
+        and membership.tenant_id == student.tenant_id
+        and paused_reason(student) is None
+    )
+
+
+def admit(
+    membership: Membership | None,
+    student: Membership,
+    *,
+    kind: str,
+    document_id: UUID,
+    download: bool = False,
+) -> None:
+    """Raise Http404 unless `membership` may see this file of `student`.
+
+    A view admits Elmify staff and the counsellor or owner assigned to the student; a
+    download admits staff only. Never the student (their own routes serve them) and never a
+    paused student's file. A staff access is recorded before this returns, and a failed
+    record is a 404: nothing is served that was not recorded.
+    """
+    if membership is None:
+        raise Http404
+    if staff_may_view(membership, student):
+        try:
+            record_staff_access(
+                membership, student, action="download" if download else "view", kind=kind,
+                document_id=document_id,
+            )
+        except DatabaseError as error:
+            raise Http404 from error
+        return
+    if (
+        download
+        or membership.role not in _COUNSELOR_ROLES
+        or paused_reason(student) is not None
+        or not may_read_student(membership, student.id)
+    ):
+        raise Http404
 
 
 @login_required
@@ -129,18 +183,102 @@ def download_document(request: HttpRequest, draft_id: UUID, filename: str) -> Ht
     if membership is None:
         raise Http404
     try:
-        draft = DocumentDraft.objects.get(id=draft_id, status=DocumentDraft.Status.APPROVED)
+        draft = DocumentDraft.objects.select_related("student").get(
+            id=draft_id, status=DocumentDraft.Status.APPROVED
+        )
     except DocumentDraft.DoesNotExist as error:
         raise Http404 from error
-    if not _may_read(membership, draft):
+    # Counsellors read a draft through draft_view and never download it (owner 2026-10-10);
+    # Elmify staff download any student's, recorded first.
+    staff = membership.role == Membership.Role.PLATFORM_ADMIN
+    if staff:
+        admit(
+            membership, draft.student, kind=f"DRAFT_{draft.kind}", document_id=draft.id,
+            download=True,
+        )
+    elif draft.student_id != membership.id:
         raise Http404
     try:
         body = read_draft(draft, filename)
     except (InvalidFilename, KeyError) as error:
         raise Http404 from error
+    if staff:
+        return inert_response(body, "application/pdf", filename)
     response = HttpResponse(body, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
+
+
+@login_required
+@require_GET
+def draft_view(request: HttpRequest, draft_id: UUID) -> HttpResponse:
+    """An approved, rendered draft shown inline to staff or the assigned counsellor."""
+    draft = (
+        DocumentDraft.objects.select_related("student")
+        .filter(id=draft_id, status=DocumentDraft.Status.APPROVED)
+        .exclude(rendered_filename="")
+        .first()
+    )
+    if draft is None:
+        raise Http404
+    admit(
+        _requesting_membership(request), draft.student, kind=f"DRAFT_{draft.kind}",
+        document_id=draft.id,
+    )
+    try:
+        body = read_draft(draft, draft.rendered_filename)
+    except (InvalidFilename, KeyError) as error:
+        raise Http404 from error
+    return inline_response(body, "application/pdf")
+
+
+def _current_upload(document_id: UUID) -> DocumentVersion:
+    """A checked, promoted upload that has not been replaced, of a type a browser may be
+    handed (pdf, png, jpeg); Http404 otherwise."""
+    upload = (
+        DocumentVersion.objects.select_related("student")
+        .filter(
+            id=document_id, state="AVAILABLE", scan_result="NO_THREATS_FOUND",
+            retired_at__isnull=True, content_type__in=SERVED_TYPES,
+        )
+        .exclude(promoted_key="")
+        .first()
+    )
+    if upload is None:
+        raise Http404
+    return upload
+
+
+def _upload_body(upload: DocumentVersion) -> bytes:
+    try:
+        return read_upload(upload)
+    except (DocumentUnavailable, KeyError) as error:
+        raise Http404 from error
+
+
+@login_required
+@require_GET
+def upload_view(request: HttpRequest, document_id: UUID) -> HttpResponse:
+    """A student's checked upload shown inline to staff or the assigned counsellor."""
+    upload = _current_upload(document_id)
+    admit(
+        _requesting_membership(request), upload.student, kind=f"UPLOAD_{upload.kind}",
+        document_id=upload.id,
+    )
+    return inline_response(_upload_body(upload), upload.content_type)
+
+
+@login_required
+@require_GET
+def staff_download_upload(request: HttpRequest, document_id: UUID) -> HttpResponse:
+    """The same upload as a download, for Elmify staff only."""
+    upload = _current_upload(document_id)
+    admit(
+        _requesting_membership(request), upload.student, kind=f"UPLOAD_{upload.kind}",
+        document_id=upload.id, download=True,
+    )
+    filename = f"{upload.kind.lower()}-{upload.id}{SERVED_TYPES[upload.content_type]}"
+    return inert_response(_upload_body(upload), upload.content_type, filename)
 
 
 def _purge_prefix(s3: Any, bucket: str, prefix: str) -> int:
@@ -326,3 +464,81 @@ def read_upload(document: DocumentVersion) -> bytes:
     """The promoted copy's bytes, for the extension route: open_document's read, so only
     an AVAILABLE upload's copy under its own uploads/ prefix (DocumentUnavailable else)."""
     return open_document(document, store=_object_store())
+
+
+_PREPARED_TEMPLATE = "tenants/{tenant_id}/students/{student_id}/prepared/{prepared_id}/{digest}"
+
+
+def prepared_key(*, tenant_id: UUID, student_id: UUID, prepared_id: UUID, sha256: str) -> str:
+    """Under the student's own prefix, so erasure's prefix purge removes it. The
+    digest, not the filename, names the object: a name may carry the student's."""
+    return _PREPARED_TEMPLATE.format(
+        tenant_id=tenant_id, student_id=student_id, prepared_id=prepared_id, digest=sha256[:16]
+    )
+
+
+def store_prepared(key: str, body: bytes, *, store: S3ObjectStore | None = None) -> str:
+    return (store or _object_store()).put(key, body)
+
+
+def delete_prepared(key: str, version_id: str, *, store: S3ObjectStore | None = None) -> None:
+    (store or _object_store()).delete_version(key, version_id)
+
+
+def read_prepared(key: str) -> bytes:
+    return _object_store().get(key)
+
+
+#: A picture of one doubtful transcript cell, cut by the sandboxed parser (transcript plan 3a).
+#: Under the student's own prefix, so erasure's prefix purge removes it with everything else.
+_CROP_TEMPLATE = (
+    "tenants/{tenant_id}/students/{student_id}/transcript-crops/{reading_id}/{name}.png"
+)
+_CROP_REF = re.compile(r"^(\d{1,4}):(title|credits|grade)$")
+
+
+def crop_key(*, tenant_id: UUID, student_id: UUID, reading_id: UUID, ref: str) -> str:
+    """`ref` is "<row index>:<cell>"; anything else is a ValueError, never part of a key."""
+    match = _CROP_REF.match(ref)
+    if match is None:
+        raise ValueError(f"not a crop ref: {ref!r}")
+    return _CROP_TEMPLATE.format(
+        tenant_id=tenant_id, student_id=student_id, reading_id=reading_id,
+        name=f"{match[1]}-{match[2]}",
+    )
+
+
+def store_crop(key: str, image: bytes) -> None:
+    _object_store().put(key, image)
+
+
+def read_crop(reading: TranscriptReading, ref: str) -> bytes:
+    """A crop the reading names (KeyError otherwise). The key is rebuilt from the reading's own
+    tenant, student and id, never taken from the stored value."""
+    if ref not in reading.crops:
+        raise KeyError(ref)
+    return _object_store().get(
+        crop_key(
+            tenant_id=reading.tenant_id, student_id=reading.student_id, reading_id=reading.id,
+            ref=ref,
+        )
+    )
+
+
+@login_required
+@require_GET
+def transcript_crop(request: HttpRequest, reading_id: UUID, ref: str) -> HttpResponse:
+    """A picture of one doubtful transcript cell (plan 3a): to the student whose reading it is,
+    or to whoever `admit` lets read their files (staff, recorded; the assigned counsellor).
+    Every refusal, an unknown ref and another agency's reading included, is the same 404."""
+    membership = _requesting_membership(request)
+    reading = TranscriptReading.objects.select_related("student").filter(id=reading_id).first()
+    if membership is None or reading is None or ref not in reading.crops:
+        raise Http404
+    if membership.id != reading.student_id:
+        admit(membership, reading.student, kind="TRANSCRIPT_CROP", document_id=reading.document_id)
+    try:
+        body = read_crop(reading, ref)
+    except (KeyError, ValueError) as error:
+        raise Http404 from error
+    return inline_response(body, "image/png")

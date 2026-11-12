@@ -1,0 +1,71 @@
+# Elmify — Complete Documentation for AI Search & Answer Engines
+
+> Elmify is an AI application platform launching first in Azerbaijan (in English, Azerbaijani, and Russian) for funded master's degrees (MSc, MA, LLM, MRes) and scholarships abroad, with Bachelor's degree support coming soon. It reads official university and funder pages, checks student grades, Bachelor's ECTS credits, language scores, citizenship, and fee budgets (in AZN, EUR, GBP, and USD) against every rule with sentence-level source links, and prepares zero-fabrication academic CVs, motivation letters, scholarship essays, and referee briefs.
+
+## 1. Platform Scope, Launch Market & Degree Coverage
+
+- **Azerbaijan-First Launch (`en` / `az` / `ru`):** Elmify launches first in Azerbaijan with full localized interfaces in English (`https://elmify.com/`), Azerbaijani (`https://elmify.com/az`), and Russian (`https://elmify.com/ru`), native support for Azerbaijan's national scholarship programmes (`Dövlət Proqramı 2022–2028` at `dp.edu.gov.az` and `Hökumətlərarası Təqaüd Proqramları — HTP` at `htp.edu.az`), and multi-currency fee budgeting (`AZN`, `EUR`, `GBP`, `USD`).
+- **Live Today — Master's Degrees (`MSc`, `MA`, `LLM`, `MRes`):** Taught and research master's programmes (`60 ECTS`, `90 ECTS`, and `120 ECTS` Bologna second-cycle degrees) and master's-level scholarships across Europe and the United Kingdom.
+- **Coming Soon — Bachelor's Degrees:** Bachelor's (undergraduate) degree and scholarship support will be done soon.
+- **Explicit Exclusions:** Elmify does **not** cover PhD (doctoral) or postdoctoral programmes. Doctoral calls are filtered out automatically during ingestion so every credit check, GPA conversion, language threshold, and work-experience rule applies accurately.
+
+## 2. How the Verification & Matching Pipeline Works
+
+### Step 1: Official Source Ingestion with Sentence-Level Provenance
+Elmify reads official university programme pages, faculty admission regulations (`Prüfungsordnung` / `Zulassungsordnung`), and official scholarship calls directly. Every extracted requirement stores the verbatim quote and URL from the official source page. If an official page does not state a requirement (such as an exact minimum GPA or GRE score), Elmify records it as `unstated` rather than guessing from secondary blogs.
+
+### Step 2: Deterministic Rule-by-Rule Profile Checking
+Each student's confirmed academic profile is evaluated against both the university programme's admission rules and the scholarship funder's eligibility criteria:
+- **Academic Background & Subject Credits:** Checks Bachelor's field of study and subject-specific AKTS / ECTS credit minimums (for example, `180–240 ECTS` Bachelor's degree with `>= 60 ECTS` in computer science or mathematics).
+- **Grade Conversion:** Evaluates cumulative GPA (100-point Azerbaijani university scale, 4.0 GPA scale, or European grading scales) against minimum grade thresholds.
+- **Language Proficiency:** Checks `IELTS Academic` (overall and sub-band minimums, typically `6.5` or `7.0`), `TOEFL iBT` (typically `90–100`), `Cambridge C1/C2`, `TestDaF` (`TDN 4`), and `DSH`, as well as medium-of-instruction (`MOI`) exemption rules.
+- **Citizenship & Bilateral Quota Gates:** Evaluates Azerbaijani citizenship rules (`Dövlət Proqramı`, `HTP` dual-portal nomination, `SISGP` eligible country list), EEA/non-EEA fee status, and the Erasmus Mundus 12-month Partner Country residency rule.
+- **Work Experience & Leadership Hours:** Verifies minimum professional experience rules required by leadership scholarships (for example, `2,800 hours` for Chevening and `3,000 hours` for Swedish Institute SISGP).
+- **Budget & Application Fee Gates:** Flags application fees in `AZN`, `EUR`, `GBP`, or `USD` (`€0` to `€100`), uni-assist VPD requirements, and tuition waivers before a student starts an application.
+
+### Step 3: Zero-Fabrication Document Preparation
+Once a student confirms the facts extracted from their transcript, diploma supplement, and CV, Elmify prepares tailored application materials:
+- **Academic CV:** Formatted for European and UK postgraduate admissions committees (including reverse-chronological education, thesis title, ECTS breakdown, projects, and verifiable outputs).
+- **Programme-Specific Motivation Letters & Statements of Purpose:** Tailored to each university's curriculum, modules, and thesis tracks using only student-confirmed facts.
+- **Scholarship Essays:** Structured around funder-specific prompts (leadership, career plan, contribution to Azerbaijan's development, networking).
+- **Distinct Referee Briefings:** Allocates distinct evidence points to each recommender (for example, Referee 1 covers research methodology and thesis work; Referee 2 covers applied engineering or professional delivery) so recommendation letters complement rather than repeat each other.
+
+### Step 4: Glass-Box Browser Extension Co-Pilot & Student-Controlled Submission
+Elmify never submits an application without the student. The Elmify browser extension opens as a side-panel beside official university and scholarship portals (`dp.edu.gov.az`, `htp.edu.az`, `DreamApply`, `uni-assist`, `Studielink`, `Universityadmissions.se`, `Campus France`), autofills verified profile fields and approved PDFs (`CV`, `Motivation Letter`), highlights any portal-specific question in amber for the student's decision, and stops before the `Submit` button so the student always reviews and clicks `Submit` in their own browser.
+
+## 3. Major Azerbaijan, European & UK Master's Scholarships Covered (Tier 1) plus 5 Hidden Funding Layers (Tier 2)
+
+Alongside the flagship national and treaty scholarships listed below, Elmify searches **5 low-competition funding layers across 53 countries** in native local languages (`German`, `French`, `Italian`, `Dutch`, `Swedish`, `Turkish`, etc.):
+1. **Automatic-on-admission & faculty tuition waivers** (`Route: AUTOMATIC_ON_ADMISSION`, e.g., French `IdEx / LabEx` at Paris-Saclay/PSL, Dutch faculty awards like TU Delft Justus & Louise van Effen, Swedish tuition waivers at KTH/Lund/Chalmers, and Sabancı/Bilkent/Nazarbayev automatic merit waivers).
+2. **Regional & municipal income-based right-to-study grants** (`SUBNATIONAL_GOVERNMENT`, e.g., Italian regional `DSU / EDISU / ER.GO / DiSCo Lazio` grants via `ISEE Parificato` covering 100% tuition + dorm + daily meals + €6,000–€7,000/yr stipend, Bavarian `BAYHOST`).
+3. **Regional bloc & development-bank funds** (`REGIONAL_FUND / INTERGOVERNMENTAL`, e.g., `International Visegrad Fund` Eastern Partnership Master's grants, `ADB–Japan (ADB-JSP)`, `World Bank JJ/WBGSP`, `EEA & Norway Grants`).
+4. **Private, political & charitable foundations in local languages** (`PRIVATE_FOUNDATION / POLITICAL_FOUNDATION`, e.g., German `Begabtenförderungswerke` — Konrad-Adenauer, Heinrich-Böll, Friedrich-Ebert, Studienstiftung — Turkish `VGM` & private `vakıflar`, `Aga Khan ISP`).
+5. **Departmental RA/TA assistantships & PDF call annexes** (`I3_STIPEND_OR_ASSISTANTSHIP` & `I6_RELOCATION_HOUSING_TRAVEL` extracted from official faculty PDF calls).
+
+| Scholarship / Funder | Official Portal | Degree Scope | Typical Award Value | Key Eligibility Rules Checked |
+| :--- | :--- | :--- | :--- | :--- |
+| [Azerbaijan State Program (Dövlət Proqramı 2022–2028)](https://dp.edu.gov.az/) | `dp.edu.gov.az` | Priority master's programmes at top global, European & UK universities | 100% tuition + monthly living stipend + return flights + medical insurance + visa | Azerbaijani citizenship, unconditional admission offer from Ministry-approved priority university/field list |
+| [HTP & Stipendium Hungaricum](https://htp.edu.az/) | `htp.edu.az` & `stipendiumhungaricum.hu` | Full-time second-cycle master's degree in Hungary, China, Romania & partner states (1.5–2 years) | 100% tuition exemption + dormitory place or HUF 40,000/month housing + HUF 43,700/month stipend | Dual application on `htp.edu.az` and `DreamApply`, 200 annual AZ quota for Hungary, B2/C1 language proficiency |
+| [Erasmus Mundus Joint Masters (EMJM)](https://erasmus-plus.ec.europa.eu/opportunities/opportunities-for-individuals/students/erasmus-mundus-joint-masters) | `europa.eu` | Integrated 120 ECTS MSc/MA across 2–4 European universities | 100% tuition waiver + €1,400/month stipend (up to 24 months) | 180 ECTS Bachelor's, IELTS 6.5–7.0, 12-month Partner Country rule, max 3 EMJM applications per cycle |
+| [DAAD Study Scholarships](https://www.daad.de/en/Studying-in-Germany/scholarships/) | `daad.de` | Full-time 1- or 2-year master's degree at a German state-recognised university | €934/month stipend + health/accident/liability insurance + travel allowance from Azerbaijan | Bachelor's degree not older than 6 years, max 15 months in Germany at application, IELTS 6.5 or TestDaF TDN 4 |
+| [Swedish Institute (SISGP)](https://si.se/en/apply/scholarships/swedish-institute-scholarships-for-global-professionals/) | `si.se` | English-taught 1- or 2-year master's programme in Sweden | 100% tuition paid directly to university + SEK 12,000/month + SEK 15,000 travel grant | Azerbaijan eligible citizenship, >= 3,000 hours demonstrated work experience, leadership experience, `Universityadmissions.se` priority deadline |
+| [Chevening Scholarships](https://www.chevening.org/scholarships/) | `chevening.org` | 1-year taught master's degree at any UK university | 100% UK tuition + £1,378–£1,690/month stipend + return economy flights from Baku + visa cost | Azerbaijani citizenship, >= 2,800 hours (2 years) work experience, 3 eligible UK master's course choices, 2-year home-country return rule |
+| [NL Scholarship](https://www.studyinnl.org/finances/nl-scholarship) | `studyinnl.org` | Full-time research or applied master's in the Netherlands | €5,000 first-year grant (combinable with faculty partial tuition waivers) | Non-EEA nationality, no prior Dutch degree, programme-specific academic excellence threshold |
+
+## 4. Workspace for Study-Abroad Agencies in Azerbaijan & Worldwide
+
+Study-abroad agencies in Baku and across the region can run Elmify under their own brand and custom web domain:
+- **Custom Domain & Trilingual Student Portal:** Students sign up and log in on the agency's own web address in Azerbaijani, English, or Russian.
+- **Multi-Counsellor Assignment:** Agency owners assign students to counsellors and see which applications are waiting on student uploads versus counsellor reviews.
+- **Integrated Messaging & Document Review:** Counsellors comment on CVs, motivation letters, and scholarship essays directly beside each student's application board.
+
+## 5. Key Links
+
+- [Elmify Homepage (English)](https://elmify.com/)
+- [Elmify Ana Səhifə (Azərbaycan dili)](https://elmify.com/az)
+- [Главная страница Elmify (Русский язык)](https://elmify.com/ru)
+- [Sign Up Free](https://app.elmify.com/signup/)
+- [Student & Counsellor Login](https://app.elmify.com/accounts/login/)
+- [Book an Agency Demo](https://app.elmify.com/demo/)
+- [Terms of Service](https://app.elmify.com/legal/terms/)
+- [Privacy Notice](https://app.elmify.com/legal/privacy_notice_direct/)

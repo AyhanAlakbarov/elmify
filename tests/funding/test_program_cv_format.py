@@ -145,3 +145,64 @@ def test_cross_tenant_student_rejected_by_composite_fk(
             """,
             [uuid4(), agency_b.id, membership_a.id, program.id, membership_a.id],
         )
+
+
+_UNDECIDED = {
+    "rule_id": "PAGE-0-max_pages", "key": "undecided", "value": "max_pages",
+    "enforcement": "ADVISORY_HIGH_RISK", "rule_text": "Two or three pages.",
+    "source_url": "", "scope": "PROGRAMME",
+    "readings": {"key": "max_pages", "values": [2, 3]},
+}
+
+
+def test_an_undecided_rules_readings_round_trip(program_factory):
+    """Spec 2026-10-12 §6.4 step 2: the reader saves what each reading said."""
+    program = program_factory()
+    program.cv_constraints = [_UNDECIDED]
+    program.save(update_fields=["cv_constraints"])
+    program.refresh_from_db()
+    [rule] = rules_from_program(program)
+    assert (rule.readings.key, rule.readings.values) == ("max_pages", (2, 3))
+    assert rule.model_dump(mode="json") == _UNDECIDED
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"key": "nope", "values": [2]},
+        {"key": "max_pages", "values": []},
+        {"key": "max_pages", "values": [2], "why": "extra"},
+    ],
+)
+def test_malformed_readings_raise_rather_than_being_skipped(program_factory, bad):
+    program = program_factory()
+    program.cv_constraints = [_UNDECIDED | {"readings": bad}]
+    program.save(update_fields=["cv_constraints"])
+    with pytest.raises(ValidationError):
+        rules_from_program(program)
+
+
+def test_readings_on_a_rule_that_is_not_undecided_raise(program_factory):
+    program = program_factory()
+    program.cv_constraints = [_UNDECIDED | {"key": "max_pages", "value": 2}]
+    program.save(update_fields=["cv_constraints"])
+    with pytest.raises(ValidationError):
+        rules_from_program(program)
+
+
+def test_a_rule_without_readings_dumps_exactly_as_before():
+    """Review focus 4: no `readings: null` in rows written from now on."""
+    from apps.documents.constraints import ConstraintRule
+
+    rule = ConstraintRule(rule_id="P-1", key="max_pages", value=2,
+                          enforcement="BINDING", rule_text="Two pages.")
+    assert set(rule.model_dump(mode="json")) == {
+        "rule_id", "key", "value", "enforcement", "rule_text", "source_url", "scope",
+    }
+
+
+@pytest.mark.parametrize("key", ["photo_required", "cv_scope", "cv_start"])
+def test_the_section_8_keys_are_constraint_keys(key):
+    from apps.documents.constraints import CONSTRAINT_KEYS
+
+    assert key in CONSTRAINT_KEYS

@@ -8,7 +8,7 @@ minutes; it spends a handful of model calls.
 
 - The app running with `MAILBOX_PROVIDERS=MICROSOFT`, the Microsoft OAuth client
   configured (`docs/runbooks/deploy.md`), `OPENAI_API_KEY` set
-  (`source ~/.config/tehsil_agent/openai.env`), and an agency with a verified
+  (`source ~/.config/elmify/openai.env`), and an agency with a verified
   `TenantDomain` you can reach in a browser.
 - `OPENROUTER_API_KEY` in the environment of the process that runs `sync_mailboxes`
   (Jev, the reader of decision mail, is reached through OpenRouter). The deployed

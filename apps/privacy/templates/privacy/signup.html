@@ -1,16 +1,14 @@
 {% extends "base.html" %}
 {% block lang %}{{ form.language.value|default:'en' }}{% endblock %}
-{% block title %}Sign up{% endblock %}
+{% block title %}Sign up — Elmify{% endblock %}
+{% block meta_description %}Create a free Elmify account in Azerbaijan or worldwide to match your grades, Bachelor's ECTS credits, and IELTS or TOEFL scores against funded master's programmes (MSc, MA, LLM, MRes) and scholarships abroad (Bachelor's support coming soon).{% endblock %}
 {% block content %}
   <h1>Sign up</h1>
-  <p class="muted">Create your free account to get master&rsquo;s programmes and funding matched to you.</p>
+  <p class="muted">Create your free account to get master&rsquo;s programmes (MSc, MA, LLM, MRes) and scholarships matched to your profile (Bachelor&rsquo;s support coming soon).</p>
   <form method="post">
     {% csrf_token %}
     {{ form.non_field_errors }}
     {% for doc in docs %}<input type="hidden" name="documents" value="{{ doc.id }}">{% endfor %}
-    <p>{{ form.full_name.label_tag }} {{ form.full_name }} {{ form.full_name.errors }}</p>
-    <p>{{ form.email.label_tag }} {{ form.email }} {{ form.email.errors }}</p>
-    <p>{{ form.password.label_tag }} {{ form.password }} <small class="muted">{{ form.password.help_text }}</small> {{ form.password.errors }}</p>
     {% comment %}Changing language reloads the page, so the documents shown (the hidden ids
        above) are always the ones in the language submitted. A select here let a
        student pick another language and then be told the documents "changed".{% endcomment %}
@@ -21,6 +19,9 @@
       </p>
     {% endwith %}
     {{ form.language.errors }}
+    <p>{{ form.full_name.label_tag }} {{ form.full_name }} {{ form.full_name.errors }}</p>
+    <p>{{ form.email.label_tag }} {{ form.email }} {{ form.email.errors }}</p>
+    <p>{{ form.password.label_tag }} {{ form.password }} <small class="muted">{{ form.password.help_text }}</small> {{ form.password.errors }}</p>
     <p class="consent">
       <label><input type="checkbox" name="consent" {% if form.consent.value and not stale %}checked{% endif %}>
       I agree to the <a href="{% url 'privacy-legal' 'terms' %}?lang={{ form.language.value|default:'en' }}">Terms of Service</a>
@@ -31,5 +32,5 @@
     </p>
     <button type="submit">Create account</button>
   </form>
-  <p class="muted auth-alt">Already have an account? <a href="/accounts/login/">Log in</a> · Agency or university? <a href="/demo/">Book a demo</a></p>
+  <p class="muted auth-alt">Already have an account? <a href="/accounts/login/">Log in</a> · Want a walkthrough first? <a href="/demo/?audience=student">Student walkthrough</a> · <a href="/demo/?audience=agency">Agency demo</a></p>
 {% endblock %}

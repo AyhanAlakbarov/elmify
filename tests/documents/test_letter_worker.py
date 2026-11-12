@@ -60,6 +60,8 @@ def test_a_written_letter_becomes_a_draft_with_its_gate_record(
         draft = DocumentDraft.objects.get(kind=DocumentDraft.Kind.MOTIVATION_LETTER)
         card.refresh_from_db()
     assert draft.programme_id == card.program_id
+    assert draft.application_id == card.id
+    assert draft.destination_label
     assert draft.letter_gates == [{"code": "WRONG_INSTITUTION", "unit_archetype": "opening"}]
     assert draft.letter_retried is True
     assert draft.letter_cycle  # the prompt the letter was written to

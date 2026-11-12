@@ -13,19 +13,19 @@ Source plan: [AWS live boundary validation](../superpowers/plans/2026-08-11-aws-
 ## Offline readiness
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run pytest -m "not aws" -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run pytest -m "not aws" -q
 ```
 
 Observed result: `96 passed, 2 deselected in 3.96s`.
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run ruff check .
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run ruff check .
 ```
 
 Observed result: `All checks passed!`
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run mypy apps config
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run mypy apps config
 ```
 
 Observed result: `Success: no issues found in 54 source files`.
@@ -34,13 +34,13 @@ The repository CI and existing harness evidence scope mypy to `apps config`; the
 draft-plan command `uv run mypy .` was not used as the release gate.
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run python manage.py check
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run python manage.py check
 ```
 
 Observed result: `System check identified no issues (0 silenced).`
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run python manage.py makemigrations --check --dry-run
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run python manage.py makemigrations --check --dry-run
 ```
 
 Observed result: `No changes detected`.
@@ -52,12 +52,12 @@ bash -n scripts/run_aws_boundary_validation.sh
 Observed result: exit `0`.
 
 ```text
-sudo docker build --platform linux/amd64 --target web --tag tehsil-agent:aws-boundary-offline .
+sudo docker build --platform linux/amd64 --target web --tag elmify:aws-boundary-offline .
 ```
 
 Observed result: the operator ran the local Docker build after the sudo prompt and reported it
 complete. This Codex process did not inspect the image afterward because
-`sudo -n docker image inspect tehsil-agent:aws-boundary-offline` returned
+`sudo -n docker image inspect elmify:aws-boundary-offline` returned
 `sudo: a password is required`.
 
 ## Privacy scan
@@ -71,19 +71,19 @@ Observed result: exit `1` with no output; no prohibited identifier pattern was f
 ## Authenticated read-only AWS preflight
 
 ```text
-aws sts get-caller-identity --profile tehsil-sandbox --region eu-central-1 --query 'Account != null && Arn != null' --output text
+aws sts get-caller-identity --profile elmify-sandbox --region eu-central-1 --query 'Account != null && Arn != null' --output text
 ```
 
 Observed result: `True`.
 
 ```text
-aws cloudformation validate-template --template-body file://infra/template.yaml --profile tehsil-sandbox --region eu-central-1 --query 'length(Parameters) >= `1` && length(Description) >= `1`' --output text
+aws cloudformation validate-template --template-body file://infra/template.yaml --profile elmify-sandbox --region eu-central-1 --query 'length(Parameters) >= `1` && length(Description) >= `1`' --output text
 ```
 
 Observed result: `True`.
 
 ```text
-AWS_PROFILE=tehsil-sandbox AWS_REGION=eu-central-1 bash scripts/run_aws_boundary_validation.sh --preflight-only
+AWS_PROFILE=elmify-sandbox AWS_REGION=eu-central-1 bash scripts/run_aws_boundary_validation.sh --preflight-only
 ```
 
 Observed result: exit `0` after printing `Preflight: validating identity, names, and region`.
@@ -91,7 +91,7 @@ This command made read-only AWS calls only and found no collision with the fixed
 repository, and log-group names.
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-debug uv run python -c '<boto3 STS boolean probe>'
+UV_CACHE_DIR=/tmp/elmify-aws-live-debug uv run python -c '<boto3 STS boolean probe>'
 ```
 
 Observed result after enabling the boto3 CRT extra: `True`. This proves the project

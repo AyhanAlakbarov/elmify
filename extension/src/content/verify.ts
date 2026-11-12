@@ -13,7 +13,7 @@
  */
 import type { PacketField } from "../types.js";
 import { REFUSED_TYPES, accessibleName } from "./snapshot.js";
-import { TOKENS, fieldKey, normalise } from "./vocabulary.js";
+import { TOKENS, fieldKey, normalise, tokenGroupKey } from "./vocabulary.js";
 
 export interface VerifiedEntry {
   entry: PacketField;
@@ -25,7 +25,7 @@ export interface VerifiedEntry {
 
 const FILL_METHODS = new Set(["fill", "type", "selectOption", "selectOptionFromDropdown"]);
 
-function visible(element: HTMLElement): boolean {
+export function visible(element: HTMLElement): boolean {
   if (element.hidden) return false;
   const style = getComputedStyle(element);
   if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
@@ -62,14 +62,56 @@ function matchingFields(name: string, candidates: readonly string[]): string[] {
   // Unanchored substring matching was measured to false-accept exactly the
   // cross-field case this check exists to refuse.
   const padded = ` ${haystack} `;
-  return candidates.filter((field) => {
-    const own = TOKENS[fieldKey(field)];
-    return own !== undefined && own.some((token) => padded.includes(` ${normalise(token)} `));
+  const hitsByGroup = new Map<string, string[]>();
+  for (const group of candidates) {
+    const own = TOKENS[group] ?? TOKENS[fieldKey(group)];
+    if (!own) continue;
+    const hits = own
+      .map((token) => normalise(token))
+      .filter((norm) => norm.length > 0 && padded.includes(` ${norm} `));
+    if (hits.length > 0) hitsByGroup.set(group, hits);
+  }
+  const matched = Array.from(hitsByGroup.keys());
+  if (matched.length <= 1) return matched;
+  // Phrase subsumption: a compound phrase matched by one candidate (e.g.
+  // "issuing country", "degree in english", "first language") subsumes a
+  // shorter head-noun token from a single other candidate ("country",
+  // "degree", "first"), provided the compound phrase does not span two
+  // distinct sub-candidates (preserving "Ad Soyad" as ambiguous_name).
+  return matched.filter((sub) => {
+    const subHits = hitsByGroup.get(sub) ?? [];
+    return !subHits.every((tSub) =>
+      matched.some((sup) => {
+        if (sup === sub) return false;
+        const supHits = hitsByGroup.get(sup) ?? [];
+        return supHits.some((tSup) => {
+          if (tSup === tSub || !(` ${tSup} `).includes(` ${tSub} `)) return false;
+          const subGroupsInSup = matched.filter(
+            (other) =>
+              other !== sup &&
+              (hitsByGroup.get(other) ?? []).some(
+                (tOther) => tOther !== tSup && (` ${tSup} `).includes(` ${tOther} `),
+              ),
+          );
+          return subGroupsInSup.length === 1;
+        });
+      }),
+    );
   });
 }
 
+/** "education.2.institution_original" -> "education.institution_original".
+ *  Two degrees' institution boxes carry the same label ("University"); which
+ *  degree a box belongs to is the map's to say (its heading), never the
+ *  label's. So the label check compares classes, not indices. */
+export function fieldClass(profileField: string): string {
+  return profileField.replace(/\.\d+\./, ".");
+}
+
 export function verifyEntries(entries: PacketField[]): VerifiedEntry[] {
-  const packetFields = Array.from(new Set(entries.map((item) => item.profile_field)));
+  // A typed-back answer names no class: its label was never ours to judge.
+  const judged = entries.filter((item) => !item.from_answer);
+  const packetGroups = Array.from(new Set(judged.map((item) => tokenGroupKey(item.profile_field))));
   return entries.map((entry) => {
     const refuse = (reason: string): VerifiedEntry => ({ entry, element: null, ok: false, reason });
 
@@ -106,10 +148,15 @@ export function verifyEntries(entries: PacketField[]): VerifiedEntry[] {
       return refuse("disabled");
     }
 
-    const matched = matchingFields(accessibleName(element), packetFields);
+    // The student typed this answer into this very box before (owner,
+    // 2026-10-09): the box is theirs by their own act, so its label is not ours
+    // to judge. Every check above (unique, visible, enabled, typeable) still applies.
+    if (entry.from_answer === true) return { entry, element, ok: true, reason: "" };
+
+    const matched = matchingFields(accessibleName(element), packetGroups);
     if (matched.length === 0) return refuse("name_mismatch");
     if (matched.length > 1) return refuse("ambiguous_name");
-    if (matched[0] !== entry.profile_field) return refuse("name_mismatch");
+    if (matched[0] !== tokenGroupKey(entry.profile_field)) return refuse("name_mismatch");
 
     return { entry, element, ok: true, reason: "" };
   });

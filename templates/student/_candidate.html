@@ -1,50 +1,55 @@
-{% load cv_countries %}{% load dashboard %}
-<article id="candidate-{{ candidate.id }}" class="match-card{% if as_banner %} is-banner{% endif %}">
+{% load cv_countries dashboard %}
+<article id="candidate-{{ candidate.id }}" class="match-card candidate{% if as_banner %} is-banner{% endif %}" data-pack-picked="{% if candidate.id in applied %}true{% else %}false{% endif %}" data-pack-kind="{% if candidate.opportunity_id %}award{% else %}programme{% endif %}" data-pack-country="{{ candidate.country_code|default:'' }}" data-pack-tier="{{ candidate.risk_tier_label|default:'' }}">
   {% if not as_banner %}
     <div class="match-top">
       {% if candidate.state == "CHECKING" %}
-        <span class="badge badge-brand">Being checked</span>
-      {% elif candidate.eligibility_status == "ELIGIBLE" %}
-        <span class="badge badge-ok">Eligible</span>
-      {% elif candidate.eligibility_status == "POSSIBLY_ELIGIBLE" %}
-        <span class="badge badge-warn">Check eligibility</span>
+        <span class="badge badge-brand">Under review</span>
       {% else %}
-        <span class="badge badge-danger">Not eligible</span>
+        <span class="badge {% if candidate.eligibility_status == 'ELIGIBLE' %}badge-ok{% elif candidate.eligibility_status == 'POSSIBLY_ELIGIBLE' %}badge-warn{% else %}badge-danger{% endif %}">Fit: {{ candidate.eligibility_status.label }}{% if candidate.is_below_fit_bar %} (below balanced fit bar){% endif %}</span>
       {% endif %}
+      {% if candidate.risk_tier_label %}<span class="badge badge-muted">Portfolio tier: {{ candidate.risk_tier_label }}</span>{% endif %}
       {% if candidate.country_code %}<span class="match-country">{{ candidate.country_code|flag }}{{ candidate.country_code|country_name }}</span>{% endif %}
     </div>
-    {% if elsewhere %}<p class="match-note">{{ elsewhere|capfirst }}</p>{% endif %}
-    <h4>{{ candidate.program_name }}</h4>
-    {% if candidate.institution_name %}<p class="match-inst">{{ candidate.institution_name }}</p>{% endif %}
-  {% endif %}
-
-  {% if candidate.state == "CHECKING" %}
-    <p class="match-why">We are checking this programme against your profile.</p>
+    {% if candidate.opportunity_id is None %}<h4>{{ candidate.program_name }}</h4>{% endif %}
+    {% if candidate.institution_name or candidate.country_code %}<p class="match-inst">{{ candidate.institution_name }}{% if candidate.institution_name and candidate.country_code %} · {% endif %}{{ candidate.country_code }}</p>{% endif %}
   {% else %}
-    {% if candidate.opportunity_id is None or candidate.application_fee %}
+    {% if candidate.state == "CHECKING" %}<span class="badge badge-brand">Under review</span>{% endif %}
+    <span class="badge {% if candidate.eligibility_status == 'ELIGIBLE' %}badge-ok{% elif candidate.eligibility_status == 'POSSIBLY_ELIGIBLE' %}badge-warn{% else %}badge-danger{% endif %}">Fit: {{ candidate.eligibility_status.label }}{% if candidate.is_below_fit_bar %} (below balanced fit bar){% endif %}</span>
+    {% if candidate.risk_tier_label %}<span class="badge badge-muted">Portfolio tier: {{ candidate.risk_tier_label }}</span>{% endif %}
+  {% endif %}
+  {% if candidate.estimated_chance_pct is not None %}<p class="match-note">{% if candidate.chance_line %}{{ candidate.chance_line }}{% else %}We estimate that there is an ~{{ candidate.estimated_chance_pct }}% chance{% endif %}</p>{% endif %}
+  {% if candidate.opportunity_id is None or candidate.application_fee %}
     <dl class="match-facts">
       {% if candidate.opportunity_id is None %}
-        <div><dt>Still to cover</dt><dd{% if not candidate.funding_gap_is_placeholder and candidate.funding_gap == 0 %} class="gap-zero"{% endif %}>{% if candidate.funding_gap_is_placeholder %}Not costed yet{% else %}{{ candidate.funding_gap }} {{ candidate.currency }}{% endif %}</dd></div>
+        <div><dt>Funding gap</dt><dd{% if not candidate.funding_gap_is_placeholder and candidate.funding_gap == 0 %} class="gap-zero"{% endif %}>{% if candidate.funding_gap_is_placeholder %}not yet costed{% else %}{{ candidate.funding_gap }} {{ candidate.currency }}{% endif %}</dd></div>
+        {% if candidate.calibration_features.application_deadline %}<div><dt>Deadline</dt><dd>{{ candidate.calibration_features.application_deadline }}</dd></div>{% endif %}
       {% endif %}
-      {% if candidate.application_fee %}<div><dt>Application fee</dt><dd>{{ candidate.application_fee }} {{ candidate.application_fee_currency }}</dd></div>{% endif %}
+      {% if candidate.application_fee %}
+        <div><dt>Application fee</dt><dd>Application fee: {{ candidate.application_fee }} {{ candidate.application_fee_currency }} — you pay this at submission</dd></div>
+      {% elif candidate.opportunity_id is None and candidate.application_fee is None %}
+        <div><dt>Application fee</dt><dd>Application fee: not known — check the programme's own page</dd></div>
+      {% endif %}
     </dl>
-    {% endif %}
-    {% if candidate.opportunity_id is None %}<p class="match-why">{{ candidate.evidence.claim }}</p>{% endif %}
   {% endif %}
-  {% if also_under %}<p class="match-note">Also funded by {{ also_under|join:", " }}</p>{% endif %}
+  {% if candidate.opportunity_id is None %}
+    {% if candidate.self_funded and not candidate.funding_gap_is_placeholder %}<p class="match-note">After the {{ candidate.self_funded }} {{ candidate.currency }} you said you can cover yourself: {{ candidate.left_to_find }} {{ candidate.currency }} left to find</p>{% endif %}
+    {% if candidate.funding_condition %}<p class="match-note">{{ candidate.funding_condition }}</p>{% endif %}
+    {% for note in candidate.risk_notes %}<p class="match-note muted">{{ note|student_risk_note }}</p>{% endfor %}
+  {% endif %}
+  {% if also_under %}<p class="match-note">Also under {{ also_under|join:", " }}</p>{% endif %}
   {% with note=recognition_notes|lookup:candidate.id %}{% if note %}<p class="match-note">{{ note }}</p>{% endif %}{% endwith %}
   {% if candidate.state != "CHECKING" %}
+    {% if candidate.opportunity_id is None %}<p class="match-why">{{ candidate.evidence.claim }}</p>{% endif %}
     {% with url=candidate.evidence.source_url|https_only %}
-      <p class="source">{% if url %}<a href="{{ url }}" rel="noopener" target="_blank">Official source</a>{% else %}Official source{% endif %}: <span translate="no">{{ candidate.evidence.source_domain }}</span>, checked {{ candidate.evidence.last_checked_at|date:"j M Y" }}</p>
+      <p class="source">{% if url %}<a href="{{ url }}" rel="noopener" target="_blank">Official source</a> · {{ candidate.evidence.source_domain }}{% else %}Official source: {{ candidate.evidence.source_domain }}{% endif %} · Last checked {{ candidate.evidence.last_checked_at|date:"j M Y" }}</p>
     {% endwith %}
   {% endif %}
-
   {% if candidate.state == "VISIBLE" %}
     <div class="match-actions">
       {% if candidate.id in applied %}
-        <span class="badge badge-ok">In your applications</span>
+        <span class="badge badge-ok">In your applications.</span>
       {% elif candidate.funding_card.route == "AUTOMATIC_ON_ADMISSION" %}
-        <p class="match-note">Comes with admission: apply to the programme.</p>
+        <p class="match-note">Comes with the admission: apply to the programme.</p>
       {% else %}
         <form method="post" action="{% url 'student-application-add' candidate.id %}">{% csrf_token %}<button type="submit">Add to my applications</button></form>
       {% endif %}

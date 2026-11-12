@@ -110,13 +110,19 @@ def request_deletion(
 
     try:
         return advance_deletion(request, "APPROVED")
-    except DeletionBlocked:
+    except DeletionBlocked as error:
         # The engine refused. Which of its two guards fired decides what the
         # student is told and what the owner has to do about it.
         blocked_by = (
             DeletionRequest.ReviewReason.LEGAL_HOLD
             if request.legal_hold
             else DeletionRequest.ReviewReason.NO_RETENTION_POLICY
+        )
+        logger.info(
+            "DeletionHeld request=%s reason=%s detail=%s",
+            request.id,
+            blocked_by,
+            error,
         )
         return _hold(request, blocked_by)
 

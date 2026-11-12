@@ -125,7 +125,7 @@ Run:
 
 ```bash
 env -u PHASE1_VALIDATION_STACK -u PHASE1_VALIDATION_QUEUE_URL \
-  UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache \
+  UV_CACHE_DIR=/tmp/elmify-uv-cache \
   uv run pytest \
   tests/research/test_controlled_egress_validation.py \
   tests/research/test_fairness_validation.py \

@@ -114,7 +114,9 @@ def test_the_kind_words_travel_as_data_and_no_student_field_can() -> None:
     assert "DATA" in call["input"][0]["content"]
     assert "vakıf" in user and "2026-2027" in user and "TR" in user
     assert call["store"] is False
-    assert call["max_output_tokens"] <= 3000
+    # Capped, and high enough for 18 Georgian sentences (cut off at 3,000 on 2026-10-14).
+    assert 6000 <= call["max_output_tokens"] <= 10_000
+    assert "18 queries in all" in user  # the writer stopped after the first angle without it
     assert call["text_format"] is AngleSet
 
 
@@ -321,3 +323,144 @@ def test_a_home_language_outside_a_diaspora_pass_is_refused_by_the_database() ->
     for family, home in (("PRIVATE_FOUNDATION", "az"), ("AFFINITY_OR_DIASPORA", "")):
         with pytest.raises(IntegrityError), transaction.atomic():
             SweepAngle.objects.create(family=family, home_language=home, **fields)
+
+
+# The 2026-10-13 comparison's fixes: the writer and the Brave operator cap.
+
+def test_the_sweep_model_writes_and_no_study_level_is_asked_for(settings) -> None:
+    settings.SWEEP_ANGLE_MODEL = "deepseek/deepseek-v4.1-flash"
+    parser = _Parser(_set())
+    generate_angles(
+        country_code="TR", family="PRIVATE_FOUNDATION", languages=("tr",),
+        vocabulary=_TR_VOCAB, parser=parser, now=NOW,
+    )
+    (call,) = parser.calls
+    assert call["model"] == "deepseek/deepseek-v4.1-flash"
+    # Naming the master's level hid 5 of 19 real master's funders (2026-10-14):
+    # the level is read off the funder's page, never put in the query.
+    assert "level word" not in call["input"][1]["content"]
+    assert "Never name a study level" in call["input"][0]["content"]
+    assert set(SweepAngle.objects.values_list("written_by", flat=True)) == {
+        "deepseek/deepseek-v4.1-flash"
+    }
+
+
+def test_keyword_terms_stacked_with_operators_fall_back_to_the_sentence() -> None:
+    stacked = 'intitle:burs inbody:"nasıl başvurulur" inbody:koşullar inbody:"son tarih" vakıf'
+    plain = 'intitle:vakfı "burs başvurusu" yüksek lisans'
+    parsed = AngleSet(angles=[
+        GeneratedAngle(angle="FAQ", query="Vakfımız yüksek lisans bursu verir, sık sorulanlar.",
+                       brave_terms=stacked),
+        GeneratedAngle(angle="ABOUT", query="Hakkımızda: vakfımız yüksek lisans bursu verir.",
+                       brave_terms=plain),
+    ])
+    generate_angles(
+        country_code="TR", family="PRIVATE_FOUNDATION", languages=("tr",),
+        vocabulary=_TR_VOCAB, parser=_Parser(parsed), now=NOW,
+    )
+    terms = dict(SweepAngle.objects.values_list("angle", "brave_terms"))
+    assert terms == {"FAQ": "", "ABOUT": plain}
+
+
+def test_the_openrouter_parser_speaks_chat_and_returns_the_parsed_set(monkeypatch) -> None:
+    from apps.research.angles import OpenRouterParser
+
+    sent: dict = {}
+    answer = _set(samples=1).model_dump_json()
+
+    class _Completions:
+        def create(self, **kwargs):
+            sent.update(kwargs)
+            message = SimpleNamespace(content=answer)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class _Client:
+        def __init__(self, **kwargs):
+            sent["client"] = kwargs
+            self.chat = SimpleNamespace(completions=_Completions())
+
+    monkeypatch.setattr("openai.OpenAI", _Client)
+    result = OpenRouterParser(api_key="k").parse(
+        model="deepseek/deepseek-v4.1-flash", text_format=AngleSet, max_output_tokens=3000,
+        input=[{"role": "developer", "content": "rules"}, {"role": "user", "content": "DATA"}],
+        safety_identifier="x", store=False,
+    )
+    assert result.output_parsed == AngleSet.model_validate_json(answer)
+    assert sent["client"] == {"api_key": "k", "base_url": "https://openrouter.ai/api/v1"}
+    assert [m["role"] for m in sent["messages"]] == ["system", "user"]
+    assert sent["response_format"]["json_schema"]["strict"] is True
+    assert sent["extra_body"] == {"reasoning": {"enabled": False}}
+
+
+def test_an_off_schema_openrouter_answer_is_recorded_as_no_answer(monkeypatch) -> None:
+    from apps.research.angles import OpenRouterParser
+
+    class _Client:
+        def __init__(self, **kwargs):
+            message = SimpleNamespace(content='{"angles": [{"angle": "NOPE"}]}')
+            create = lambda **kw: SimpleNamespace(choices=[SimpleNamespace(message=message)])  # noqa: E731
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=create))
+
+    monkeypatch.setattr("openai.OpenAI", _Client)
+    outcome = generate_angles(
+        country_code="TR", family="PRIVATE_FOUNDATION", languages=("tr",),
+        vocabulary=_TR_VOCAB, parser=OpenRouterParser(api_key="k"), now=NOW,
+    )
+    assert outcome == {"tr": "no_answer"}
+
+
+class _Sequence:
+    """Answers in turn, then the last one again."""
+
+    def __init__(self, *answers: AngleSet) -> None:
+        self.answers = list(answers)
+        self.calls: list[dict] = []
+
+    def parse(self, **kwargs: object) -> object:
+        self.calls.append(kwargs)
+        answer = self.answers[min(len(self.calls), len(self.answers)) - 1]
+        return SimpleNamespace(output_parsed=answer, output=[])
+
+
+def test_a_short_answer_is_asked_once_more_and_the_two_are_merged() -> None:
+    parser = _Sequence(_set(samples=1), _set(samples=3))
+    generate_angles(
+        country_code="TR", family="PRIVATE_FOUNDATION", languages=("tr",),
+        vocabulary=_TR_VOCAB, parser=parser, now=NOW,
+    )
+    assert len(parser.calls) == 2
+    samples = PASS_SHAPES["PRIVATE_FOUNDATION"].samples
+    assert SweepAngle.objects.count() == len(ANGLE_KINDS) * samples
+
+
+def test_a_still_short_answer_is_not_asked_a_third_time() -> None:
+    parser = _Sequence(_set(samples=1), _set(samples=1))
+    generate_angles(
+        country_code="TR", family="PRIVATE_FOUNDATION", languages=("tr",),
+        vocabulary=_TR_VOCAB, parser=parser, now=NOW,
+    )
+    assert len(parser.calls) == 2
+
+
+def test_an_off_schema_answer_is_asked_once_more() -> None:
+    from pydantic import ValidationError
+
+    class _OffThenFull:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def parse(self, **kwargs: object) -> object:
+            self.calls += 1
+            if self.calls == 1:
+                AngleSet.model_validate({"angles": [{"angle": "NOPE"}]})  # raises
+            return SimpleNamespace(output_parsed=_set(), output=[])
+
+    parser = _OffThenFull()
+    try:
+        outcome = generate_angles(
+            country_code="TR", family="PRIVATE_FOUNDATION", languages=("tr",),
+            vocabulary=_TR_VOCAB, parser=parser, now=NOW,
+        )
+    except ValidationError:  # pragma: no cover - the generator must catch it
+        raise
+    assert (parser.calls, outcome) == (2, {"tr": "written"})

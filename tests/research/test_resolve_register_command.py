@@ -82,14 +82,14 @@ def test_diffbot_is_refused_on_stale_terms(keys) -> None:
 
 def test_an_unknown_register_names_the_ones_served(keys, monkeypatch, tmp_path) -> None:
     _closed_list(monkeypatch, tmp_path, "az_banks", "AZ")
-    with pytest.raises(CommandError, match="one of: az_banks, vgm_tr"):
+    with pytest.raises(CommandError, match="one of: az_banks, pointer, vgm_tr"):
         call_command("resolve_register", "--register", "vgm")
 
 
 def test_a_list_without_a_rows_file_is_not_served(keys, monkeypatch, tmp_path) -> None:
     _closed_list(monkeypatch, tmp_path, "az_banks", "AZ")
     (tmp_path / "az_banks.csv").unlink()
-    with pytest.raises(CommandError, match="one of: vgm_tr$"):
+    with pytest.raises(CommandError, match="one of: pointer, vgm_tr$"):
         call_command("resolve_register", "--register", "az_banks")
 
 
@@ -255,3 +255,69 @@ def test_skipped_rows_do_not_count_against_the_limit(keys, monkeypatch, tmp_path
     call_command("resolve_register", "--register", "igo_regional_global", "--limit", "1")
     assert [q.names[0] for q in asked] == ["Türk Vakfı"]
     assert "'no country': 3" in capsys.readouterr().out
+
+
+from apps.research.closed_lists import has_signal  # noqa: E402
+from apps.research.models import ResolutionItem  # noqa: E402
+
+POINTER_QUOTE = "Tələbələr Mədəniyyət Nazirliyinin MyStart təqaüdünə də müraciət edə bilərlər."
+
+
+def _pointer(name: str = "Mədəniyyət Nazirliyi") -> RegisterEntry:
+    return RegisterEntry.objects.create(
+        register="pointer", external_key="medeniyyet nazirliyi", name=name,
+        names=[name, "MyStart təqaüdü"], resolution="UNRESOLVED", last_seen=timezone.now(),
+        country_code="AZ", kind="NATIONAL_GOVERNMENT",
+        pointer_quote=POINTER_QUOTE, pointer_url="https://example-agency.az/tehsil/teqaud",
+    )
+
+
+def test_a_placed_pointer_s_body_carries_the_pointer_route(keys, monkeypatch) -> None:
+    _pointer()
+    _fake(monkeypatch, {"Mədəniyyət Nazirliyi": Resolution(
+        "example-ministry.az", "SEARCH_SLUG", names=("Mədəniyyət Nazirliyi",))})
+    call_command("resolve_register", "--register", "pointer", "--write")
+    org = Organisation.objects.get(primary_domain="example-ministry.az")
+    assert org.found_via == ["POINTER:example-agency.az"]
+    assert (org.kind, org.country_code) == ("NATIONAL_GOVERNMENT", "AZ")
+    assert has_signal(org) is True
+    assert not ResolutionItem.objects.exists()
+
+
+def test_an_unplaceable_pointer_asks_a_person_with_its_quote(keys, monkeypatch) -> None:
+    entry = _pointer()
+    _fake(monkeypatch, {"Mədəniyyət Nazirliyi": Resolution(
+        reason="NO_CANDIDATE", names=("Mədəniyyət Nazirliyi", "MyStart təqaüdü"))})
+    call_command("resolve_register", "--register", "pointer", "--write")
+    item = ResolutionItem.objects.get(kind="SITE_UNKNOWN")
+    assert item.subject_key == f"register:pointer:{entry.external_key}"
+    assert item.evidence["register"] == "pointer" and item.evidence["candidates"] == []
+    assert POINTER_QUOTE[:80] in item.evidence["why"]
+    assert item.ask.startswith("Which site is Mədəniyyət Nazirliyi's own?")
+    assert item.country_code == "AZ"
+
+
+def test_a_fetch_failure_asks_nobody_yet(keys, monkeypatch) -> None:
+    """The resolver retries a fetch failure after a week; a person asked now
+    would be answering the resolver's own transient problem."""
+    _pointer()
+    _fake(monkeypatch, {"Mədəniyyət Nazirliyi": Resolution(
+        reason="FETCH_FAILED", names=("Mədəniyyət Nazirliyi",))})
+    call_command("resolve_register", "--register", "pointer", "--write")
+    assert not ResolutionItem.objects.exists()
+
+
+def test_a_dry_run_asks_nobody(keys, monkeypatch) -> None:
+    _pointer()
+    _fake(monkeypatch, {"Mədəniyyət Nazirliyi": Resolution(
+        reason="NO_CANDIDATE", names=("Mədəniyyət Nazirliyi",))})
+    call_command("resolve_register", "--register", "pointer")
+    assert not ResolutionItem.objects.exists()
+
+
+def test_another_register_s_unplaced_row_asks_nobody(keys, monkeypatch) -> None:
+    _entries("ÖRNEK VAKFI")
+    _fake(monkeypatch, {"ÖRNEK VAKFI": Resolution(reason="NO_CANDIDATE",
+                                                  names=("ÖRNEK VAKFI",))})
+    call_command("resolve_register", "--register", "vgm_tr", "--write")
+    assert not ResolutionItem.objects.exists()

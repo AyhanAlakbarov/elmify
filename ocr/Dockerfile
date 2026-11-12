@@ -2,7 +2,7 @@
 # Its own image, never the app's: the page inventory (pdfplumber, pypdfium2) and the upload check
 # (pypdf), no model, on Python 3.12 (the Lambda base image's). Build context is ocr/, so no
 # app code or secret can enter it:
-#   docker build --platform linux/amd64 --provenance=false -t tehsil-ocr ocr/
+#   docker build --platform linux/amd64 --provenance=false -t elmify-ocr ocr/
 #
 # AWS's own Python 3.12 base image: it carries the Lambda runtime client, the runtime interface
 # emulator for local invokes, and boto3 (the handler's S3 read). Pinned by digest, like every base

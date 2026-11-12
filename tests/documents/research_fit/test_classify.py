@@ -94,3 +94,41 @@ def test_an_entity_after_a_character_casefold_lengthens_is_returned_whole():
     turkish = "İstanbul Teknik Üniversitesi Robotik Laboratuvarı yürüyen robotlar üzerine çalışır."
     assert entity_in_sentence("Robotik Laboratuvarı", turkish) == "Robotik Laboratuvarı"
     assert entity_in_sentence("Nobody At All", german) is None
+
+
+def test_emeritus_retired_visiting_and_on_leave_people_are_dropped_to_none():
+    sentences = (
+        "Prof. Dr. H. Weber (Emeritus) researched nonlinear control.",
+        "Visiting Professor Jane Roe teaches summer seminars on robotics.",
+        "Prof. Dr. K. Braun is currently on sabbatical leave.",
+        "Prof. Dr. M. Kaya leads the Autonomous Systems Group.",
+    )
+    parsed = Classified(
+        items=(
+            ClassifiedItem(
+                index=0, relevance=0.95, kind="named_person", entity="Prof. Dr. H. Weber"
+            ),
+            ClassifiedItem(index=1, relevance=0.90, kind="named_person", entity="Jane Roe"),
+            ClassifiedItem(
+                index=2, relevance=0.88, kind="named_person", entity="Prof. Dr. K. Braun"
+            ),
+            ClassifiedItem(
+                index=3, relevance=0.85, kind="named_person", entity="Prof. Dr. M. Kaya"
+            ),
+        )
+    )
+    out = FrontierClassifier(_Parser(parsed), student_id="s").classify(
+        sentences, topic="autonomous control"
+    )
+    assert out[0].kind == "none" and out[0].entity is None
+    assert out[1].kind == "none" and out[1].entity is None
+    assert out[2].kind == "none" and out[2].entity is None
+    assert out[3].kind == "named_person" and out[3].entity == "Prof. Dr. M. Kaya"
+
+
+def test_empty_sentences_skip_the_model_call():
+    parser = _Parser()
+    assert FrontierClassifier(parser, student_id="s").classify((), topic="robotics") == ()
+    assert parser.calls == []
+
+

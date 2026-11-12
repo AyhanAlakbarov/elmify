@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{% if overrun.who %}Over {{ overrun.who }}'s budget{% else %}Over your budget{% endif %}{% endblock %}
+{% block content %}
+  <h1>{{ overrun.title }}</h1>
+  {% if refused %}<p role="alert" id="confirm-error">Tick the box to add it.</p>{% endif %}
+  <p>{{ overrun.body }}</p>
+  <form method="post" action="{{ action }}">
+    {% csrf_token %}
+    {% for name, value in hidden.items %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+    <input type="hidden" name="seen" value="1">
+    <p>
+      <input type="checkbox" id="confirm" name="confirm" value="1" required{% if refused %} aria-describedby="confirm-error"{% endif %}>
+      <label for="confirm">{{ overrun.tick }}</label>
+    </p>
+    <button type="submit">Add anyway</button>
+  </form>
+  {% if cancel_url %}
+    <p><a href="{{ cancel_url }}">Cancel</a></p>
+  {% else %}
+    <p><a href="{% url 'student-settings-budget' %}">Change my budget</a> · <a href="{% url 'student-recommendation' %}">Cancel</a></p>
+  {% endif %}
+{% endblock %}

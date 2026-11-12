@@ -1,181 +1,447 @@
 {% csrf_token %}
+{% if not counselor_view and not staff_view %}
+<a class="write-callout" href="{% url 'student-writing' %}"><span class="ico ico-pen" aria-hidden="true"></span><span><strong>Your CV and motivation letters</strong><small>Confirm the details the AI read from your files, then let it write your CV and a letter for each application.</small></span><span class="write-callout-go">Open CV &amp; letters</span></a>
+{% endif %}
+{% if transcript_review %}<p role="status">Transcript: the student asked for a review{% if transcript_review.review_reason %} — {{ transcript_review.review_reason }}{% endif %}</p>{% endif %}
+{% if not staff_view %}
+<nav class="subnav" aria-label="Document view"><a href="#by-document">By document</a> <a href="#documents">By application</a> <a href="#upload">Upload &amp; files</a> <a href="#details">Your details</a>{% if not counselor_view %} <a href="#fill-form">Fill a form</a>{% endif %}</nav>
+<section class="panel" aria-labelledby="by-document-heading" id="by-document">
+  <h2 id="by-document-heading">By document</h2>
+  <ul class="item-list">
+    {% for entry in by_document %}
+      <li>
+        <div>
+          <strong>{{ entry.headline }}</strong>{% if entry.needed_by %}: {{ entry.needed_by }}{% endif %}{% if entry.held %} · <span class="badge badge-ok">you have it</span>{% endif %}
+          <br><span class="muted">{{ entry.titles|join:", " }}</span>
+          {% if entry.certified %}<br><small class="muted">Certified copy for {{ entry.certified|join:", " }}</small>{% endif %}
+          {% if entry.letters %}<br><small class="muted">Up to {{ entry.letters }} letter{{ entry.letters|pluralize }} for one application{% if not counselor_view %} · <a href="{% url 'student-referee-plan' %}">Plan your referees</a>{% endif %}</small>{% endif %}
+          {% if entry.validity %}<br><span role="alert">{{ entry.validity }}</span>{% endif %}
+        </div>
+      </li>
+    {% empty %}
+      <li class="quiet-line">Nothing is needed yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+<section class="panel" aria-labelledby="table-heading" id="documents">
+  <h2 id="table-heading">What each application needs</h2>
+  {% if not counselor_view and table.columns %}<p class="muted">Click <strong>Send</strong> on any ready document to open that university's application portal in your paired browser extension and attach the file.</p>{% endif %}
+  {% if table.columns %}
+    <div class="table-wrap">
+      <table class="doc-table">
+        <thead>
+          <tr>
+            <th scope="col">Document</th>
+            {% for column in table.columns %}<th scope="col" id="application-{{ column.application_id }}">{{ column.title }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for line in grid %}
+            <tr>
+              <th scope="row">{{ line.row.label }}{% if line.row.expires_on %} <small class="muted">(expires {{ line.row.expires_on|date:"j M Y" }})</small>{% endif %}</th>
+              {% for cell in line.cells %}
+                <td>
+                  <span class="cell cell-{{ cell.state|slugify }}">{{ cell.state }}{% if cell.count > 1 %} ({{ cell.count }} held{% if cell.merged %}, sent as one file{% endif %}){% endif %}</span>
+                  {% if counselor_view %}{% for held in cell.held %}{% if held.document_id %}
+                    {% if held.source == "draft" %}<a class="text-link" href="{% url 'documents-draft-view' held.document_id %}" target="_blank" rel="noopener">View</a>{% else %}<a class="text-link" href="{% url 'documents-upload-view' held.document_id %}" target="_blank" rel="noopener">View</a>{% if staff_view %} <a class="text-link" href="{% url 'documents-staff-download-upload' held.document_id %}">Download</a>{% endif %}{% endif %}
+                  {% endif %}{% endfor %}{% endif %}
+                  {% if not counselor_view %}{% for held in cell.held %}
+                    <form method="post" action="{% url 'student-document-submit' %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="application_id" value="{{ cell.column.application_id }}">
+                      <input type="hidden" name="document_id" value="{{ held.document_id }}">
+                      <input type="hidden" name="source" value="{{ held.source }}">
+                      <button type="submit" class="cell-send"><span aria-hidden="true">Send{% if cell.held|length > 1 %} #{{ forloop.counter }}{% endif %}</span><span class="sr-only">Submit document{% if cell.held|length > 1 %} {{ forloop.counter }}{% endif %} to {{ cell.column.title }}</span></button>
+                    </form>
+                  {% endfor %}{% endif %}
+                  {% for note in cell.notes %}<p class="doc-note">{{ note }}</p>{% endfor %}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+          {% if bundle_row %}
+            <tr>
+              <th scope="row">Combined application file</th>
+              {% for line in bundle_row %}<td>{% if line %}<p class="doc-note">{{ line }}</p>{% endif %}</td>{% endfor %}
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="quiet-line">No applications yet, so nothing is required.</p>
+  {% endif %}
+  {% if unverified %}
+    <ul class="item-list">
+      {% for title, kinds in unverified %}<li>{{ title }}: {{ kinds }} (unverified)</li>{% endfor %}
+    </ul>
+  {% endif %}
+</section>
+
 <div class="doc-hub">
 {% if not read_only %}
-<section class="panel uploader-panel" aria-labelledby="upload-heading">
-  <h2 id="upload-heading">Add a document</h2>
-  <form class="uploader" data-upload="{{ upload_endpoint }}" hx-boost="false">
-    <fieldset class="kind-picker">
-      <legend>What is it?</legend>
-      <div class="chips">
-        {% for value, label in upload_kinds %}
-          <label class="chip"><input type="radio" name="kind" value="{{ value }}"{% if forloop.first %} checked{% endif %}><span>{{ label }}</span></label>
+<section class="panel uploader-panel" aria-labelledby="upload-heading" id="upload">
+  <h2 id="upload-heading">Upload a document</h2>
+  <form data-upload="{{ upload_endpoint }}">
+    <p>
+      <label for="upload-kind">Document</label>
+      <select id="upload-kind" name="kind">{% for value, label in upload_kinds %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
+    </p>
+    {% if replaceable %}
+      {# documents.js shows the choices for the chosen kind when there is a choice to make. #}
+      <fieldset data-modes hidden>
+        <legend>Replace or add</legend>
+        {% for upload in replaceable %}
+          <p><label><input type="radio" name="mode" value="REPLACE" data-kind="{{ upload.kind }}" data-replaces="{{ upload.id }}"{% if forloop.first %} checked{% endif %}> Replace the {{ upload.get_kind_display|lower }} uploaded {{ upload.created_at|date:"j M Y" }}</label></p>
         {% endfor %}
-      </div>
+        {% for kind, example, default in add_another %}
+          <p><label><input type="radio" name="mode" value="ADD" data-kind="{{ kind }}"{% if default %} data-default{% endif %}> Add another (e.g. {{ example }})</label></p>
+        {% endfor %}
+      </fieldset>
+    {% endif %}
+    {# documents.js shows this only when the chosen kind is a transcript: the upload is refused without it. #}
+    <fieldset data-transcript-role hidden>
+      <legend>Is this the original transcript or a translation?</legend>
+      <p>
+        <label><input type="radio" name="role" value="ORIGINAL" checked> Original</label>
+        <label for="upload-language">in</label>
+        <select id="upload-language" name="language">
+          <option value="">another language</option>
+          <option value="az">Azerbaijani</option>
+          <option value="tr">Turkish</option>
+          <option value="ru">Russian</option>
+        </select>
+      </p>
+      <p><label><input type="radio" name="role" value="TRANSLATION"> Certified translation</label></p>
     </fieldset>
-    <label class="dropzone" for="upload-file" data-dropzone>
-      <span class="dz-icon" aria-hidden="true"></span>
-      <span class="dz-title">Drop a file here, or <u>choose one</u></span>
-      <span class="dz-hint">PDF, JPG or PNG. A Word CV: save it as PDF first.</span>
-      <input type="file" id="upload-file" name="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
-    </label>
-    <div class="dz-file" data-file hidden>
-      <span class="file-type" data-file-type>PDF</span>
-      <span class="dz-file-name"><strong data-file-name></strong><small data-file-size></small></span>
-      <progress data-progress max="100" value="0" hidden>0%</progress>
-    </div>
-    <div class="uploader-foot">
-      <button type="submit">Upload</button>
-      <p role="status" aria-live="polite"></p>
-    </div>
+    <p><label for="upload-file">File</label> <input type="file" id="upload-file" name="file" accept=".pdf,.jpg,.jpeg,.png"></p>
+    <button type="submit">Upload</button>
+    <p role="status"></p>
   </form>
 </section>
 {% endif %}
 
 <section class="panel" aria-labelledby="uploads-heading">
   <div class="panel-head">
-    <h2 id="uploads-heading">Your documents</h2>
+    <h2 id="uploads-heading">Your uploads</h2>
     {% if uploads %}<span class="count">{{ uploads|length }}</span>{% endif %}
   </div>
   {% if uploads %}
-  <ul class="doc-cards">
-    {% for upload in uploads %}
-      <li class="doc-card">
-        <span class="file-type">{% if "pdf" in upload.content_type %}PDF{% elif "png" in upload.content_type %}PNG{% elif "jpeg" in upload.content_type or "jpg" in upload.content_type %}JPG{% else %}FILE{% endif %}</span>
-        <div class="doc-card-body">
-          <h3>{{ upload.get_kind_display }}</h3>
-          <p class="muted">Uploaded <time datetime="{{ upload.created_at|date:'c' }}">{{ upload.created_at|date:"j M Y" }}</time>{% if upload.expires_on %}. Expires {{ upload.expires_on|date:"j M Y" }}{% endif %}</p>
-          {% if upload.rejection_message %}
-            <span class="badge badge-danger">Not accepted</span>
-            <p class="doc-problem">{{ upload.rejection_message }}.</p>
-          {% elif upload.state == "AVAILABLE" %}
-            <span class="badge badge-ok">Ready</span>
-          {% elif upload.state == "QUARANTINED" or upload.state == "CHECKING" %}
-            <span class="badge badge-brand">Checking…</span>
-          {% elif upload.state == "REVIEW_REQUIRED" %}
-            <span class="badge badge-warn">Needs a look</span>
-          {% elif upload.state == "READ_FAILED" %}
-            <span class="badge badge-danger">Could not be read</span>
-          {% else %}
-            <span class="badge">{{ upload.state|lower|capfirst }}</span>
-          {% endif %}
+    <ul class="doc-cards">
+      {% for upload in uploads %}
+        <li class="doc-card{% if upload.rejection_message %} is-rejected{% elif upload.state == 'CHECKING' %} is-checking{% elif upload.retired_at %} is-retired{% endif %}">
+          <div class="doc-card-main">
+            <span class="doc-card-icon" aria-hidden="true"></span>
+            <div class="doc-card-body">
+              <strong>{{ upload.get_kind_display }} — {% if upload.retired_at %}replaced{% elif upload.rejection_message %}{{ upload.rejection_message }}{% elif upload.state == "CHECKING" %}checking…{% else %}{{ upload.state|lower }}{% endif %}{% if upload.expires_on %}, expires {{ upload.expires_on|date:"j M Y" }}{% endif %}</strong>
+            </div>
+            {% if counselor_view and upload.state == "AVAILABLE" and not upload.retired_at %}
+              <span class="row-actions">
+                <a class="text-link" href="{% url 'documents-upload-view' upload.id %}" target="_blank" rel="noopener">View</a>{% if staff_view %} <a class="text-link" href="{% url 'documents-staff-download-upload' upload.id %}">Download</a>{% endif %}
+              </span>
+            {% endif %}
+          </div>
           {% if upload.kind in expiring and not counselor_view %}
             <details class="doc-expiry">
-              <summary>{% if upload.expires_on %}Change expiry date{% else %}Add expiry date{% endif %}</summary>
+              <summary>{% if upload.expires_on %}Change expiry date{% else %}Set expiry date{% endif %}</summary>
               <form method="post" action="{% url 'student-document-expiry' upload.id %}">
                 {% csrf_token %}
                 <label for="expiry-{{ upload.id }}">Expires on</label>
                 <input type="date" id="expiry-{{ upload.id }}" name="expires_on" value="{{ upload.expires_on|date:'Y-m-d' }}">
-                <button type="submit" class="btn-quiet">Save date</button>
+                <button type="submit" class="btn-quiet btn-small">Save</button>
               </form>
             </details>
           {% endif %}
-        </div>
-      </li>
-    {% endfor %}
-  </ul>
+        </li>
+      {% endfor %}
+    </ul>
   {% else %}
-    <p class="quiet-line">Nothing uploaded yet. Start with your CV: we read your details from it.</p>
+    <p class="quiet-line">Nothing uploaded yet.</p>
   {% endif %}
 </section>
 </div>
 
-<section class="panel" aria-labelledby="table-heading" id="documents">
-  <h2 id="table-heading">What each application needs</h2>
-  {% if table.columns %}
-    <div class="table-wrap">
-    <table class="doc-table">
-      <thead>
-        <tr>
-          <th scope="col">Document</th>
-          {% for column in table.columns %}<th scope="col" id="application-{{ column.application_id }}">{{ column.title }}</th>{% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for line in grid %}
-          <tr>
-            <th scope="row">{{ line.row.label }}{% if line.row.expires_on %}<small>Expires {{ line.row.expires_on|date:"j M Y" }}</small>{% endif %}</th>
-            {% for cell in line.cells %}
-              <td>
-                <span class="cell cell-{{ cell.state|slugify }}">{{ cell.state }}</span>
-                {% if cell.held and not counselor_view %}
-                  <form method="post" action="{% url 'student-document-submit' %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="application_id" value="{{ cell.column.application_id }}">
-                    <input type="hidden" name="document_id" value="{{ cell.held.document_id }}">
-                    <input type="hidden" name="source" value="{{ cell.held.source }}">
-                    <button type="submit" class="cell-send" title="Submit document to {{ cell.column.title }}"><span aria-hidden="true">Send</span><span class="sr-only">Submit document to {{ cell.column.title }}</span></button>
-                  </form>
-                {% endif %}
-              </td>
-            {% endfor %}
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  {% else %}
-    <p class="quiet-line">No applications yet, so nothing is required. Add programmes from your matches first.</p>
-  {% endif %}
-  {% if unverified %}
-    <ul class="plain-list">
-      {% for title, kinds in unverified %}<li>{{ title }}: {{ kinds }} (unverified)</li>{% endfor %}
+{# Staff file access is FILES only (owner 2026-10-11): neither section below is a file. #}
+{% if not staff_view %}
+<section class="panel" aria-labelledby="details-heading" id="details">
+  <h2 id="details-heading">Your details</h2>
+  {% for problem in problems %}
+    <p role="status">{{ problem.document.get_kind_display }}: {{ problem.text }}{% if not read_only %} <a href="#upload">Upload again</a>{% endif %}</p>
+  {% endfor %}
+  {% if to_check_total %}
+    <h3>{{ to_check_total }} detail{{ to_check_total|pluralize }} to check</h3>
+    <ul class="item-list">
+      {% for row in to_check %}
+        <li>
+          <div>
+            {{ row.label }}: <strong>{{ row.value }}</strong> <span class="muted">from {{ row.source }}</span>
+            {% if row.snippet %}<span class="muted"> — read from “{{ row.snippet }}”</span>{% endif %}
+            {% if row.why %}<span class="muted"> {{ row.why }}</span>{% endif %}
+            {% if row.doubts %}<ul>{% for doubt in row.doubts %}<li>{{ doubt }}</li>{% endfor %}</ul>{% endif %}
+          </div>
+          {% if not counselor_view %}
+            <div class="row-actions">
+              {% if row.key %}
+                {% if not row.typed %}<button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ row.use_body }}" data-gone-is-done>Use</button>{% endif %}
+                <form method="post" action="{% url 'student-fact-correct' row.fact_id %}" class="inline-form">
+                  {% csrf_token %}
+                  <input type="hidden" name="key" value="{{ row.key }}">
+                  <label for="correct-{{ row.fact_id }}-{{ row.key }}">Correct</label>
+                  <input id="correct-{{ row.fact_id }}-{{ row.key }}" name="value" value="{{ row.value }}">
+                  <button type="submit" class="btn-quiet">Save</button>
+                </form>
+              {% else %}
+                <button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ row.use_body }}">Yes, add it</button>
+                {% for into in row.merge_into %}
+                  <form method="post" action="{% url 'student-document-merge' row.fact_id %}">{% csrf_token %}<input type="hidden" name="into" value="{{ into.id }}"><button type="submit" class="btn-quiet">No — it's my {{ into.name }}</button></form>
+                {% endfor %}
+              {% endif %}
+              <span role="status"></span>
+            </div>
+          {% endif %}
+        </li>
+      {% endfor %}
+      {% for row in document_choices %}
+        <li>
+          <div>
+            {{ row.label }}: you have {{ row.held|default:"nothing" }} — <strong>{{ row.value }}</strong> <span class="muted">from {{ row.source }}</span>
+            {% if row.snippet %}<span class="muted"> — read from “{{ row.snippet }}”</span>{% endif %}
+            {% if row.why %}<span class="muted"> {{ row.why }}</span>{% endif %}
+          </div>
+          {% if not counselor_view %}
+            <div class="row-actions">
+              <form method="post" action="{% url 'student-document-value-adopt' row.reading_id %}" class="inline-form">{% csrf_token %}<input type="hidden" name="key" value="{{ row.key }}">{% if row.typed %}<label for="type-{{ row.reading_id }}-{{ row.key }}">Type it</label> <input type="{% if row.date %}date{% else %}text{% endif %}" name="value" id="type-{{ row.reading_id }}-{{ row.key }}" required> {% endif %}<button type="submit">Use</button></form>
+              <form method="post" action="{% url 'student-document-value-keep' row.reading_id %}">{% csrf_token %}<input type="hidden" name="key" value="{{ row.key }}"><button type="submit" class="btn-quiet">Keep mine</button></form>
+            </div>
+          {% endif %}
+        </li>
+      {% endfor %}
     </ul>
+  {% endif %}
+  {% if passport_choices and not counselor_view %}
+    <h3>Which passport should we use?</h3>
+    <div class="row-actions">
+      {% for passport in passport_choices %}
+        <form method="post" action="{% url 'student-id-document-primary' passport.document_id %}">
+          {% csrf_token %}
+          <button type="submit" class="btn-quiet">{{ passport.number }}, expires {{ passport.expiry_date }}</button>
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+  {% if details %}
+    <ul class="item-list">
+      {% for row in details %}
+        <li>
+          <div>{{ row.label }}: {{ row.value }} <span class="muted">(from {{ row.source }})</span></div>
+          {% if not counselor_view %}
+            <details class="doc-expiry">
+              <summary>Edit</summary>
+              <form method="post" action="{% url 'student-fact-correct' row.fact_id %}">
+                {% csrf_token %}
+                <input type="hidden" name="key" value="{{ row.key }}">
+                <label for="edit-{{ row.fact_id }}-{{ row.key }}">Edit</label>
+                <input id="edit-{{ row.fact_id }}-{{ row.key }}" name="value" value="{{ row.value }}">
+                <button type="submit" class="btn-quiet btn-small">Save</button>
+              </form>
+            </details>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% elif not to_check_total %}
+    {% if has_passport_upload %}
+      <p class="quiet-line">Your passport is on file. Confirmed personal details appear here{% if not counselor_view %} and on <a href="{% url 'student-writing' %}#facts">CV &amp; letters</a>{% endif %} once read.</p>
+    {% else %}
+      <p class="quiet-line">Upload your passport and we'll fill in your details on every application.</p>
+    {% endif %}
   {% endif %}
 </section>
 
-{% if counselor_view %}
-<div class="doc-grid">
-<section class="panel" aria-labelledby="facts-heading" id="facts">
-  <h2 id="facts-heading">Details read from your CV</h2>
-  {% if facts %}
-    <p class="muted">Check these. Only details you confirm are ever used in your documents.</p>
-    <ul class="item-list">{% for fact in facts %}<li><span class="fact-kind">{{ fact.category|lower|capfirst }}</span>{% for key, value in fact.payload.items %}{{ key }} {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}</li>{% endfor %}</ul>
+{% if transcript_to_check or transcript_checked %}
+<section class="panel" aria-labelledby="transcript-heading" id="transcript">
+  <h2 id="transcript-heading">Transcript</h2>
+  {% if transcript_to_check %}
+    <p>We read your transcript.{% if not counselor_view %} <a class="btn btn-small" href="{% url 'student-transcript-check' %}">Check your transcript</a>{% endif %}</p>
+  {% elif transcript_checked %}
+    <p>Your transcript: checked — {{ transcript_checked_line }}.</p>
     {% if not counselor_view %}
-      <p class="row-actions"><button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ confirm_body }}">These are right, confirm them</button> <span role="status" aria-live="polite"></span></p>
+      <details class="doc-expiry">
+        <summary>Something's wrong</summary>
+        <form method="post" action="{% url 'student-transcript-check' %}">
+          {% csrf_token %}
+          <input type="hidden" name="reading_id" value="{{ transcript_checked.id }}">
+          <input type="hidden" name="action" value="review">
+          <label for="transcript-review-reason">What's wrong?</label>
+          <textarea id="transcript-review-reason" name="reason" maxlength="500"></textarea>
+          <button type="submit" class="btn-quiet">Send</button>
+        </form>
+      </details>
+    {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+
+{% if cv_changes %}
+<section class="panel" aria-labelledby="changes-heading" id="cv-changes">
+  <h2 id="changes-heading">Changed since your last CV</h2>
+  {% if not counselor_view %}
+  <form method="post" action="{% url 'student-cv-changes' %}">
+    {% csrf_token %}
+    <p class="muted">Untick a change to keep what we had before.</p>
+  {% endif %}
+    <ul class="item-list">
+      {% for change in cv_changes %}
+        <li>
+          {% if not counselor_view %}<input type="hidden" name="shown" value="{{ change.fact.id }}"><label><input type="checkbox" name="accept" value="{{ change.fact.id }}" checked> {% endif %}{{ change.fact.category|lower }}: {% for key, old, new in change.changes %}{{ key }} {{ old|default:"(none)" }} → {{ new }}{% if not forloop.last %}; {% endif %}{% endfor %}{% if not counselor_view %}</label>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% if not counselor_view %}
+    <p class="row-actions"><button type="submit">Confirm these changes</button></p>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="panel" aria-labelledby="facts-heading" id="facts">
+  <div class="panel-head">
+    <h2 id="facts-heading">Facts read from your CV</h2>
+    {% if not counselor_view %}<a class="text-link" href="{% url 'student-writing' %}">Open CV &amp; letters studio</a>{% endif %}
+  </div>
+  {% if facts %}
+    <ul class="item-list">{% for fact, shown, courses in facts_shown %}<li><span><strong>{{ fact.category|lower|capfirst }}:</strong> {% for key, value in shown %}{{ key }} {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}{% if courses %}; {{ courses }} course{{ courses|pluralize }} from your transcript{% endif %}</span></li>{% endfor %}</ul>
+    {% if not counselor_view %}
+      <p class="row-actions"><button type="button" data-api-post="/api/documents/facts/confirm" data-body="{{ confirm_body }}">These are right — confirm them</button> <span role="status"></span></p>
     {% endif %}
   {% else %}
     <p class="quiet-line">Nothing to confirm.</p>
   {% endif %}
+  {% for held in held_degrees %}
+    <div class="held-degree">
+      <p>{{ held.name }} — this may be the same degree as {{ held.may_be }}, so it isn't added twice.</p>
+      {% if not counselor_view %}<form method="post" action="{% url 'student-different-degree' held.fact.id %}">{% csrf_token %}<button type="submit" class="btn-quiet btn-small">Different degree — add it</button></form>{% endif %}
+    </div>
+  {% endfor %}
 </section>
+{% endif %}
 
 <section class="panel" aria-labelledby="drafts-heading" id="drafts">
   <div class="panel-head">
     <h2 id="drafts-heading">Your CV</h2>
     {% if not counselor_view %}
-      <p class="row-actions"><button type="button" data-api-post="/api/documents/generate" data-body='{"kind": "CV"}'>Write my CV</button> <span role="status" aria-live="polite"></span></p>
+      <p class="row-actions"><a class="text-link" href="{% url 'student-writing' %}#drafts">Open full CV preview</a> <button type="button" data-api-post="/api/documents/generate" data-body='{"kind": "CV"}'>Write my CV</button> <span role="status"></span></p>
     {% endif %}
   </div>
-  {% if drafts %}
   <ul class="item-list">
     {% for draft in drafts %}
       <li>
-        <span><strong>Version {{ draft.version }}</strong> <span class="badge{% if draft.status == 'APPROVED' %} badge-ok{% else %} badge-brand{% endif %}">{{ draft.status|lower|capfirst }}</span></span>
-        {% if draft.status == "DRAFT" and not counselor_view %}
-          <button type="button" data-api-post="/api/documents/drafts/{{ draft.id }}/approve">Approve</button> <span role="status" aria-live="polite"></span>
+        <div>
+          <strong>Version {{ draft.version }} — {{ draft.status|lower }}</strong>
+          {% if draft.warning_lines %}
+            <p class="muted">Notes on this version:</p>
+            <ul>
+              {% for line in draft.warning_lines %}<li>{{ line }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+          {% if draft.left_out %}
+            <p class="muted">Left out for this programme:</p>
+            <ul>
+              {% for entry in draft.left_out %}
+                <li>{{ entry.item }} — {{ entry.reason }}.
+                  {% if not counselor_view %}
+                    <button type="button" class="btn-quiet btn-small" data-api-post="/api/documents/drafts/{{ draft.id }}/put-back" data-body='{"item_digest": "{{ entry.item_digest }}"}'>Put back</button>
+                    <span role="status"></span> It will be on your next version.
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          {% if counselor_view and draft.counsellor_notes %}
+            <p class="muted">For the counsellor:</p>
+            <ul>
+              {% for note in draft.counsellor_notes %}<li>{{ note }}</li>{% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+        <div class="row-actions">
+          {% if draft.status == "DRAFT" and not counselor_view %}
+            <button type="button" data-api-post="/api/documents/drafts/{{ draft.id }}/approve">Approve</button> <span role="status"></span>
+          {% endif %}
+          {% if draft.status == "APPROVED" and draft.rendered_filename %}
+            {% if counselor_view %}<a class="btn btn-quiet btn-small" href="{% url 'documents-draft-view' draft.id %}" target="_blank" rel="noopener">View</a>{% if staff_view %} <a class="btn btn-quiet btn-small" href="{% url 'documents-download' draft.id draft.rendered_filename %}">Download</a>{% endif %}
+            {% else %}<a class="btn btn-quiet btn-small" href="{% url 'documents-download' draft.id draft.rendered_filename %}">Download</a>{% endif %}
+          {% endif %}
+        </div>
+      </li>
+    {% empty %}
+      <li class="quiet-line">No CV yet.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+{% if not counselor_view %}
+<section class="panel" aria-labelledby="fill-form-heading" id="fill-form">
+  <h2 id="fill-form-heading">Fill a scholarship or university form</h2>
+  <p class="muted">If a scholarship or university gives you an offline Word (<code>.docx</code>) or fillable PDF (<code>.pdf</code>) application form to download and complete, upload the blank form here and we will pre-fill it with your verified profile details.</p>
+  <form method="post" action="{% url 'student-document-fill-form' %}" enctype="multipart/form-data" hx-boost="false">
+    {% csrf_token %}
+    <p>
+      <label for="fill-form-file">Form template (.docx or .pdf)</label>
+      <input id="fill-form-file" type="file" name="template_file" accept=".docx,.pdf" required>
+    </p>
+    {% if table.columns %}
+      <p>
+        <label for="fill-form-application">Application</label>
+        <select id="fill-form-application" name="application_id">
+          <option value="">Any application</option>
+          {% for col in table.columns %}
+            <option value="{{ col.application_id }}">{{ col.title }}</option>
+          {% endfor %}
+        </select>
+      </p>
+    {% endif %}
+    <button type="submit" class="btn-quiet">Fill form</button>
+  </form>
+</section>
+{% endif %}
+
+{% if applied_fixes %}
+<section class="panel" aria-labelledby="fixes-heading" id="cv-fixes">
+  <h2 id="fixes-heading">What we changed</h2>
+  <p class="muted">Changes show on the next CV you write.</p>
+  <ul class="item-list">
+    {% for fix in applied_fixes %}
+      <li>
+        <span>{% if fix.changed %}{{ fix.original }} → {{ fix.changed }}{% else %}Left out: {{ fix.original }}{% endif %}{% if fix.undone %} (undone){% endif %}</span>
+        {% if not counselor_view %}
+          <form method="post" action="{% url 'student-cv-fix' %}" class="row-actions">
+            {% csrf_token %}
+            <input type="hidden" name="subject" value="{{ fix.subject }}">
+            {% if fix.undone %}<button type="submit" class="btn-quiet btn-small" name="action" value="redo">Apply again</button>
+            {% elif fix.changed %}<button type="submit" class="btn-quiet btn-small" name="action" value="undo">Undo</button>{% if fix.fix == "verb_opener" %} <button type="submit" class="btn-quiet btn-small" name="action" value="keep">Keep this wording</button>{% endif %}
+            {% else %}<button type="submit" class="btn-quiet btn-small" name="action" value="undo">Put back</button>{% endif %}
+          </form>
         {% endif %}
-        {% if draft.status == "APPROVED" and draft.rendered_filename %}<a class="btn btn-quiet" hx-boost="false" href="{% url 'documents-download' draft.id draft.rendered_filename %}">Download</a>{% endif %}
       </li>
     {% endfor %}
   </ul>
-  {% else %}
-    <p class="quiet-line">No CV yet. Our AI writes it from the details you confirmed.</p>
-  {% endif %}
 </section>
-</div>
-{% else %}
-<a class="write-callout" href="{% url 'student-writing' %}"><span class="ico ico-pen" aria-hidden="true"></span><span><strong>Your CV and motivation letters</strong><small>Confirm the details the AI read from your files, then let it write your CV and a letter for each application.</small></span><span class="write-callout-go">Open CV &amp; letters</span></a>
 {% endif %}
 
 {% if unnamed and not counselor_view %}
   <section class="panel" aria-labelledby="unread-heading">
     <h2 id="unread-heading">Messages we could not read</h2>
     {% for signal in unnamed %}
-      <form class="row-form" method="post" action="{% url 'student-document-request' signal.id %}">
+      <form method="post" action="{% url 'student-document-request' signal.id %}">
         {% csrf_token %}
         <p>{{ signal.sender_domain }} wrote on {{ signal.received_at|date:"j M" }} about {{ signal.application.title }}. If it asked for a document, which one?</p>
-        <label for="request-{{ signal.id }}" class="sr-only">Document</label>
-        <select id="request-{{ signal.id }}" name="kind">{% for kind, label in row_kinds %}<option value="{{ kind }}">{{ label }}</option>{% endfor %}</select>
-        <button type="submit" class="btn-quiet">Save</button>
+        <p>
+          <label for="request-{{ signal.id }}">Document</label>
+          <select id="request-{{ signal.id }}" name="kind">{% for kind, label in row_kinds %}<option value="{{ kind }}">{{ label }}</option>{% endfor %}</select>
+        </p>
+        <button type="submit">Save</button>
       </form>
     {% endfor %}
   </section>

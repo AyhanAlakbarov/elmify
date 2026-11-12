@@ -23,7 +23,7 @@
 - **Migration numbering collides across branches.** `apps/funding/migrations/` ends at `0030_cv_directives_undecided_unreadable` on this branch and master renumbered that same migration to `0031` (CLAUDE.md, "Migrations: squash once"). Number every new migration from `ls` at execution time, never from this document, and run `makemigrations --check` before each commit.
 - **Never run `ruff format`** in this repo (it produces invalid Python here). The gates are `uv run ruff check`, `uv run mypy`, `uv run pytest`, `uv run bandit -c pyproject.toml -r apps config`.
 - **Line length 100**, ruff `select = ["E", "F", "I", "UP"]`, mypy `strict = true`.
-- **Test database per worktree:** run pytest with `POSTGRES_DB=tehsil_letter_shape`.
+- **Test database per worktree:** run pytest with `POSTGRES_DB=elmify_letter_shape`.
 
 ---
 
@@ -156,7 +156,7 @@ def test_the_pages_declared_language_is_read_off_the_html_element() -> None:
 
 - [ ] **Step 3: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_terms.py tests/research/test_reader.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_terms.py tests/research/test_reader.py -q`
 Expected: FAIL, `ModuleNotFoundError: apps.documents.letter_terms` and `ImportError: cannot import name 'html_lang'`
 
 - [ ] **Step 4: Implement `letter_terms.py`**
@@ -345,7 +345,7 @@ In `read_program_page`, every `ReadResult(...)` construction that already passes
 
 - [ ] **Step 6: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_terms.py tests/research/test_reader.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_terms.py tests/research/test_reader.py -q`
 Expected: PASS
 
 - [ ] **Step 7: Commit**
@@ -415,7 +415,7 @@ def test_an_unknown_language_finds_no_letter_line_by_keyword() -> None:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_derive.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_derive.py -q`
 Expected: FAIL, `candidates() got an unexpected keyword argument 'language'`
 
 - [ ] **Step 3: Implement**
@@ -546,7 +546,7 @@ def test_a_letter_only_line_cannot_abstain_the_cv_decision() -> None:
 
 - [ ] **Step 4: Run both suites**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_derive.py tests/documents/test_derive.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_derive.py tests/documents/test_derive.py -q`
 Expected: PASS — the existing CV tests are unchanged because every candidate they build is `cv=True, letter=False`.
 
 - [ ] **Step 5: Commit**
@@ -606,7 +606,7 @@ def test_every_phrasing_states_the_letter_question_and_the_data_framing() -> Non
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_derive.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_derive.py -q`
 Expected: FAIL, `cannot import name 'LetterVerdict'`
 
 - [ ] **Step 3: Implement the schema**
@@ -728,7 +728,7 @@ Then in each of the three `_PHRASINGS` entries, replace the trailing `+ _QUESTIO
 
 - [ ] **Step 5: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_derive.py tests/documents/test_derive.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_derive.py tests/documents/test_derive.py -q`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -942,7 +942,7 @@ def test_artifact_fields_take_the_stated_value_and_the_safer_side_of_two() -> No
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_shape.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_shape.py -q`
 Expected: FAIL, `cannot import name 'decide_letter_shape'`
 
 - [ ] **Step 3: Implement `letter_shape.py`**
@@ -1197,7 +1197,7 @@ Add `from typing import Literal, cast` to derive.py's imports, and
 
 - [ ] **Step 5: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_shape.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_shape.py -q`
 Expected: PASS (14 tests)
 
 - [ ] **Step 6: Lint and type-check**
@@ -1333,7 +1333,7 @@ In `Program`, beside `academic_track`:
     portfolio_led = models.BooleanField(default=False)
 ```
 
-Then: `POSTGRES_DB=tehsil_letter_shape uv run python manage.py makemigrations funding -n letter_shape`
+Then: `POSTGRES_DB=elmify_letter_shape uv run python manage.py makemigrations funding -n letter_shape`
 
 - [ ] **Step 4: Implement persistence in `letter_shape.py`**
 
@@ -1500,7 +1500,7 @@ Inside, resolve the language here rather than trusting the raw attribute (pre-fl
 
 - [ ] **Step 6: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/ -q && POSTGRES_DB=tehsil_letter_shape uv run python manage.py makemigrations --check`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/ -q && POSTGRES_DB=elmify_letter_shape uv run python manage.py makemigrations --check`
 Expected: PASS, "No changes detected"
 
 - [ ] **Step 7: Commit**
@@ -1781,7 +1781,7 @@ Replace the body of `apply_silent_funder_defaults` so the archetypes and word ta
 
 - [ ] **Step 5: Run**
 
-Run: `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_defaults.py tests/documents/test_silent_funder.py -q`
+Run: `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_defaults.py tests/documents/test_silent_funder.py -q`
 Expected: PASS
 
 - [ ] **Step 6: Commit**
@@ -1922,7 +1922,7 @@ and thread `shape`/`row` into `_call_model`, which appends `_shape_instructions(
 
 If `NarrativeInput` has no `confirmed_fit` attribute yet (`grep -n "confirmed_fit" apps/`), use the research-fit design's field name if present, else gate on `inputs` being non-empty **and** record a `# ponytail:` note naming the real check to wire when the 2026-09-15 fit design lands.
 
-- [ ] **Step 4: Run** — `POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letters.py -q`
+- [ ] **Step 4: Run** — `POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letters.py -q`
 
 - [ ] **Step 5: Commit**
 
@@ -2124,7 +2124,7 @@ Format the date with the existing `cv_dates` templatetag for `content.language`;
 - [ ] **Step 6: Run and commit**
 
 ```bash
-POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/ -q
+POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/ -q
 git add docs/research/letter-formalities.csv apps/documents/templates/documents/letter_formal.html apps/documents/letter_render.py apps/documents/letter_shape.py tests/documents/test_letter_formal_render.py
 git commit -m "documents: the letter is rendered inside the shape, formalities from their own row"
 ```
@@ -2218,7 +2218,7 @@ Call it from `run_letter_gates` with a new `naming` / `research_names` keyword p
 - [ ] **Step 3: Run and commit**
 
 ```bash
-POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_letter_naming_gate.py tests/documents/test_letter_gates.py -q
+POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_letter_naming_gate.py tests/documents/test_letter_gates.py -q
 git add apps/documents/letter_gates.py apps/documents/letters.py tests/documents/test_letter_naming_gate.py
 git commit -m "documents: a forbidden name blocks, with no override"
 ```
@@ -2278,7 +2278,7 @@ In `generate_letter`, after the gates pass, run the check; on a non-empty result
 - [ ] **Step 3: Run and commit**
 
 ```bash
-POSTGRES_DB=tehsil_letter_shape uv run pytest tests/documents/test_written_requirements.py tests/documents/test_letters.py -q
+POSTGRES_DB=elmify_letter_shape uv run pytest tests/documents/test_written_requirements.py tests/documents/test_letters.py -q
 git add apps/documents/letter_verification.py apps/documents/letters.py tests/documents/test_written_requirements.py
 git commit -m "documents: a requirement no column can type is written to, then checked"
 ```
@@ -2350,7 +2350,7 @@ Read-only, from data already in the catalog. End the module with:
 - [ ] **Step 4: Run and commit**
 
 ```bash
-POSTGRES_DB=tehsil_letter_shape uv run pytest tests/funding/test_requirements.py -q
+POSTGRES_DB=elmify_letter_shape uv run pytest tests/funding/test_requirements.py -q
 git add apps/funding/requirements.py apps/documents/management/commands/letter_requirement_backlog.py tests/funding/test_requirements.py
 git commit -m "funding: the three requirement panes, and the counter that finds the next column"
 ```
@@ -2389,12 +2389,12 @@ Write `docs/superpowers/plans/2026-09-19-letter-shape-acceptance.md` naming ONE 
 - [ ] **Step 4: Full validation**
 
 ```bash
-POSTGRES_DB=tehsil_letter_shape uv run pytest -q
+POSTGRES_DB=elmify_letter_shape uv run pytest -q
 uv run ruff check apps tests config
 uv run mypy apps config
-POSTGRES_DB=tehsil_letter_shape uv run python manage.py makemigrations --check
+POSTGRES_DB=elmify_letter_shape uv run python manage.py makemigrations --check
 uv run bandit -c pyproject.toml -r apps config -q
-POSTGRES_DB=tehsil_letter_shape uv run pytest -m live tests/documents/test_letter_derive.py -q  # costs real credits
+POSTGRES_DB=elmify_letter_shape uv run pytest -m live tests/documents/test_letter_derive.py -q  # costs real credits
 ```
 
 - [ ] **Step 5: Commit**

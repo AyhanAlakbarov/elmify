@@ -25,12 +25,16 @@ from typing import Any, cast
 import anthropic
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 from openai import OpenAI
 
 from apps.funding.cycle_schedule import tracked_intakes
-from apps.funding.models import FundingCycleVerification, FundingOpportunity
+from apps.funding.models import (
+    FundingCycleVerification,
+    FundingOpportunity,
+    RecommendationCandidate,
+)
 from apps.research.cycle_verification import (
     build_seams,
     persist_verdict,
@@ -63,6 +67,14 @@ class Command(BaseCommand):
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--max", type=int, default=50)
         parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument(
+            "--active-only",
+            action="store_true",
+            help=(
+                "Only re-verify scholarships that are either in an active student pack "
+                "(RecommendationCandidate) or inside their 14-day opening/deadline window."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -73,12 +85,27 @@ class Command(BaseCommand):
         today = timezone.now().date()
         if not options["dry_run"]:
             self._ensure_tracked(today)
-        due = list(
-            FundingCycleVerification.objects.filter(
-                _verifiable(), next_check_at__lte=timezone.now()
+        qs = FundingCycleVerification.objects.filter(
+            _verifiable(), next_check_at__lte=timezone.now()
+        )
+        if options.get("active_only"):
+            active_student_award = Exists(
+                RecommendationCandidate.objects.filter(
+                    opportunity_id=OuterRef("opportunity_id"),
+                    state=RecommendationCandidate.State.VISIBLE,
+                )
             )
-            .select_related("opportunity__organisation")
-            .order_by("next_check_at")[: options["max"]]
+            window_end = today + dt.timedelta(days=settings.CYCLE_DEADLINE_WINDOW_DAYS)
+            in_season = Q(projected_open__gte=today, projected_open__lte=window_end) | Q(
+                projected_deadline__gte=today, projected_deadline__lte=window_end
+            )
+            qs = qs.annotate(_in_active_pack=active_student_award).filter(
+                Q(_in_active_pack=True) | in_season
+            )
+        due = list(
+            qs.select_related("opportunity__organisation").order_by("next_check_at")[
+                : options["max"]
+            ]
         )
         self.stdout.write(f"due {len(due)}")
         for row in due:

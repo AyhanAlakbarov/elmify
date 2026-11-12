@@ -42,7 +42,7 @@ This item's code and tests land with fakes behind those seams. The production bi
 
 Also read `docs/superpowers/specs/2026-09-25-tailored-programme-finding-design.md` §4.1 and §5.6. Its "slice" (destination × broad field × level) and its "12 found, still researching 2 areas" line are the programme-side view of the same object this plan builds. Every design choice below is argued in those sections, not here.
 
-**Base branch:** fresh from `origin/master`. Work in a dedicated worktree and use a dedicated test database, `POSTGRES_DB=tehsil_cells`, on every `pytest` and `manage.py` call. Two pytest sessions against one database produce fake failures.
+**Base branch:** fresh from `origin/master`. Work in a dedicated worktree and use a dedicated test database, `POSTGRES_DB=elmify_cells`, on every `pytest` and `manage.py` call. Two pytest sessions against one database produce fake failures.
 
 ---
 
@@ -74,8 +74,8 @@ Also read `docs/superpowers/specs/2026-09-25-tailored-programme-finding-design.m
 - **Never run `ruff format`.** After every task, all of these must be clean:
   - `uv run ruff check apps config tests scripts`
   - `uv run mypy apps config`
-  - `POSTGRES_DB=tehsil_cells uv run pytest -q`
-  - `POSTGRES_DB=tehsil_cells uv run python manage.py makemigrations --check --dry-run`
+  - `POSTGRES_DB=elmify_cells uv run pytest -q`
+  - `POSTGRES_DB=elmify_cells uv run python manage.py makemigrations --check --dry-run`
 
   Read `${PIPESTATUS[0]}`, never a piped exit code.
 - **Commits:** `feat(research): …` / `test(research): …`, one task per commit. End each message with the attribution lines the session's system reminder gives. Never put a model identifier in a commit.
@@ -168,8 +168,8 @@ Each is small, argued, and reversible. Each is listed here so it is not buried i
 
 ```bash
 git fetch origin master
-git worktree add ../tehsil-cells -b claude/plan-14-demand-cells-impl origin/master
-cd ../tehsil-cells && POSTGRES_DB=tehsil_cells uv run python manage.py migrate
+git worktree add ../elmify-cells -b claude/plan-14-demand-cells-impl origin/master
+cd ../elmify-cells && POSTGRES_DB=elmify_cells uv run python manage.py migrate
 ```
 
 - [ ] **Step 2: Record the leaves and what has landed.** Write the output into the PR description draft. It decides Tasks 4, 9, 10 and 12.
@@ -183,7 +183,7 @@ git branch -r --merged origin/master | grep -E "catalog-read-split|plan-(7|9|10)
 
 Expected on 2026-09-25: research leaf `0009_site_job_record_rls`, funding leaf `0048_merge_20260925_0838`, no angle rows, no stop rule, `catalog-read-split` unmerged. If any of those differs, the "until it lands" column above shrinks, and Task 10 Step 5 binds the seam that now exists.
 
-- [ ] **Step 3: Baseline is green.** Run `POSTGRES_DB=tehsil_cells uv run pytest -q` and record the pass count. A red baseline is not this plan's to fix. Note it and stop.
+- [ ] **Step 3: Baseline is green.** Run `POSTGRES_DB=elmify_cells uv run pytest -q` and record the pass count. A red baseline is not this plan's to fix. Note it and stop.
 
 ---
 
@@ -229,7 +229,7 @@ def test_unclassifiable_is_a_bucket_so_a_thin_reading_is_never_forced_into_a_fie
     assert len(set(BUCKETS)) == len(BUCKETS)
 ```
 
-- [ ] **Step 5: Run it and watch it fail.** Run `POSTGRES_DB=tehsil_cells uv run pytest tests/research/test_disciplines.py -q`. It should fail with `ModuleNotFoundError`.
+- [ ] **Step 5: Run it and watch it fail.** Run `POSTGRES_DB=elmify_cells uv run pytest tests/research/test_disciplines.py -q`. It should fail with `ModuleNotFoundError`.
 
 - [ ] **Step 6: Implement**
 
@@ -355,7 +355,7 @@ def test_a_student_cell_matches_an_any_cell_and_its_own_exact_cell() -> None:
 
 Note on `profile_snapshot`: run `grep -rn "def .*profile" tests/ | grep -i "snapshot\|factory"` and use the base's existing factory for a valid schema-3 `StudentProfileSnapshot`. If none takes keyword overrides, add a `profile_snapshot(**overrides)` helper in `tests/research/conftest.py`. It should build the dict the onboarding tests use, `apps/accounts` onboarding fixture with `intended_intake="2027-09-01"`, and call `StudentProfileSnapshot.model_validate`. Do not duplicate a factory that exists.
 
-- [ ] **Step 2: Run it and watch it fail.** Run `POSTGRES_DB=tehsil_cells uv run pytest tests/research/test_cells.py -q`.
+- [ ] **Step 2: Run it and watch it fail.** Run `POSTGRES_DB=elmify_cells uv run pytest tests/research/test_cells.py -q`.
 
 - [ ] **Step 3: Implement**
 
@@ -816,7 +816,7 @@ class AreaSweep(models.Model):
 
 Add `from decimal import Decimal` if the module lacks it.
 
-- [ ] **Step 2: Generate the schema migration.** Run `POSTGRES_DB=tehsil_cells uv run python manage.py makemigrations research --name demand_cells`. Open the file and check that it depends on the **real** leaf.
+- [ ] **Step 2: Generate the schema migration.** Run `POSTGRES_DB=elmify_cells uv run python manage.py makemigrations research --name demand_cells`. Open the file and check that it depends on the **real** leaf.
 
 - [ ] **Step 3: Write the RLS migration by hand**, named `<leaf+2>_demand_cells_rls.py`:
 
@@ -905,7 +905,7 @@ Fill both dependency names from `ls` and never from this plan. Also check that `
 ),
 ```
 
-Put each in its own dict; do not add the same key twice to one dict. Add a comment above each KEEP entry. The spend ledger is money arithmetic, not a person, and the identifying link is the student relation, excluded by `classifiable_fields` exactly as for `portals.ReminderSent`. `CellCoverage` has no student relation at all, and an erased student leaves it by recomputation (Task 8), not by redaction. Run `POSTGRES_DB=tehsil_cells uv run pytest tests/audit -q`. The completeness test says exactly which field is still unclassified.
+Put each in its own dict; do not add the same key twice to one dict. Add a comment above each KEEP entry. The spend ledger is money arithmetic, not a person, and the identifying link is the student relation, excluded by `classifiable_fields` exactly as for `portals.ReminderSent`. `CellCoverage` has no student relation at all, and an erased student leaves it by recomputation (Task 8), not by redaction. Run `POSTGRES_DB=elmify_cells uv run pytest tests/audit -q`. The completeness test says exactly which field is still unclassified.
 
 - [ ] **Step 6: Verify and commit** (Tasks 3 and 4 together). Run the full check list, then `git commit -m "feat(research): demand-cell, wallet and coverage tables with RLS"`.
 
@@ -2235,7 +2235,7 @@ The **write** refusal is not a new test. `research_areasweep` joins `_SHARED_TAB
 
 The same applies to the other four tenant tables: parametrise the first two tests over `ProfileCellSelection`, `SearchTap`, `WalletCharge` and `CellCoverage`.
 
-- [ ] **Step 2:** Run `POSTGRES_DB=tehsil_cells uv run pytest tests/research/test_demand_cells_rls.py tests/tenancy -q`.
+- [ ] **Step 2:** Run `POSTGRES_DB=elmify_cells uv run pytest tests/research/test_demand_cells_rls.py tests/tenancy -q`.
 
 - [ ] **Step 3:** Commit with `test(research): demand-cell tables behind the NOBYPASSRLS role`.
 

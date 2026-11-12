@@ -44,6 +44,10 @@ class FirecrawlSiteError(RuntimeError):
     a programme recorded `not found`.
     """
 
+    #: Credits already billed by the call that failed (a /map whose filtered call answered
+    #: before its fallback failed); 0 when nothing is known to have been billed.
+    credits: int = 0
+
 
 @dataclass(frozen=True)
 class MapResult:
@@ -167,7 +171,11 @@ def map_site(
     urls = _links(document)
     credits = 1
     if not urls and search:
-        document = _call("/map", payload, api_key=api_key, post=post)
+        try:
+            document = _call("/map", payload, api_key=api_key, post=post)
+        except FirecrawlSiteError as error:
+            error.credits = credits  # the filtered call answered, so it was billed
+            raise
         urls = _links(document)
         credits = 2
     return MapResult(urls=urls, credits=credits)
@@ -182,12 +190,11 @@ def _as_list(document: Mapping[str, object], key: str) -> list[object]:
 
 
 def _links(document: Mapping[str, object]) -> tuple[str, ...]:
-    found: list[str] = []
-    for entry in _as_list(document, "links"):
-        url = str(entry.get("url") or "") if isinstance(entry, dict) else str(entry)
-        if url and url not in found:
-            found.append(url)
-    return tuple(found)
+    urls = (
+        str(entry.get("url") or "") if isinstance(entry, dict) else str(entry)
+        for entry in _as_list(document, "links")
+    )
+    return tuple(dict.fromkeys(url for url in urls if url))
 
 
 #: A list of what to SKIP is easy to complete; a list of what to keep is not
@@ -443,14 +450,13 @@ def agent(
 
     The entire safety argument for calling this function is that every URL
     it returns is re-fetched through the ladder and checked with
-    `require_origin` before anything is read or stored -- **and that check
-    does not exist anywhere on this branch.** The funnel seam that would call
-    `agent()` and then apply it is a separate, unexecuted plan; until that
-    seam exists and enforces `require_origin`, any caller of this function
-    is handing whoever wrote the seed page's content an unchecked list of
-    URLs to whatever the platform does with `AgentResult.leads` next. Do not
-    wire a caller onto this function without `require_origin` (or
-    equivalent) sitting between it and any read/write/storage. What makes
+    `require_origin` before anything is read or stored. Its one caller is the
+    funding card's site hunt (`apps/research/card_funding/seek.py`): it keeps a
+    lead only on the start page's own registrable domain with a RECOGNISED
+    provenance verdict, and the hunt fetches it with `fetch_page(...,
+    require_origin=...)`. Do not wire another caller onto this function without
+    `require_origin` (or equivalent) sitting between it and any
+    read/write/storage. What makes
     the open-web search safe is the funnel's `require_origin` check, not a
     vendor flag (owner decision 2026-09-23): only URLs are taken from the
     answer, every one goes through the ladder and must pass `require_origin`
@@ -487,7 +493,9 @@ def agent(
         # kind is the vendor's word and is never trusted, while the URL is the
         # only thing the call was paid for.
         leads.append((url, kind if kind in AGENT_KINDS else "other"))
-        logger.info("navigator lead %s (%s): %s", url, kind, str(page.get("why") or "")[:120])
+        # Never the `why`: it is the vendor's reading of the page, which is not kept, logged
+        # or sent anywhere (the funnel's rule).
+        logger.info("navigator lead %s (%s)", url, leads[-1][1])
     credits_used = document.get("creditsUsed")
     credits = int(credits_used) if isinstance(credits_used, (int, float)) else 0
     return AgentResult(leads=tuple(leads), credits=credits)

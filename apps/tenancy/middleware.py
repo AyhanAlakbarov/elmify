@@ -124,6 +124,36 @@ class HostTenantContextMiddleware:
             return self.get_response(request)
 
 
+def _gate_redirect(request: HttpRequest, membership: Membership) -> HttpResponse | None:
+    """Enforce staff MFA, deletion lock, and privacy stop/re-acceptance gates in order."""
+    assert request.user.is_authenticated
+    if request.path == "/" and _needs_mfa(request.user, membership.role):
+        # The bare host is where a successful login lands
+        # (LOGIN_REDIRECT_URL), so an unverified staff member is sent to
+        # the code screen instead of a "Not allowed" page with no way
+        # forward. Every other path still denies, as the gate pins.
+        return redirect(_MFA_SETUP_PATH)
+    if request.path != _MFA_SETUP_PATH:
+        # require_staff_mfa already raises PermissionDenied; letting it
+        # propagate is what reaches templates/403.html.
+        require_staff_mfa(request.user, membership.role)
+    if not request.path.startswith(_DELETION_EXEMPT_PREFIXES):
+        target = deletion_lock_target(membership)
+        if target is not None:
+            return redirect(target)
+    if not request.path.startswith(_ACCEPTANCE_EXEMPT_PREFIXES):
+        # Local import: apps.privacy imports apps.tenancy.models, so a
+        # module-level import here would be circular.
+        from apps.privacy.acceptance import needs_acceptance
+        from apps.privacy.requests import processing_stopped
+
+        if processing_stopped(membership):
+            return redirect("privacy-stopped")
+        if needs_acceptance(membership):
+            return redirect("privacy-accept")
+    return None
+
+
 class TenantMembershipMiddleware:
     def __init__(self, get_response: Callable[[HttpRequest], HttpResponse]) -> None:
         self.get_response = get_response
@@ -138,30 +168,8 @@ class TenantMembershipMiddleware:
                 # htmx-config makes 403 swap.
                 raise PermissionDenied("tenant membership required")
             request.membership = membership  # type: ignore[attr-defined]
-            if request.path == "/" and _needs_mfa(request.user, membership.role):
-                # The bare host is where a successful login lands
-                # (LOGIN_REDIRECT_URL), so an unverified staff member is sent to
-                # the code screen instead of a "Not allowed" page with no way
-                # forward. Every other path still denies, as the gate pins.
-                return redirect(_MFA_SETUP_PATH)
-            if request.path != _MFA_SETUP_PATH:
-                # require_staff_mfa already raises PermissionDenied; letting it
-                # propagate is what reaches templates/403.html.
-                require_staff_mfa(request.user, membership.role)
-            if not request.path.startswith(_DELETION_EXEMPT_PREFIXES):
-                target = deletion_lock_target(membership)
-                if target is not None:
-                    return redirect(target)
-            if not request.path.startswith(_ACCEPTANCE_EXEMPT_PREFIXES):
-                # Local import: apps.privacy imports apps.tenancy.models, so a
-                # module-level import here would be circular.
-                from apps.privacy.acceptance import needs_acceptance
-                from apps.privacy.requests import processing_stopped
-
-                if processing_stopped(membership):
-                    return redirect("privacy-stopped")
-                if needs_acceptance(membership):
-                    return redirect("privacy-accept")
+            if (gated := _gate_redirect(request, membership)) is not None:
+                return gated
         return self.get_response(request)
 
 
@@ -201,6 +209,8 @@ def content_security_policy(
 
     def middleware(request: HttpRequest) -> HttpResponse:
         response = get_response(request)
+        if "Permissions-Policy" not in response:
+            response["Permissions-Policy"] = "camera=(), microphone=(), geolocation=(), payment=()"
         if (
             response.get("Content-Type", "").startswith("text/html")
             and "Content-Security-Policy" not in response

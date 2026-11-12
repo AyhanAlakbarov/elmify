@@ -63,17 +63,37 @@ def matches(words: tuple[str, ...], *texts: object) -> bool:
 _PAGES = (
     ("Home", "Your applications, deadlines and what needs you now", "/student/"),
     ("Programmes & funding", "Your pack and other options", "/student/recommendation/"),
+    ("My applications", "Every programme and scholarship you chose", "/student/applications/"),
     ("Documents", "Uploads, CV and what each application needs", "/student/documents/"),
+    (
+        "CV & letters",
+        "Tailored CVs, motivation letters and scholarship essays",
+        "/student/writing/",
+    ),
+    ("Referees", "Your professors, referee plan and briefing packages", "/student/referees/"),
+    ("Questions", "Open questions about your profile and coursework", "/student/gap-interview/"),
     ("Messages", "Your counsellor and mail from universities", "/student/messages/"),
+    ("Reports", "Your consultation reports", "/student/reports/"),
     ("Settings", "Profile, mailbox, browser extension and account", "/student/settings/"),
     ("Profile", "Your consultation answers", "/student/profile/"),
+    ("Plan", "Your application cycle and payment status", "/student/settings/plan/"),
+    ("Budget", "Your application fee budget", "/student/settings/budget/"),
     ("Mailbox", "The inbox we watch for university replies", "/student/settings/mailbox/"),
     (
         "Browser extension",
         "The browsers that fill your applications",
         "/student/settings/extension/",
     ),
-    ("Account", "Leave and delete your data", "/student/settings/account/"),
+    (
+        "Portal accounts",
+        "University portals and saved login credentials",
+        "/student/settings/portals/",
+    ),
+    (
+        "Account",
+        "Name, password, personal data download and account deletion",
+        "/student/settings/account/",
+    ),
 )
 
 

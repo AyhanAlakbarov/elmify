@@ -3,8 +3,8 @@ en,\bnon[- ]?eu\b,APPLICANT_CLASS:NON_EU,docs/superpowers/specs/2026-09-22-fundi
 en,\beu\b,NATIONALITY:EU,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
 en,\binternational (?:students|applicants)\b,APPLICANT_CLASS:INTERNATIONAL,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
 en,\bdomestic (?:students|applicants)\b,APPLICANT_CLASS:DOMESTIC,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
-en,\bself[- ]funded\b,FUNDING:SELF_FUNDED,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
-en,\bscholarship (?:applicants|candidates)\b,FUNDING:SCHOLARSHIP,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\b(?:self[- ](?:funded|paying|financing)|fee[- ]paying|without scholarship)\b,FUNDING:SELF_FUNDED,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
+en,\b(?:(?:with|for)\s+scholarship|(?:erasmus(?:\s+mundus)?|consortium)\s+scholarship|scholarship\s+(?:applicants|candidates|applications|track|holders|round))\b,FUNDING:SCHOLARSHIP,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
 en,\bnominat\w*,ROUTE:NOMINATION,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
 en,\bdirect (?:applicants|applications)\b,ROUTE:DIRECT,docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22
 en,\bround\s*(\d+),ROUND:{0},docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md#92,2026-09-22

@@ -15,6 +15,7 @@ which.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 from apps.documents.letter_shape import shape_from_prompt
 
@@ -71,6 +72,7 @@ class RequirementItem:
     requirement: str
     status: str
     statement_id: str = ""
+    outcome: str = "UNCHECKED"
 
 
 @dataclass(frozen=True)
@@ -148,10 +150,19 @@ def _cv_items(programme: Program) -> list[RequirementItem]:
             )
         )
     for directive in programme.cv_directives:
+        if isinstance(directive, dict):
+            dir_text = str(
+                directive.get("rule_text")
+                or f"{directive.get('action', '')}({directive.get('target', '')})"
+            )
+            dir_url = str(directive.get("source_url") or programme.cv_format_source_url)
+        else:
+            dir_text = str(directive)
+            dir_url = programme.cv_format_source_url
         items.append(
             RequirementItem(
-                text=str(directive),
-                source_url=programme.cv_format_source_url,
+                text=dir_text,
+                source_url=dir_url,
                 requirement="REQUIRED",
                 status=ENFORCED_AT_RENDER,
             )
@@ -159,37 +170,62 @@ def _cv_items(programme: Program) -> list[RequirementItem]:
     return items
 
 
-def program_requirements(programme: Program, *, cycle: str) -> Requirements:
+def program_requirements(
+    programme: Program,
+    *,
+    cycle: str,
+    profile: object | None = None,
+    as_of: date | None = None,
+) -> Requirements:
     """The three panes, for one programme and one admissions cycle.
 
     A programme with no prompt for that cycle has no letter pane rather than
     an error: the catalog is read programme by programme and a cycle nobody
     has read yet is an ordinary state, not a failure.
+    When `profile` is provided, each applicant statement is checked against the
+    student's profile and transcript courses, showing the exact courses counted.
     """
+    from .transcript_eligibility import evaluate_program_statement
+
     prompt = programme.application_prompts.filter(cycle=cycle).first()
     statements = list(
         programme.statements.filter(kind__in=_APPLICANT_STATEMENT_KINDS).select_related(
             "snapshot"
         )
     )
-    return Requirements(
-        letter=tuple(_shape_items(prompt)) if prompt is not None else (),
-        cv=tuple(_cv_items(programme)),
-        applicant=tuple(
+    applicant_items: list[RequirementItem] = []
+    for statement in statements:
+        if profile is None:
+            status_text = NOT_YET_CHECKED
+            outcome_val = "UNCHECKED"
+        else:
+            ev = evaluate_program_statement(
+                statement.text,
+                profile,
+                kind=statement.kind,
+                as_of=as_of,
+            )
+            status_text = ev.status_text
+            outcome_val = ev.outcome
+        applicant_items.append(
             RequirementItem(
                 text=statement.text,
                 source_url=statement.snapshot.final_url,
                 requirement=statement.requirement,
-                status=NOT_YET_CHECKED,
+                status=status_text,
                 statement_id=str(statement.id),
+                outcome=outcome_val,
             )
-            for statement in statements
-        ),
+        )
+    return Requirements(
+        letter=tuple(_shape_items(prompt)) if prompt is not None else (),
+        cv=tuple(_cv_items(programme)),
+        applicant=tuple(applicant_items),
     )
 
 
 def letter_kit_steps(prompt: ApplicationPrompt) -> tuple[RequirementItem, ...]:
-    """The steps only the applicant can take, for the Application Kit.
+    """The steps only the applicant can take, stored for the counsellor's kit view.
 
     The same objects the letter pane shows, so a step can never be worded one
     way in the pane and another in the Kit.
@@ -200,7 +236,8 @@ def letter_kit_steps(prompt: ApplicationPrompt) -> tuple[RequirementItem, ...]:
 # SHOULD BE DONE BY AYKHAN: the window that shows these three panes is the
 # presentation layer's, and this service is the one thing it calls.
 #
-# The Application Kit (2026-09-15 glass-box design) reads letter_kit_steps
+# The counsellor's kit view (read-only; no student by-hand page, owner
+# 2026-10-10) reads letter_kit_steps
 # through apps/portals/packets.py::_letter_actions, as this note predicted. It
 # has no model and wants none: the spec's own words are that the kit and the
 # packet are "one server-side object with two renderings, so they can never

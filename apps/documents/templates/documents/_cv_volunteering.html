@@ -1,0 +1,30 @@
+{% comment %}Unpaid posts (ExperienceEntry.unpaid), printed under their own heading: spec §7.1, S-042. Generated from _cv_experience.html by renaming its row variable and heading; keep the two in step.{% endcomment %}
+{% load cv_dates cv_countries %}{% if volunteering_rows %}<h2>Volunteering</h2>
+{% if tabular %}
+<table class="grid">
+  {% for entry in volunteering_rows %}
+  <tr>
+    <td class="when">{% date_range entry.start_date entry.end_date %}</td>
+    {% if entry.statement %}<td>{{ entry.statement }}</td>
+    {% else %}<td><strong>{{ entry.title }}</strong><br>
+    {% if entry.group %}{{ entry.group }}, {% endif %}{{ entry.employer }}{% if entry.city or entry.country %}, {% include "documents/_cv_place.html" with entry=entry only %}{% endif %}{% if entry.distinct_supervisor %} — Supervisor: {{ entry.distinct_supervisor }}{% endif %}{% if "experience.project" in include_targets and entry.project %}<div class="gloss">Project: {{ entry.project }}</div>{% else %}<br>{% endif %}
+    {% include "documents/_cv_bullets.html" with entry=entry only %}</td>{% endif %}
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+{% for entry in volunteering_rows %}
+{% if entry.statement %}
+<div class="entry">
+  <div class="entry-header"><strong>{{ entry.statement }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
+</div>
+{% else %}
+<div class="entry">
+  <div class="entry-header"><strong>{{ entry.title }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
+  <div>{% if entry.group %}{{ entry.group }}, {% endif %}{{ entry.employer }}{% if entry.city or entry.country %}, {% include "documents/_cv_place.html" with entry=entry only %}{% endif %}{% if entry.distinct_supervisor %} — Supervisor: {{ entry.distinct_supervisor }}{% endif %}</div>
+  {% if "experience.project" in include_targets and entry.project %}<div class="gloss">Project: {{ entry.project }}</div>{% endif %}
+  {% include "documents/_cv_bullets.html" with entry=entry only %}
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}{% endif %}

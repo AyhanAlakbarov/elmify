@@ -155,3 +155,44 @@ def test_without_a_printed_total_the_key_number_is_our_sum_and_says_so():
     )
     numbers = key_numbers(_reading(*rows))
     assert (numbers.total_credits, numbers.total_credits_printed) == ("11.5", False)
+
+
+def test_uk_cats_sixty_credit_dissertation_is_within_range_while_120_is_flagged():
+    rows_60 = (
+        _course(0, "MSc Dissertation", "60"),
+        _row(1, "overall_total", "60"),
+    )
+    reading_60 = Reading(
+        content=TranscriptContent(
+            institution="University of Manchester",
+            overall_grade="72",
+            grading_scale="100",
+            credit_unit="UK_CATS",
+            expected_completion=date(2027, 6, 30),
+        ),
+        rows=rows_60,
+        total_credits_line=None,
+        doubts=(),
+    )
+    assert highlights(reading_60) == ()
+
+    rows_120 = (
+        _course(0, "Misread Full Year Row", "120"),
+        _row(1, "overall_total", "120"),
+    )
+    reading_120 = Reading(
+        content=TranscriptContent(
+            institution="University of Manchester",
+            overall_grade="72",
+            grading_scale="100",
+            credit_unit="UK_CATS",
+            expected_completion=date(2027, 6, 30),
+        ),
+        rows=rows_120,
+        total_credits_line=None,
+        doubts=(),
+    )
+    assert highlights(reading_120) == (
+        Highlight(kind="credit_out_of_range", scope="row", ref="0"),
+    )
+

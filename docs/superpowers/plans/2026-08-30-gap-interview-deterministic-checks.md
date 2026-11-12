@@ -19,7 +19,7 @@
 - **Ask only for what is genuinely absent.** Asking for something already on file is the fastest way to make a student distrust the tool. An avoidable question is worse than none.
 - **No model call anywhere in this plan.** These three types are field-null tests against the ledger. Because nothing here calls an LLM, `CLAUDE.md`'s rule that a wiring change must carry a rate limiter does not bind — and must not be cited as satisfied either. Type 1, 2 and 6 will call a model, and they will owe the limiter.
 - **The ledger is append-only.** A correction is a new row with `supersedes` set (`apps/documents/models.py:9`). Nothing in this plan may mutate an existing `VerifiedFact`.
-- Test database is per-worktree: run pytest with `POSTGRES_DB=tehsil_gaps`.
+- Test database is per-worktree: run pytest with `POSTGRES_DB=elmify_gaps`.
 - Lint/type/security gate, all blocking: `uv run ruff check .`, `uv run mypy apps config`, `uv run bandit -c pyproject.toml -r apps config`. There is **no** `ruff format` in this repo — do not run it.
 
 ---
@@ -107,7 +107,7 @@ def test_an_experience_entry_keeps_its_supervisor_in_the_ledger():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_verification.py::test_an_experience_entry_keeps_its_supervisor_in_the_ledger -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_verification.py::test_an_experience_entry_keeps_its_supervisor_in_the_ledger -v`
 Expected: FAIL with `KeyError: 'supervisor'`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -134,7 +134,7 @@ The experience `_CategorySpec` is **not** touched — `identity`, `detail` and `
 
 - [ ] **Step 4: Run the test and the whole documents suite**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents -q`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents -q`
 Expected: PASS, including the pre-existing verification and generation tests. If a generation snapshot test fails on the added key, that failure is the bug being fixed showing itself — read it before changing anything.
 
 - [ ] **Step 5: Verify the check is not vacuous**
@@ -239,7 +239,7 @@ def test_a_student_with_no_identity_fact_is_asked_nothing(student):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: FAIL at collection with `ModuleNotFoundError: No module named 'apps.documents.gaps'`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -341,7 +341,7 @@ def missing_contact(student: Membership) -> tuple[GapQuestion, ...]:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
@@ -424,7 +424,7 @@ def test_a_superseded_degree_is_not_asked_about(student):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: FAIL with `ImportError: cannot import name 'missing_grade'`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -480,7 +480,7 @@ def missing_grade(student: Membership) -> tuple[GapQuestion, ...]:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: 8 passed.
 
 - [ ] **Step 5: Commit**
@@ -585,7 +585,7 @@ def test_a_complete_record_produces_no_questions(student):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: FAIL with `ImportError: cannot import name 'incomplete_entry'`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -668,12 +668,12 @@ def incomplete_entry(student: Membership) -> tuple[GapQuestion, ...]:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: 14 passed.
 
 - [ ] **Step 5: Verify Task 1 is load-bearing here**
 
-Revert Task 1's `_PAYLOAD_KEYS` change, run `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`, and confirm `test_a_post_that_already_names_its_supervisor_is_not_asked_about` fails — the payload key is what makes "already answered" distinguishable from "never asked". Restore Task 1.
+Revert Task 1's `_PAYLOAD_KEYS` change, run `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`, and confirm `test_a_post_that_already_names_its_supervisor_is_not_asked_about` fails — the payload key is what makes "already answered" distinguishable from "never asked". Restore Task 1.
 
 - [ ] **Step 6: Commit**
 
@@ -843,7 +843,7 @@ def test_a_rejected_answer_writes_none_of_the_batch(student):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: FAIL with `ImportError: cannot import name 'answer_questions'`.
 
 - [ ] **Step 3: Add the public payload-key helper**
@@ -941,7 +941,7 @@ def answer_questions(
 
 - [ ] **Step 5: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: 22 passed.
 
 - [ ] **Step 6: Mutation-check each guard**
@@ -1015,7 +1015,7 @@ def test_every_question_gap_questions_emits_can_be_answered(student):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: FAIL with `ImportError: cannot import name 'gap_questions'`.
 
 - [ ] **Step 3: Write minimal implementation**
@@ -1041,17 +1041,17 @@ def gap_questions(student: Membership) -> tuple[GapQuestion, ...]:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_gaps uv run pytest tests/documents/test_gaps.py -v`
+Run: `POSTGRES_DB=elmify_gaps uv run pytest tests/documents/test_gaps.py -v`
 Expected: 25 passed.
 
 - [ ] **Step 5: Run the whole gate**
 
 ```bash
-POSTGRES_DB=tehsil_gaps uv run pytest -q
+POSTGRES_DB=elmify_gaps uv run pytest -q
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config
-POSTGRES_DB=tehsil_gaps uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_gaps uv run python manage.py makemigrations --check --dry-run
 ```
 
 Expected: all pass, and no new migrations — nothing in this plan changes a model field.

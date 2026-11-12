@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Run tests as `POSTGRES_DB=tehsil_ei uv run pytest -q`. The shared `test_tehsil` database wedges across parallel sessions and the symptom looks like an unrelated regression.
+- Run tests as `POSTGRES_DB=elmify_ei uv run pytest -q`. The shared `test_elmify` database wedges across parallel sessions and the symptom looks like an unrelated regression.
 - `uv run ruff check apps config tests` and `uv run mypy apps config` must pass before every commit. Do **not** run `ruff format` -- this repo is lint-only and formatting churns 26 unrelated files.
 - Nothing in `apps/documents/evidence/` may import `django.db` except `facts.py`. `tests/documents/evidence/test_invariants.py` pins this.
 - No new third-party dependency. Every parser in this plan uses the standard library or `defusedxml`, which is already in `[project].dependencies`.
@@ -112,7 +112,7 @@ def test_python_imports_are_unaffected():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/evidence/test_signals.py -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/evidence/test_signals.py -q`
 Expected: FAIL with `ImportError: cannot import name 'MANIFEST_FILES'`.
 
 - [ ] **Step 3: Delete the regex tier**
@@ -271,14 +271,14 @@ def file_signals(
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/evidence/test_signals.py -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/evidence/test_signals.py -q`
 Expected: PASS. Some existing tests in this file assert on `foreign_signals`; delete those tests -- the function they cover no longer exists and the behaviour they pinned is the defect.
 
 - [ ] **Step 7: Run the full suite and the gates**
 
 Run:
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest -q
+POSTGRES_DB=elmify_ei uv run pytest -q
 uv run ruff check apps config tests
 uv run mypy apps config
 ```
@@ -376,7 +376,7 @@ Add `import base64` and `from apps.documents.evidence.repo import RepoSnapshot`,
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/evidence/test_intake.py::test_libraries_carry_import_counts_and_include_manifest_names -v`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/evidence/test_intake.py::test_libraries_carry_import_counts_and_include_manifest_names -v`
 Expected: FAIL -- `libraries` is a tuple of bare strings.
 
 - [ ] **Step 3: Change `_Evidence` and the import collection**
@@ -433,7 +433,7 @@ At `apps/documents/evidence/intake.py:168-173`, `write_library_skill_facts` is c
 
 - [ ] **Step 5: Run the test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/evidence/test_intake.py -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/evidence/test_intake.py -q`
 Expected: the new test passes. `uv run mypy apps config` still reports one error at the `write_library_skill_facts` call; that is Task 3's.
 
 - [ ] **Step 6: Commit**
@@ -491,7 +491,7 @@ def test_the_library_cut_keeps_the_most_imported_not_the_alphabetically_first(
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/evidence/test_facts.py -k most_imported -v`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/evidence/test_facts.py -k most_imported -v`
 Expected: FAIL -- `sorted()` on `(name, count)` tuples sorts by name, so `pkg00` leads.
 
 - [ ] **Step 3: Change the writer**
@@ -528,7 +528,7 @@ _MAX_LIBRARY_SKILLS = 15
 
 Run:
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest tests/documents/evidence/ -q
+POSTGRES_DB=elmify_ei uv run pytest tests/documents/evidence/ -q
 uv run mypy apps config
 ```
 Expected: all pass, and the mypy error Task 2 left behind is gone.
@@ -580,7 +580,7 @@ def test_skill_payload_carries_kind_and_evidence_without_comparing_them():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest -k skill_payload_carries -v`
+Run: `POSTGRES_DB=elmify_ei uv run pytest -k skill_payload_carries -v`
 Expected: FAIL with a Pydantic `ValidationError` -- `SkillEntry` forbids extra fields.
 
 - [ ] **Step 3: Extend the schema**
@@ -616,7 +616,7 @@ In `apps/documents/verification.py`, change line 201:
 
 Run:
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest -q
+POSTGRES_DB=elmify_ei uv run pytest -q
 uv run mypy apps config
 ```
 Expected: all pass. No existing verdict changes -- the new keys are outside `spec.identity` and `spec.detail`, so nothing new is compared.
@@ -673,7 +673,7 @@ def test_each_skill_row_records_what_backs_it(agency_a, django_user_model):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/evidence/test_facts.py -k records_what_backs -v`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/evidence/test_facts.py -k records_what_backs -v`
 Expected: FAIL with `KeyError: 'kind'` -- the writers still build `SkillEntry(name=..., category=...)`.
 
 - [ ] **Step 3: Change `_write_skills` to take pairs and a kind**
@@ -760,7 +760,7 @@ def _write_skills(
 
 Run:
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest -q
+POSTGRES_DB=elmify_ei uv run pytest -q
 uv run ruff check apps config tests
 uv run mypy apps config
 ```
@@ -836,7 +836,7 @@ def test_a_technique_row_stores_its_excerpt_as_evidence(agency_a, django_user_mo
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/evidence/test_extraction.py tests/documents/evidence/test_facts.py -k technique -v`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/evidence/test_extraction.py tests/documents/evidence/test_facts.py -k technique -v`
 Expected: FAIL -- `Technique` does not exist.
 
 - [ ] **Step 3: Add the model and change the field**
@@ -899,10 +899,10 @@ Import `Technique` from `.extraction` in `facts.py`. The `intake.py` call site a
 
 Run:
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest -q
+POSTGRES_DB=elmify_ei uv run pytest -q
 uv run ruff check apps config tests
 uv run mypy apps config
-POSTGRES_DB=tehsil_ei uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_ei uv run python manage.py makemigrations --check --dry-run
 ```
 Expected: all pass; no migrations (nothing here is a model field).
 

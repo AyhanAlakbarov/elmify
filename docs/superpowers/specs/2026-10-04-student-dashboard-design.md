@@ -16,7 +16,7 @@ mailbox signals those two PRs record.
 | `docs/superpowers/specs/2026-09-15-glass-box-copilot-design.md` | the kit, the packet, pairing. Where it says the extension never clicks, spec B amends it |
 | Owner, 2026-10-04, spec review | the AI recognises reliably **that** a decision arrived and the board shows "Decision available"; the outcome is **recorded automatically** when the mail states it or when the student opens the portal (§4); programme pages **show the official source link** (amends P1-7.1); **counsellors work on each student's board with full rights**, not read-only |
 | Owner, 2026-10-04, plan review | logout keeps the extension paired; disconnect lives in Settings; erasure revokes (`request_deletion` already revokes every pairing). A counsellor sees a read-only board while the student's deletion request is open. Interview dates are extracted. An open award (HOLDER, COUNTRY, GLOBAL scope) lists every programme the student could use it for. Accept on an offer of another programme creates a new card. "We operate in Azerbaijan; you can send to TypeSafe (using OpenRouter)": student mail may reach Jev, with identifiers stripped (`docs/legal/2026-09-provider-terms.md`), and **one** Jev reading that abstains decides a mail (§4). Uploads reach the extension through a promoted copy and a device route (§6), after a magic-byte type allowlist and an active-content check in the isolated OCR function; a PDF is never rewritten; an EICAR first-deploy check (§6, "Upload safety") |
-| Agreed with the consent session (tehsil-agent-f7), 2026-10-03 | this spec owns `templates/base.html`, `templates/registration/login.html`, `templates/student/*`, `/accounts/login/`, `/accounts/logout/`. f7 owns `apps/privacy/templates/privacy/*` and adds `/accounts/logout/` to its `_ACCEPTANCE_EXEMPT_PREFIXES` |
+| Agreed with the consent session (elmify-f7), 2026-10-03 | this spec owns `templates/base.html`, `templates/registration/login.html`, `templates/student/*`, `/accounts/login/`, `/accounts/logout/`. f7 owns `apps/privacy/templates/privacy/*` and adds `/accounts/logout/` to its `_ACCEPTANCE_EXEMPT_PREFIXES` |
 
 Not in scope: owner and platform pages; counsellor pages other than the student board (§4a); visual design; Gmail; the `+` address delivery
 test (it needs the platform to send mail, and no sending domain exists — owner, 2026-09-19).
@@ -40,7 +40,7 @@ test (it needs the platform to send mail, and no sending domain exists — owner
   invisible pairing), so revoking at logout would force a re-pair after every login and break
   one-click Start application. Disconnect lives in Settings, Extension; erasure revokes
   (`request_deletion` already revokes every pairing). A deletion-locked student can still log out.
-- **`/`** stops answering the bare word "Tehsil": an authenticated student is redirected to
+- **`/`** stops answering the bare word "Elmify": an authenticated student is redirected to
   `/student/`, anyone else to `/accounts/login/`. The Outlook callback, which ends on `/`, then
   lands on the board.
 - **`manage.py create_student`** (`--agency`, `--host`, `--username`, password prompted, never an
@@ -353,6 +353,9 @@ bucket is encrypted, versioned and private; TLS only. Three additions:
 - **Start application** posts to the server, which marks the card in progress and queues a
   `START_FILL` device action; spec B makes the extension open the portal and fill. Rate-limited
   per student like the other device actions.
+- **Amended 2026-10-10:** the button is "Apply to <programme>" and only opens the portal page;
+  filling starts from the extension's panel (co-pilot on-page guidance spec D2, §3). What the
+  card and programme page show, and why they list no application steps, is the lanes spec §5.1.
 
 ## 8. Mail on the board
 

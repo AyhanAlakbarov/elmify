@@ -8,7 +8,7 @@
     "poll_seconds": 15
   },
   "queue": {
-    "name": "tehsil-phase1-validation-ResearchQueue-LrfmdSGIZzxi"
+    "name": "elmify-phase1-validation-ResearchQueue-LrfmdSGIZzxi"
   },
   "region": "eu-central-1",
   "schema_version": 1,

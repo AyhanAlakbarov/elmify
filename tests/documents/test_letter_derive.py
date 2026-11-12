@@ -184,22 +184,37 @@ _LENGTH = {
 
 def _asserted(verdict: LetterVerdict, field: str, value: str) -> bool | None:
     """Whether this reading asserted the expected value, contradicted it, or
-    said nothing (None)."""
+    said nothing about it (None).
+
+    A length is contradicted only by a reading about the SAME measure that names
+    a different number or the opposite kind of bound. A reading that names the
+    other unit of a two-unit sentence ("one or two pages -- roughly 500 to 1,000
+    words") answered a different question, and one that names the measure with
+    no number answered none: both are None, not a contradiction. "approximate"
+    satisfies a cap because decide_letter_shape treats it as one. So the only
+    contradiction is a matching measure and bound with a different number.
+    """
     if field in _LENGTH:
         measure, bound = _LENGTH[field]
-        if verdict.length_measure == "none" and verdict.length_number is None:
+        if verdict.length_measure != measure or verdict.length_number is None:
             return None
-        return (
-            verdict.length_measure == measure
-            and verdict.length_bound == bound
-            and verdict.length_number == int(value)
+        bound_ok = verdict.length_bound in (
+            ("maximum", "approximate") if bound == "maximum" else ("minimum",)
         )
+        if not bound_ok:
+            # A named bound of the other kind answered a different question (a
+            # range's floor); no bound at all answered none. Neither is a wrong cap.
+            return None
+        return verdict.length_number == int(value)
     got = getattr(verdict, field)
     if got in ("none", None, False):
         return None
     if field in ("handwritten", "signed_declaration"):
         return got is True
     return str(got) == value
+
+
+_EVAL_BATCH = 12
 
 
 @pytest.mark.live
@@ -231,43 +246,63 @@ def test_the_judge_reads_every_language_in_the_eval_sheet(capsys) -> None:
     with capsys.disabled():
         print(f"\n{settings.OPENAI_EXTRACTION_MODEL} x2 + {settings.ANTHROPIC_JUDGE_MODEL}")
     for language, language_rows in sorted(by_language.items()):
-        page_text = "\n".join(row["sentence"] for row in language_rows)
-        found = candidates(page_text, (), language=language)
-        index_of = {candidate.text: index for index, candidate in enumerate(found)}
-        listing = "\n".join(f"{index} | {c.text}" for index, c in enumerate(found))
-        samples = _judge(
-            openai.OpenAI().responses,
-            anthropic.Anthropic().messages,
-            program_id=f"eval-{language}",
-            listing=listing,
-        )
         asserted = missed = contradicted = unfound = printed = 0
-        for row in language_rows:
-            index = index_of.get(row["sentence"])
-            if index is None:
-                # Found by no recall path: a real result about the SHEET, not
-                # about the judge, so it is counted and named separately.
-                unfound += 1
-                continue
-            answers = [
-                _asserted(verdict, row["expected_field"], row["expected_value"])
-                for verdict in _verdicts_for(samples, index)
-            ]
-            if row["expected_field"] == "none":
-                printed += 1
-                with capsys.disabled():
-                    print(f"  ? {row['id']} [{language}] untypeable -> {answers}")
-                continue
-            if any(answer is False for answer in answers):
-                contradicted += 1
-                if row["expected_field"] in _LENGTH:
-                    wrong_caps.append((row["id"], language, row["expected_field"]))
-            elif any(answer is True for answer in answers):
-                asserted += 1
-            else:
-                missed += 1
-                if row["expected_field"] == "naming" and row["expected_value"] == "forbidden":
-                    missed_forbidden.append(row["id"])
+        # Page-sized batches, not one listing per language. Measured live
+        # 2026-09-25: 57 English sentences in one call ran Claude into its
+        # 21,000-token cap after 210 s and the reading was dropped -- a fact
+        # about batch size, not about how well it reads a page.
+        for start in range(0, len(language_rows), _EVAL_BATCH):
+            batch = language_rows[start : start + _EVAL_BATCH]
+            found = candidates("\n".join(r["sentence"] for r in batch), (), language=language)
+            index_of = {candidate.text: index for index, candidate in enumerate(found)}
+            samples = _judge(
+                openai.OpenAI().responses,
+                anthropic.Anthropic().messages,
+                program_id=f"eval-{language}-{start}",
+                listing="\n".join(f"{index} | {c.text}" for index, c in enumerate(found)),
+            )
+            with capsys.disabled():
+                print(f"  [{language} {start}] {len(samples)} readings survived")
+            for row in batch:
+                index = index_of.get(row["sentence"])
+                if index is None:
+                    # Found by no recall path: a real result about the SHEET, not
+                    # about the judge, so it is counted and named separately.
+                    unfound += 1
+                    continue
+                verdicts = _verdicts_for(samples, index)
+                if row["expected_field"] == "none":
+                    printed += 1
+                    lengths = [
+                        (v.length_measure, v.length_bound, v.length_number) for v in verdicts
+                    ]
+                    with capsys.disabled():
+                        print(f"  ? {row['id']} [{language}] untypeable -> {lengths}")
+                    continue
+                answers = [
+                    _asserted(verdict, row["expected_field"], row["expected_value"])
+                    for verdict in verdicts
+                ]
+                if any(answer is False for answer in answers):
+                    contradicted += 1
+                    with capsys.disabled():
+                        said = [
+                            (v.length_measure, v.length_bound, v.length_number, v.form)
+                            for v in verdicts
+                        ]
+                        print(f"  x {row['id']} [{language}] {row['expected_field']}="
+                              f"{row['expected_value']} contradicted by {said}")
+                    if row["expected_field"] in _LENGTH:
+                        wrong_caps.append((row["id"], language, row["expected_field"]))
+                elif any(answer is True for answer in answers):
+                    asserted += 1
+                else:
+                    missed += 1
+                    with capsys.disabled():
+                        print(f"  - {row['id']} [{language}] {row['expected_field']}="
+                              f"{row['expected_value']} missed")
+                    if row["expected_field"] == "naming" and row["expected_value"] == "forbidden":
+                        missed_forbidden.append(row["id"])
         with capsys.disabled():
             print(
                 f"  {language}: {len(language_rows)} rows, {asserted} asserted, "

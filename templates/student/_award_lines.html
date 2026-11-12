@@ -1,0 +1,7 @@
+{% load dashboard %}{% for line in lane.award_lines %}
+  <p>{{ line.name }}: {{ line.text }}{% with url=line.source_url|https_only %}{% if url %} <a href="{{ url }}" target="_blank" rel="noopener">Official page</a>{% endif %}{% endwith %}</p>
+  {% if line.kind == "ASK" %}
+    {% if line.claim %}<blockquote>{{ line.claim }}</blockquote>{% endif %}
+    {% if line.add_url and not read_only %}<form method="post" action="{{ line.add_url }}">{% csrf_token %}<button type="submit">Yes, add {{ line.name }}</button></form>{% endif %}
+  {% endif %}
+{% endfor %}

@@ -175,6 +175,6 @@ def normalise_condition(
         return other
     if codes:
         return f"{prefix}:{','.join(codes)}"
-    if region and prefix == "RESIDENCE":
-        return f"RESIDENCE:{region}"
+    if region and prefix in ("RESIDENCE", "NATIONALITY"):
+        return f"{prefix}:{region}"
     return other

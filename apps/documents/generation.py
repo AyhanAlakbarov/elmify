@@ -11,17 +11,37 @@ from pydantic import ValidationError
 
 from apps.funding.models import Program, ProgramStatement
 from apps.ratelimit import rate_limited
+from apps.research.decisions import Client
 from apps.research.extraction import OpenAIClient, ResponsesAPI, privacy_safe_identifier
 from apps.tenancy.models import Membership
 
 from .approval import is_blocked
 from .constraints import directives_from_program
+from .cv_evidence import apply_cv_evidence
+from .cv_fixes import (
+    AppliedFix,
+    drop_soft_skills,
+    full_titles,
+    place_theses,
+    reverted_subjects,
+    stamp_from_ledger,
+)
+from .cv_verbs import verb_fixes
+from .evidence.readings import usable_readings
 from .models import VerifiedFact
+from .render import select_render_variant, without_banned_content
+from .requirement_list import RequirementList
+from .reupload import has_pending_changes
 from .schemas import CVContent
+from .selection import LeftOut, select_for_programme
 from .tailoring import TailoredSkills, tailor_skills
 from .verification import (
+    NOT_FOR_CV,
     ClaimVerdict,
     generatable_facts,
+    has_full_name,
+    match_confirmed_fact,
+    prompt_payload,
     unsuperseded_facts,
     verify_against_facts,
 )
@@ -55,6 +75,15 @@ class ApplicationEmailMissing(RuntimeError):
     """No address confirmed for this student to apply with. See IdentityNotConfirmed."""
 
 
+class ChangesPending(RuntimeError):
+    """A newer CV changed confirmed facts and the student has not settled them.
+
+    While a change is pending the entry's old row is superseded and its new row
+    is unconfirmed, so generatable_facts sees neither: a CV generated now would
+    silently leave the entry out. A precondition, like IdentityNotConfirmed.
+    """
+
+
 class GenerationError(RuntimeError):
     """Base for domain errors raised out of a CV generation call.
 
@@ -86,6 +115,9 @@ class GenerationResult:
     #: (see tailoring.TailoredSkills) -- and always empty when no programme
     #: was given, because a gap has no meaning without one.
     gaps: tuple[str, ...] = ()
+    #: Spec §5.5: every automatic fix, applied or undone, with its original.
+    applied_fixes: tuple[AppliedFix, ...] = ()
+    left_out: tuple[LeftOut, ...] = ()
 
 
 def generation_rate_limited(actor_id: UUID) -> bool:
@@ -138,7 +170,11 @@ def _tailor(student: Membership, programme: Program, parser: ResponsesAPI) -> Ta
     competencies = list(
         ProgramStatement.objects.filter(program=programme, kind=ProgramStatement.Kind.COMPETENCY)
     )
-    return tailor_skills(student, competencies, parser=parser) if competencies else None
+    return (
+        tailor_skills(student, competencies, parser=parser, use_cache=True)
+        if competencies
+        else None
+    )
 
 
 def _apply_tailoring(content: CVContent, tailored: TailoredSkills | None) -> CVContent:
@@ -170,7 +206,8 @@ def _apply_tailoring(content: CVContent, tailored: TailoredSkills | None) -> CVC
 def _facts_payload(facts: list[VerifiedFact]) -> str:
     return json.dumps(
         [
-            {"id": str(fact.id), "category": fact.category, "payload": fact.payload}
+            {"id": str(fact.id), "category": fact.category,
+             "payload": prompt_payload(fact.payload, NOT_FOR_CV)}
             for fact in facts
         ],
         sort_keys=True,
@@ -240,6 +277,8 @@ def _call_model(
         "Carry an award's awarding_body and detail, a degree's supervisor, funding and "
         "relevant_coursework, a publication's url and a reference's do_not_contact through "
         "from DATA unchanged; never compose one that DATA does not carry. "
+        "Carry a certification's title, issuer and date through from DATA unchanged; "
+        "never add a certification DATA does not carry. "
         "Carry medium_of_instruction through unchanged when a fact states it. "
         "Leave summary as null unless it can be built entirely from a confirmed personal-"
         "information fact in DATA -- do not write a summary as a pitch or from inference. "
@@ -258,6 +297,8 @@ def _call_model(
         "A language's listening, reading, spoken_interaction, spoken_production and "
         "writing levels are separate self-assessments: leave them null unless DATA "
         "states that sub-skill on its own. Do not copy the overall cefr_level into them. "
+        "Leave projects empty; projects are populated separately from repository and "
+        "thesis readings. "
         # Not in DATA: DATA is labelled untrusted student content, and the
         # platform's own configuration must not be mixed into it.
         "The contact email is not part of DATA and is not a fact to verify: "
@@ -298,11 +339,164 @@ def _call_model(
     return content.model_copy(update={"personal_information": personal})
 
 
+def _coursework_line_from_courses(courses: object) -> str | None:
+    """Format checked transcript `courses` (`[{"title": ...}, ...]`) into a
+    single comma-separated line within `EducationEntry.relevant_coursework`'s
+    1,000-character limit."""
+    if not isinstance(courses, list | tuple):
+        return None
+    titles: list[str] = []
+    total = 0
+    for item in courses:
+        title = str(item.get("title", "")).strip() if isinstance(item, dict) else ""
+        if not title:
+            continue
+        sep = 2 if titles else 0
+        if total + sep + len(title) > 1000:
+            break
+        titles.append(title)
+        total += sep + len(title)
+    return ", ".join(titles) if titles else None
+
+
+def _stamp_from_facts(
+    content: CVContent,
+    *,
+    facts: list[VerifiedFact],
+    required_fields: tuple[str, ...] = (),
+) -> CVContent:
+    """Stamp checked transcript coursework when requested and clear `projects`
+    before `stamp_from_ledger` and `apply_cv_evidence` run."""
+    education = []
+    wants_coursework = "education.relevant_coursework" in required_fields
+    for edu in content.education:
+        fact = match_confirmed_fact(
+            edu, category=VerifiedFact.Category.EDUCATION, facts=facts
+        )
+        if fact is not None and isinstance(fact.payload, dict) and not edu.relevant_coursework:
+            stated = fact.payload.get("relevant_coursework")
+            if isinstance(stated, str) and stated.strip():
+                edu = edu.model_copy(update={"relevant_coursework": stated.strip()[:1000]})
+            elif wants_coursework:
+                line = _coursework_line_from_courses(fact.payload.get("courses"))
+                if line:
+                    edu = edu.model_copy(update={"relevant_coursework": line})
+        education.append(edu)
+
+    return content.model_copy(
+        update={
+            "education": tuple(education),
+            "projects": (),
+        }
+    )
+
+
+_PRESERVABLE_SECTIONS = (
+    "personal_information",
+    "education",
+    "experience",
+    "research",
+    "publications",
+    "awards",
+    "certifications",
+    "skills",
+    "languages",
+    "timeline",
+    "references",
+    "summary",
+)
+
+
+def _preserve_clean_sections(
+    first: CVContent,
+    first_verdicts: tuple[ClaimVerdict, ...],
+    second: CVContent,
+    second_verdicts: tuple[ClaimVerdict, ...],
+) -> CVContent:
+    """Keep any section from `first` that had zero blocking verdicts on Pass 1
+    if Pass 2 introduced a blocking verdict in that section or dropped its
+    entries completely."""
+    first_blocked = {
+        v.claim_path.split("[", 1)[0].split(".", 1)[0]
+        for v in first_verdicts
+        if is_blocked((v,))
+    }
+    second_blocked = {
+        v.claim_path.split("[", 1)[0].split(".", 1)[0]
+        for v in second_verdicts
+        if is_blocked((v,))
+    }
+    updates: dict[str, object] = {}
+    for section in _PRESERVABLE_SECTIONS:
+        if section in first_blocked:
+            continue
+        first_val = getattr(first, section, None)
+        second_val = getattr(second, section, None)
+        dropped_entries = (
+            isinstance(first_val, tuple)
+            and isinstance(second_val, tuple)
+            and len(second_val) < len(first_val)
+        )
+        if (
+            section in second_blocked
+            or (bool(first_val) and not bool(second_val))
+            or dropped_entries
+        ):
+            updates[section] = first_val
+    return second.model_copy(update=updates) if updates else second
+
+
+def _required_fields_for(
+    programme: Program | None, requirements: RequirementList | None
+) -> tuple[str, ...]:
+    if requirements is None:
+        return tuple(
+            d.target
+            for d in (directives_from_program(programme) if programme is not None else ())
+            if d.action == "include"
+        )
+    targets: list[str] = [
+        d.target for d in requirements.cv_directives() if d.action == "include"
+    ]
+    for rule in requirements.cv_rules():
+        if rule.key == "required_fields" and isinstance(rule.value, list):
+            for field in rule.value:
+                if isinstance(field, str) and field.strip():
+                    target = f"personal.{field.strip()}"
+                    if target not in targets:
+                        targets.append(target)
+    return tuple(targets)
+
+
+def _quality_fixes(
+    content: CVContent,
+    *,
+    student: Membership,
+    facts: list[VerifiedFact],
+    verification_facts: list[VerifiedFact],
+    decisions_client: Client | None,
+) -> tuple[CVContent, tuple[AppliedFix, ...]]:
+    """Spec §5.6 then §5.1-§5.4, after the model and before tailoring and
+    verification. Before tailoring on purpose: _apply_tailoring falls back to
+    the content it is given, so an omitted skill cannot come back through it."""
+    undone = reverted_subjects(student)
+    content = stamp_from_ledger(content, facts)
+    content, soft = drop_soft_skills(content, facts, undone)
+    content, theses = place_theses(content, undone)
+    content, titles = full_titles(content, verification_facts, undone)
+    content, verbs = verb_fixes(
+        content, student_id=student.id, undone=undone, client=decisions_client
+    )
+    return content, (*soft, *theses, *titles, *verbs)
+
+
 def generate_cv(
     *,
     student: Membership,
     client: OpenAIClient | None = None,
     programme: Program | None = None,
+    requirements: RequirementList | None = None,
+    decisions_client: Client | None = None,
 ) -> GenerationResult:
     """Generate a CV for ``student`` from that student's own ledger.
 
@@ -323,7 +517,9 @@ def generate_cv(
     # fixed-window counter, and burning a token on a student who is missing a
     # precondition punishes them for a state waiting cannot fix. Both checks
     # are indexed reads.
-    if not generatable_facts(student).filter(category=VerifiedFact.Category.IDENTITY).exists():
+    if has_pending_changes(student):
+        raise ChangesPending("settle the changes from the newer CV first")
+    if not has_full_name(generatable_facts(student)).exists():
         raise IdentityNotConfirmed("no confirmed identity fact for this student")
     if not student.application_email:
         raise ApplicationEmailMissing("tell us which address to apply with")
@@ -337,11 +533,15 @@ def generate_cv(
         client.responses if client is not None else cast(ResponsesAPI, OpenAI().responses)
     )
     facts_json = _facts_payload(prompt_facts)
-    required_fields = tuple(
-        d.target
-        for d in (directives_from_program(programme) if programme is not None else ())
-        if d.action == "include"
-    )
+    required_fields = _required_fields_for(programme, requirements)
+    ban_rules = requirements.cv_rules() if requirements is not None else ()
+    is_funder_template = (
+        requirements is not None
+        and any(
+            item.key == "cv_format" and item.value == "funder_template"
+            for item in requirements.for_document("cv")
+        )
+    ) or (programme is not None and select_render_variant(programme) == "FUNDER_TEMPLATE")
     content = _call_model(
         parser,
         student_id=str(student.id),
@@ -350,13 +550,58 @@ def generate_cv(
         contact_email=contact_email(student),
         required_fields=required_fields,
     )
+    content = _stamp_from_facts(
+        content, facts=prompt_facts, required_fields=required_fields
+    )
+    content, fixes = _quality_fixes(
+        content,
+        student=student,
+        facts=prompt_facts,
+        verification_facts=verification_facts,
+        decisions_client=decisions_client,
+    )
+    if getattr(settings, "CV_REPO_BULLETS_ENABLED", False):
+        content, evidence_fixes = apply_cv_evidence(
+            content,
+            usable_readings(student),
+            undone=reverted_subjects(student),
+            include_projects=not is_funder_template,
+        )
+        fixes = (
+            *fixes,
+            *(
+                AppliedFix(
+                    ef["kind"],
+                    f"{ef['reading']}@{ef['target']}",
+                    ef["target"],
+                    ef["reading"],
+                    ef["target"],
+                )
+                for ef in evidence_fixes
+            ),
+        )
+    if ban_rules:
+        content = without_banned_content(content, ban_rules)
     tailored = _tailor(student, programme, parser) if programme is not None else None
     gaps = tailored.gaps if tailored is not None else ()
     content = _apply_tailoring(content, tailored)
+    selection = select_for_programme(
+        content,
+        student=student,
+        programme=programme,
+        requirements=requirements,
+        client=decisions_client,
+    )
+    content = selection.content
     verdicts = verify_against_facts(content, verification_facts)
     if not is_blocked(verdicts):
         return GenerationResult(
-            content=content, verdicts=verdicts, retried=False, gaps=gaps
+            content=content,
+            verdicts=verdicts,
+            retried=False,
+            gaps=gaps,
+            applied_fixes=fixes,
+            left_out=selection.left_out,
         )
     # claim_path only, never claim_text: claim_text is the model's own
     # previously generated document content, and feeding a superseded or
@@ -374,6 +619,8 @@ def generate_cv(
     # practice: carry structured, non-text state forward (e.g. which
     # category/identity a field must match), not claim_text -- that would
     # reopen the leak this comment exists to avoid.
+    first_content = content
+    first_verdicts = verdicts
     failed = ", ".join(
         f"{verdict.claim_path} ({verdict.verdict})"
         for verdict in verdicts
@@ -390,6 +637,57 @@ def generate_cv(
         contact_email=contact_email(student),
         required_fields=required_fields,
     )
+    content = _stamp_from_facts(
+        content, facts=prompt_facts, required_fields=required_fields
+    )
+    content, fixes = _quality_fixes(
+        content,
+        student=student,
+        facts=prompt_facts,
+        verification_facts=verification_facts,
+        decisions_client=decisions_client,
+    )
+    if getattr(settings, "CV_REPO_BULLETS_ENABLED", False):
+        content, evidence_fixes = apply_cv_evidence(
+            content,
+            usable_readings(student),
+            undone=reverted_subjects(student),
+            include_projects=not is_funder_template,
+        )
+        fixes = (
+            *fixes,
+            *(
+                AppliedFix(
+                    ef["kind"],
+                    f"{ef['reading']}@{ef['target']}",
+                    ef["target"],
+                    ef["reading"],
+                    ef["target"],
+                )
+                for ef in evidence_fixes
+            ),
+        )
+    if ban_rules:
+        content = without_banned_content(content, ban_rules)
     content = _apply_tailoring(content, tailored)
+    selection = select_for_programme(
+        content,
+        student=student,
+        programme=programme,
+        requirements=requirements,
+        client=decisions_client,
+    )
+    content = selection.content
     verdicts = verify_against_facts(content, verification_facts)
-    return GenerationResult(content=content, verdicts=verdicts, retried=True, gaps=gaps)
+    merged = _preserve_clean_sections(first_content, first_verdicts, content, verdicts)
+    if merged is not content:
+        content = merged
+        verdicts = verify_against_facts(content, verification_facts)
+    return GenerationResult(
+        content=content,
+        verdicts=verdicts,
+        retried=True,
+        gaps=gaps,
+        applied_fixes=fixes,
+        left_out=selection.left_out,
+    )

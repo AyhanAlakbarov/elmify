@@ -1,7 +1,18 @@
 """The language loop -- which languages a sweep pass writes its angles in.
 
-Decision 38 (2026-09-24): every official language of the country from
-Wikidata P37, plus English, never one language per country. `STEERING`'s single
+Decision 38 (2026-09-24): every official language of the country, plus
+English, never one language per country. Since 2026-10-13 the official
+languages come from Unicode CLDR (through Babel, already a dependency), not
+Wikidata P37: Wikidata marks English as a *deprecated* official language of
+the United States and lists Hawaiian, Samoan, Chamorro and Carolinian instead,
+so a US pass ran four dead languages before English. CLDR records English as the
+US's de-facto official language and those as regional. Regional-only languages
+are left out, and so is any official language spoken by under
+`_MIN_SPEAKER_SHARE` of residents (Māori in New Zealand, Tamil in Singapore).
+Known cost, accepted: Swiss German ("gsw") is de-facto official in CLDR and
+runs a pass of its own, though Swiss funders publish in standard German; the
+per-language tally drops it rather than a hand-kept exception list.
+`STEERING`'s single
 `language` column was right for Türkiye and wrong for most of the corridor: a
 Kazakh funder's page is more often Russian than Kazakh, and Uzbekistan,
 Belgium, Switzerland, India and Pakistan publish in several.
@@ -21,62 +32,52 @@ this module only says which ones start.
 from __future__ import annotations
 
 import logging
-import re
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from typing import Protocol
+from collections.abc import Sequence
+from dataclasses import dataclass
 
-from . import wikidata
+from .vocabulary import _ISO2 as _ISO2
+from .vocabulary import _LANG as _LANG
 
 logger = logging.getLogger(__name__)
 
-_ISO2 = re.compile(r"^[A-Z]{2}$")
-#: The same shape vocabulary.py's `_LANG` checks: codes come back from
-#: Wikidata (P424) and must not be trusted further than that.
-_LANG = re.compile(r"^[a-z]{2,3}(-[a-z0-9]+)*$")
 #: SweepAngle.language / SweepAngle.home_language / SweepRun.home_language
 #: are all CharField(max_length=12) -- `_LANG` alone does not bound length
 #: (a BCP-47 tag can carry arbitrarily many subtags), so a code that
 #: matches it can still be too long for the column.
 MAX_LANGUAGE_LEN = 12
 
-#: P297 is the ISO 3166-1 alpha-2 code, P37 official language, P424 the
-#: language's Wikimedia code -- the same code vocabulary.py's kind words are
-#: keyed on, so the loop and the vocabulary must agree on which alphabet a
-#: language is. Only current countries: dissolved ones (a P576 claim) do not
-#: run sweeps. The country code is validated against `_ISO2` before it is
-#: formatted in, so this string cannot be steered.
-_QUERY = """SELECT DISTINCT ?code WHERE {{
-  ?country wdt:P297 "{code}" ; wdt:P31 wd:Q6256 .
-  FILTER NOT EXISTS {{ ?country wdt:P576 [] }}
-  ?country wdt:P37 ?language .
-  ?language wdt:P424 ?code .
-}}"""
-
-
-class CountryLanguages(Protocol):
-    def languages(self, country_code: str) -> tuple[str, ...]: ...
+#: CLDR's share of residents who speak the language. Below it a language is
+#: left to the English leg (Māori in New Zealand 2.8%, Tamil in Singapore 2.1%).
+#: ponytail: one global cut; the per-language tally (tally.py) is what drops a
+#: language above it that finds nothing.
+_MIN_SPEAKER_SHARE = 5.0
 
 
 @dataclass(frozen=True)
-class WikidataLanguages:
-    sparql: Callable[[str], list[dict[str, str]]] = field(default=wikidata.sparql)
+class CldrLanguages:
+    """Official and de-facto official languages, most-spoken first, from CLDR.
+
+    Codes are reduced to the language (az_Cyrl -> az, zh_Hant -> zh), and the
+    macrolanguage "no" is dropped beside Bokmål, so no language runs twice.
+    """
 
     def languages(self, country_code: str) -> tuple[str, ...]:
+        from babel.languages import get_official_languages, get_territory_language_info
+
         code = country_code.upper()
         if not _ISO2.match(code):
             raise ValueError(f"not an ISO 3166-1 alpha-2 code: {country_code!r}")
-        rows = self.sparql(_QUERY.format(code=code))
-        codes: set[str] = set()
-        for row in rows:
-            raw = row.get("code", "").lower()
-            if _LANG.match(raw):
-                codes.add(raw)
-            else:
-                logger.warning("not a language code from Wikidata for %s: %r", code, raw)
-        # Sorted: SPARQL guarantees no order, and a pass's batch order must be
-        # reproducible from its languages column.
-        return tuple(sorted(codes))
+        share = get_territory_language_info(code)
+        codes: list[str] = []
+        for raw in get_official_languages(code, regional=False, de_facto=True):
+            if float(share.get(raw, {}).get("population_percent") or 0.0) < _MIN_SPEAKER_SHARE:
+                continue
+            language = raw.split("_")[0].lower()
+            if _LANG.match(language) and language not in codes:
+                codes.append(language)
+        if "no" in codes and "nb" in codes:
+            codes.remove("no")
+        return tuple(codes)
 
 
 def home_language(family: str, codes: Sequence[str]) -> str:
@@ -103,7 +104,7 @@ def pass_languages(
     country_code: str,
     family: str,
     *,
-    source: CountryLanguages,
+    source: CldrLanguages,
     home_language: str = "",
 ) -> tuple[str, ...]:
     """The languages a pass runs in: see `ordered_languages`."""
@@ -115,9 +116,9 @@ def pass_languages(
         return ordered_languages((home_language,))
     local = source.languages(country_code)
     if not local:
-        # Visibly incomplete, never silently English: a country Wikidata
-        # gives no official language for is a data gap, logged.
-        logger.warning("no official language for %s in Wikidata; English only", country_code)
+        # Visibly incomplete, never silently English: a country CLDR gives
+        # no official language for is a data gap, logged.
+        logger.warning("no official language for %s in CLDR; English only", country_code)
     return ordered_languages(local)
 
 

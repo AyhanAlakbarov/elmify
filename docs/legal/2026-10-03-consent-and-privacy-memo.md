@@ -14,11 +14,11 @@ constraint, not the GDPR.** Text read: https://frameworks.e-qanun.az/19/f_19675.
 
 - No EU establishment + students located in Azerbaijan: the GDPR does not apply (Art. 3(2) protects
   people "in the Union"; nationality is irrelevant; EDPB Guidelines 3/2018). High confidence.
-- It starts to apply if Tehsil targets people in the EU (post-arrival services, EU marketing),
+- It starts to apply if Elmify targets people in the EU (post-arrival services, EU marketing),
   monitors their behaviour in the EU (profiling students after arrival), or opens an EU
   establishment. Under Art. 3(2) an Art. 27 EU representative is then required. Acting as a
-  processor for an EU university does not by itself bring Tehsil under the GDPR.
-- An EU-incorporated Tehsil is under the GDPR for all processing (Art. 3(1)); sending data to
+  processor for an EU university does not by itself bring Elmify under the GDPR.
+- An EU-incorporated Elmify is under the GDPR for all processing (Art. 3(1)); sending data to
   Azerbaijani agencies is then a Chapter V transfer (no adequacy decision for Azerbaijan).
 - UK GDPR: same Art. 3 analysis; Data (Use and Access) Act 2025 effects not verified.
 
@@ -102,8 +102,8 @@ constraint, not the GDPR.** Text read: https://frameworks.e-qanun.az/19/f_19675.
 ## 8. B2B
 
 - GDPR Art. 26 joint control is lawful with an arrangement whose essence is shown to students, but
-  the likelier correct model is agency = controller, Tehsil = processor (Art. 28) for the service,
-  Tehsil = separate controller for its own analytics/training (EDPB Guidelines 07/2020).
+  the likelier correct model is agency = controller, Elmify = processor (Art. 28) for the service,
+  Elmify = separate controller for its own analytics/training (EDPB Guidelines 07/2020).
 - Azerbaijan: owner/operator roles by contract (Art. 9.9, 10.3); no joint-controller concept found.
 
 ## 9. Minors
@@ -118,4 +118,4 @@ constraint, not the GDPR.** Text read: https://frameworks.e-qanun.az/19/f_19675.
 - Any adequacy list; whether China passes Art. 14.2.2.
 - Current consolidated E-Commerce Law Art. 6.
 - The reported draft new data law.
-- Whether the Law reaches Tehsil if it incorporates in the EU.
+- Whether the Law reaches Elmify if it incorporates in the EU.

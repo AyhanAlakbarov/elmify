@@ -484,8 +484,8 @@ def test_the_schema_carries_no_regex_the_responses_api_refuses() -> None:
 def test_parsed_or_none_collapses_the_three_ways_a_call_learns_nothing():
     """One tail, three degrading callers. Each outcome must yield None.
 
-    Previously extract_statements, propose_description and
-    judge_remainder each carried their own copy of this, two of them ordering
+    Previously extract_statements, judge_remainder and the old evidence
+    description call each carried their own copy of this, two of them ordering
     the checks differently while doing the same thing -- three implementations
     that could drift apart.
     """

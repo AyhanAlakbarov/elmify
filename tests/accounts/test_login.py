@@ -174,3 +174,62 @@ def test_a_deletion_locked_student_can_still_log_out(client, agency_a, domain_a,
     client.force_login(student)
     response = client.post(LOGOUT, HTTP_HOST=domain_a.host)
     assert response["Location"] == "/accounts/login/"
+
+
+def test_session_and_csrf_cookie_hardening_settings(settings) -> None:
+    assert settings.SESSION_COOKIE_AGE == 60 * 60 * 8
+    assert settings.SESSION_SAVE_EVERY_REQUEST is True
+    assert settings.SESSION_EXPIRE_AT_BROWSER_CLOSE is True
+    assert settings.SESSION_COOKIE_HTTPONLY is True
+    assert settings.SESSION_COOKIE_SAMESITE == "Lax"
+    assert settings.CSRF_COOKIE_SAMESITE == "Lax"
+
+
+def test_password_change_updates_password_rotates_session_and_revokes_device_tokens(
+    client, agency_a, domain_a, student
+) -> None:
+    from django.test import Client
+
+    from apps.portals import pairing as pairing_module
+
+    with tenant_scope(agency_a.id):
+        membership = Membership.objects.get(user=student)
+        pairing, token = redeem_pairing_code(issue_pairing_code(membership), "install-1")
+
+    other_client = Client()
+    other_client.post(
+        LOGIN, {"username": "amina", "password": "correct-horse-battery"}, HTTP_HOST=domain_a.host
+    )
+    client.post(
+        LOGIN, {"username": "amina", "password": "correct-horse-battery"}, HTTP_HOST=domain_a.host
+    )
+
+    get_resp = client.get("/accounts/password_change/", HTTP_HOST=domain_a.host)
+    assert get_resp.status_code == 200
+
+    post_resp = client.post(
+        "/accounts/password_change/",
+        {
+            "old_password": "correct-horse-battery",
+            "new_password1": "new-horse-battery-staple-99",
+            "new_password2": "new-horse-battery-staple-99",
+        },
+        HTTP_HOST=domain_a.host,
+    )
+    assert post_resp.status_code == 302
+    assert post_resp["Location"] == "/student/settings/account/"
+
+    student.refresh_from_db()
+    assert student.check_password("new-horse-battery-staple-99")
+    # Current session stays authenticated; other session is invalidated.
+    assert client.get("/student/", HTTP_HOST=domain_a.host).status_code == 200
+    assert other_client.get("/student/", HTTP_HOST=domain_a.host)["Location"].startswith(
+        "/accounts/login/"
+    )
+    # Paired extension device token is revoked.
+    with tenant_scope(agency_a.id):
+        pairing.refresh_from_db()
+        assert pairing.revoked_at is not None
+        assert pairing.token_hash == ""
+        assert pairing_module.authenticate_device(token) is None
+

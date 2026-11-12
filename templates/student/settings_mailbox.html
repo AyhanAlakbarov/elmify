@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Mailbox{% endblock %}
 {% block content %}
-  <div class="page-head"><div><h1>Mailbox</h1><p><a href="/student/settings/">Settings</a> / Mailbox</p></div></div>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/student/settings/">Settings</a><span aria-hidden="true">/</span><span>Mailbox</span></nav>
+  <div class="page-head"><div><h1>Mailbox</h1><p>Connect the email inbox we watch for university and scholarship replies.</p></div></div>
   <section class="panel" aria-labelledby="inboxes-heading">
     <h2 id="inboxes-heading">Connected inboxes</h2>
     {% for connection in connections %}
@@ -28,7 +29,7 @@
 
   <section class="panel" aria-labelledby="connect-heading">
     <h2 id="connect-heading">Connect an inbox</h2>
-    <p>We read only mail from these senders: {{ domains|join:", "|default:"none yet; add an application first" }}.</p>
+    <p>We read only mail from these senders: {% for d in domains %}<code class="domain-pill">{{ d }}</code>{% if not forloop.last %}, {% endif %}{% empty %}none yet — add an application first{% endfor %}.</p>
     <div class="provider-grid">
     {% for provider in providers %}
       <form method="get" action="{% url 'mailbox-connect' provider %}" hx-boost="false">

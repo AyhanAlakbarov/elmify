@@ -3,9 +3,9 @@
 ## Resume Prompt
 
 > This handoff is the source of truth for what happened. If `claude-mem` injects
-> observations for tehsil_agent, treat them as supporting recall only; missing,
+> observations for elmify, treat them as supporting recall only; missing,
 > empty, stale or wrong-project memory is not a blocker and should not be chased.
-> Worktree `/home/orkhan/Desktop/tehsil_agent`, branch
+> Worktree `/home/orkhan/Desktop/elmify`, branch
 > `claude/phase-5-automated-discovery-requirements`, HEAD should be `d03783b`.
 > First action, read-only: `git log --oneline -5` and read
 > `docs/superpowers/specs/2026-08-28-funding-led-discovery-design.md`. External
@@ -69,12 +69,12 @@ Docs:
 - `phased requirements.md` — P1-7.1 amendment
 
 Pre-existing dirty files, untouched and not mine: `CLAUDE.md`, `DESIGN.md`,
-`.agents/product-marketing.md`, `docs/tehsil-website-marketing-spec.md`,
+`.agents/product-marketing.md`, `docs/elmify-website-marketing-spec.md`,
 `skill-observations/`, `website-proposal.md`.
 
 ## 5. Commands/checks run with results
 
-- `POSTGRES_DB=tehsil_specwork uv run pytest tests/research/ -q` → **217 passed**
+- `POSTGRES_DB=elmify_specwork uv run pytest tests/research/ -q` → **217 passed**
 - `uv run ruff check apps tests` → All checks passed
 - `uv run mypy apps` → Success, 133 files
 - `uv run bandit -c pyproject.toml -r apps` → No issues identified
@@ -95,7 +95,7 @@ Waiting on the user, do not attempt:
 3. Email Opetushallitus re the `konfo-backend` licence.
 4. Answer ten questions about the Azerbaijani outbound state scholarship — these
    block two known spec defects (below).
-5. DNS for `tehsil.app` plus a page at `/bot`.
+5. DNS for `elmify.app` plus a page at `/bot`.
 
 Engineering, when asked:
 - Shadow run against the 169 EACEA leads (user explicitly deferred it).
@@ -109,7 +109,7 @@ Engineering, when asked:
   conflates the outbound state programme with the inbound Heydar Aliyev grant,
   and §7.4 bars "Azerbaijan" from ever being a floor on the strength of the
   *inbound* grant — wrong for the primary student population.
-- `tehsil.app` does not resolve, yet every crawl advertises `+https://tehsil.app/bot`
+- `elmify.app` does not resolve, yet every crawl advertises `+https://elmify.app/bot`
   as the contact URL.
 - The user asked for a browser-impersonation stack to defeat EACEA's 403; I
   declined and found the legitimate route instead. It is in **Not built**.

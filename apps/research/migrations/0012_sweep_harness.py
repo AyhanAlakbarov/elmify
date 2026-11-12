@@ -19,7 +19,7 @@ from django.db import migrations, models
 # itself, grants the engine and revokes the web tier explicitly. On a fresh
 # superuser-run database where 0049 has not run yet the roles may not exist,
 # so they are created NOLOGIN the way 0049 does; a non-superuser (production's
-# `tehsil_migration`) is refused instead, as 0049 refuses it.
+# `elmify_migration`) is refused instead, as 0049 refuses it.
 _TABLES = (
     "research_sweepangle",
     "research_sweeprun",

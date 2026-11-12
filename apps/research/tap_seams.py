@@ -6,15 +6,18 @@ sweeper -- every one of which ends in a RECORDED outcome (SearchTap.Ending,
 AreaSweep.State), never a crash and never a silent success. `bound_*()` is the
 single place production binding happens.
 
-Two seams are bound to real rows today (seam_bindings.py):
+Three seams are bound to real rows today (seam_bindings.py):
 
 - `RungSource` -> `ClosedListRungSource`: the closed-list registry (item 7,
   research/0010-0011) IS the ladder, so there is no `REGISTER_RUNGS` table.
 - `PassStates` -> `SweepRunPassStates`: the latest finished `SweepRun` of the
   area (item 10, research/0012), its stop reason and its trailing empty batches.
+- `AngleSource` -> `ProgrammeAngleSource`: the latest live `ProgrammeAngle`
+  templates (RECENCY: this cycle's only), written by `manage.py
+  generate_programme_angles`.
 
-Two cannot bind on master, and say why in their `bound_*` docstrings
-(`bound_angles`, `bound_host_reader`). The sweeper is the next binding
+One cannot bind on master, and says why in its `bound_*` docstring
+(`bound_host_reader`). The sweeper is the next binding
 (`harness.run_pass`, through the `sweep_organisations` command's pieces).
 """
 
@@ -33,6 +36,28 @@ class AngleRow:
     id: str
     language: str
     template: str
+    kind: str = "PROGRAMME"
+
+
+@dataclass(frozen=True)
+class TapQueryInputs:
+    """The query-word bin, and nothing else: the shape IS the allow-list
+    (spec 10.5, D.6) -- a fact with no field here cannot travel.
+
+    Built by `tap_query.inputs_from`. It lives here, with no Django import,
+    because `ResearchMessage` carries a follow-up's new part and
+    `apps.research.schemas` is imported by scripts that never set Django up.
+    """
+
+    field_words: tuple[str, ...]
+    interest_words: tuple[str, ...]
+    teaching_languages: tuple[str, ...]
+    money_words: tuple[str, ...]
+    money_first: bool
+    intake_year: int
+    duration_words: tuple[str, ...]
+    research_pathway: bool
+    destinations: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -135,18 +160,13 @@ class NullSeams:
         return ()
 
 
-def bound_angles() -> AngleSource:
-    """NullSeams: master has no PROGRAMME angle rows to slot-fill.
+def bound_angles(*, fallback_on_empty: bool = False) -> AngleSource:
+    """The stored programme templates (`ProgrammeAngle`, written by
+    `manage.py generate_programme_angles`). A language with none answers ()
+    unless `fallback_on_empty=True`."""
+    from .seam_bindings import ProgrammeAngleSource
 
-    The only stored angles are `SweepAngle` rows, keyed `(country, family,
-    language)`: organisation-side, finished query text with no slots, and
-    profile-free by design. No `(field, level, language)` programme angle
-    exists anywhere on master, and building a tap query out of a SweepAngle
-    would blend a profile-free pass with student words (spec 6.3). So every
-    tap ends NO_ANGLES -- recorded, never a crash -- until item 10 stores
-    programme angles.
-    """
-    return NullSeams()
+    return ProgrammeAngleSource(fallback_on_empty=fallback_on_empty)
 
 
 def bound_pass_states() -> PassStates:
@@ -155,22 +175,21 @@ def bound_pass_states() -> PassStates:
     return SweepRunPassStates()
 
 
-def bound_host_reader() -> HostReader:
-    """NullSeams: no single-host orchestrator exists on master.
+def bound_host_reader(*, field: str = "") -> HostReader:
+    """`CardHostReader`: reads one new host via `card_funding.entry.read_page`
+    and persists its servable awards via `card_funding.store.write_card`."""
+    from .seam_bindings import CardHostReader
 
-    Stage 2 needs "classify one new host, then read it and serve its awards,
-    capped at max_usd". `sitejob.py` holds only the types and the navigator
-    brief, and `pipeline.run_discovery` is a whole-run, lead-source-driven
-    path, not a per-host call. So stage 2 records the new hosts, reads none,
-    and the tap ends STAGE2_UNAVAILABLE until item 9's funnel lands.
-    """
-    return NullSeams()
+    return CardHostReader(field=field)
 
 
 def bound_sweeper() -> CellSweeper:
-    """NullSeams for now: the next binding is `harness.run_pass`, bounded by
-    CELL_SWEEP_BUDGET_USD and mirroring `manage.py sweep_organisations`."""
-    return NullSeams()
+    """`harness.run_pass`, bounded by the budget the caller passes
+    (CELL_SWEEP_BUDGET_USD), mirroring `manage.py sweep_organisations`."""
+    from .providers import default_providers
+    from .seam_bindings import HarnessSweeper
+
+    return HarnessSweeper(providers=default_providers())
 
 
 def bound_rungs() -> RungSource:

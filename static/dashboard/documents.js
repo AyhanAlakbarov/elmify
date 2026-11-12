@@ -23,6 +23,9 @@
 
   // The JSON door's refusal codes (apps/documents/api.py), as a student reads them.
   var REASONS = {
+    replace_which: "You now have more than one of these documents \u2014 reload the page and choose which one to replace.",
+    replace_pending: "A replacement for this document is still being checked. Wait for it, then try again.",
+    invalid_role: "Say whether this transcript is the original or a translation.",
     identity_not_confirmed: "Upload your CV first and confirm the details we read from it. Then we can write your CV.",
     cycle_unpaid: "This needs an active application cycle on your account.",
     application_email_missing: "Add the email address you use for applications first.",
@@ -34,7 +37,10 @@
     unsupported_kind: "That kind of document cannot be uploaded here.",
     not_found: "That item no longer exists. Reload the page.",
     approval_blocked: "Some lines are not in your confirmed details (listed on the right). Confirm those details or write a new version.",
-    fact_ids_required: "There is nothing to confirm."
+    cv_changes_pending: "Review the changed details from your new CV first.",
+    fact_ids_required: "There is nothing to confirm.",
+    fact_ids_invalid: "Some details could not be confirmed. Reload the page and try again.",
+    too_many_fact_ids: "Too many details in one batch. Confirm them in smaller steps."
   };
   function reason(data, status) {
     var code = data && data.error;
@@ -54,6 +60,42 @@
     });
   }
 
+  function selectedKind(form) {
+    var picked = form.querySelector('input[name="kind"]:checked') || form.querySelector('select[name="kind"]');
+    return picked ? picked.value : "";
+  }
+
+  function syncForm(form) {
+    var kind = selectedKind(form);
+    var modes = form.querySelector("fieldset[data-modes]");
+    if (modes) {
+      var first = null;
+      var shown = 0;
+      modes.querySelectorAll('input[name="mode"]').forEach(function (radio) {
+        var mine = radio.dataset.kind === kind;
+        var wrapper = radio.closest("p") || radio.closest("label");
+        if (wrapper) { wrapper.hidden = !mine; }
+        radio.checked = false;
+        if (mine) {
+          shown += 1;
+          if (!first || ("default" in radio.dataset && !("default" in first.dataset))) { first = radio; }
+        }
+      });
+      if (first) { first.checked = true; }
+      modes.hidden = shown < 2;
+    }
+    var transcriptRole = form.querySelector("fieldset[data-transcript-role]");
+    if (transcriptRole) {
+      transcriptRole.hidden = kind !== "TRANSCRIPT";
+    }
+  }
+
+  function syncAllUploadForms() {
+    document.querySelectorAll("form[data-upload]").forEach(syncForm);
+  }
+  syncAllUploadForms();
+  document.addEventListener("htmx:afterSettle", syncAllUploadForms);
+
   // ---------- the drop zone: show the chosen file, accept a dropped one ----------
   var ACCEPTED = /\.(pdf|jpe?g|png)$/i;
 
@@ -68,7 +110,7 @@
   function fileSize(bytes) {
     var unit = bytes >= 1048576 ? "MB" : "KB";
     var value = bytes / (unit === "MB" ? 1048576 : 1024);
-    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value) + " " + unit;
+    return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value) + "\u00a0" + unit;
   }
 
   function showFile(form, file) {
@@ -89,9 +131,15 @@
   }
 
   document.addEventListener("change", function (event) {
-    var input = event.target;
-    if (!input.matches || !input.matches('form[data-upload] input[type="file"]')) { return; }
-    showFile(input.form, input.files[0]);
+    var target = event.target;
+    if (!target || !target.matches) { return; }
+    if (target.matches('form[data-upload] select[name="kind"], form[data-upload] input[name="kind"]')) {
+      syncForm(target.form || target.closest("form[data-upload]"));
+      return;
+    }
+    if (target.matches('form[data-upload] input[type="file"]')) {
+      showFile(target.form, target.files[0]);
+    }
   });
 
   function zoneOf(event) {
@@ -151,14 +199,28 @@
     var file = (input && input.files[0]) || (zone && zone.__dropped);
     if (!file) { say(form, "Choose a file first."); return; }
     if (!ACCEPTED.test(file.name)) { say(form, "This file type is not accepted. Upload a PDF, JPG or PNG."); return; }
-    var picked = form.querySelector('input[name="kind"]:checked') || form.querySelector('select[name="kind"]');
-    var kind = picked ? picked.value : "";
+    var kind = selectedKind(form);
+    var body = { kind: kind };
+    var transcriptRole = form.querySelector("fieldset[data-transcript-role]");
+    if (kind === "TRANSCRIPT" && transcriptRole) {
+      var role = transcriptRole.querySelector('input[name="role"]:checked');
+      body.role = role ? role.value : "ORIGINAL";
+      var languageSelect = transcriptRole.querySelector('select[name="language"]');
+      var language = languageSelect ? languageSelect.value : "";
+      if (body.role === "ORIGINAL" && language) { body.language = language; }
+    }
+    var modes = form.querySelector("fieldset[data-modes]");
+    var chosen = modes && !modes.hidden && modes.querySelector('input[name="mode"]:checked');
+    if (chosen) {
+      body.mode = chosen.value;
+      if (chosen.dataset.replaces) { body.replaces = chosen.dataset.replaces; }
+    }
     var button = form.querySelector('button[type="submit"]');
     var bar = form.querySelector("[data-progress]");
     if (button) { button.setAttribute("aria-busy", "true"); }
     say(form, "Uploading…");
     function done() { if (button) { button.removeAttribute("aria-busy"); } }
-    post(form.dataset.upload, { kind: kind }).then(function (signed) {
+    post(form.dataset.upload, body).then(function (signed) {
       if (signed.status !== 201) {
         done();
         say(form, signed.status >= 500
@@ -182,13 +244,18 @@
 
   document.addEventListener("click", function (event) {
     var button = event.target.closest && event.target.closest("button[data-api-post]");
-    if (!button) { return; }
+    if (!button || button.getAttribute("aria-busy") === "true") { return; }
     var body = button.dataset.body ? JSON.parse(button.dataset.body) : {};
+    if (button.dataset.programmeSelect) {
+      var sel = document.getElementById(button.dataset.programmeSelect);
+      if (sel && sel.value) { body.programme_id = sel.value; }
+    }
     button.setAttribute("aria-busy", "true");
     say(button, "Working…");
     post(button.dataset.apiPost, body).then(function (result) {
       button.removeAttribute("aria-busy");
-      if (result.status < 300) {
+      // 409 already_used on a repeated Use (data-gone-is-done): the line was already answered, so reload it away.
+      if (result.status < 300 || (result.status === 409 && "goneIsDone" in button.dataset)) {
         say(button, "Done.");
         setTimeout(function () { window.location.reload(); }, 1500);
       } else if (result.status >= 500) {

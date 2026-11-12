@@ -2,6 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from apps.documents.letter_schemas import LetterContent, LetterUnit
+from apps.documents.letters import generate_letter
 from apps.documents.prompt_resolution import (
     _RESOLUTION_LIMIT,
     LetterPromptExtraction,
@@ -11,6 +13,7 @@ from apps.documents.prompt_resolution import (
 from apps.funding.models import ApplicationPrompt, AuditEvent
 from apps.research.extraction import SourceSnapshot
 from apps.tenancy.context import tenant_scope
+from apps.tenancy.models import Membership
 
 pytestmark = pytest.mark.django_db
 
@@ -102,6 +105,71 @@ def test_high_confidence_extraction_creates_extracted_row(program_factory):
     )
     assert resolved.source == ApplicationPrompt.Source.EXTRACTED
     assert resolved.structure == ApplicationPrompt.Structure.TWO_STATEMENTS
+    assert resolved.archetypes
+    assert resolved.header_block_required is True
+
+
+def test_unresolved_prompt_has_usable_archetypes(program_factory, agency_a):
+    with tenant_scope(agency_a.id):
+        program = program_factory()
+        resolved = resolve_application_prompt(
+            program=program, cycle="2027", snapshot=None, client=None
+        )
+        assert resolved.source == ApplicationPrompt.Source.UNRESOLVED
+        assert resolved.archetypes
+        assert resolved.header_block_required is True
+
+
+def test_generate_letter_against_extracted_prompt_produces_units(
+    program_factory, agency_a, django_user_model
+):
+    """I6: an EXTRACTED prompt row with no core_narrative to reuse must produce
+    a real letter, not skip _call_model into a blocked zero-unit one."""
+    with tenant_scope(agency_a.id):
+        user = django_user_model.objects.create(username="pr-extracted-gen")
+        student = Membership.objects.create(
+            tenant=agency_a, user=user, role=Membership.Role.STUDENT, active=True
+        )
+        program = program_factory()
+        resolution_client = _mock_client(
+            structure="TWO_STATEMENTS",
+            funder_kind="UNIVERSITY_ADMISSION",
+            letter_required="required",
+            document_language="en",
+            confidence=0.85,
+        )
+        prompt = resolve_application_prompt(
+            program=program,
+            cycle="2027",
+            snapshot=SourceSnapshot(relevant_text="x"),
+            client=resolution_client,
+        )
+        assert prompt.archetypes
+
+        content = LetterContent(
+            language="en",
+            header_block="MSc Application",
+            units=tuple(
+                LetterUnit(archetype=archetype, text="Because of my background here.")
+                for archetype in prompt.archetypes
+            ),
+        )
+        generation_response = MagicMock()
+        generation_response.output_parsed = content
+        generation_response.output = []
+        generation_client = MagicMock()
+        generation_client.responses.parse.return_value = generation_response
+
+        result = generate_letter(
+            student=student,
+            prompt=prompt,
+            facts={},
+            inputs={},
+            forbidden_institution_names=frozenset(),
+            client=generation_client,
+        )
+        assert len(result.content.units) == len(prompt.archetypes)
+
 
 
 def test_low_confidence_extraction_falls_to_inferred_with_silent_funder_defaults(program_factory):

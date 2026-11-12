@@ -158,3 +158,41 @@ def test_an_entry_without_an_agreement_is_not_agreed():
                    deadlines=[["2027-01-15", "ALL", "ALL"]])
     del entry["agreement"]
     assert _state([entry], 2027) == "UNVERIFIED"
+
+
+def test_september_or_october_deadline_on_entry_naming_target_year_is_retained():
+    """Winter-semester calls naming 2027/28 with a 15 September 2027 deadline
+    belong to 2027, not 2028 (Pass 10 B3)."""
+    entries = [
+        _entry(
+            applies_to="2027-2028",
+            intake_year=2027,
+            deadlines=[["2027-09-15", "EU/EEA applicants", "APPLICANT_CLASS:EEA"]],
+        )
+    ]
+    evidence = to_evidence(
+        entries, target_year=2027, cadence=None, page_removed=False, lapsed=False
+    )
+    assert evidence.deadlines == ((dt.date(2027, 9, 15), "APPLICANT_CLASS:EEA"),)
+    # Norwegian (EEA) student matches APPLICANT_CLASS:EEA (Pass 10 B5)
+    no_student = deadline_student("NO", "NO")
+    assert no_student["applicant_class"] == "EU"
+    assert (
+        cycle_validity(
+            evidence,
+            student=no_student,
+            target_intake="2027",
+            today=dt.date(2027, 8, 1),
+        )
+        == "OPEN"
+    )
+    assert (
+        cycle_validity(
+            evidence,
+            student=no_student,
+            target_intake="2027",
+            today=dt.date(2027, 9, 20),
+        )
+        == "CLOSED_FOR_INTAKE"
+    )
+

@@ -98,11 +98,11 @@ def test_report_content_has_required_sections_and_no_internal_reasoning(
 
         body = fake_store.get(report.object_key).decode()
         assert "MSc Robotics" in body
-        # P1-7.1, amendment 2026-08-28: official source URLs stay out of the
-        # student-facing report; its last-checked dates stay in. The dashboard
-        # amendment of 2026-10-04 lifts this for the pages, not the report.
-        assert candidate.evidence.source_url not in body
-        assert "last checked" in body
+        # P1-7.1's 2026-08-28 amendment kept official source URLs out of the
+        # report; the owner reversed that for the report on 2026-10-24, so it
+        # cites the source exactly as the pack page does.
+        assert f'<a href="{candidate.evidence.source_url}">Official source</a>' in body
+        assert "Last checked" in body
         assert agency_a.name in body
         assert "internal" not in body.lower()
         assert "chain-of-thought" not in body.lower()
@@ -224,3 +224,28 @@ def test_new_tables_enforce_row_level_security() -> None:
             assert cmd == "ALL"
             assert "current_setting" in qual
             assert "current_setting" in with_check
+
+
+@pytest.mark.django_db
+def test_report_links_only_an_https_source(agency_a, membership_a, fake_store):
+    """`https_only` is the one gate between a third-party URL and an href: a
+    plain-http source is named by its domain, never linked."""
+    from apps.funding.models import EvidenceClaim
+    from tests.funding.conftest import make_db_candidate, make_published_pack, make_run
+
+    run = make_run(agency_a, membership_a)
+    candidate = make_db_candidate(agency_a, run, program_name="MSc Physics")
+    with tenant_scope(agency_a.id):
+        EvidenceClaim.objects.filter(id=candidate.evidence_id).update(
+            source_url="http://plain.example.test/physics"
+        )
+    pack = make_published_pack(agency_a, run, (candidate,))
+    with tenant_scope(agency_a.id):
+        payment = ConsultationPayment.objects.create(
+            tenant=agency_a, student=membership_a, amount="49.00", currency="USD", status="PAID"
+        )
+        report = generate_report(payment, pack, store=fake_store)
+    html = fake_store.get(report.object_key).decode()
+
+    assert 'href="http://plain.example.test/physics"' not in html
+    assert "Official source: plain.example.test" in html

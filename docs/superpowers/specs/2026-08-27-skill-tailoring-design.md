@@ -255,8 +255,8 @@ existing package testable without a database. The new code keeps that shape.
 * **One live end-to-end run** against a real repository and a real programme
   page stays opt-in and out of CI -- live runs cost money.
 
-Run as `POSTGRES_DB=tehsil_<worktree> uv run pytest -q`; the shared
-`test_tehsil` database wedges across parallel sessions and the symptom looks
+Run as `POSTGRES_DB=elmify_<worktree> uv run pytest -q`; the shared
+`test_elmify` database wedges across parallel sessions and the symptom looks
 like an unrelated regression.
 
 ## 9. Out of scope

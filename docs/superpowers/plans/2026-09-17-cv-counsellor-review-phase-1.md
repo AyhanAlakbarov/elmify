@@ -38,13 +38,13 @@ claims and is where every non-obvious decision below comes from.
 
 ## Global Constraints
 
-- **Test database, every run:** `POSTGRES_DB=tehsil_gapreview uv run pytest ...`. A shared
-  `test_tehsil` is killed by the other session working in this repo; that cost two live
+- **Test database, every run:** `POSTGRES_DB=elmify_gapreview uv run pytest ...`. A shared
+  `test_elmify` is killed by the other session working in this repo; that cost two live
   attempts on 2026-09-15.
 - **Never run `ruff format` in this repo.** ruff 0.16.6 rewrites this repo's except-tuples
   into invalid Python, and no gate runs the formatter. `uv run ruff check apps tests` only.
 - **Validation commands** (repo-canonical): `uv run ruff check apps tests`,
-  `uv run mypy apps/documents`, `POSTGRES_DB=tehsil_gapreview uv run pytest -q`.
+  `uv run mypy apps/documents`, `POSTGRES_DB=elmify_gapreview uv run pytest -q`.
 - **Every fact written by this module is a candidate:** `source_tier=STUDENT_STATEMENT`,
   `source_ref="gap-interview"`, `confirmed_by=None`. `answer_questions` already does this;
   no new writer is added.
@@ -183,8 +183,8 @@ def test_two_create_questions_with_the_same_key_get_different_field_names():
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py -q
+cd /home/orkhan/Desktop/elmify
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py -q
 ```
 Expected: FAIL — `GapQuestion` has no `slug`, so every new test errors on an unexpected
 keyword argument, and `test_a_create_question_without_a_slug_is_a_programming_error` does
@@ -322,7 +322,7 @@ def field_name(question: GapQuestion) -> str:
 - [ ] **Step 6: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py tests/documents/test_gap_interview_view.py -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py tests/documents/test_gap_interview_view.py -q
 ```
 Expected: PASS, including every pre-existing test in those three modules.
 
@@ -529,7 +529,7 @@ URL constant rather than the placeholders above if they differ.
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -k "gap or note" -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -k "gap or note" -q
 ```
 Expected: FAIL — `cannot import name 'timeline_gaps' from 'apps.documents.gaps'`.
 
@@ -682,7 +682,7 @@ its "nothing to ask" line only when there are neither fields nor notes:
 - [ ] **Step 5: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_interview_view.py -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_interview_view.py -q
 ```
 Expected: PASS.
 
@@ -764,7 +764,7 @@ def test_the_test_score_is_asked_before_the_level(student):
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -k language -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -k language -q
 ```
 Expected: FAIL — `cannot import name 'missing_language_detail'`.
 
@@ -836,7 +836,7 @@ Add `+ missing_language_detail(student)` to `gap_questions`, immediately after
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -q
 ```
 Expected: PASS.
 
@@ -972,7 +972,7 @@ def test_a_degree_with_no_grade_is_not_asked_for_a_rank(student):
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -k degree_detail -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -k degree_detail -q
 ```
 Expected: FAIL — `cannot import name 'missing_degree_detail'`.
 
@@ -1077,7 +1077,7 @@ Add `+ missing_degree_detail(student)` to `gap_questions` after `missing_grade(s
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -q
 ```
 Expected: PASS.
 
@@ -1195,7 +1195,7 @@ def test_a_degree_that_states_its_medium_is_not_asked_again(student):
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_schemas.py tests/documents/test_verification.py tests/documents/test_gaps.py -k medium -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_schemas.py tests/documents/test_verification.py tests/documents/test_gaps.py -k medium -q
 ```
 Expected: FAIL — `extra="forbid"` rejects `medium_of_instruction`, `payload_keys` lacks it,
 and the detector does not exist.
@@ -1294,7 +1294,7 @@ Add `+ missing_medium_of_instruction(student)` to `gap_questions`, immediately a
 - [ ] **Step 7: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents -q && uv run mypy apps/documents
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents -q && uv run mypy apps/documents
 ```
 Expected: PASS, mypy clean. A failure in `test_extraction_accuracy.py` or `test_render.py`
 means a template or a corpus fixture reads education keys positionally — fix it there, do not
@@ -1401,7 +1401,7 @@ def test_a_publication_with_no_year_is_asked_for_one(student):
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -k publication -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -k publication -q
 ```
 Expected: FAIL — `cannot import name 'missing_publication_detail'`.
 
@@ -1480,7 +1480,7 @@ Add `+ missing_publication_detail(student)` to `gap_questions` after
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -q
 ```
 Expected: PASS.
 
@@ -1539,7 +1539,7 @@ def test_an_award_that_names_its_body_is_not_asked(student):
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -k award_detail -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -k award_detail -q
 ```
 Expected: FAIL — `cannot import name 'missing_award_detail'`.
 
@@ -1581,7 +1581,7 @@ Add `+ missing_award_detail(student)` to `gap_questions` directly after `missing
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -q
 ```
 Expected: PASS.
 
@@ -1700,7 +1700,7 @@ def test_a_voluntary_role_answered_in_full_becomes_one_experience_fact(student):
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -k "absent or voluntary or referee or certificate" -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -k "absent or voluntary or referee or certificate" -q
 ```
 Expected: FAIL — `cannot import name 'absent_sections'`.
 
@@ -1840,7 +1840,7 @@ Add `+ absent_sections(student)` to `gap_questions`, last before the programme b
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py -q
 ```
 Expected: PASS.
 
@@ -1948,7 +1948,7 @@ for two keys while `_CREATE_GROUPS` declares three would silently write nothing,
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -k "completeness or exchange or create_slug" -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -k "completeness or exchange or create_slug" -q
 ```
 Expected: FAIL — `cannot import name 'education_completeness'`.
 
@@ -2061,7 +2061,7 @@ only thing that can hold it.
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py tests/documents/test_gap_interview_view.py -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_intake.py tests/documents/test_gap_interview_view.py -q
 ```
 Expected: PASS.
 
@@ -2134,7 +2134,7 @@ def test_the_language_certificate_is_asked_before_a_publication_year(student):
 - [ ] **Step 2: Run them**
 
 ```bash
-POSTGRES_DB=tehsil_gapreview uv run pytest tests/documents/test_gaps.py -k "real_cv or before_a_publication" -q
+POSTGRES_DB=elmify_gapreview uv run pytest tests/documents/test_gaps.py -k "real_cv or before_a_publication" -q
 ```
 Expected: PASS already, if Tasks 3–9 placed their detectors in the stated order. A failure
 here means the order in `gap_questions` is wrong — fix the order, not the test.
@@ -2208,10 +2208,10 @@ In `apps/documents/gap_intake.py`'s docstring, add one bullet:
 - [ ] **Step 4: Full validation**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent
+cd /home/orkhan/Desktop/elmify
 uv run ruff check apps tests
 uv run mypy apps/documents
-POSTGRES_DB=tehsil_gapreview uv run pytest -q
+POSTGRES_DB=elmify_gapreview uv run pytest -q
 git diff --stat
 git status --short
 ```

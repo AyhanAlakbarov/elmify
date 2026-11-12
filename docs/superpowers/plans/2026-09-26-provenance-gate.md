@@ -23,14 +23,14 @@
 - **Transports follow spec §6.** Pages (ENIC-NARIC country pages, HTML registers, Wikipedia revisions, recogniser pages) go through `apps.research.fetch.fetch_page`. Data files (CSV/TSV/JSON registers, the IANA RDAP bootstrap, registry RDAP answers) go through `egress.fetch_data_file`. That function gains a per-call `max_bytes` (default stays 10 MB) and the `application/rdap+json`, CSV and XLSX content types. Jev goes through `egress.fetch_json_api`, a contracted keyed API.
 - **Jev goes through OpenRouter.** The endpoint is `{settings.JEV_BASE_URL}/v1/systemone` (default base `https://openrouter.ai/api`). The key is `settings.JEV_API_KEY`, read from env `OPENROUTER_API_KEY`. The model is pinned to `settings.JEV_MODEL` (default `jev-1.13`, never an alias), and thresholds are pinned to that model. One Jev client serves the repo (`apps/research/jev.py`). Only page text is ever sent, never student data.
 - **No live network in tests.** Every test stubs fetches. The only exceptions are tests marked `@pytest.mark.live`, which `addopts` deselects by default.
-- **Test database:** `POSTGRES_DB=tehsil_provenance_gate`, with `--create-db` on the first run of each task.
+- **Test database:** `POSTGRES_DB=elmify_provenance_gate`, with `--create-db` on the first run of each task.
 - **Never run `ruff format`.** The tree is not formatter-clean. The gate is lint only.
 - **Research migrations never depend on funding migrations** (research/0003's `InvalidMigrationPlan`, restated in research/0010's header).
 - **Checks after every task, all four must pass:**
   - `uv run ruff check apps config tests scripts`
   - `uv run mypy apps config`
   - `uv run python manage.py makemigrations --check --dry-run`
-  - `POSTGRES_DB=tehsil_provenance_gate uv run pytest -q --create-db`
+  - `POSTGRES_DB=elmify_provenance_gate uv run pytest -q --create-db`
 
 ## Review Focus
 
@@ -348,7 +348,7 @@ def test_a_second_run_changes_nothing() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_hosts.py tests/research/test_rederive_domains.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_hosts.py tests/research/test_rederive_domains.py -q --create-db`
 Expected: FAIL. `ImportError: cannot import name 'HOSTING_PLATFORMS'` and `Unknown command: 'rederive_domains'`.
 
 - [ ] **Step 3: Implement**
@@ -580,7 +580,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_hosts.py tests/research/test_rederive_domains.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_hosts.py tests/research/test_rederive_domains.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Run the four checks** (Global Constraints). Every existing registrable-domain caller now uses the new key. If a test elsewhere asserted the old platform-root key, read it before changing it: the old key was the bug.
@@ -871,7 +871,7 @@ def test_the_gate_ships_off_and_a_cycle_is_thirty_days() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_storage.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_storage.py -q --create-db`
 Expected: FAIL with `ImportError: cannot import name 'ProvenanceVerdict'`.
 
 - [ ] **Step 3: Implement the models**
@@ -1329,7 +1329,7 @@ PROVENANCE_CYCLE_DAYS = int(os.getenv("PROVENANCE_CYCLE_DAYS", "30"))
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_storage.py tests/tenancy/test_catalog_grants.py tests/audit/test_redaction_classification.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_storage.py tests/tenancy/test_catalog_grants.py tests/audit/test_redaction_classification.py -q --create-db`
 Expected: PASS. `test_catalog_grants.py` now covers the two new tables automatically, and it fails if the `REVOKE` is missing.
 
 - [ ] **Step 7: Run the four checks.**
@@ -1511,7 +1511,7 @@ def test_a_hosting_platform_programme_records_no_body() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_program_evidence.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_program_evidence.py -q --create-db`
 Expected: FAIL with `ImportError: cannot import name 'evidence_of'`.
 
 - [ ] **Step 3: Implement**
@@ -1558,7 +1558,7 @@ In `apps/research/catalog.py`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_program_evidence.py tests/research/test_catalog_writer.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_program_evidence.py tests/research/test_catalog_writer.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Run the four checks.** A catalogue write now also records the evidence body. If an existing test counts `Organisation` rows after one, the new body is expected: update the count and say why in a comment. Do not suppress the write.
@@ -1726,7 +1726,7 @@ def test_skipped_content_checks_are_recorded() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_decide.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_decide.py -q --create-db`
 Expected: FAIL with `ImportError: cannot import name 'ContentHit'`.
 
 - [ ] **Step 3: Implement**
@@ -1896,7 +1896,7 @@ def _unconfirmed_reason(facts: Facts) -> str:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_decide.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_decide.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Run the four checks.**
@@ -1964,7 +1964,7 @@ eacea_emjm,funder_list,,,,,,,,,,,,
 Append to `docs/research/closed-lists.csv`:
 
 ```csv
-national_scholarship_agencies,"National scholarship agencies with no open register (DAAD, Campus France, SI, Chevening, Stipendium Hungaricum, CSC)",,NATIONAL_GOVERNMENT,1,https://github.com/0rkhann/tehsil_agent/blob/master/docs/research/closed-lists/national_scholarship_agencies.csv,tehsil_agent (compiled from each body's own page),yes,yes,OWN_COMPILATION,,yes,ENUMERATE_ONLY,,2026-09-26
+national_scholarship_agencies,"National scholarship agencies with no open register (DAAD, Campus France, SI, Chevening, Stipendium Hungaricum, CSC)",,NATIONAL_GOVERNMENT,1,https://github.com/0rkhann/elmify/blob/master/docs/research/closed-lists/national_scholarship_agencies.csv,elmify (compiled from each body's own page),yes,yes,OWN_COMPILATION,,yes,ENUMERATE_ONLY,,2026-09-26
 ```
 
 Create `docs/research/closed-lists/national_scholarship_agencies.csv`:
@@ -2237,7 +2237,7 @@ def test_the_command_reports_each_row(monkeypatch) -> None:
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_recognition_lists.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_recognition_lists.py -q --create-db`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.recognition'`.
 
 - [ ] **Step 4: Implement**
@@ -2518,7 +2518,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_recognition_lists.py tests/research/test_closed_lists.py tests/research/test_closed_list_data.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_recognition_lists.py tests/research/test_closed_lists.py tests/research/test_closed_list_data.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Run the four checks.**
@@ -2950,7 +2950,7 @@ def test_the_shipped_registers_are_open_and_linked_or_named_by_hand() -> None:
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_registers.py tests/research/test_egress.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_registers.py tests/research/test_egress.py -q --create-db`
 Expected: FAIL with `ImportError: cannot import name 'RegisterShape'`, and `TypeError: fetch_data_file() got an unexpected keyword argument 'max_bytes'`.
 
 - [ ] **Step 4: Implement the transport change**
@@ -3236,7 +3236,7 @@ If mypy objects to `lxml.html` types, follow `apps/research/reader.py`, which im
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_registers.py tests/research/test_egress.py tests/research/test_recognition_lists.py tests/research/test_closed_list_data.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_registers.py tests/research/test_egress.py tests/research/test_recognition_lists.py tests/research/test_closed_list_data.py -q`
 Expected: PASS.
 
 - [ ] **Step 7: Run the four checks.**
@@ -3352,7 +3352,7 @@ def test_no_shared_identifier_no_recognition() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_ror_binding.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_ror_binding.py -q --create-db`
 Expected: FAIL with `ImportError: cannot import name 'RorFacts'`.
 
 - [ ] **Step 3: Implement**
@@ -3429,7 +3429,7 @@ def ror_recognitions(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_ror_binding.py tests/research/test_ror.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_ror_binding.py tests/research/test_ror.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Run the four checks.**
@@ -3564,7 +3564,7 @@ In `tests/documents/research_fit/test_live.py`, change the skipif to `@pytest.ma
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_jev_client.py tests/documents/research_fit/test_jev.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_jev_client.py tests/documents/research_fit/test_jev.py -q --create-db`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.jev'`.
 
 - [ ] **Step 3: Implement**
@@ -3700,7 +3700,7 @@ JEV_MODEL = os.getenv("JEV_MODEL", "jev-1.13")
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_jev_client.py tests/documents/research_fit -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_jev_client.py tests/documents/research_fit -q`
 Expected: PASS. The live test is deselected.
 
 - [ ] **Step 5: Run the four checks.** `grep -rn TYPESAFE_API_KEY apps config tests` must print nothing.
@@ -4004,7 +4004,7 @@ def test_the_diff_command_shows_a_vandalised_or_real_edit(monkeypatch) -> None:
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_blocking.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_blocking.py -q --create-db`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.blocking'`.
 
 - [ ] **Step 4: Implement**
@@ -4378,7 +4378,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_blocking.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_blocking.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Run the four checks.**
@@ -4526,7 +4526,7 @@ def test_the_term_lists_are_pinned() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_vouch.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_vouch.py -q --create-db`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.vouch'`.
 
 - [ ] **Step 3: Implement**
@@ -4697,7 +4697,7 @@ def _reverse_link(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_vouch.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_vouch.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Run the four checks.**
@@ -4806,7 +4806,7 @@ def test_a_registry_failure_is_failed_never_passed() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_rdap.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_rdap.py -q --create-db`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.rdap'`.
 
 - [ ] **Step 3: Implement**
@@ -4877,7 +4877,7 @@ def registration_date(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_rdap.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_rdap.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Run the four checks.**
@@ -5357,7 +5357,7 @@ def test_the_command_checks_one_domain(monkeypatch) -> None:
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_check.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_check.py -q --create-db`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.provenance_job'`.
 
 - [ ] **Step 4: Implement**
@@ -5618,7 +5618,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_check.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_check.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Add the live checks spec §11 names**
@@ -5666,7 +5666,7 @@ def test_live_enic_naric_still_links_the_ofs_register() -> None:
     assert any("officeforstudents.org.uk" in link for link in enic_register_links(fetched.body))
 ```
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_live.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_live.py -q`
 Expected: `3 deselected`. These tests only run with `-m live`.
 
 - [ ] **Step 7: Run the four checks.**
@@ -5858,7 +5858,7 @@ def test_the_pack_says_how_many_are_still_being_checked_without_the_catalogue(
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/funding/test_pool_gate.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/funding/test_pool_gate.py -q --create-db`
 Expected: FAIL with `ImportError: cannot import name 'provenance_of_award'`.
 
 - [ ] **Step 3: Implement**
@@ -6054,7 +6054,7 @@ In `apps/funding/views.py`'s `_pack_context`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/funding/test_pool_gate.py tests/funding/test_pool.py tests/funding/test_spine.py tests/research/test_handle_research_message.py tests/tenancy/test_catalog_grants.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/funding/test_pool_gate.py tests/funding/test_pool.py tests/funding/test_spine.py tests/research/test_handle_research_message.py tests/tenancy/test_catalog_grants.py -q`
 Expected: PASS. `test_catalog_grants.py`'s end-to-end web test proves `_pack_context` still reads no catalogue table, as `runtime_web`.
 
 - [ ] **Step 5: Run the four checks.**
@@ -6293,7 +6293,7 @@ def test_the_worker_routes_a_named_check_outside_the_tenant_transaction(monkeypa
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/funding/test_named_program_gate.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/funding/test_named_program_gate.py -q --create-db`
 Expected: FAIL with `ImportError: cannot import name 'check_named_url'`.
 
 - [ ] **Step 3: Implement the message and the worker**
@@ -6437,7 +6437,7 @@ In `apps/funding/views.py`:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/funding/test_named_program_gate.py tests/funding/test_student_controls.py tests/research/test_queue.py tests/tenancy/test_catalog_grants.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/funding/test_named_program_gate.py tests/funding/test_student_controls.py tests/research/test_queue.py tests/tenancy/test_catalog_grants.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Run the four checks.**
@@ -6530,7 +6530,7 @@ def test_a_generate_message_for_a_blocked_programme_is_dropped(
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/documents/test_draft_letter_command.py tests/documents/test_document_worker.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/documents/test_draft_letter_command.py tests/documents/test_document_worker.py -q --create-db`
 Expected: FAIL. The blocked programme gets a letter (no `CommandError` raised), and the verdict line is absent.
 
 - [ ] **Step 3: Implement**
@@ -6578,7 +6578,7 @@ In `document_worker.py`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/documents/test_draft_letter_command.py tests/documents/test_document_worker.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/documents/test_draft_letter_command.py tests/documents/test_document_worker.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Run the four checks.**
@@ -6812,7 +6812,7 @@ def test_an_unchecked_named_programme_is_re_queued(unchecked_named, agency_a, rl
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_sweep.py -q --create-db`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_sweep.py -q --create-db`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.provenance_sweep'`.
 
 - [ ] **Step 3: Implement**
@@ -7078,7 +7078,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/research/test_provenance_sweep.py tests/funding/test_student_controls.py tests/funding/test_pack_service.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/research/test_provenance_sweep.py tests/funding/test_student_controls.py tests/funding/test_pack_service.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Run the four checks.**
@@ -7145,7 +7145,7 @@ def test_the_provenance_recheck_runs_daily_and_ships_enabled(template: Template)
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/infra/test_template.py tests/research/test_provenance_sweep.py -q --create-db -k "recheck or canary_input"`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/infra/test_template.py tests/research/test_provenance_sweep.py -q --create-db -k "recheck or canary_input"`
 Expected: FAIL with `ProvenanceRecheckRule is not defined in infra/template.yaml` and `Unknown command: 'provenance_recheck'`.
 
 - [ ] **Step 3: Implement**
@@ -7209,7 +7209,7 @@ In `infra/template.yaml`, directly after the `ReminderLadderRule` resource, add:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_provenance_gate uv run pytest tests/infra/test_template.py tests/research/test_provenance_sweep.py -q`
+Run: `POSTGRES_DB=elmify_provenance_gate uv run pytest tests/infra/test_template.py tests/research/test_provenance_sweep.py -q`
 Expected: PASS, including the existing events-role scope test: the rule targets the already-allowed `WorkerTaskDefinition`.
 
 - [ ] **Step 5: Run the four checks.**

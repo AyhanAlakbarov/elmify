@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-25-catalog-read-split-design.md` — read it before Task 1, especially §4 (the role table and the six task definitions), §7 (why no ordinary test can prove any of this) and §11 (the decided copy-forward and its narrowed scope).
 
-**Base branch:** `claude/catalog-read-split`, forked from master at the ten-PR queue merge. Work in a fresh worktree. Test database: `POSTGRES_DB=tehsil_catalog_split` — never share a test DB between sessions.
+**Base branch:** `claude/catalog-read-split`, forked from master at the ten-PR queue merge. Work in a fresh worktree. Test database: `POSTGRES_DB=elmify_catalog_split` — never share a test DB between sessions.
 
 ## Global Constraints
 
@@ -19,7 +19,7 @@
 - **Never `GRANT runtime_engine TO runtime_web`.** Role attributes are not inherited through membership, but `SET ROLE` does not need them to be (CLAUDE.md, the erasure-guard lesson). Membership turns the boundary into a discipline.
 - **An unrecognised `DATABASE_ROLE` must raise `ImproperlyConfigured`.** `runtime` is removed, not aliased — a task definition that was missed must fail at boot, not connect as something.
 - **Never run `ruff format`** in this repo — it is a lint-only gate (CLAUDE.md).
-- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_catalog_split uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
+- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=elmify_catalog_split uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
 - **Derive the catalogue table list from `pg_policies` on a migrated database**, never by grepping migrations: several tables named in migration text were later dropped (`funding_registerlisting`, `funding_institutionidentifier` went with the 2026-09-14 register removal).
 
 ---
@@ -81,7 +81,7 @@ def test_each_new_role_reads_its_own_credential_pair(role, user_var) -> None:
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `POSTGRES_DB=tehsil_catalog_split uv run pytest tests/test_settings_database.py -v`
+Run: `POSTGRES_DB=elmify_catalog_split uv run pytest tests/test_settings_database.py -v`
 Expected: FAIL — `runtime` is currently accepted, and the two new names are not.
 
 - [ ] **Step 3: Implement**
@@ -138,7 +138,7 @@ Generalise `runtime_connection` (`tests/conftest.py:117`) into a factory taking 
 
 - [ ] **Step 4: Run the test and the isolation suite**
 
-Run: `POSTGRES_DB=tehsil_catalog_split uv run pytest tests/conftest.py tests/tenancy/ -v`
+Run: `POSTGRES_DB=elmify_catalog_split uv run pytest tests/conftest.py tests/tenancy/ -v`
 Expected: PASS, with the 13 existing isolation tests unchanged.
 
 - [ ] **Step 5: Commit** — `test: a fixture that connects as a named role`
@@ -219,7 +219,7 @@ Add the copied statements to the packet model as a JSON list. In `packets.py`, `
 
 Note what does **not** change: `mint_packet`'s refusal order (`automation_prohibited` → `NoFieldMap` → `malformed_field_map` → `missing_fact` → `unsafe_action`) is load-bearing and tested; the copy happens after the posture check, so a prohibited portal still never reads a verified value.
 
-- [ ] **Step 4: Run the portal suite** — `POSTGRES_DB=tehsil_catalog_split uv run pytest tests/portals/ -v`
+- [ ] **Step 4: Run the portal suite** — `POSTGRES_DB=elmify_catalog_split uv run pytest tests/portals/ -v`
 - [ ] **Step 5: Commit** — `feat(portals): the packet carries its own requirements`
 
 ---

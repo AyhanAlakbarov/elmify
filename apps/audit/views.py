@@ -5,6 +5,8 @@ it -- they check the role, check that the request belongs to the caller, and
 cap the rate.
 """
 
+import logging
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import IntegrityError, transaction
@@ -24,7 +26,8 @@ from .console import (
     request_deletion,
 )
 from .deletion import DeletionBlocked
-from .models import DeletionRequest
+from .exports import build_export
+from .models import DeletionRequest, StaffFileAccess
 
 #: Requesting an erasure writes a row, an audit event, and starts an
 #: irreversible thirty-day clock. Five an hour is generous for a decision
@@ -68,8 +71,12 @@ def request_account_deletion(request: HttpRequest) -> HttpResponse:
     try:
         with transaction.atomic():
             request_deletion(student=student, reason=reason)
-    except IntegrityError:
-        pass
+    except IntegrityError as error:
+        logging.getLogger(__name__).info(
+            "DeletionRequestDuplicate student=%s error=%s",
+            student.id,
+            type(error).__name__,
+        )
     return redirect("audit-deletion-pending")
 
 
@@ -131,6 +138,19 @@ def deletion_console(request: HttpRequest) -> HttpResponse:
             "partially_erased": DeletionRequest.objects.filter(
                 state="EXECUTED", identity_retained=True
             ).values("id", "student_id", "identity_retained_reason", "created_at"),
+            # Elmify staff opening students' files (owner decision 2026-10-11): when, who,
+            # what kind. No student, no filename -- the same no-name rule as the list above.
+            "staff_views": [
+                {
+                    "accessed_at": a.accessed_at,
+                    "staff_name": a.staff.display_name,
+                    "action": a.action,
+                    "document_kind": a.document_kind,
+                }
+                for a in StaffFileAccess.objects.select_related("staff__user").order_by(
+                    "-accessed_at"
+                )[:200]
+            ],
         },
     )
 
@@ -175,7 +195,46 @@ def deny_deletion_request(request: HttpRequest, request_id: str) -> HttpResponse
 def account_settings(request: HttpRequest) -> HttpResponse:
     """The deletion request form. An open request never reaches this: the
     deletion lock sends the student to the waiting page first."""
-    current_membership(request, Membership.Role.STUDENT)
+    student = current_membership(request, Membership.Role.STUDENT)
+    if request.method == "POST":
+        full_name = request.POST.get("full_name", "").strip()
+        if not full_name or len(full_name) > 150:
+            messages.error(request, "Enter your full name (up to 150 characters).")
+            return redirect("student-settings-account")
+        parts = full_name.split(None, 1)
+        user = student.user
+        user.first_name = parts[0][:150]
+        user.last_name = (parts[1] if len(parts) > 1 else "")[:150]
+        user.save(update_fields=["first_name", "last_name"])
+        messages.success(request, "Saved your name.")
+        return redirect("student-settings-account")
     return render(
-        request, "student/settings_account.html", {"reasons": DeletionRequest.Reason.choices}
+        request,
+        "student/settings_account.html",
+        {
+            "reasons": DeletionRequest.Reason.choices,
+            "full_name": student.display_name,
+        },
+    )
+
+
+@login_required
+def export_personal_data(request: HttpRequest) -> HttpResponse:
+    """Download the student's tenant-scoped personal data dossier as a ZIP archive."""
+    student = current_membership(request, Membership.Role.STUDENT)
+    if rate_limited(
+        "account-export",
+        student.id,
+        limit=10,
+        window_seconds=3600,
+    ):
+        return HttpResponse("Too many requests. Try again shortly.", status=429)
+    archive_bytes = build_export(student.tenant_id, student.id)
+    return HttpResponse(
+        archive_bytes,
+        content_type="application/zip",
+        headers={
+            "Content-Disposition": 'attachment; filename="elmify-personal-data.zip"',
+            "Cache-Control": "no-store",
+        },
     )

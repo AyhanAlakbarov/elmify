@@ -14,7 +14,7 @@
 ## Global Constraints
 
 - **Work in the worktree `.claude/worktrees/erasure-console`, on branch `claude/erasure-console`.** PR #70 is open against it; these commits join that PR.
-- **`export POSTGRES_DB=tehsil_erasure_console`** before running tests.
+- **`export POSTGRES_DB=elmify_erasure_console`** before running tests.
 - **Never run `ruff format`.** Lint-only repo.
 - **The full gate, as CI runs it:**
   ```
@@ -187,7 +187,7 @@ Note the `_legal_hold_for_test` keyword: `legal_hold` has no writer anywhere in 
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-export POSTGRES_DB=tehsil_erasure_console
+export POSTGRES_DB=elmify_erasure_console
 uv run pytest tests/audit/test_console.py -q
 ```
 
@@ -992,7 +992,7 @@ Claude-Session: https://claude.ai/code/session_01LgxcordBdyPJUPX3sahrKP"
 - [ ] **Step 1: Run every check CI runs**
 
 ```bash
-export POSTGRES_DB=tehsil_erasure_console
+export POSTGRES_DB=elmify_erasure_console
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config

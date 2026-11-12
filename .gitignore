@@ -16,7 +16,8 @@ review/
 
 # Built by the glass-box extension's bundler; never source.
 extension/dist/
-extension/tehsil-copilot.zip
+extension/dist-test/
+extension/elmify-copilot.zip
 
 # Agent tooling installed per machine, not project source
 .agents/
@@ -25,5 +26,12 @@ extension/tehsil-copilot.zip
 skills-lock.json
 skill-observations/
 skill-updates/
+# Personal overlay and logs for global agent tooling (.agent/config.toml is shared)
+.agent/config.local.toml
+.agent/deploy.log
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml
 .local-queue/
 .local-store/

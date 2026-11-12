@@ -1,0 +1,50 @@
+<section class="panel" aria-labelledby="referees-heading" id="referees">
+  <h2 id="referees-heading">{% if counselor_view %}Referees{% else %}Your referees{% endif %}</h2>
+  {% if rows %}
+    <div class="ref-list">
+      {% for referee, edit in rows %}
+        <article class="ref-card">
+          <div class="panel-head">
+            <h3>{{ referee.label }}</h3>
+            <span class="badge {% if referee.status == 'AGREED' %}badge-ok{% elif referee.status == 'DECLINED' %}badge-danger{% else %}badge-brand{% endif %}">{{ referee.get_status_display }}</span>
+          </div>
+          <p class="muted">{{ referee.institution }}{% if referee.email %} · {{ referee.email }}{% if not referee.institutional_email %} (not a university address){% endif %}{% endif %}</p>
+          <p>{{ referee.get_kind_display }} · agreed to {{ referee.agreed_requests }} portal request{{ referee.agreed_requests|pluralize }}{% if referee.gives_generic_letter %} · gives a general letter{% endif %}</p>
+          {% if referee.relationship %}<p class="muted">{{ referee.relationship }}</p>{% endif %}
+          {% if not counselor_view %}
+            <div class="row-actions">
+              <a class="btn btn-quiet btn-small" href="{% url 'student-referee-package' referee.id %}">What to send {{ referee.label }}</a>
+              <form method="post" action="{% url 'student-referee-status' referee.id %}" class="inline-form">
+                {% csrf_token %}
+                <label for="status-{{ referee.id }}" class="sr-only">Status</label>
+                <select id="status-{{ referee.id }}" name="status">{% for value, label in statuses %}<option value="{{ value }}"{% if value == referee.status %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+                <button type="submit" class="btn-quiet btn-small">Save</button>
+              </form>
+            </div>
+            <details class="doc-expiry"{% if edit.errors %} open{% endif %}>
+              <summary>Edit</summary>
+              <form method="post" action="{% url 'student-referee-edit' referee.id %}">
+                {% csrf_token %}
+                {{ edit.as_p }}
+                <button type="submit" class="btn-quiet btn-small">Save</button>
+              </form>
+            </details>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="quiet-line">No referees yet.</p>
+  {% endif %}
+  {% if from_cv %}
+    <h3>From your CV</h3>
+    <ul class="item-list">
+      {% for fact in from_cv %}
+        <li>
+          <span>{{ fact.payload.name }}{% if fact.payload.institution %}, {{ fact.payload.institution }}{% endif %}</span>
+          <form method="post" action="{% url 'student-referee-from-cv' fact.id %}">{% csrf_token %}<button type="submit" class="btn-quiet btn-small">Add as a referee</button></form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</section>

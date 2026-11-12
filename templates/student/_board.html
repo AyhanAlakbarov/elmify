@@ -1,23 +1,46 @@
-<section aria-labelledby="board-heading" class="board-section">
-  <h2 id="board-heading" class="sr-only">Applications by stage</h2>
+{% load dashboard %}<section aria-labelledby="board-heading" class="board-section">
+  <div class="board-head">
+    <h2 id="board-heading">Your applications</h2>
+    {% if not counselor_view and not read_only and request.path == "/student/" %}
+      <a class="text-link" href="/student/applications/">Manage by country</a>
+    {% endif %}
+  </div>
+  {% if board.budget or board.rate_note %}
+  <div class="board-budget-bar">
+    {% if board.budget %}
+      <p>{{ board.budget.text }}</p>
+      {% if board.budget.stretch_text %}<p>{{ board.budget.stretch_text }}</p>{% endif %}
+      {% if board.budget_url %}<p><a href="{{ board.budget_url }}">Change my application budget</a></p>{% endif %}
+    {% endif %}
+    {% if board.rate_note %}<p>{{ board.rate_note }}</p>{% endif %}
+  </div>
+  {% endif %}
   {% if not board.cards %}
     <div class="empty-state">
-      <h3>No applications yet</h3>
-      <p>Choose programmes from your matches and they appear here, ready to track.</p>
+      <p>No applications yet. Add one from Programmes &amp; funding.</p>
       {% if not read_only %}<a class="btn" href="/student/recommendation/">Review matches</a>{% endif %}
     </div>
   {% else %}
-  <div class="board">
-  {% for column, cards in board.columns %}
-    <section class="lane lane-{{ column.key }}" aria-labelledby="column-{{ column.key }}">
-      <h3 id="column-{{ column.key }}">{{ column }} <span class="count">{{ cards|length }}</span></h3>
-      {% for card in cards %}
-        {% include "student/_card.html" %}
-      {% empty %}
-        <p class="lane-empty">Nothing here.</p>
+    <div class="board">
+      {% for lane in board.lanes %}
+        <section id="lane-{{ lane.key }}" class="lane lane-{{ lane.lead.column.key|default:'to_start' }}" aria-labelledby="lane-title-{{ lane.key }}">
+          <h3 id="lane-title-{{ lane.key }}">{% if lane.lead.country %}{{ lane.lead.country|flag }}{% endif %}{% if lane.page_url %}<a href="{{ lane.page_url }}">{{ lane.title }}</a>{% else %}{{ lane.title }}{% endif %}</h3>
+          <p class="lane-status">{{ lane.status }}</p>
+          {% for line in lane.also_funded %}<p class="lane-meta">{{ line }}</p>{% endfor %}
+          {% if lane.programmes %}<p class="lane-meta">For: {{ lane.programmes|join:", " }}</p>{% endif %}
+          {% include "student/_award_lines.html" %}
+          {% for column, cards in lane.columns %}{% if cards %}
+            <h4>{{ column }}</h4>
+            {% for card in cards %}{% include "student/_card.html" %}{% endfor %}
+          {% endif %}{% endfor %}
+        </section>
       {% endfor %}
+    </div>
+  {% endif %}
+  {% if board.done %}
+    <section aria-labelledby="done-heading">
+      <h3 id="done-heading">Done</h3>
+      <ul>{% for lane in board.done %}<li>{% if lane.lead.country %}{{ lane.lead.country|flag }}{% endif %}{% if lane.page_url %}<a href="{{ lane.page_url }}">{{ lane.title }}</a>{% else %}{{ lane.title }}{% endif %}: {{ lane.done_line }}</li>{% endfor %}</ul>
     </section>
-  {% endfor %}
-  </div>
   {% endif %}
 </section>

@@ -1,106 +1,86 @@
-"""Ingest one artefact a student has named -- a paper's DOI, or their own repository.
+"""A student's evidence, from the console (CV evidence spec §13).
 
-    POSTGRES_DB=... uv run python manage.py ingest_evidence \
-        --tenant <agency-uuid> --student <membership-uuid> \
-        --source https://doi.org/10.1021/acs.jcim.4c00001
+    uv run python manage.py ingest_evidence --tenant <agency> --student <membership>
 
-The first caller of ``apps.documents.evidence.ingest_evidence`` outside its own
-tests, and deliberately a console one: the CV engine reads the uploaded CV and
-nothing else, so a student's papers and code reach the ledger only through
-this. Everything it writes is a CANDIDATE fact (``confirmed_by=None``) unless
-the evidence package's own gate auto-confirms it -- generation still cannot see
-any of it until a human accepts it, which is the whole design.
+runs refresh_evidence for the student -- forced past the 10-minute skip -- and
+prints what it did and every reading, each bullet with its support verdict.
 
-A repository additionally needs ``owner_login`` to be someone we have reason to
-believe is the student, because ``repo.authorship()`` reduces to
-``contributors.get(owner_login, 0) > 0`` -- pass a stranger's login and a
-stranger's repository becomes the student's skills. There is no verified
-GitHub account link on a profile yet, so this takes the handle from a
-CONFIRMED identity fact instead: the student's own uploaded CV printed it and a
-human accepted it. No confirmed handle, no repository ingest.
+    ... --source https://doi.org/10.1021/acs.jcim.4c00001
+
+ingests one DOI as a confirmed publication fact: the only caller of the DOI
+path. Repositories are never named here; the refresh finds them from the
+student's GitHub username.
+
+On ECS, run it as a one-off `aws ecs run-task` of DocumentWorkerTaskDefinition
+with a command override: that task holds GITHUB_TOKEN, OPENAI_API_KEY and the
+OpenRouter key, and connects as runtime_engine.
 """
 
 from __future__ import annotations
 
-from urllib.parse import urlsplit
 from uuid import UUID
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from apps.documents.evidence import ingest_evidence
+from apps.documents.evidence import facts, ingest_evidence
+from apps.documents.evidence.readings import usable_readings
+from apps.documents.evidence.refresh import refresh_evidence
 from apps.documents.evidence.sources import DoiRef, UnsupportedSource, parse_source
-from apps.documents.models import VerifiedFact
-from apps.documents.verification import generatable_facts
 from apps.tenancy.context import tenant_scope
-from apps.tenancy.models import Membership
-
-
-def _profile_handle(url: str) -> str:
-    """The single path segment of a github.com profile address, or nothing."""
-    parts = urlsplit(url)
-    if (parts.hostname or "").lower() not in {"github.com", "www.github.com"}:
-        return ""
-    segments = [segment for segment in parts.path.split("/") if segment]
-    return segments[0] if len(segments) == 1 else ""
-
-
-def confirmed_github_login(student: Membership) -> str:
-    """The GitHub handle a human has already accepted for this student.
-
-    Reads the confirmed IDENTITY facts only -- ``generatable_facts`` is the
-    same confirmation gate generation runs on. Falls back to a confirmed
-    ``github_url`` when the CV printed an address rather than a handle, which
-    is the more common of the two.
-
-    The address is parsed, not searched. ``github_url`` is validated only as
-    an https URL (``schemas._HTTPS_URL_PATTERN`` constrains no host), so
-    substring matching on "github.com/" reads
-    ``https://evil.example/?r=github.com/victim`` as GitHub -- and this handle
-    decides authorship, because ``repo.authorship()`` reduces to
-    ``contributors.get(owner_login, 0) > 0``. Same reasoning as
-    ``schemas._anchor_text``, which already refuses "github.com.evil.example".
-
-    A profile is one path segment. A CV linking a project it merely used
-    (``github.com/tensorflow/models``) would otherwise claim that project's
-    owner as the applicant.
-    """
-    for fact in generatable_facts(student).filter(category=VerifiedFact.Category.IDENTITY):
-        payload = fact.payload if isinstance(fact.payload, dict) else {}
-        handle = str(payload.get("github_username") or "").strip()
-        if not handle:
-            handle = _profile_handle(str(payload.get("github_url") or ""))
-        if handle:
-            return handle
-    return ""
 
 
 class Command(BaseCommand):
-    help = "Ingest one DOI or repository as candidate facts for a student."
+    help = "Refresh a student's repo and thesis readings, or ingest one DOI with --source."
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--tenant", required=True)
         parser.add_argument("--student", required=True)
-        parser.add_argument("--source", required=True)
+        parser.add_argument("--source", default="")
 
     def handle(self, *args: object, **options: object) -> None:
-        source = str(options["source"])
-        try:
-            ref = parse_source(source)
-        except UnsupportedSource as error:
-            raise CommandError(f"unusable source: {error}") from None
-        with tenant_scope(UUID(str(options["tenant"]))):
-            student = Membership.objects.get(id=UUID(str(options["student"])))
-            owner_login = confirmed_github_login(student)
-            if not isinstance(ref, DoiRef) and owner_login.casefold() != ref.owner.casefold():
+        source = str(options["source"] or "")
+        if source:
+            try:
+                ref = parse_source(source)
+            except UnsupportedSource as error:
+                raise CommandError(f"unusable source: {error}") from None
+            if not isinstance(ref, DoiRef):
                 raise CommandError(
-                    f"{ref.owner!r} is not this student's confirmed GitHub handle "
-                    f"({owner_login or 'none on file'}) -- confirm the identity fact "
-                    "that names it before ingesting their repositories"
+                    "--source takes a DOI; repositories are read by refresh_evidence"
                 )
-            result = ingest_evidence(
-                student=student, raw_source=source, owner_login=owner_login
+        try:
+            tenant_id = UUID(str(options["tenant"]))
+            student_id = UUID(str(options["student"]))
+        except ValueError:
+            raise CommandError("--tenant and --student must be UUIDs") from None
+        with tenant_scope(tenant_id):
+            found = facts.refreshable_student(tenant_id, student_id)
+            if found is None:
+                raise CommandError(
+                    f"no active student {student_id} in tenant {tenant_id}, "
+                    "or they are being erased; nothing is read"
+                )
+            student = found
+            if source:
+                result = ingest_evidence(student=student, raw_source=source)
+                self.stdout.write(f"outcome={result.outcome.value} facts={len(result.facts)}")
+                for line in (result.reason, result.question):
+                    if line:
+                        self.stdout.write(line)
+                return
+            report = refresh_evidence(student, force=True)
+            readings = usable_readings(student)
+        self.stdout.write(
+            f"read={len(report.read)} deleted={report.deleted} "
+            f"github_requests={report.github_requests} model_calls={report.model_calls} "
+            f"tokens={report.tokens} stopped={report.stopped or '-'}"
+        )
+        if report.message:
+            self.stdout.write(report.message)
+        for reading in readings:
+            self.stdout.write(
+                f"[{reading.source}] {reading.url or reading.document_id} "
+                f"{reading.kind}: {reading.summary}"
             )
-        self.stdout.write(f"outcome={result.outcome.value} facts={len(result.facts)}")
-        for line in (result.reason, result.question):
-            if line:
-                self.stdout.write(line)
+            for bullet in reading.bullets:
+                self.stdout.write(f"  - ({bullet.verdict}) {bullet.text}")

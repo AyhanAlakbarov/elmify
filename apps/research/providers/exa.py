@@ -34,6 +34,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from django.conf import settings
@@ -80,7 +81,10 @@ class ExaProvider:
 
     api_key: str = field(repr=False)
     name: str = "exa"
-    post: Callable[..., dict[str, object]] = field(default=fetch_json_api)
+    #: Waits out a throttle: Exa's 10 QPS is per team, shared by parallel taps.
+    post: Callable[..., dict[str, object]] = field(
+        default=partial(fetch_json_api, retry_throttled=True)
+    )
 
     def search(self, request: SearchRequest, meter: SearchMeter | None = None) -> Iterator[str]:
         payload: dict[str, object] = {

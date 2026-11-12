@@ -78,7 +78,7 @@ def test_a_served_outcome_comes_back_as_a_page(outcome: Outcome) -> None:
 
 def test_an_unchanged_page_still_carries_its_bytes_to_the_old_callers() -> None:
     """UNCHANGED is the host answering in full -- firecrawl.py builds it from
-    the same payload as a FETCHED page, body and all (`_CARRIES_BYTES`). The
+    the same payload as a FETCHED page, body and all (`CARRIES_BYTES`). The
     saving is the READER's own digest short-circuit, which needs those bytes;
     raising here would instead file every unchanged page as a blocked source and
     put a consultant on a page that did not move."""

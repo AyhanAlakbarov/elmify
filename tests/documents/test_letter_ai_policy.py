@@ -46,3 +46,84 @@ def test_ai_policy_never_imported_by_gate_or_generation_modules() -> None:
         source = inspect.getsource(module)
         msg = f"{module.__name__} must not import the AI-policy module"
         assert "letter_ai_policy" not in source, msg
+
+
+def test_resolve_prompt_ai_policy_from_institution_immigration_and_written_requirements() -> None:
+    from types import SimpleNamespace
+
+    from apps.documents.letter_ai_policy import resolve_prompt_ai_policy
+
+    cambridge_prompt = SimpleNamespace(
+        funder_id=None,
+        immigration=False,
+        source_url="https://www.postgraduate.study.cam.ac.uk/application",
+        programme=SimpleNamespace(
+            name="MPhil in Advanced Computer Science",
+            country_code="GB",
+            institution=SimpleNamespace(name="University of Cambridge"),
+        ),
+        letter_written_requirements=[],
+    )
+    assert resolve_prompt_ai_policy(cambridge_prompt).policy_class == AIUsePolicyClass.PROHIBITS
+
+    au_imm_prompt = SimpleNamespace(
+        funder_id=None,
+        immigration=True,
+        source_url="https://immi.homeaffairs.gov.au/",
+        programme=SimpleNamespace(
+            name="Master of Engineering",
+            country_code="AU",
+            institution=SimpleNamespace(name="University of Melbourne"),
+        ),
+        letter_written_requirements=[],
+    )
+    assert (
+        resolve_prompt_ai_policy(au_imm_prompt).policy_class
+        == AIUsePolicyClass.IMMIGRATION_PROHIBITION
+    )
+
+    dynamic_prohibit = SimpleNamespace(
+        funder_id=None,
+        immigration=False,
+        source_url="https://example.edu/apply",
+        programme=SimpleNamespace(
+            name="MSc Data Science",
+            country_code="NL",
+            institution=SimpleNamespace(name="Example University"),
+        ),
+        letter_written_requirements=[
+            {
+                "text": (
+                    "The use of generative AI or ChatGPT to write your motivation letter "
+                    "is strictly prohibited and treated as fraud."
+                )
+            }
+        ],
+    )
+    note = resolve_prompt_ai_policy(dynamic_prohibit)
+    assert note.policy_class == AIUsePolicyClass.PROHIBITS
+    assert "ChatGPT" in note.note_text
+
+    dynamic_disclose = SimpleNamespace(
+        funder_id=None,
+        immigration=False,
+        source_url="https://example.edu/apply",
+        programme=SimpleNamespace(
+            name="MSc Data Science",
+            country_code="DE",
+            institution=SimpleNamespace(name="Example University"),
+        ),
+        letter_written_requirements=[
+            {
+                "text": (
+                    "Applicants must disclose any generative AI tools used and include "
+                    "a declaration of how AI supported the draft."
+                )
+            }
+        ],
+    )
+    assert (
+        resolve_prompt_ai_policy(dynamic_disclose).policy_class
+        == AIUsePolicyClass.REQUIRES_DISCLOSURE
+    )
+

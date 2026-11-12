@@ -3,7 +3,7 @@ Document Intelligence and the real Jev, nothing mocked but the storage and the l
 
 Never a real person's transcript (spec T19): an official sample or specimen, from
 TRANSCRIPT_SAMPLE. Skips without it, without the OCR interpreter, without Azure keys
-(~/.config/tehsil_agent/ocr.env) or without OPENROUTER_API_KEY.
+(~/.config/elmify/ocr.env) or without OPENROUTER_API_KEY.
 """
 
 import os
@@ -26,7 +26,7 @@ pytestmark = [
     pytest.mark.skipif(not os.environ.get("OPENROUTER_API_KEY"), reason="no OPENROUTER_API_KEY"),
     pytest.mark.skipif(
         not (os.environ.get("AZURE_DI_ENDPOINT") and os.environ.get("AZURE_DI_KEY")),
-        reason="no AZURE_DI_ENDPOINT / AZURE_DI_KEY (source ~/.config/tehsil_agent/ocr.env)",
+        reason="no AZURE_DI_ENDPOINT / AZURE_DI_KEY (source ~/.config/elmify/ocr.env)",
     ),
     pytest.mark.skipif(not Path(settings.OCR_PYTHON).exists(), reason="no OCR interpreter"),
 ]

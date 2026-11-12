@@ -1,4 +1,3 @@
-
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -10,7 +9,6 @@ CONSENT_TEXT = (
     "I agree to the Terms of Service and consent to the processing of my personal data as "
     "described in the Privacy Notice, including its transfer to the countries it lists."
 )
-
 
 
 class SignupForm(forms.Form):
@@ -31,7 +29,11 @@ class SignupForm(forms.Form):
         email = str(self.cleaned_data["email"]).strip().lower()
         taken = Q(username__iexact=email) | Q(email__iexact=email)
         if get_user_model().objects.filter(taken).exists():
-            raise forms.ValidationError("An account with this e-mail already exists.", code="taken")
+            raise forms.ValidationError(
+                "Unable to complete sign-up with these details. "
+                "If you already have an account, please log in.",
+                code="taken",
+            )
         return email
 
     def clean_password(self) -> str:

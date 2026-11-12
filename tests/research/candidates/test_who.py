@@ -233,3 +233,30 @@ def test_under_with_punctuation_is_still_an_age(line, age_max):
 def test_chinese_taipei_is_taiwan_and_chinese_students_are_unchanged():
     assert codes("Athletes from Chinese Taipei") == {"TW"}
     assert "TW" not in codes("Chinese students may apply")
+
+
+def test_multilingual_levels_tests_and_gulf_asia_aliases():
+    assert levels("برامج الماجستير والدكتوراه لمرحلة الدراسات العليا") == [
+        "master",
+        "phd",
+        "postgraduate",
+    ]
+    assert levels("Corsi di laurea magistrale e dottorato di ricerca") == ["master", "phd"]
+    assert levels("Programas de maestría, mestrado y doctorado") == ["master", "master", "phd"]
+    assert levels("Beasiswa pascasarjana dan sarjana muda") == ["postgraduate", "bachelor"]
+    assert levels("Chương trình thạc sĩ và tiến sĩ") == ["master", "phd"]
+    assert levels("Studia II stopnia oraz szkoła doktorska") == ["master", "phd"]
+    (r1,) = find_requirements("TestDaF 4")
+    assert (r1.test, r1.score) == ("TestDaF", Decimal(4))
+    (r2,) = find_requirements("اختبار STEP 75")
+    assert (r2.test, r2.score) == ("اختبار STEP", Decimal(75))
+    assert find_requirements("Step 1: complete the online form") == []
+    assert codes("Open to Saudi, Emirati, Qatari, Indonesian, and Azerbaijani students") == {
+        "SA",
+        "AE",
+        "QA",
+        "ID",
+        "AZ",
+    }
+    assert codes("متاح للطلاب من أذربيجان والمملكة العربية السعودية") == {"AZ", "SA"}
+

@@ -14,6 +14,7 @@ keeps the value out of the prompt.
 
 from __future__ import annotations
 
+import re
 from urllib.parse import unquote
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -36,6 +37,16 @@ class SnapshotControl(BaseModel):
     placeholder: str = Field(default="", max_length=300)
     options: tuple[str, ...] = ()
     required: bool = False
+    #: The nearest heading or legend before the control ("Degree 2"). Page text,
+    #: so it is redacted of every student value before anything reads it.
+    heading: str = Field(default="", max_length=200)
+    #: The text of the control's own group (fieldset, row, list item), with every
+    #: control removed. Redacted like `heading`.
+    context: str = Field(default="", max_length=300)
+    #: A file input's `accept` attribute ("application/pdf,.jpg").
+    accept: str = Field(default="", max_length=100)
+    #: A text input or textarea's positive `maxLength` cap (0 when uncapped).
+    max_length: int = Field(default=0, ge=0, le=100_000)
 
 
 class FormSnapshot(BaseModel):
@@ -82,3 +93,52 @@ def assert_no_student_values(snapshot: FormSnapshot, forbidden_values: list[str]
         stripped = value.strip()
         if stripped and stripped.casefold() in haystack:
             raise SnapshotPIILeak("form snapshot contains a student value")
+
+
+#: A forbidden value shorter than this is never redacted: a two-letter value
+#: ("Al", a country code) would blank every word it starts.
+_MIN_REDACTED = 3
+
+
+def student_value_pattern(forbidden_values: list[str]) -> re.Pattern[str] | None:
+    """One case-insensitive, whole-word pattern over every forbidden value.
+
+    Whole word, so "Ali" never blanks "Aliyeva": `\\w` is Unicode in a str
+    pattern, so "Ləman" is one word. Longest first, so "Leyla Aliyeva" wins
+    over "Leyla". None when no value is long enough to look for. Shared with
+    plan 6's bench recordings, which redact a saved copy's text the same way.
+    """
+    needles = sorted(
+        {n for n in (" ".join(v.split()) for v in forbidden_values) if len(n) >= _MIN_REDACTED},
+        key=len,
+        reverse=True,
+    )
+    if not needles:
+        return None
+    # The client's clip() collapses whitespace, so a needle matches any run of it.
+    alternation = "|".join(r"\s+".join(map(re.escape, n.split())) for n in needles)
+    return re.compile(rf"(?<!\w)(?:{alternation})(?!\w)", re.IGNORECASE)
+
+
+def redact_student_values(snapshot: FormSnapshot, forbidden_values: list[str]) -> FormSnapshot:
+    """Replace every student value in the free-text fields with "■".
+
+    Redacted, not refused: free text is where a signed-in portal greets the
+    student by name, so refusing it would make every logged-in form
+    unlearnable. Labels, names, ids, options and the URL stay with
+    assert_no_student_values, which refuses -- a control NAMED after the
+    student is a leak worth stopping, not editing.
+    """
+    pattern = student_value_pattern(forbidden_values)
+    if pattern is None:
+        return snapshot
+    controls = tuple(
+        control.model_copy(
+            update={
+                "heading": pattern.sub("■", control.heading),
+                "context": pattern.sub("■", control.context),
+            }
+        )
+        for control in snapshot.controls
+    )
+    return snapshot.model_copy(update={"controls": controls})

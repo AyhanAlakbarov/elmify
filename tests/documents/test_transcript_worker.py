@@ -210,6 +210,7 @@ def test_every_row_and_semester_highlight_names_a_row_the_reading_stores(
         "credits": "60",
         "grade": "91",
         "status": "COMPLETED",
+        "origin": None,
     }
     assert stored[0]["kind"] == "semester_heading"
 

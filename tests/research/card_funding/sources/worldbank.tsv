@@ -1,0 +1,298 @@
+# https://api.worldbank.org/v2/country?format=json&per_page=400 fetched 2026-10-14 (incomeLevel.id: LIC LMC UMC HIC INX NA; aggregates have id 'NA' region)
+# iso2	name	region_id	income_level_id
+AW	Aruba	LCN	HIC
+ZH	Africa Eastern and Southern	NA	NA
+AF	Afghanistan	MEA	LIC
+A9	Africa	NA	NA
+ZI	Africa Western and Central	NA	NA
+AO	Angola	SSF	LMC
+AL	Albania	ECS	UMC
+AD	Andorra	ECS	HIC
+1A	Arab World	NA	NA
+AE	United Arab Emirates	MEA	HIC
+AR	Argentina	LCN	UMC
+AM	Armenia	ECS	UMC
+AS	American Samoa	EAS	HIC
+AG	Antigua and Barbuda	LCN	HIC
+AU	Australia	EAS	HIC
+AT	Austria	ECS	HIC
+AZ	Azerbaijan	ECS	UMC
+BI	Burundi	SSF	LIC
+B4	East Asia & Pacific (IBRD-only countries)	NA	NA
+B7	Europe & Central Asia (IBRD-only countries)	NA	NA
+BE	Belgium	ECS	HIC
+BJ	Benin	SSF	LMC
+BF	Burkina Faso	SSF	LIC
+BD	Bangladesh	SAS	LMC
+BG	Bulgaria	ECS	HIC
+B1	IBRD countries classified as high income	NA	NA
+BH	Bahrain	MEA	HIC
+BS	Bahamas, The	LCN	HIC
+BA	Bosnia and Herzegovina	ECS	UMC
+B2	Latin America & the Caribbean (IBRD-only countries)	NA	NA
+BY	Belarus	ECS	UMC
+BZ	Belize	LCN	UMC
+B3	Middle East, North Africa, Afghanistan & Pakistan (IBRD only)	NA	NA
+BM	Bermuda	NAC	HIC
+BO	Bolivia	LCN	LMC
+BR	Brazil	LCN	UMC
+BB	Barbados	LCN	HIC
+BN	Brunei Darussalam	EAS	HIC
+B6	Sub-Saharan Africa (IBRD-only countries)	NA	NA
+BT	Bhutan	SAS	LMC
+BW	Botswana	SSF	UMC
+C9	Sub-Saharan Africa (IFC classification)	NA	NA
+CF	Central African Republic	SSF	LIC
+CA	Canada	NAC	HIC
+C4	East Asia and the Pacific (IFC classification)	NA	NA
+B8	Central Europe and the Baltics	NA	NA
+C5	Europe and Central Asia (IFC classification)	NA	NA
+CH	Switzerland	ECS	HIC
+JG	Channel Islands	ECS	HIC
+CL	Chile	LCN	HIC
+CN	China	EAS	UMC
+CI	Cote d'Ivoire	SSF	LMC
+C6	Latin America and the Caribbean (IFC classification)	NA	NA
+C7	Middle East and North Africa (IFC classification)	NA	NA
+CM	Cameroon	SSF	LMC
+CD	Congo, Dem. Rep.	SSF	LIC
+CG	Congo, Rep.	SSF	LMC
+CO	Colombia	LCN	UMC
+KM	Comoros	SSF	LMC
+CV	Cabo Verde	SSF	UMC
+CR	Costa Rica	LCN	HIC
+C8	South Asia (IFC classification)	NA	NA
+S3	Caribbean small states	NA	NA
+CU	Cuba	LCN	UMC
+CW	Curacao	LCN	HIC
+KY	Cayman Islands	LCN	HIC
+CY	Cyprus	ECS	HIC
+CZ	Czechia	ECS	HIC
+D4	East Asia & Pacific (IDA-eligible countries)	NA	NA
+D7	Europe & Central Asia (IDA-eligible countries)	NA	NA
+DE	Germany	ECS	HIC
+DJ	Djibouti	MEA	LMC
+D2	Latin America & the Caribbean (IDA-eligible countries)	NA	NA
+DM	Dominica	LCN	UMC
+D3	Middle East, North Africa, Afghanistan & Pakistan (IDA total)	NA	NA
+DK	Denmark	ECS	HIC
+N6	IDA countries in Sub-Saharan Africa not classified as fragile situations 	NA	NA
+DO	Dominican Republic	LCN	UMC
+D5	South Asia (IDA-eligible countries)	NA	NA
+F6	IDA countries in Sub-Saharan Africa classified as fragile situations 	NA	NA
+D6	Sub-Saharan Africa (IDA-eligible countries)	NA	NA
+DZ	Algeria	MEA	UMC
+4E	East Asia & Pacific (excluding high income)	NA	NA
+V2	Early-demographic dividend	NA	NA
+Z4	East Asia & Pacific	NA	NA
+7E	Europe & Central Asia (excluding high income)	NA	NA
+Z7	Europe & Central Asia	NA	NA
+EC	Ecuador	LCN	UMC
+EG	Egypt, Arab Rep.	MEA	LMC
+XC	Euro area	NA	NA
+ER	Eritrea	SSF	LIC
+ES	Spain	ECS	HIC
+EE	Estonia	ECS	HIC
+ET	Ethiopia	SSF	LIC
+EU	European Union	NA	NA
+F2	Fragility, Conflict, and Violence (FCV) situations	NA	NA
+FI	Finland	ECS	HIC
+FJ	Fiji	EAS	UMC
+FR	France	ECS	HIC
+FO	Faroe Islands	ECS	HIC
+FM	Micronesia, Fed. Sts.	EAS	UMC
+6F	IDA countries classified as fragile situations, excluding Sub-Saharan Africa	NA	NA
+GA	Gabon	SSF	UMC
+GB	United Kingdom	ECS	HIC
+GE	Georgia	ECS	UMC
+GH	Ghana	SSF	LMC
+GI	Gibraltar	ECS	HIC
+GN	Guinea	SSF	LMC
+GM	Gambia, The	SSF	LIC
+GW	Guinea-Bissau	SSF	LIC
+GQ	Equatorial Guinea	SSF	UMC
+GR	Greece	ECS	HIC
+GD	Grenada	LCN	UMC
+GL	Greenland	ECS	HIC
+GT	Guatemala	LCN	UMC
+GU	Guam	EAS	HIC
+GY	Guyana	LCN	HIC
+XD	High income	NA	NA
+HK	Hong Kong SAR, China	EAS	HIC
+HN	Honduras	LCN	LMC
+XE	Heavily indebted poor countries (HIPC)	NA	NA
+HR	Croatia	ECS	HIC
+HT	Haiti	LCN	LMC
+HU	Hungary	ECS	HIC
+ZB	IBRD, including blend	NA	NA
+XF	IBRD only	NA	NA
+ZT	IDA & IBRD total	NA	NA
+XG	IDA total	NA	NA
+XH	IDA blend	NA	NA
+ID	Indonesia	EAS	UMC
+XI	IDA only	NA	NA
+IM	Isle of Man	ECS	HIC
+IN	India	SAS	LMC
+XY	Not classified	NA	NA
+IE	Ireland	ECS	HIC
+IR	Iran, Islamic Rep.	MEA	UMC
+IQ	Iraq	MEA	UMC
+IS	Iceland	ECS	HIC
+IL	Israel	MEA	HIC
+IT	Italy	ECS	HIC
+JM	Jamaica	LCN	UMC
+JO	Jordan	MEA	UMC
+JP	Japan	EAS	HIC
+KZ	Kazakhstan	ECS	UMC
+KE	Kenya	SSF	LMC
+KG	Kyrgyz Republic	ECS	LMC
+KH	Cambodia	EAS	LMC
+KI	Kiribati	EAS	LMC
+KN	St. Kitts and Nevis	LCN	HIC
+KR	Korea, Rep.	EAS	HIC
+KW	Kuwait	MEA	HIC
+XJ	Latin America & Caribbean (excluding high income)	NA	NA
+LA	Lao PDR	EAS	LMC
+LB	Lebanon	MEA	LMC
+LR	Liberia	SSF	LIC
+LY	Libya	MEA	UMC
+LC	St. Lucia	LCN	UMC
+ZJ	Latin America & Caribbean 	NA	NA
+XL	Least developed countries: UN classification	NA	NA
+XM	Low income	NA	NA
+LI	Liechtenstein	ECS	HIC
+LK	Sri Lanka	SAS	UMC
+XN	Lower middle income	NA	NA
+XO	Low & middle income	NA	NA
+LS	Lesotho	SSF	LMC
+V3	Late-demographic dividend	NA	NA
+LT	Lithuania	ECS	HIC
+LU	Luxembourg	ECS	HIC
+LV	Latvia	ECS	HIC
+MO	Macao SAR, China	EAS	HIC
+MF	St. Martin (French part)	LCN	HIC
+MA	Morocco	MEA	LMC
+MC	Monaco	ECS	HIC
+MD	Moldova	ECS	UMC
+M1	Middle East (developing only)	NA	NA
+MG	Madagascar	SSF	LIC
+MV	Maldives	SAS	UMC
+ZQ	Middle East, North Africa, Afghanistan & Pakistan	NA	NA
+MX	Mexico	LCN	UMC
+MH	Marshall Islands	EAS	UMC
+XP	Middle income	NA	NA
+MK	North Macedonia	ECS	UMC
+ML	Mali	SSF	LIC
+MT	Malta	MEA	HIC
+MM	Myanmar	EAS	LMC
+XQ	Middle East, North Africa, Afghanistan & Pakistan (excluding high income)	NA	NA
+ME	Montenegro	ECS	UMC
+MN	Mongolia	EAS	UMC
+MP	Northern Mariana Islands	EAS	HIC
+MZ	Mozambique	SSF	LIC
+MR	Mauritania	SSF	LMC
+MU	Mauritius	SSF	UMC
+MW	Malawi	SSF	LIC
+MY	Malaysia	EAS	UMC
+XU	North America	NA	NA
+M2	North Africa	NA	NA
+NA	Namibia	SSF	LMC
+NC	New Caledonia	EAS	HIC
+NE	Niger	SSF	LIC
+NG	Nigeria	SSF	LMC
+NI	Nicaragua	LCN	LMC
+NL	Netherlands	ECS	HIC
+NO	Norway	ECS	HIC
+NP	Nepal	SAS	LMC
+6X	Non-resource rich Sub-Saharan Africa countries	NA	NA
+NR	Naoero	EAS	HIC
+6N	IDA countries not classified as fragile situations, excluding Sub-Saharan Africa	NA	NA
+NZ	New Zealand	EAS	HIC
+OE	OECD members	NA	NA
+OM	Oman	MEA	HIC
+S4	Other small states	NA	NA
+PK	Pakistan	MEA	LMC
+PA	Panama	LCN	HIC
+PE	Peru	LCN	UMC
+PH	Philippines	EAS	UMC
+PW	Palau	EAS	HIC
+PG	Papua New Guinea	EAS	LMC
+PL	Poland	ECS	HIC
+V1	Pre-demographic dividend	NA	NA
+PR	Puerto Rico (US)	LCN	HIC
+KP	Korea, Dem. People's Rep.	EAS	LIC
+PT	Portugal	ECS	HIC
+PY	Paraguay	LCN	UMC
+PS	West Bank and Gaza	MEA	LMC
+S2	Pacific island small states	NA	NA
+V4	Post-demographic dividend	NA	NA
+PF	French Polynesia	EAS	HIC
+QA	Qatar	MEA	HIC
+RO	Romania	ECS	HIC
+R6	Resource rich Sub-Saharan Africa countries	NA	NA
+RU	Russian Federation	ECS	HIC
+RW	Rwanda	SSF	LIC
+8S	South Asia	NA	NA
+SA	Saudi Arabia	MEA	HIC
+SD	Sudan	SSF	LIC
+SN	Senegal	SSF	LMC
+SG	Singapore	EAS	HIC
+SB	Solomon Islands	EAS	LMC
+SL	Sierra Leone	SSF	LIC
+SV	El Salvador	LCN	UMC
+SM	San Marino	ECS	HIC
+SO	Somalia, Fed. Rep.	SSF	LIC
+RS	Serbia	ECS	UMC
+ZF	Sub-Saharan Africa (excluding high income)	NA	NA
+SS	South Sudan	SSF	LIC
+ZG	Sub-Saharan Africa 	NA	NA
+S1	Small states	NA	NA
+ST	Sao Tome and Principe	SSF	LMC
+SR	Suriname	LCN	UMC
+SK	Slovak Republic	ECS	HIC
+SI	Slovenia	ECS	HIC
+SE	Sweden	ECS	HIC
+SZ	Eswatini	SSF	LMC
+SX	Sint Maarten (Dutch part)	LCN	HIC
+A4	Sub-Saharan Africa excluding South Africa	NA	NA
+SC	Seychelles	SSF	HIC
+SY	Syrian Arab Republic	MEA	LIC
+TC	Turks and Caicos Islands	LCN	HIC
+TD	Chad	SSF	LIC
+T4	East Asia & Pacific (IDA & IBRD countries)	NA	NA
+T7	Europe & Central Asia (IDA & IBRD countries)	NA	NA
+TG	Togo	SSF	LMC
+TH	Thailand	EAS	UMC
+TJ	Tajikistan	ECS	LMC
+TM	Turkmenistan	ECS	UMC
+T2	Latin America & the Caribbean (IDA & IBRD countries)	NA	NA
+TL	Timor-Leste	EAS	LMC
+T3	Middle East, North Africa, Afghanistan & Pakistan (IDA & IBRD)	NA	NA
+TO	Tonga	EAS	UMC
+T5	South Asia (IDA & IBRD)	NA	NA
+T6	Sub-Saharan Africa (IDA & IBRD countries)	NA	NA
+TT	Trinidad and Tobago	LCN	HIC
+TN	Tunisia	MEA	LMC
+TR	Turkiye	ECS	UMC
+TV	Tuvalu	EAS	UMC
+TZ	Tanzania	SSF	LMC
+UG	Uganda	SSF	LIC
+UA	Ukraine	ECS	UMC
+XT	Upper middle income	NA	NA
+UY	Uruguay	LCN	HIC
+US	United States	NAC	HIC
+UZ	Uzbekistan	ECS	LMC
+VC	St. Vincent and the Grenadines	LCN	UMC
+VE	Venezuela, RB	LCN	LMC
+VG	British Virgin Islands	LCN	HIC
+VI	Virgin Islands (U.S.)	LCN	HIC
+VN	Viet Nam	EAS	UMC
+VU	Vanuatu	EAS	LMC
+1W	World	NA	NA
+WS	Samoa	EAS	UMC
+XK	Kosovo	ECS	UMC
+A5	Sub-Saharan Africa excluding South Africa and Nigeria	NA	NA
+YE	Yemen, Rep.	MEA	LIC
+ZA	South Africa	SSF	UMC
+ZM	Zambia	SSF	LMC
+ZW	Zimbabwe	SSF	LMC

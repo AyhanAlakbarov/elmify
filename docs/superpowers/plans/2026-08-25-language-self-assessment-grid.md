@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Branch: `claude/cv-render-fidelity`, worktree `/home/orkhan/Desktop/tehsil_agent/.worktrees/phase2-cv-engine`.
+- Branch: `claude/cv-render-fidelity`, worktree `/home/orkhan/Desktop/elmify/.worktrees/phase2-cv-engine`.
 - Every command runs through `uv run`. Never invoke `python` or `pytest` bare.
 - Gates before any commit: `uv run ruff check apps tests`, `uv run mypy apps`, `uv run pytest -q`, `uv run bandit -c pyproject.toml -r apps config`. A pre-commit hook runs Bandit, so a Bandit failure blocks the commit itself.
 - Line length is 100; ruff enforces it.

@@ -1,0 +1,66 @@
+{
+ "note": "Holder kind -> the Wikidata items that mean it. Kept by hand: it names classes, never a body. Only the kinds a sweep pass searches for (angles.PASS_SHAPES) need a row. The order of a kind's items is the order its words are offered in. `label` is for the reader of this file; manage.py build_kind_words reads only `qid`.",
+ "verified_on": "2026-10-12",
+ "kinds": {
+  "PRIVATE_FOUNDATION": [
+   {
+    "qid": "Q157031",
+    "label": "foundation"
+   },
+   {
+    "qid": "Q708676",
+    "label": "charitable organization"
+   }
+  ],
+  "POLITICAL_FOUNDATION": [
+   {
+    "qid": "Q104832689",
+    "label": "party political foundation"
+   }
+  ],
+  "RELIGIOUS": [
+   {
+    "qid": "Q1530022",
+    "label": "religious organization"
+   }
+  ],
+  "EMPLOYER": [
+   {
+    "qid": "Q783794",
+    "label": "company"
+   },
+   {
+    "qid": "Q6881511",
+    "label": "enterprise"
+   }
+  ],
+  "DIASPORA_AFFINITY": [
+   {
+    "qid": "Q133004",
+    "label": "diaspora"
+   },
+   {
+    "qid": "Q15911314",
+    "label": "association"
+   },
+   {
+    "qid": "Q48204",
+    "label": "voluntary association"
+   },
+   {
+    "qid": "Q1685451",
+    "label": "student society"
+   }
+  ],
+  "NATIONAL_GOVERNMENT": [
+   {
+    "qid": "Q192350",
+    "label": "ministry"
+   },
+   {
+    "qid": "Q327333",
+    "label": "government agency"
+   }
+  ]
+ }
+}

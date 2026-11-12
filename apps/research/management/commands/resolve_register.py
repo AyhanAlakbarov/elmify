@@ -32,6 +32,7 @@ from apps.research import closed_lists, vgm
 from apps.research.egress import SourceBlocked
 from apps.research.fetch import CATALOG_ROLE_NOTE, SweepBudget, default_budget
 from apps.research.models import ClosedList, RegisterEntry
+from apps.research.pointers import POINTER_REGISTER, ask_for_site, pointer_route
 from apps.research.providers.base import ProviderUnavailable
 from apps.research.providers.diffbot import DiffbotEnhance
 from apps.research.providers.tavily import TavilyProvider
@@ -56,6 +57,9 @@ from apps.research.wikidata import find_item
 
 #: VGM vouches for all three facts of every row: a body, in Türkiye, a foundation.
 VGM_SPEC = RegisterSpec(country_code="TR", kind="PRIVATE_FOUNDATION")
+#: A pointer row carries its own country and kind (pointers.record_pointers:
+#: the naming page's country, the reading's holder); the register asserts none.
+POINTER_SPEC = RegisterSpec(country_code="", kind="")
 _DIFFBOT_WINDOW = timedelta(days=30)
 #: What ends a run between names. Each leaves the current name untouched.
 _STOPS = (CallBudgetSpent, FetchBudgetSpent, ProviderUnavailable, SourceBlocked)
@@ -70,7 +74,7 @@ def registers() -> dict[str, RegisterSpec]:
     An adapter-read list (Wikidata, ROR, EACEA) has no rows file and no
     queue here -- its rows carry their key or never had a name to resolve.
     """
-    found = {vgm.REGISTER: VGM_SPEC}
+    found = {vgm.REGISTER: VGM_SPEC, POINTER_REGISTER: POINTER_SPEC}
     for slug, country in ClosedList.objects.order_by("slug").values_list("slug", "country_code"):
         if (closed_lists.LISTS_DIR / f"{slug}.csv").exists():
             found.setdefault(slug, RegisterSpec(country_code=country, kind=""))
@@ -216,12 +220,17 @@ class Command(BaseCommand):
             self.stdout.write(f"{entry.name} -> {resolution.domain or '-'} ({outcome})")
             if options["write"]:
                 try:
-                    record_resolution(entry, resolution, spec=spec, now=now)
+                    record_resolution(
+                        entry, resolution, spec=spec, now=now, found_via=pointer_route(entry)
+                    )
                 except EntryMovedOn as error:
                     # Bound, renamed or queued for a person by someone else
                     # meanwhile: theirs stands, and the run goes on.
                     self.stdout.write(f"  not written: {error}")
                     outcome = "MOVED_ON"
+                else:
+                    if ask_for_site(entry, resolution) is not None:
+                        self.stdout.write("  asked: SITE_UNKNOWN")
             tally[outcome] += 1
         self.stdout.write(f"tally: {dict(sorted(tally.items()))}")
         self.stdout.write(f"tavily calls: {tavily.spent} of {tavily.limit}")

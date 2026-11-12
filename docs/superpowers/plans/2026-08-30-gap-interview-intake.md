@@ -19,13 +19,13 @@
 - **Every question is skippable.** A blank answer is a skip. Nothing in this module may require a field to be present or non-empty.
 - Commit convention: conventional commits, subject in the imperative, body explains *why*.
 - Validation gate, all of which must pass before the branch is done:
-  - `POSTGRES_DB=tehsil_gap_intake uv run pytest`
+  - `POSTGRES_DB=elmify_gap_intake uv run pytest`
   - `uv run ruff check .`  (**there is no `ruff format` in this repo — do not run it**)
   - `uv run mypy apps config`
   - `uv run bandit -c pyproject.toml -r apps config`
   - `uv run python manage.py makemigrations --check --dry-run` (expect no changes; this plan adds no model fields)
 - Worktree: `.worktrees/gap-intake`, branch `claude/gap-interview-intake`, based on `origin/master` (`9139da6`). Commit with `git -C .worktrees/gap-intake` — a bare `git` command from the parent directory lands on the wrong branch.
-- The test database name is per-worktree. Always prefix pytest with `POSTGRES_DB=tehsil_gap_intake`; the shared `test_tehsil` wedges across parallel sessions.
+- The test database name is per-worktree. Always prefix pytest with `POSTGRES_DB=elmify_gap_intake`; the shared `test_elmify` wedges across parallel sessions.
 
 ## File Structure
 
@@ -189,7 +189,7 @@ def test_every_question_can_be_named_and_answered(student):
 
 ```bash
 cd .worktrees/gap-intake
-POSTGRES_DB=tehsil_gap_intake uv run pytest tests/documents/test_gap_intake.py -q
+POSTGRES_DB=elmify_gap_intake uv run pytest tests/documents/test_gap_intake.py -q
 ```
 
 Expected: collection error — `ModuleNotFoundError: No module named 'apps.documents.gap_intake'`.
@@ -275,7 +275,7 @@ def submit_answers(
 - [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_gap_intake uv run pytest tests/documents/test_gap_intake.py -q
+POSTGRES_DB=elmify_gap_intake uv run pytest tests/documents/test_gap_intake.py -q
 ```
 
 Expected: 7 passed.
@@ -383,7 +383,7 @@ def test_a_refused_batch_writes_neither_fact_nor_event(student):
 - [x] **Step 2: Run the tests to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_gap_intake uv run pytest tests/documents/test_gap_intake.py -q
+POSTGRES_DB=elmify_gap_intake uv run pytest tests/documents/test_gap_intake.py -q
 ```
 
 Expected: the three audit tests fail on an empty `AuditEvent` queryset (`test_a_skipped_form_audits_nothing` and `test_a_refused_batch_...` already pass, because nothing writes events yet — that is fine, they are the regression half).
@@ -433,7 +433,7 @@ Add to the `submit_answers` docstring:
 - [x] **Step 4: Run the tests to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_gap_intake uv run pytest tests/documents/test_gap_intake.py -q
+POSTGRES_DB=elmify_gap_intake uv run pytest tests/documents/test_gap_intake.py -q
 ```
 
 Expected: 11 passed.
@@ -441,11 +441,11 @@ Expected: 11 passed.
 - [x] **Step 5: Run the full gate**
 
 ```bash
-POSTGRES_DB=tehsil_gap_intake uv run pytest
+POSTGRES_DB=elmify_gap_intake uv run pytest
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config
-POSTGRES_DB=tehsil_gap_intake uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_gap_intake uv run python manage.py makemigrations --check --dry-run
 ```
 
 Expected: the suite green with no regressions, ruff and mypy clean, bandit with no new findings, and `makemigrations --check` reporting no changes (this plan adds no model fields).

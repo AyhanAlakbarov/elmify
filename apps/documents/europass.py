@@ -27,6 +27,7 @@ from apps.documents.schemas import (
     EducationEntry,
     ExperienceEntry,
     LanguageEntry,
+    ProjectEntry,
     PublicationEntry,
     ResearchEntry,
     TimelineEntry,
@@ -547,6 +548,32 @@ def _project_entry(order: int, entry: ResearchEntry) -> dict[str, object]:
     }
 
 
+def _standalone_project_entry(order: int, entry: ProjectEntry) -> dict[str, object]:
+    """CV evidence spec §10.5: a standalone `ProjectEntry` mapped after
+    research entries, never repeating a thesis."""
+    return {
+        "order": order,
+        "title": entry.title,
+        "description": "\n".join(entry.bullets) or None,
+        "creationDate": None,
+        "startDate": _date_obj(entry.start_date),
+        "endDate": _date_obj(entry.end_date),
+        "ongoing": entry.start_date is not None and entry.end_date is None,
+        "mediaAttachments": None,
+        "links": None,
+    }
+
+
+def _europass_projects(content: CVContent) -> list[dict[str, object]]:
+    rows = [_project_entry(order, entry) for order, entry in enumerate(content.research)]
+    thesis_titles = {r.thesis_title.strip().casefold() for r in content.research}
+    for entry in content.projects:
+        if entry.title.strip().casefold() in thesis_titles:
+            continue
+        rows.append(_standalone_project_entry(len(rows), entry))
+    return rows
+
+
 def _publication_entry(order: int, entry: PublicationEntry) -> dict[str, object]:
     """Europass has always had authors/year/doi/journalConference fields; they
     were sent as None only because CVContent held publications as strings."""
@@ -655,15 +682,26 @@ def europass_payload(content: CVContent, *, oldest_first: bool = False) -> dict[
                 ],
                 "showGuidanceLevelSentence": None,
             },
-            "projects": [
-                _project_entry(order, entry) for order, entry in enumerate(content.research)
-            ],
+            "projects": _europass_projects(content),
             "publications": [
                 _publication_entry(order, entry)
                 for order, entry in enumerate(content.publications)
             ],
+            # ponytail: certifications ride here, in the captured award shape,
+            # labelled so a reader can tell them from an honour (plan decision
+            # 21). The editor's own "certifications" section exists but its
+            # entry shape was never captured, and an uncaptured shape is what
+            # 500'd the whole render six times. Upgrade path: capture a
+            # populated certification entry, then map it to its own key.
             "honoursAwards": [
-                _award_entry(order, item.title) for order, item in enumerate(content.awards)
+                _award_entry(order, title)
+                for order, title in enumerate(
+                    [item.title for item in content.awards]
+                    + [
+                        "Certificate: " + ", ".join(p for p in (c.title, c.issuer) if p)
+                        for c in content.certifications
+                    ]
+                )
             ],
             "profileSkills": {
                 "other": [

@@ -18,10 +18,17 @@ class RateTable:
     rates: Mapping[str, Decimal]
     source: str
     retrieved_on: date
+    #: Currencies CBAR does not quote, crossed through EUR from the ECB's rate.
+    cross: frozenset[str] = frozenset()
 
 
 def round_money(amount: Decimal) -> Decimal:
     return amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+#: A fee fits the budget only with 3% left for bank charges (lanes spec §7.6).
+#: One place: the pack, the board and New for you all read it.
+BANK_MARGIN = Decimal("1.03")
 
 
 def convert(

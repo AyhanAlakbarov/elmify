@@ -1,5 +1,5 @@
 [project]
-name = "tehsil-agent"
+name = "elmify"
 version = "0.1.0"
 requires-python = ">=3.14,<3.15"
 dependencies = [
@@ -10,7 +10,7 @@ dependencies = [
   "gunicorn>=26.1.0,<27",
   # apps/research/refresh.py::readable_text imports it directly.
   "lxml>=6.1.3,<7",
-  "openai>=3.36.1,<4",
+  "openai>=3.16.2,<4",
   "pillow>=13,<14",
   "psycopg[binary]>=3.3.6,<4",
   "pydantic>=2.13.5,<3",
@@ -18,12 +18,7 @@ dependencies = [
   # apps/research/names.py: romanise every script before a name meets a
   # domain label. ISC; unidecode (GPL) was the measured prototype's choice.
   "anyascii>=0.3.2,<0.4",
-  "stagehand>=4.1.0,<5",
-  "pypdf>=6.19.0,<7",
-  # Was transitive via scrapling[fetchers]; declared directly now that
-  # scrapling is gone. The portal Docker stage still needs the `playwright`
-  # CLI (`playwright install --with-deps chromium`) for apps/portals/engine.py.
-  "playwright>=1.64.0,<2",
+  "pypdf>=6.21.4,<7",
   "urllib3>=2.8.0,<3",
   "weasyprint>=70.0,<71",
   "whitenoise>=6.9,<7",
@@ -37,15 +32,18 @@ dependencies = [
 [dependency-groups]
 dev = [
   "bandit[toml]>=1.9.4,<2",
-  "cfn-lint>=1.56,<2",
+  "cfn-lint>=1.57.0,<2",
   "django-stubs>=6.1.1,<7",
-  "mypy>=2.4.0,<3",
+  "mypy>=2.3.1,<3",
+  # tests/portals/test_extension_e2e.py drives real Chromium at the extension;
+  # nothing in the deployed image runs a browser any more.
+  "playwright>=1.64.1,<2",
   "pip-audit>=2.7,<3",
   "pre-commit>=4.6.2,<5",
   "pytest>=9.0.3,<10",
   "pytest-cov>=7.1.0,<8",
   "pytest-django>=4.11,<5",
-  "ruff>=0.16.6,<1",
+  "ruff>=0.16.9,<1",
   "types-defusedxml>=0.7,<1",
 ]
 

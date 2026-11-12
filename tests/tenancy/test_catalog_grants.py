@@ -61,7 +61,23 @@ def test_every_catalogue_table_is_revoked_from_web_and_granted_to_engine(db_curs
                 "has_table_privilege('runtime_engine', %s, %s)",
                 [f"public.{table}", privilege] * 2,
             )
-            assert db_cursor.fetchone() == (False, True), (table, privilege)
+            if table == "funding_officialsourcesnapshot" and privilege == "UPDATE":
+                # funding/0067: UPDATE is column-scoped here -- the evidence columns are immutable
+                assert db_cursor.fetchone() == (False, False), (table, privilege)
+                for col in (
+                    "retrieval_status",
+                    "readability",
+                    "funding_read_at",
+                    "funding_read_cost",
+                ):
+                    db_cursor.execute(
+                        "SELECT has_column_privilege('runtime_web', %s, %s, 'UPDATE'), "
+                        "has_column_privilege('runtime_engine', %s, %s, 'UPDATE')",
+                        [f"public.{table}", col] * 2,
+                    )
+                    assert db_cursor.fetchone() == (False, True), (table, col)
+            else:
+                assert db_cursor.fetchone() == (False, True), (table, privilege)
 
 
 def test_no_catalogue_sequence_is_usable_by_web(db_cursor) -> None:
@@ -234,9 +250,20 @@ def test_a_students_pack_renders_end_to_end_without_the_catalogue(
         assert [c.evidence.claim for c in pack.context["considered"]]
 
     application = web_world["application"]
-    kit = client.get(f"/applications/{application.id}/kit", HTTP_HOST=domain_a.host)
+    # The student has no kit page; the assigned counsellor's read-only one
+    # renders under the same role.
+    assert client.get(
+        f"/applications/{application.id}/kit", HTTP_HOST=domain_a.host
+    ).status_code == 404
+    client.force_login(counselor_user)
+    verify_mfa_session(client, counselor_user)
+    kit = client.get(
+        f"/counselor/students/{application.student_id}/applications/{application.id}/answers/",
+        HTTP_HOST=domain_a.host,
+    )
     assert kit.status_code == 200
     assert [d.draft_id for d in kit.context["kit"].documents] == [web_world["kit_draft"].id]
+    client.force_login(user_a)
 
     draft = web_world["draft"]
     detail = client.get(f"/api/documents/drafts/{draft.id}", HTTP_HOST=domain_a.host)

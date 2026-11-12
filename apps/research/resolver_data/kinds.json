@@ -1,0 +1,3598 @@
+{
+ "depth": 3,
+ "kinds": {
+  "Q1007870": [
+   "bildergalerie",
+   "galereya",
+   "galeri",
+   "galerie",
+   "gallery",
+   "kunstgalerie",
+   "kunsthandlung",
+   "produzentengalerie",
+   "selbsthilfegalerie"
+  ],
+  "Q102496": [
+   "kirchenspiel",
+   "kirchgemeinde",
+   "mrevli",
+   "parafiya",
+   "parikiya",
+   "paris",
+   "parish",
+   "paroki",
+   "pastorat",
+   "pfarre",
+   "pfarrei",
+   "pfarreien",
+   "pfarren",
+   "pfarrgemeinde",
+   "prikhod",
+   "prixod",
+   "tserkov"
+  ],
+  "Q1030034": [
+   "gbam",
+   "gkam",
+   "glam",
+   "glams",
+   "glem"
+  ],
+  "Q1030814": [
+   "allerweltspartei",
+   "volkspartei"
+  ],
+  "Q1032372": [
+   "hackerspace",
+   "hacklab",
+   "hackspace",
+   "khakspeys",
+   "makerspace"
+  ],
+  "Q105611": [
+   "hedgefonds",
+   "saiv"
+  ],
+  "Q1058330": [
+   "milisoner",
+   "militia",
+   "militsiya",
+   "miliz",
+   "milizija"
+  ],
+  "Q105985": [
+   "judiciary",
+   "judikative",
+   "justiz",
+   "kehakiman",
+   "rechtsprechungsgewalt",
+   "yudikatif"
+  ],
+  "Q1060409": [
+   "chasovoy",
+   "chasovye",
+   "ehrenposten",
+   "ehrenwache",
+   "saatdar",
+   "stabswache"
+  ],
+  "Q1063239": [
+   "politi",
+   "politiya",
+   "polity",
+   "yonetim"
+  ],
+  "Q1076052": [
+   "kindergarten",
+   "preschool",
+   "vorschulbildung",
+   "vorschule",
+   "vorschulerziehung",
+   "vorschulkind"
+  ],
+  "Q10858057": [
+   "madschlis",
+   "majlis",
+   "mazhilis",
+   "meclis",
+   "medzhlis",
+   "mejlisi"
+  ],
+  "Q10879018": [
+   "intuisionisme",
+   "intuitionism",
+   "intuitionismus",
+   "intuitivizm",
+   "intuitsionizm"
+  ],
+  "Q11000047": [
+   "gesundheitssystem",
+   "gesundheitswesen"
+  ],
+  "Q11038979": [
+   "cult",
+   "kult",
+   "kultus",
+   "sekta"
+  ],
+  "Q111161": [
+   "konsil",
+   "sinod",
+   "sinode",
+   "sinodi",
+   "synod",
+   "synode"
+  ],
+  "Q11204": [
+   "gesetzgeber",
+   "legislatif",
+   "legislative",
+   "legislatura",
+   "legislature"
+  ],
+  "Q1125321": [
+   "wahrungsunion"
+  ],
+  "Q1127126": [
+   "beistandspakt",
+   "blok",
+   "defensivallianz",
+   "defensivbundnis",
+   "militarbundnis",
+   "militarpakt",
+   "pact",
+   "pakta",
+   "verteidigungsbundnis",
+   "waffenbruderschaft"
+  ],
+  "Q11315": [
+   "einkaufszentrum",
+   "mal",
+   "moll",
+   "trts",
+   "tts"
+  ],
+  "Q1132207": [
+   "existenzgrunderzentrum",
+   "grunderzentrum",
+   "innovationszentrum",
+   "technologiezentrum"
+  ],
+  "Q1133938": [
+   "trest",
+   "trost",
+   "trust"
+  ],
+  "Q11342820": [
+   "glam",
+   "glamwiki"
+  ],
+  "Q1135557": [
+   "kuartet",
+   "kvartet",
+   "quartet",
+   "quartett",
+   "quartette"
+  ],
+  "Q113603": [
+   "essensstelle",
+   "essenverteilerstelle",
+   "foodbank",
+   "tafel",
+   "tafelladen"
+  ],
+  "Q11371": [
+   "internetanbieter",
+   "internetdienstanbieter",
+   "internetdiensteanbieter",
+   "internetdienstleister",
+   "internetprovider",
+   "isp",
+   "netzwerkprovider",
+   "provayder"
+  ],
+  "Q1137527": [
+   "ilcebay",
+   "kaimakam",
+   "kaymakam",
+   "kaymakan",
+   "qaymaqam"
+  ],
+  "Q1140229": [
+   "birlesme",
+   "reunification",
+   "unia",
+   "unification",
+   "uniya"
+  ],
+  "Q1140316": [
+   "strafkolonie",
+   "straflingskolonie",
+   "verbrecherkolonie"
+  ],
+  "Q1141323": [
+   "wahlkollegium",
+   "wahlmannergremium",
+   "wahlmannerkollegium"
+  ],
+  "Q1143635": [
+   "handelshochschule",
+   "handelshochschulen",
+   "wirtschaftshochschule",
+   "wirtschaftshochschulen",
+   "wirtschaftsuniversitat",
+   "wirtschaftsuniversitaten"
+  ],
+  "Q1144991": [
+   "reserve",
+   "rezerv"
+  ],
+  "Q1146002": [
+   "ajoyibxona",
+   "kunstkabinett",
+   "kunstkammer",
+   "kuriositatenkabinett",
+   "raritatenkabinett",
+   "wunderkammer"
+  ],
+  "Q114793": [
+   "minderheitskabinett",
+   "minderheitsregierung",
+   "minderheitssenat"
+  ],
+  "Q11691": [
+   "aktienborse",
+   "effektenborse",
+   "fondsborse",
+   "wertpapierborse"
+  ],
+  "Q11771944": [
+   "staatsdienst"
+  ],
+  "Q1195348": [
+   "indexfonds"
+  ],
+  "Q123432": [
+   "aristocracy",
+   "aristocratism",
+   "aristokrasi",
+   "aristokrat",
+   "aristokratie",
+   "aristokratiya",
+   "aristokratka",
+   "aristokraty",
+   "soylu",
+   "soyluluk"
+  ],
+  "Q12353044": [
+   "erdolraffinerie",
+   "erdolverarbeitungswerk",
+   "npz",
+   "olraffinerie"
+  ],
+  "Q12546": [
+   "crusades",
+   "kreuzzug"
+  ],
+  "Q1254874": [
+   "fernsehnetzwerk",
+   "telekanal",
+   "telekompaniya",
+   "teleset",
+   "telezriteli"
+  ],
+  "Q12552047": [
+   "dominus",
+   "lord",
+   "lords",
+   "lort",
+   "senior",
+   "signore"
+  ],
+  "Q125752": [
+   "lcn",
+   "mafia"
+  ],
+  "Q1259323": [
+   "chief",
+   "chieftain",
+   "chieftainess",
+   "chieftaness",
+   "hauptling",
+   "rubasy",
+   "stammeshauptling"
+  ],
+  "Q1260006": [
+   "cartel",
+   "drogenkartell",
+   "kartel",
+   "narkokartel"
+  ],
+  "Q127448": [
+   "kommun",
+   "kommune"
+  ],
+  "Q1283181": [
+   "pengecipulan",
+   "racket",
+   "racketeering",
+   "reket",
+   "reketir",
+   "xerac"
+  ],
+  "Q129238": [
+   "girisim",
+   "jungunternehmen",
+   "startap",
+   "startup",
+   "startups",
+   "startuptale",
+   "venchura"
+  ],
+  "Q1307214": [
+   "herrschaftsform"
+  ],
+  "Q13107184": [
+   "apotek",
+   "apotheke",
+   "aptek",
+   "apteka",
+   "chemist",
+   "darikhana",
+   "dorixona",
+   "drugstore",
+   "eczane",
+   "pharmacies",
+   "pharmacy"
+  ],
+  "Q131186": [
+   "choir",
+   "chor",
+   "choral",
+   "chorale",
+   "chorgesang",
+   "chorus",
+   "gesangschor",
+   "gundi",
+   "khor",
+   "koor",
+   "koro",
+   "ttbb",
+   "volkschor",
+   "xor"
+  ],
+  "Q131596": [
+   "agrarbetrieb",
+   "baurngehoft",
+   "baurnhof",
+   "ciftlik",
+   "farm",
+   "ferma",
+   "hof",
+   "perma",
+   "scheunenhof"
+  ],
+  "Q131708": [
+   "argirokratiya",
+   "plutarchie",
+   "plutocracy",
+   "plutokrasi",
+   "plutokrat",
+   "plutokratie",
+   "plutokratiya"
+  ],
+  "Q131734": [
+   "bierbraurei",
+   "bierfabrik",
+   "braurei",
+   "brewery",
+   "pivovarnya",
+   "varnya"
+  ],
+  "Q132050": [
+   "gouverneur",
+   "gov",
+   "governor",
+   "governors",
+   "govs",
+   "gubernator",
+   "gubernur",
+   "guv",
+   "guvernor",
+   "guvs",
+   "ilbay",
+   "provinzgouverneur",
+   "qubernator",
+   "vali"
+  ],
+  "Q132834": [
+   "madaris",
+   "madrasa",
+   "madrasah",
+   "madrassa",
+   "mdrsh",
+   "medresa",
+   "medrese",
+   "medresse"
+  ],
+  "Q133182": [
+   "aberglaube",
+   "aberglauben",
+   "movhumat",
+   "predrassudok",
+   "superstition",
+   "suverie",
+   "takhayul",
+   "yrym"
+  ],
+  "Q133215": [
+   "casino",
+   "kasino",
+   "kazino",
+   "kumarhane",
+   "qumarxana",
+   "samorine",
+   "spielbank",
+   "spielcasino",
+   "spielhalle",
+   "spielkasino"
+  ],
+  "Q133311": [
+   "asiret",
+   "kabile",
+   "plemena",
+   "plemya",
+   "puak",
+   "qabila",
+   "stamm",
+   "stammesgruppe",
+   "tayfa",
+   "taypa",
+   "tribe",
+   "volksstamm"
+  ],
+  "Q133442": [
+   "polis",
+   "stadtstaat"
+  ],
+  "Q1335818": [
+   "nadgosudarstvennost",
+   "supranationalism",
+   "supranationalismus",
+   "ubernational",
+   "uberstaatlich",
+   "uluslarustu",
+   "uluslarustuluk"
+  ],
+  "Q133981": [
+   "p3k"
+  ],
+  "Q1340098": [
+   "avtoshkola",
+   "fahrschule"
+  ],
+  "Q1341387": [
+   "spa"
+  ],
+  "Q134390": [
+   "provincia",
+   "provincies"
+  ],
+  "Q13473501": [
+   "collective",
+   "colligere",
+   "kolektif",
+   "kollektiv",
+   "musterek",
+   "ortak",
+   "toplu"
+  ],
+  "Q1353040": [
+   "bokhr",
+   "coastguard",
+   "kustenwache"
+  ],
+  "Q1358919": [
+   "baykshering",
+   "fahrradverleihsystem",
+   "fahrradverleihsysteme",
+   "veloprokat",
+   "velosheyring"
+  ],
+  "Q136649": [
+   "khural",
+   "khurultay",
+   "kuriltai",
+   "kurultai",
+   "kurultay",
+   "qurultay",
+   "qurultoy",
+   "quryltay",
+   "toygun"
+  ],
+  "Q138796": [
+   "widerstand",
+   "widerstandsbewegung"
+  ],
+  "Q1395324": [
+   "familienbetrieb",
+   "familienunternehmen"
+  ],
+  "Q1412224": [
+   "court",
+   "tribunal"
+  ],
+  "Q144281": [
+   "daibatxu",
+   "dzaybatsu",
+   "zaibatsu"
+  ],
+  "Q1454597": [
+   "freimaurerloge"
+  ],
+  "Q1454820": [
+   "freitagsmoschee",
+   "ulucami"
+  ],
+  "Q149566": [
+   "mittelschule",
+   "ortaokul",
+   "sltp",
+   "smp",
+   "thcs"
+  ],
+  "Q1508143": [
+   "getmanat",
+   "getmandyq",
+   "getmansina",
+   "hetmanate",
+   "hetmanshchyna"
+  ],
+  "Q150820": [
+   "playboy",
+   "pleiboi",
+   "pleyboy"
+  ],
+  "Q15284": [
+   "belediye",
+   "belediyye",
+   "gemeinde",
+   "gmina",
+   "kommuna",
+   "municipalities",
+   "municipality",
+   "munisipalitas",
+   "munitsipalitet",
+   "obshchina"
+  ],
+  "Q153026": [
+   "euregio",
+   "euregion",
+   "europaregion",
+   "euroregio",
+   "euroregion",
+   "evroregion"
+  ],
+  "Q15334": [
+   "gemeinde",
+   "gmina"
+  ],
+  "Q153936": [
+   "milis",
+   "milisi",
+   "milisia",
+   "militia",
+   "militsiya",
+   "miliz",
+   "milizarmee",
+   "milizionar",
+   "milizsoldat",
+   "opolchenie",
+   "schweizermiliz",
+   "volksheer"
+  ],
+  "Q154773": [
+   "eshibot",
+   "eshiva",
+   "eshivot",
+   "ieshibot",
+   "ieshiva",
+   "jeschiba",
+   "jeschibah",
+   "jeschiva",
+   "jeschiwa",
+   "jeschiwot",
+   "jeshiva",
+   "kollel",
+   "rabbinerschule",
+   "talmudhochschule",
+   "talmudschule",
+   "yeshibot",
+   "yeshiva",
+   "yeshivah",
+   "yeshivot",
+   "yeshiwa",
+   "yeshiwah",
+   "yeshiwot",
+   "yesiva"
+  ],
+  "Q1549319": [
+   "grossfurst",
+   "grossfyurst"
+  ],
+  "Q1550557": [
+   "dorfherrschaft",
+   "grundherr",
+   "grundherren",
+   "grundherrenschaft",
+   "grundherrschaft",
+   "manorialism",
+   "manorialisme",
+   "manorializm",
+   "manoryalizm",
+   "ortsherrschaft",
+   "patrimonialherrschaft",
+   "seigneurie",
+   "senioria"
+  ],
+  "Q155271": [
+   "denkfabrik",
+   "thinktank",
+   "thinktanks"
+  ],
+  "Q155511": [
+   "baumschule",
+   "fidanlik",
+   "gartnerei",
+   "nursery",
+   "persemaian"
+  ],
+  "Q156112": [
+   "ecumenism",
+   "ekumenik",
+   "ekumeniklik",
+   "ekumenis",
+   "ekumenisme",
+   "ekumenizm",
+   "ocumenism",
+   "okumene",
+   "okumeniker",
+   "okumenismus"
+  ],
+  "Q15627509": [
+   "formation"
+  ],
+  "Q156611": [
+   "fraykor",
+   "freicorps",
+   "freikorps",
+   "freykor"
+  ],
+  "Q157031": [
+   "ayyrbas",
+   "fond",
+   "fondy",
+   "foundation",
+   "foundations",
+   "pondi",
+   "qor",
+   "qui",
+   "quy",
+   "stiftung",
+   "vakif",
+   "veqf",
+   "yayasan"
+  ],
+  "Q157963": [
+   "kreissparkasse",
+   "sberkassa",
+   "sparkasse",
+   "stadtsparkasse"
+  ],
+  "Q15888": [
+   "hospitalschiff",
+   "hospitalschiffe",
+   "krankenhausschiff",
+   "lazarettschiff",
+   "verwundetentransportschiff"
+  ],
+  "Q1589009": [
+   "privatgesellschaft",
+   "privatunternehmen"
+  ],
+  "Q159334": [
+   "lise",
+   "liseler",
+   "sekundarschule"
+  ],
+  "Q15936437": [
+   "forschungsuniversitat"
+  ],
+  "Q160645": [
+   "kinderheim",
+   "orphanage",
+   "orphanages",
+   "waisenhaus",
+   "yetimhane",
+   "yetimxona"
+  ],
+  "Q1616075": [
+   "fernsehsender",
+   "telemerkez",
+   "teletsentr"
+  ],
+  "Q161726": [
+   "mnc",
+   "mne",
+   "mnu",
+   "tms",
+   "tnc"
+  ],
+  "Q162633": [
+   "academy",
+   "akademi",
+   "akademie",
+   "akademiezh",
+   "akademii",
+   "akademik",
+   "akademiya"
+  ],
+  "Q163740": [
+   "ngo",
+   "nirlaba",
+   "nko",
+   "nonprofit",
+   "npi",
+   "qkt"
+  ],
+  "Q1641089": [
+   "mehrvolkerstaat",
+   "nationalitatenstaat",
+   "vielvolkerstaat"
+  ],
+  "Q164142": [
+   "himaye",
+   "protectorate",
+   "protektora",
+   "protektorat",
+   "schutzgebiet"
+  ],
+  "Q1642488": [
+   "beylik",
+   "chiefdom",
+   "chifdom",
+   "fondom",
+   "hauptlingstum",
+   "seflik",
+   "vozhdestvo"
+  ],
+  "Q16463": [
+   "likey",
+   "lisey",
+   "litseumi",
+   "litsey",
+   "lyceum",
+   "lykeion",
+   "lyzeen",
+   "lyzeum"
+  ],
+  "Q164950": [
+   "adelsgeschlecht",
+   "aulet",
+   "dinasti",
+   "dinastiya",
+   "dynastie",
+   "dynasties",
+   "dynasty",
+   "familiendynastie",
+   "furstengeschlecht",
+   "hanedan",
+   "herrscherdynastie",
+   "herrscherfamilie",
+   "sulale",
+   "sulola",
+   "xanedan"
+  ],
+  "Q165853": [
+   "garem",
+   "haram",
+   "haramkhana",
+   "harem",
+   "haremlik",
+   "harim",
+   "herem",
+   "kadine",
+   "kadyne"
+  ],
+  "Q166118": [
+   "archiv",
+   "archivability",
+   "archive",
+   "archives",
+   "arkhiv",
+   "arkhivy",
+   "arkivi",
+   "arsif",
+   "arsip",
+   "arsiv",
+   "arxiv",
+   "belgelik",
+   "muraghat",
+   "sammlungen"
+  ],
+  "Q166382": [
+   "ameer",
+   "amier",
+   "amir",
+   "amira",
+   "amirah",
+   "emir",
+   "emira"
+  ],
+  "Q1664720": [
+   "enstitu",
+   "institut",
+   "institute",
+   "universitatsinstitut",
+   "vien"
+  ],
+  "Q167037": [
+   "corp",
+   "corporation",
+   "korperschaft",
+   "korporasiya",
+   "korporation",
+   "korporatsii",
+   "korporatsiya",
+   "perusahaan",
+   "sirket"
+  ],
+  "Q167346": [
+   "botsad"
+  ],
+  "Q168343": [
+   "bundesversammlung"
+  ],
+  "Q16917": [
+   "aurukhana",
+   "hastane",
+   "hospital",
+   "kasalxona",
+   "klinik",
+   "klinikum",
+   "krankenhaus",
+   "rumkit",
+   "spital",
+   "xestexana"
+  ],
+  "Q170156": [
+   "confederacy",
+   "confederation",
+   "konfederasi",
+   "konfederasiya",
+   "konfederasyon",
+   "konfederatsiya",
+   "leagu",
+   "staatenbund",
+   "staatenunion"
+  ],
+  "Q170161": [
+   "gilde",
+   "gildia",
+   "guild",
+   "handwerksgilde",
+   "handwerkszunft",
+   "lonca",
+   "sex",
+   "tsekh",
+   "tsekhi",
+   "zunft",
+   "zunfte",
+   "zunften",
+   "zunftwesen"
+  ],
+  "Q172748": [
+   "antipapa",
+   "antipapst",
+   "antipapy",
+   "antipaus",
+   "antipope",
+   "gegenpapst"
+  ],
+  "Q174376": [
+   "almamater"
+  ],
+  "Q175331": [
+   "demo",
+   "demonstrasi",
+   "demonstration",
+   "demonstratsiya",
+   "eylem",
+   "gosteri",
+   "manifestatsiya",
+   "miting",
+   "mitinq",
+   "numayis",
+   "protesto",
+   "rally",
+   "toplanma"
+  ],
+  "Q176799": [
+   "einheit",
+   "militareinheit",
+   "militarseinheit",
+   "truppenteil"
+  ],
+  "Q178706": [
+   "einrichtung",
+   "institusi",
+   "institut",
+   "institution",
+   "institutsiya",
+   "kurum",
+   "mussise",
+   "pranata",
+   "sistem",
+   "system",
+   "vien"
+  ],
+  "Q178790": [
+   "arbeitnehmerorganisation",
+   "gewerkschaft",
+   "gewerkschaften",
+   "kasipodaq",
+   "profkom",
+   "profsoyuz",
+   "profsoyuzy",
+   "union"
+  ],
+  "Q179076": [
+   "birja",
+   "birzha",
+   "borsa",
+   "borse",
+   "borsenhandel",
+   "bourse",
+   "exchange"
+  ],
+  "Q180095": [
+   "tiran",
+   "tirani",
+   "tirann",
+   "tirany",
+   "tyrann",
+   "tyrant",
+   "tyrants"
+  ],
+  "Q180846": [
+   "pasaraya",
+   "selbstbedienungsladen",
+   "supermarket",
+   "supermarkt",
+   "universam"
+  ],
+  "Q180958": [
+   "college",
+   "fachbereich",
+   "faculty",
+   "fak",
+   "fakultas",
+   "fakultat",
+   "fakulte",
+   "fakulteler",
+   "fakultet",
+   "school"
+  ],
+  "Q18127": [
+   "label",
+   "leibli",
+   "leybl",
+   "musiklabel",
+   "plattenlabel",
+   "schallplattenlabel",
+   "tontragerlabel"
+  ],
+  "Q181916": [
+   "gerbariy",
+   "herbar",
+   "herbari",
+   "herbarium",
+   "herbaryum"
+  ],
+  "Q182103": [
+   "pensionsfonds",
+   "pensionskasse",
+   "superannuation"
+  ],
+  "Q182875": [
+   "amfiktioniya",
+   "amphictiony",
+   "amphictyony",
+   "amphiktyonie"
+  ],
+  "Q183288": [
+   "noc",
+   "nok"
+  ],
+  "Q184299": [
+   "padischah",
+   "sah",
+   "schah",
+   "schahanschah",
+   "schahbanu",
+   "shah",
+   "shahebi",
+   "shahi",
+   "shakh",
+   "shoh"
+  ],
+  "Q184644": [
+   "conservatoire",
+   "conservatorium",
+   "conservatory",
+   "konservatorii",
+   "konservatorium",
+   "konservatoriya",
+   "konservatuvar"
+  ],
+  "Q184719": [
+   "anthroposophie",
+   "anthroposophy",
+   "antroposof",
+   "antroposofi",
+   "antroposofiya",
+   "geteanum"
+  ],
+  "Q184973": [
+   "internetradio",
+   "internetradiosender",
+   "onlineradio",
+   "webradio"
+  ],
+  "Q18550": [
+   "mafia",
+   "mafiya",
+   "mafya",
+   "mapia",
+   "mob"
+  ],
+  "Q186431": [
+   "conclave",
+   "konklaf",
+   "konklav",
+   "konklave",
+   "papstwahl"
+  ],
+  "Q187456": [
+   "bar",
+   "bari",
+   "kafe"
+  ],
+  "Q187878": [
+   "grosskhan",
+   "hakan",
+   "kaan",
+   "kagan",
+   "khagan",
+   "khaganat",
+   "khaghan",
+   "khakan",
+   "khaqan",
+   "qaan",
+   "qagan",
+   "qaghan",
+   "xaqan",
+   "xoqon"
+  ],
+  "Q188443": [
+   "fantasiestaat",
+   "kibergosudarstvo",
+   "micronation",
+   "mikrogosudarstvo",
+   "mikronation",
+   "mikronationen",
+   "mikronatsiya",
+   "phantasiestaat",
+   "scheinstaat"
+  ],
+  "Q188506": [
+   "homebanking",
+   "internetbanking",
+   "netbanking",
+   "onlinebanking",
+   "telebanking",
+   "telefonbanking"
+  ],
+  "Q188628": [
+   "board",
+   "direksi",
+   "konsistorium",
+   "kuratorium",
+   "stiftungsrat"
+  ],
+  "Q188913": [
+   "perkebunan",
+   "plantage",
+   "plantagen",
+   "plantagenwirtschaft",
+   "plantasiya",
+   "plantasyon",
+   "plantation",
+   "plantator",
+   "plantatsiya"
+  ],
+  "Q188993": [
+   "anarchosyndikalismus",
+   "anarxosindikalizm"
+  ],
+  "Q189004": [
+   "college",
+   "kolej",
+   "kolese",
+   "kollec",
+   "kolledzh",
+   "kollej",
+   "studiengemeinschaft"
+  ],
+  "Q190044": [
+   "expertokratie",
+   "technocracy",
+   "technokratie",
+   "technokratismus",
+   "tekhnokratiya",
+   "tekhnokratizm",
+   "teknokrasi",
+   "texnokratiya"
+  ],
+  "Q1900755": [
+   "konstituante",
+   "nationalversammlung"
+  ],
+  "Q190928": [
+   "bauwerft",
+   "boatyard",
+   "bootswerft",
+   "dockyard",
+   "dockyards",
+   "schiffswerft",
+   "shipyard",
+   "shipyards",
+   "sudoverf",
+   "tersane",
+   "verf",
+   "werft",
+   "werftanlage",
+   "werfthalle"
+  ],
+  "Q191244": [
+   "diebesherrschaft",
+   "kleptocracy",
+   "kleptokrasi",
+   "kleptokrat",
+   "kleptokratie",
+   "kleptokratiya"
+  ],
+  "Q192283": [
+   "nachrichtenagentur",
+   "nachrichtenburo",
+   "newswire",
+   "presseagentur",
+   "ttx"
+  ],
+  "Q192350": [
+   "bakanlik",
+   "kementerian",
+   "ministerien",
+   "ministerium",
+   "ministerstvo",
+   "ministries",
+   "ministrlik",
+   "ministry",
+   "nazirlik",
+   "vazirlik"
+  ],
+  "Q192852": [
+   "muhalefet",
+   "muxalifet",
+   "muxolafat",
+   "oposisi",
+   "opponent",
+   "opponenty",
+   "opposition",
+   "oppositionspartei",
+   "oppozitsii",
+   "oppozitsioner",
+   "oppozitsiya"
+  ],
+  "Q193032": [
+   "gerontakratiya",
+   "gerontocracy",
+   "gerontokrasi",
+   "gerontokrat",
+   "gerontokraten",
+   "gerontokratie",
+   "gerontokratin",
+   "gerontokratiya"
+  ],
+  "Q194166": [
+   "congxoocxiom",
+   "consortia",
+   "consortium",
+   "konsorsium",
+   "konsorsiyum",
+   "konsorten",
+   "konsortial",
+   "konsortialpartner",
+   "konsortialvertrag",
+   "konsortien",
+   "konsortium",
+   "konsortsium",
+   "konsortsiumy",
+   "syndikat"
+  ],
+  "Q194188": [
+   "cosmodrome",
+   "kosmodrom",
+   "kosmoport",
+   "poligon",
+   "raketenstartplatz",
+   "raketodrom",
+   "raumflughafen",
+   "raumhafen",
+   "spaceport",
+   "weltraumbahnhof",
+   "weltraumhafen"
+  ],
+  "Q194195": [
+   "funfair",
+   "vergnugungspark"
+  ],
+  "Q194267": [
+   "rosenkreutzertum",
+   "rosenkreuzer",
+   "rosenkreuzertum",
+   "rosicrucian",
+   "rosicrucianism",
+   "rosicrucians",
+   "rosikrusian",
+   "rozenkreytser",
+   "rozenkreytserstvo",
+   "rozenkreytsery"
+  ],
+  "Q19643": [
+   "koroleva",
+   "kralice",
+   "quen",
+   "ratu"
+  ],
+  "Q1976594": [
+   "tekhnopolis",
+   "wissenschaftspark"
+  ],
+  "Q197952": [
+   "firmengruppe",
+   "kholding",
+   "unternehmensverbindung",
+   "unternehmensverbund",
+   "unternehmenszusammenschluss"
+  ],
+  "Q2003221": [
+   "ritterorden"
+  ],
+  "Q2006518": [
+   "konigsfamilie",
+   "konigshaus",
+   "royalty"
+  ],
+  "Q200764": [
+   "bookshop",
+   "bookstore",
+   "buchhandlung",
+   "buchladen",
+   "kitabevi",
+   "kitapci"
+  ],
+  "Q201559": [
+   "armator",
+   "armatory",
+   "corsair",
+   "kaper",
+   "kaperfahrer",
+   "kaperfahrerin",
+   "kaperschiff",
+   "kaperstvo",
+   "korsar",
+   "korsarin",
+   "korsarstvo",
+   "privateer",
+   "privatir",
+   "privatiry"
+  ],
+  "Q2039348": [
+   "gemeente"
+  ],
+  "Q205766": [
+   "umbet",
+   "umma",
+   "ummah",
+   "ummet"
+  ],
+  "Q2061186": [
+   "klostergemeinschaft",
+   "monchsorden",
+   "orden",
+   "ordensgemeinschaft",
+   "ordensleute",
+   "ordensstand",
+   "tarikat"
+  ],
+  "Q206361": [
+   "concern",
+   "isletme",
+   "konsern",
+   "kontsern",
+   "konzern",
+   "kurulus",
+   "kurum",
+   "mussese",
+   "sirket",
+   "ticarethane"
+  ],
+  "Q207320": [
+   "paramilitar",
+   "paramilitarisch",
+   "paramilitarismus",
+   "paramilitars",
+   "paramilitary",
+   "paramiliter"
+  ],
+  "Q207378": [
+   "bigband"
+  ],
+  "Q2074737": [
+   "municipio"
+  ],
+  "Q207694": [
+   "galeri",
+   "kunstmuseen",
+   "kunstmuseum",
+   "kunstmuseumsgebaude"
+  ],
+  "Q208500": [
+   "furstentum",
+   "kepangeranan",
+   "kinazdik",
+   "knyazhestvo",
+   "knyazlik",
+   "knyazliq",
+   "prenslik",
+   "principality",
+   "prinsipalitas",
+   "samtavro"
+  ],
+  "Q2085381": [
+   "baspa",
+   "gamomtsemloba",
+   "izdatel",
+   "nashriyotchi",
+   "nesriyyat",
+   "nxb",
+   "penerbit",
+   "publisher",
+   "publishers",
+   "verlag",
+   "verlagsgesellschaft",
+   "verleger",
+   "yayimci",
+   "yayinci",
+   "yayinevi"
+  ],
+  "Q208701": [
+   "arbeiterbewegung",
+   "arbeiterinnenbewegung",
+   "arbeiterorganisation"
+  ],
+  "Q2088357": [
+   "ansambl",
+   "ansambli",
+   "ensemble",
+   "grup",
+   "musikensemble",
+   "topluluk"
+  ],
+  "Q209824": [
+   "oblast"
+  ],
+  "Q20983877": [
+   "edinorog",
+   "einhorn",
+   "unicorn",
+   "unikorn",
+   "yunikorn"
+  ],
+  "Q210167": [
+   "entwicklerstudio",
+   "entwicklungsstudio",
+   "spieleentwickler",
+   "spieleentwicklerin",
+   "spieleentwicklerstudio",
+   "spielentwickler",
+   "spielentwicklerin",
+   "spielentwicklerstudio",
+   "videospieleentwicklerstudio",
+   "videospielentwicklerstudio"
+  ],
+  "Q210815": [
+   "militarpolizei"
+  ],
+  "Q211017": [
+   "egovernment"
+  ],
+  "Q211201": [
+   "sdt",
+   "sovet",
+   "sovetler",
+   "soviet",
+   "sovyet",
+   "sowet",
+   "sowjet",
+   "sowjets",
+   "sowjetsystem",
+   "srkd"
+  ],
+  "Q211503": [
+   "asiret",
+   "clan",
+   "clans",
+   "fam",
+   "familienklan",
+   "klan",
+   "marga",
+   "rod",
+   "sippe",
+   "tuqym",
+   "urug",
+   "yadu"
+  ],
+  "Q213283": [
+   "auslandsvertretung",
+   "kedutaan",
+   "mission",
+   "sefirlik"
+  ],
+  "Q214183": [
+   "geheimpolizei"
+  ],
+  "Q2142654": [
+   "asevi",
+   "auskocherei",
+   "suppenanstalt",
+   "suppenkuche",
+   "volkskuche"
+  ],
+  "Q215380": [
+   "band",
+   "bando",
+   "bendi",
+   "ensembel",
+   "group",
+   "grup",
+   "gruppa",
+   "gruppe",
+   "musikband",
+   "musikergruppe",
+   "musikgruppe"
+  ],
+  "Q216212": [
+   "automatenhotel",
+   "motel",
+   "motelem",
+   "motels"
+  ],
+  "Q216931": [
+   "werbeagentur",
+   "werbeagenturen",
+   "werbungsmittler"
+  ],
+  "Q217107": [
+   "reiseagentur",
+   "reisebureau",
+   "reiseburo",
+   "turagent",
+   "turagentstvo",
+   "turfirma"
+  ],
+  "Q217731": [
+   "gaydin",
+   "gayduk",
+   "gayduki",
+   "haiduc",
+   "haiduck",
+   "haiducken",
+   "haiduk",
+   "haiduken",
+   "haiduks",
+   "hajduk",
+   "hajduken",
+   "hajduks",
+   "hajdut",
+   "hayduken",
+   "heiduck",
+   "heiducke",
+   "heiducken",
+   "heiduken"
+  ],
+  "Q2178147": [
+   "assotsiatsiya",
+   "branchenverband",
+   "industrieverband",
+   "wirtschaftsverband"
+  ],
+  "Q2184704": [
+   "groko"
+  ],
+  "Q219577": [
+   "dachgesellschaft",
+   "holding",
+   "holdingfirma",
+   "holdinggesellschaft",
+   "holdings",
+   "holdingunternehmen",
+   "holdinq",
+   "kholding",
+   "xolding"
+  ],
+  "Q219692": [
+   "kortesy"
+  ],
+  "Q219817": [
+   "directoire",
+   "direktorialregierung",
+   "direktorium",
+   "direktoriya",
+   "direktuvar"
+  ],
+  "Q221096": [
+   "opp",
+   "ppp"
+  ],
+  "Q2249009": [
+   "petrosovet",
+   "prmc"
+  ],
+  "Q22687": [
+   "bank",
+   "banka",
+   "bankhaus",
+   "finanzinstitut",
+   "geldhaus",
+   "geldinstitut"
+  ],
+  "Q22715": [
+   "bag",
+   "bagcilik",
+   "rebflache",
+   "venakhi",
+   "vertograd",
+   "vinery",
+   "vineyard",
+   "vineyards",
+   "vinogradnik",
+   "vinogradniki",
+   "vinyard",
+   "weinberg",
+   "weingarten",
+   "wengert",
+   "wingert"
+  ],
+  "Q22721": [
+   "regierungsbezirk",
+   "verwaltungsbezirk"
+  ],
+  "Q22806": [
+   "nationalbibliothek"
+  ],
+  "Q22908": [
+   "altenheim",
+   "altenwohnheim",
+   "altersheim",
+   "betagtenzentrum",
+   "feierabendheim",
+   "seniorenheim",
+   "seniorenresidenz",
+   "seniorenstift",
+   "seniorenwohnsitz"
+  ],
+  "Q233324": [
+   "klerikalseminar",
+   "klerikerseminar",
+   "priesterseminar",
+   "seminari",
+   "seminaria",
+   "seminariya",
+   "seminary",
+   "seminer"
+  ],
+  "Q233591": [
+   "kommunisty",
+   "kompartiya"
+  ],
+  "Q2353993": [
+   "revsindikalizm",
+   "sendikalizm",
+   "sindikalisme",
+   "syndikalismus"
+  ],
+  "Q236036": [
+   "respublika",
+   "unionsrepublik"
+  ],
+  "Q236371": [
+   "berkebun",
+   "kebun",
+   "obstgarten",
+   "obstplantage",
+   "obstwiese",
+   "orchard",
+   "streuobst",
+   "streuobstanbau",
+   "streuobstbau",
+   "streuobstflache",
+   "streuobstflachen",
+   "streuobstgarten",
+   "streuobstwiese"
+  ],
+  "Q236972": [
+   "fusi",
+   "fuxi",
+   "himmelssouveran",
+   "paoxi",
+   "pusi",
+   "yuxiong"
+  ],
+  "Q2385804": [
+   "bildungseinrichtung",
+   "bildungsinstitution",
+   "bildungsstatte",
+   "bildungszentrum"
+  ],
+  "Q2387974": [
+   "gospital",
+   "militarkrankenhaus",
+   "tsvg"
+  ],
+  "Q239582": [
+   "sinfonieorchester",
+   "symphonieorchester"
+  ],
+  "Q2438715": [
+   "todesschwadron"
+  ],
+  "Q244741": [
+   "canisin",
+   "mepisnatsvali",
+   "viceroy",
+   "viceroyal",
+   "vizekonig",
+   "vizekonigin"
+  ],
+  "Q245065": [
+   "igo"
+  ],
+  "Q24649": [
+   "europapartei",
+   "europarty"
+  ],
+  "Q2485448": [
+   "sportverband"
+  ],
+  "Q2495862": [
+   "congress",
+   "congresses",
+   "kongre",
+   "kongres",
+   "kongress",
+   "qurultay"
+  ],
+  "Q253302": [
+   "legoland",
+   "legolend"
+  ],
+  "Q25424534": [
+   "junta",
+   "militarjunta",
+   "xunta"
+  ],
+  "Q261362": [
+   "arbeitsvermittler",
+   "arbeitsvermittlers",
+   "kadrovo",
+   "kerjantara"
+  ],
+  "Q2618571": [
+   "kuttab",
+   "maktab",
+   "maktabeh",
+   "maktabxona",
+   "makteb",
+   "maqtab",
+   "mekteb",
+   "mektebe",
+   "mektep",
+   "meqteb"
+  ],
+  "Q262166": [
+   "gemeinde"
+  ],
+  "Q26718": [
+   "kontinentalkongress"
+  ],
+  "Q269770": [
+   "boarder",
+   "collegio",
+   "internat",
+   "pansiondar"
+  ],
+  "Q270791": [
+   "bumn",
+   "gospredpriyatie",
+   "parastatal",
+   "staatsbetrieb",
+   "staatskonzern",
+   "staatsunternehmen"
+  ],
+  "Q273613": [
+   "knes",
+   "knez",
+   "knjas",
+   "knjaz",
+   "knyaz",
+   "knyazhich",
+   "kral",
+   "mtavari",
+   "prince"
+  ],
+  "Q274393": [
+   "backerei",
+   "backerhaus",
+   "backwarenstube",
+   "bakeries",
+   "bakery",
+   "bakeshop",
+   "firin",
+   "kalachnaya",
+   "kalashnaya",
+   "pekarnya",
+   "satskhobi"
+  ],
+  "Q275186": [
+   "banda",
+   "bande",
+   "bandenkrieg",
+   "bandenkriminalitat",
+   "cete",
+   "gang",
+   "geng",
+   "strassengang"
+  ],
+  "Q275488": [
+   "dzieytay",
+   "jieitai",
+   "jsdf",
+   "jsf",
+   "sdf",
+   "selbstverteidigungsstreitkrafte"
+  ],
+  "Q276548": [
+   "geheimbund",
+   "geheimgesellschaft"
+  ],
+  "Q27686": [
+   "gostinitsa",
+   "hotel",
+   "hotels",
+   "mehmanxana",
+   "meymankhana",
+   "otel"
+  ],
+  "Q281643": [
+   "terzett",
+   "trio",
+   "ucluk"
+  ],
+  "Q285181": [
+   "eparchia",
+   "eparchie",
+   "eparchy",
+   "eparkhiya",
+   "eparki",
+   "yeparxiya"
+  ],
+  "Q28653": [
+   "bettelmonch",
+   "bettelorden",
+   "mendikant",
+   "mendikanten",
+   "mendikantenorden"
+  ],
+  "Q2912172": [
+   "einzelgesellschaft",
+   "einzelgewerbe",
+   "einzelunternehmen",
+   "itd",
+   "pboyul"
+  ],
+  "Q291240": [
+   "autoverleih",
+   "autovermieter",
+   "autovermietung",
+   "gebrauchtwagenvermietung",
+   "mietwagenunternehmen",
+   "rentekar"
+  ],
+  "Q30461": [
+   "baskan",
+   "cumhurbaskani",
+   "prasident",
+   "prasidentin",
+   "presiden",
+   "president",
+   "prezident",
+   "prezidentka",
+   "prezidenty"
+  ],
+  "Q309118": [
+   "politbiro",
+   "politburo",
+   "politbyuro"
+  ],
+  "Q313827": [
+   "breg",
+   "bundeskabinett",
+   "bundesregierung",
+   "regierung"
+  ],
+  "Q31489": [
+   "movember"
+  ],
+  "Q31728": [
+   "administration",
+   "administrative",
+   "administratsiya",
+   "administrirovanie",
+   "adminstrasiya",
+   "akimshilik",
+   "bureau",
+   "siyasal",
+   "verwaltungswesen"
+  ],
+  "Q3184121": [
+   "belediye"
+  ],
+  "Q31855": [
+   "forschungsanstalt",
+   "forschungseinrichtung",
+   "forschungsinstitut",
+   "forschungsinstitution",
+   "ghzi",
+   "nii"
+  ],
+  "Q3191695": [
+   "kabupaten",
+   "kapubaten"
+  ],
+  "Q319845": [
+   "investbank",
+   "investmentbank",
+   "investmentbanking"
+  ],
+  "Q320501": [
+   "landesparlament",
+   "landtag",
+   "landtaq"
+  ],
+  "Q322563": [
+   "berufschule",
+   "berufsfachschule",
+   "berufsfortbildungsstatte",
+   "berufsschule",
+   "berufsschulen",
+   "proftekhuchilishche",
+   "ptu",
+   "smk",
+   "uchilishche"
+  ],
+  "Q325380": [
+   "shtatgalter",
+   "stadhouder",
+   "stadtholder",
+   "statkhauder",
+   "statthalter",
+   "statthalterei"
+  ],
+  "Q3266850": [
+   "commune",
+   "comune",
+   "halk",
+   "kommuna",
+   "kommune",
+   "komun",
+   "kotapraja",
+   "taunship"
+  ],
+  "Q327245": [
+   "doan",
+   "doi",
+   "jamoa",
+   "komanda",
+   "nhom",
+   "takim",
+   "team",
+   "teamfahigkeit",
+   "tim"
+  ],
+  "Q327333": [
+   "amt",
+   "behorde",
+   "regierungsbehorde",
+   "verwaltungsbehorde",
+   "verwaltungsinstanz"
+  ],
+  "Q327591": [
+   "bespartiynaya",
+   "bespartiynyy",
+   "biteref",
+   "independent",
+   "parteilose",
+   "parteiloser",
+   "partiyasiz",
+   "partiyasyz",
+   "unabhangige",
+   "unabhangiger"
+  ],
+  "Q327922": [
+   "allparteienkoalition",
+   "allparteienregierung",
+   "einheitsregierung",
+   "gnu",
+   "konzentrationsregierung"
+  ],
+  "Q32815": [
+   "cami",
+   "camii",
+   "dzamija",
+   "jamia",
+   "masdzhid",
+   "masjid",
+   "mechet",
+   "mecheti",
+   "mescid",
+   "meshit",
+   "mesjid",
+   "moschee",
+   "mosqu"
+  ],
+  "Q328584": [
+   "obcina"
+  ],
+  "Q329978": [
+   "triad",
+   "triada",
+   "triade",
+   "triaden"
+  ],
+  "Q33506": [
+   "murazhay",
+   "museum",
+   "muze",
+   "muzecilik",
+   "muzei",
+   "muzeumi",
+   "muzey",
+   "muzeyler"
+  ],
+  "Q33685": [
+   "kapitalgesellschaft",
+   "ltd"
+  ],
+  "Q34651": [
+   "church",
+   "ekklesia",
+   "gereja",
+   "kilise",
+   "kirche",
+   "kirchenwesen",
+   "kirchlich",
+   "tserkov"
+  ],
+  "Q35749": [
+   "gesetzgebungskorperschaft",
+   "meclis",
+   "nationalparlament",
+   "parlament",
+   "parlamento",
+   "parlamentsfunktionen",
+   "parlemen",
+   "parlemento",
+   "parliament"
+  ],
+  "Q35798": [
+   "executive",
+   "exekutive",
+   "exekutivorgan",
+   "gesetzesvollzug",
+   "regierung",
+   "yurutme"
+  ],
+  "Q3664326": [
+   "piratenpartei",
+   "piraty"
+  ],
+  "Q3684508": [
+   "gekachepe",
+   "gekachepisty",
+   "gkchp",
+   "gktschp",
+   "qkcp"
+  ],
+  "Q37110": [
+   "faraon",
+   "ferghauyn",
+   "firaun",
+   "firavun",
+   "firavunlar",
+   "firghaun",
+   "firon",
+   "paraoni",
+   "perghauyn",
+   "pharao",
+   "pharaoh",
+   "pharaon",
+   "pharaonen",
+   "pharaong",
+   "pharoah"
+  ],
+  "Q374278": [
+   "agitprop",
+   "ajitprop"
+  ],
+  "Q375336": [
+   "filmatelier",
+   "filmstudio",
+   "kinokompaniya",
+   "kinostudiya"
+  ],
+  "Q375928": [
+   "abgeordnetenkammer",
+   "burgerkammer",
+   "dpr",
+   "unterhaus"
+  ],
+  "Q37726": [
+   "armiya",
+   "army",
+   "askerler",
+   "heer",
+   "heerfuhrung",
+   "landarmee",
+   "landstreitkrafte",
+   "ordu"
+  ],
+  "Q3778417": [
+   "zelenye"
+  ],
+  "Q380342": [
+   "fabrikasyon",
+   "manufactory",
+   "manufacture",
+   "manufaktur",
+   "manufaktura",
+   "manufakturing",
+   "works",
+   "workshop"
+  ],
+  "Q3809586": [
+   "wir"
+  ],
+  "Q38723": [
+   "atm",
+   "hei",
+   "hochschule",
+   "vuz",
+   "zhoo"
+  ],
+  "Q387834": [
+   "thing",
+   "ting"
+  ],
+  "Q389888": [
+   "kentet",
+   "kvintet",
+   "quintet",
+   "quintett"
+  ],
+  "Q3914": [
+   "bildungsanstalt",
+   "bildungsanstalten",
+   "lehrplanvollzugsanstalt",
+   "lehrplanvollzugsanstalten",
+   "lernanstalt",
+   "lernanstalten",
+   "maktab",
+   "mekteb",
+   "mektep",
+   "okul",
+   "school",
+   "schools",
+   "schule",
+   "schulen",
+   "sekolah",
+   "shkola",
+   "truong",
+   "unterrichtvollzugsanstalt",
+   "unterrichtvollzugsanstalten"
+  ],
+  "Q3918": [
+   "darulfunun",
+   "uni",
+   "univer",
+   "universitas",
+   "universitat",
+   "universitaten",
+   "universite",
+   "universitet",
+   "universities",
+   "university",
+   "varsity"
+  ],
+  "Q3929782": [
+   "freihandelszone",
+   "freilager",
+   "freizone",
+   "zollfreigebiet",
+   "zst"
+  ],
+  "Q397648": [
+   "agreman",
+   "agremani",
+   "agrement",
+   "aqreman"
+  ],
+  "Q39804": [
+   "kreuzfahrtschiff",
+   "kruvaziyer"
+  ],
+  "Q40357": [
+   "abaqty",
+   "bui",
+   "cezavi",
+   "dam",
+   "gaol",
+   "gefangenensammelstelle",
+   "gefangenensammelstellen",
+   "gefangnis",
+   "gefangnisse",
+   "ges",
+   "gess",
+   "haftanstalt",
+   "haftanstalten",
+   "hapis",
+   "hapishane",
+   "hebsxana",
+   "hochsicherheitsgefangnis",
+   "hochsicherheitsgefangnisse",
+   "jail",
+   "justizvollzugsanstalt",
+   "justizvollzugsanstalten",
+   "jva",
+   "jvas",
+   "katalazhka",
+   "kittchen",
+   "knast",
+   "knasts",
+   "kodes",
+   "kurungan",
+   "kutuzka",
+   "labaqty",
+   "lapas",
+   "mahbes",
+   "mahpus",
+   "mahpushane",
+   "nary",
+   "nguc",
+   "penitentiary",
+   "penitentsiariy",
+   "penjara",
+   "pokey",
+   "prison",
+   "slammer",
+   "strafanstalt",
+   "strafanstalten",
+   "strafvollzugsanstalt",
+   "strafvollzugsanstalten",
+   "temnitsa",
+   "turma",
+   "turme",
+   "zona",
+   "zyndan"
+  ],
+  "Q41253": [
+   "bioskop",
+   "cinema",
+   "filmtheater",
+   "kinematograf",
+   "kinematografiya",
+   "kino",
+   "kinokompleks",
+   "kinoteatr",
+   "kinozal",
+   "lichtspielhaus",
+   "lichtspieltheater",
+   "sinema",
+   "xine"
+  ],
+  "Q41487": [
+   "court",
+   "cud",
+   "gericht",
+   "mahkamah",
+   "mahkeme",
+   "mehkeme",
+   "pengadilan",
+   "sasamartlo",
+   "sot",
+   "sud",
+   "sudy",
+   "tribunal"
+  ],
+  "Q417633": [
+   "nezavisimost",
+   "samoupravlenie",
+   "selbstverwaltung",
+   "selbstverwaltungsgarantie",
+   "tvitmmartveloba"
+  ],
+  "Q4201895": [
+   "fon",
+   "fund",
+   "investmentfonds",
+   "reksadana",
+   "tilgungstrager"
+  ],
+  "Q423208": [
+   "erganzungsschule",
+   "ersatzschule",
+   "privatschule"
+  ],
+  "Q426759": [
+   "manda",
+   "mandat"
+  ],
+  "Q42998": [
+   "orchester",
+   "orchestra",
+   "orkestr",
+   "orkestra",
+   "orkestral",
+   "orkestralar"
+  ],
+  "Q431603": [
+   "interessengruppe",
+   "interessensgruppe",
+   "interessensgruppen",
+   "interessensvertretung",
+   "interessenvereinigung",
+   "interessenvertretung",
+   "kulis",
+   "lobbyists",
+   "lobbyorganisation"
+  ],
+  "Q43229": [
+   "anstalt",
+   "institusi",
+   "institution",
+   "kompaniya",
+   "korporatsiya",
+   "kurulus",
+   "odaq",
+   "org",
+   "orga",
+   "organisasi",
+   "organisation",
+   "organisations",
+   "organizasyon",
+   "organization",
+   "organizations",
+   "organizatsia",
+   "organizatsiya",
+   "organizovyvanie",
+   "orgut",
+   "pertubuhan",
+   "predpriyatie",
+   "tashkilot",
+   "teskilat",
+   "uchrezhdenie",
+   "uyym"
+  ],
+  "Q43702": [
+   "bund",
+   "bundesrepublik",
+   "bundesstaat",
+   "federasi",
+   "federasiya",
+   "federasyon",
+   "federation",
+   "federatsii",
+   "federatsiya",
+   "foderatio",
+   "foderation",
+   "pederatsia"
+  ],
+  "Q4539": [
+   "coop",
+   "cooperative",
+   "cooperatives",
+   "geno",
+   "genossenschaft",
+   "kooperatif",
+   "kooperativ",
+   "kooperative",
+   "kooperativy",
+   "koparatif",
+   "koperasi"
+  ],
+  "Q45990": [
+   "gebetmusalla",
+   "langgar",
+   "musala",
+   "musalla",
+   "musallah",
+   "mushala",
+   "mushola",
+   "musholla",
+   "namazga",
+   "namazgokh"
+  ],
+  "Q45996": [
+   "gizemcilik",
+   "irfan",
+   "mistik",
+   "mistika",
+   "mistis",
+   "mistisisme",
+   "mistisizm",
+   "mistitsizm",
+   "mistizm",
+   "mysticism",
+   "mysticisme",
+   "mystik",
+   "mystiker",
+   "mystisch"
+  ],
+  "Q463080": [
+   "rir"
+  ],
+  "Q464555": [
+   "justicialism",
+   "justicialist",
+   "khustializm",
+   "khustisialist",
+   "khustisializm",
+   "peronism",
+   "peronisme",
+   "peronismus",
+   "peronist",
+   "peronizm"
+  ],
+  "Q464780": [
+   "darphane",
+   "mint",
+   "munze",
+   "munzprageanstalt",
+   "munzpragestatte",
+   "munzpragewerkstatt",
+   "munzstatte",
+   "prageanstalt",
+   "prageort",
+   "pragestatte",
+   "zarapkhana",
+   "zarbxona",
+   "zerbxana"
+  ],
+  "Q465613": [
+   "volksdemokratie",
+   "volksrepublik"
+  ],
+  "Q465909": [
+   "allianz",
+   "flugallianz",
+   "luftfahrtallianz"
+  ],
+  "Q473996": [
+   "evrazes",
+   "evrazesi"
+  ],
+  "Q476028": [
+   "fussballclub",
+   "fussballklub",
+   "fussballverein"
+  ],
+  "Q476118": [
+   "perestrakhovanie",
+   "reassekuranz",
+   "reasurans",
+   "reasuransi",
+   "reinsurance",
+   "ruckversicherer",
+   "ruckversicherung",
+   "ruckversicherungen",
+   "rvu"
+  ],
+  "Q477406": [
+   "naip",
+   "naiplik",
+   "noib",
+   "noyib",
+   "regent",
+   "regentess",
+   "regentschaft",
+   "regentsha",
+   "reichsverweser"
+  ],
+  "Q47805": [
+   "cossack",
+   "cossacks",
+   "cozak",
+   "kazachestvo",
+   "kazak",
+   "kazaki",
+   "kazaklar",
+   "kazaktar",
+   "komki",
+   "kosak",
+   "kosake",
+   "kosaken",
+   "kosakentum",
+   "kosaklar",
+   "kozachestvo",
+   "kozak",
+   "kozaki",
+   "kozaklar"
+  ],
+  "Q47913": [
+   "geheimdienst",
+   "nachrichtendienst",
+   "spetssluzhba"
+  ],
+  "Q48204": [
+   "asotsiatsia",
+   "assosiasiya",
+   "assotsiatsiya",
+   "dernek",
+   "federatsiya",
+   "freiwilligenverein",
+   "klub",
+   "obshchestvo",
+   "society",
+   "soyuz",
+   "toplum"
+  ],
+  "Q482517": [
+   "chabol",
+   "chebol",
+   "cheboli",
+   "jabeol",
+   "jabol"
+  ],
+  "Q4830453": [
+   "bisnis",
+   "biznes",
+   "biznesi",
+   "business",
+   "businesses",
+   "geschaftsbetrieb",
+   "gewerbe",
+   "gewerbebetrieb",
+   "isletme",
+   "kasiporyn",
+   "kompaniya",
+   "mussise",
+   "perusahaan"
+  ],
+  "Q483242": [
+   "lab",
+   "labaratuar",
+   "labaratuarlar",
+   "labor",
+   "laboratories",
+   "laboratorium",
+   "laboratoriya",
+   "laboratory",
+   "laboratuar",
+   "laboratuvar",
+   "labortechnik",
+   "labs",
+   "makmal",
+   "zertkhana"
+  ],
+  "Q483677": [
+   "afterwissenschaft",
+   "ilmusemu",
+   "lzhenauka",
+   "pseudosains",
+   "pseudoscience",
+   "pseudowissenschaft",
+   "pseudowissenschaftlich",
+   "psevdoghylym",
+   "psevdonauka",
+   "sozdebilim"
+  ],
+  "Q484652": [
+   "tashkilotlar"
+  ],
+  "Q484847": [
+   "ecommerce",
+   "eticaret",
+   "onlineshopping",
+   "tmdt"
+  ],
+  "Q485016": [
+   "kolchos",
+   "kolchosbaur",
+   "kolchose",
+   "kolchosebaur",
+   "kolhoz",
+   "kolkhoz",
+   "kolkhozy",
+   "kolxoz"
+  ],
+  "Q489209": [
+   "gemeinschaftsunternehmen",
+   "jointventure"
+  ],
+  "Q494978": [
+   "dkkt",
+   "kek",
+   "kktdb",
+   "sez",
+   "sonderwirtschaftszone",
+   "swz"
+  ],
+  "Q495430": [
+   "genelkurmay",
+   "generalstab",
+   "genshtab",
+   "stabsabteilung"
+  ],
+  "Q4959031": [
+   "appellationsgericht",
+   "istinaf",
+   "shaghymdanu"
+  ],
+  "Q496341": [
+   "freeport",
+   "freihafen",
+   "sez",
+   "zollfreigebiet"
+  ],
+  "Q49773": [
+   "bewegung",
+   "hareket",
+   "movement",
+   "sozialbewegung"
+  ],
+  "Q49896": [
+   "cunta",
+   "junta",
+   "militardiktatur"
+  ],
+  "Q499094": [
+   "chattel",
+   "chattels",
+   "dvizhimost",
+   "menkul",
+   "menkuller",
+   "movable",
+   "personalty",
+   "zhylzhymalylyq"
+  ],
+  "Q504400": [
+   "gimnasium",
+   "gimnasiy",
+   "gimnaziya",
+   "gymnasio",
+   "gymnasion",
+   "gymnasium"
+  ],
+  "Q505213": [
+   "bordmuhle",
+   "brettmuhle",
+   "brettsage",
+   "lesopilka",
+   "sagerei",
+   "sagewerk",
+   "sawmill"
+  ],
+  "Q507619": [
+   "chain",
+   "chainstore",
+   "handelskette"
+  ],
+  "Q51647": [
+   "mission",
+   "zending"
+  ],
+  "Q51724": [
+   "dzhedai",
+   "jedabi",
+   "jedi"
+  ],
+  "Q529012": [
+   "cabinet"
+  ],
+  "Q5393308": [
+   "chua",
+   "vihara"
+  ],
+  "Q548520": [
+   "gaa"
+  ],
+  "Q5487333": [
+   "microbrewery",
+   "mikrobraurei"
+  ],
+  "Q55043": [
+   "gimnasium",
+   "gimnazia",
+   "gimnaziya",
+   "gymnasium"
+  ],
+  "Q555911": [
+   "privateigentum"
+  ],
+  "Q562930": [
+   "rekan",
+   "ryokan"
+  ],
+  "Q576342": [
+   "salon"
+  ],
+  "Q581754": [
+   "pioner",
+   "pioneriya",
+   "pionery",
+   "pionier",
+   "pionierbewegung",
+   "pionierorganisation"
+  ],
+  "Q59281": [
+   "interimsregierung",
+   "ubergangsregierung"
+  ],
+  "Q6063": [
+   "hmg"
+  ],
+  "Q613142": [
+   "anwaltsburo",
+   "anwaltskanzlei",
+   "kanzlei",
+   "rechtsanwaltskanzlei"
+  ],
+  "Q613729": [
+   "cabmin",
+   "cmu",
+   "kmu",
+   "umk"
+  ],
+  "Q620749": [
+   "bagnaz",
+   "bagnazlik",
+   "dogma",
+   "dogmacilik",
+   "dogmat",
+   "dogmatik",
+   "dogmatizm",
+   "dogmaty",
+   "doqma",
+   "glaubensdogma",
+   "inak",
+   "inakcilik",
+   "lehrsatz"
+  ],
+  "Q622439": [
+   "kmb",
+   "kmu",
+   "kobi",
+   "mittelstandsunternehmen",
+   "msp",
+   "smb",
+   "sme",
+   "smes",
+   "ukm",
+   "umkm"
+  ],
+  "Q623086": [
+   "komisia",
+   "komitsii"
+  ],
+  "Q623109": [
+   "division",
+   "leagu",
+   "lig",
+   "liga",
+   "spielklasse",
+   "sportliga",
+   "wettkampfklasse"
+  ],
+  "Q625160": [
+   "kirchenprovinz",
+   "metropole",
+   "metropolitanbistum"
+  ],
+  "Q627527": [
+   "donaufurstentum",
+   "donaufurstentumer",
+   "moldovalakhiya",
+   "moldovlakhiya"
+  ],
+  "Q62832": [
+   "gozlemevi",
+   "observatories",
+   "observatorium",
+   "observatoriya",
+   "observatory",
+   "rasadxona",
+   "rasathane",
+   "resedxana",
+   "sternwarte"
+  ],
+  "Q637776": [
+   "dairy",
+   "kaserei",
+   "mandiracilik",
+   "meierei",
+   "molkerei"
+  ],
+  "Q637846": [
+   "oberhaus",
+   "senat"
+  ],
+  "Q639738": [
+   "kabinett"
+  ],
+  "Q640506": [
+   "cabinet",
+   "kabine",
+   "kabinet",
+   "kabinett",
+   "regierungsmannschaft"
+  ],
+  "Q647160": [
+   "conisterium",
+   "coryceum",
+   "elaothesium",
+   "ephebeum",
+   "palaistra",
+   "palastra",
+   "palestra",
+   "spharisterium"
+  ],
+  "Q6498663": [
+   "feurwehr",
+   "itfaiye",
+   "pozharnye"
+  ],
+  "Q6500733": [
+   "baspakhana",
+   "bosmaxona",
+   "druckerei",
+   "offizin",
+   "percetakan",
+   "printer",
+   "tipografiya"
+  ],
+  "Q6501447": [
+   "kommunalverwaltung"
+  ],
+  "Q650241": [
+   "finanzinstitut",
+   "finanzinstitution"
+  ],
+  "Q654772": [
+   "herberge",
+   "hostel",
+   "hostels",
+   "khostel",
+   "losmen",
+   "xostel"
+  ],
+  "Q655311": [
+   "hotsprings",
+   "onsen"
+  ],
+  "Q657449": [
+   "march",
+   "marchpast",
+   "marsch",
+   "marsh",
+   "parad",
+   "parade"
+  ],
+  "Q658255": [
+   "anper",
+   "filial",
+   "subsider",
+   "subsidiari",
+   "subsidiary",
+   "tochterbetrieb",
+   "tochterfirma",
+   "tochtergesellschaft",
+   "tochterunternehmen"
+  ],
+  "Q660064": [
+   "burgerantrag",
+   "einwohnerantrag",
+   "einwohnerinitiative",
+   "initiative",
+   "initsiativa",
+   "volksantrag",
+   "volksinitiative"
+  ],
+  "Q661513": [
+   "sonntagschule",
+   "sonntagsschule"
+  ],
+  "Q662862": [
+   "khirotoniya",
+   "weihesakrament"
+  ],
+  "Q66344": [
+   "nationalbank",
+   "notenbank",
+   "zentralbank"
+  ],
+  "Q665487": [
+   "bishopric",
+   "bistum",
+   "diocese",
+   "diotsez",
+   "diozese",
+   "keuskupan"
+  ],
+  "Q669970": [
+   "reichstag",
+   "reykhstag"
+  ],
+  "Q672108": [
+   "rfqk",
+   "sbrf",
+   "scrf",
+   "sovbez"
+  ],
+  "Q678116": [
+   "exilregierung",
+   "gie"
+  ],
+  "Q6813432": [
+   "abteilung",
+   "qerargah",
+   "shtab",
+   "stab"
+  ],
+  "Q681615": [
+   "sendika",
+   "sindikat",
+   "syndicate",
+   "syndikat"
+  ],
+  "Q683337": [
+   "coprince",
+   "coprincep",
+   "kofurst"
+  ],
+  "Q6881511": [
+   "companies",
+   "company",
+   "enterprise",
+   "enterprises",
+   "firm",
+   "firma",
+   "firms",
+   "hang",
+   "kasiporyn",
+   "korxona",
+   "perusahaan",
+   "predpriyatie",
+   "sirket",
+   "undertaking",
+   "undertakings",
+   "unternehmen"
+  ],
+  "Q701632": [
+   "gemeindeparlament",
+   "gemeinderat",
+   "stadtverordnetenversammlung"
+  ],
+  "Q708676": [
+   "charities",
+   "charity",
+   "wohltatigkeitsorganisation"
+  ],
+  "Q7188": [
+   "devlet",
+   "gov",
+   "government",
+   "govt",
+   "gvmnt",
+   "hokumet",
+   "hukumat",
+   "hukumet",
+   "idare",
+   "kabinet",
+   "mtavroba",
+   "pemerintah",
+   "regierung",
+   "rejim",
+   "staatsgewalt",
+   "ukimet",
+   "yonetim"
+  ],
+  "Q720069": [
+   "gattenfamilie",
+   "kernfamilie"
+  ],
+  "Q721790": [
+   "grossfamilie"
+  ],
+  "Q72468": [
+   "berlaymont",
+   "birokrasi",
+   "bureaucracy",
+   "burokrasi",
+   "burokratie",
+   "burokratieansatz",
+   "burokratiya",
+   "byurokratiya"
+  ],
+  "Q725434": [
+   "imperator",
+   "kaiser"
+  ],
+  "Q7278": [
+   "dang",
+   "firka",
+   "parpol",
+   "partei",
+   "parteien",
+   "partiya",
+   "partiyalar"
+  ],
+  "Q7281": [
+   "propaganda",
+   "tebligat"
+  ],
+  "Q728646": [
+   "kemitraan",
+   "ortaklik",
+   "partner",
+   "partnership",
+   "partnerstvo",
+   "partnyorluq",
+   "personalgesellschaft",
+   "personengesellschaft",
+   "personengesellschaftsrecht",
+   "personenunternehmen",
+   "terefdasliq",
+   "tovarishchestvo",
+   "yoldasliq"
+  ],
+  "Q729128": [
+   "boule",
+   "bule"
+  ],
+  "Q731613": [
+   "maritimes",
+   "seeprovinzen"
+  ],
+  "Q732717": [
+   "ermittlungsbehorde",
+   "ermittlungsbehorden",
+   "lea",
+   "strafverfolgungsbehorde",
+   "strafverfolgungsbehorden"
+  ],
+  "Q744593": [
+   "miac",
+   "mic",
+   "mik",
+   "oboronka",
+   "opk",
+   "vpk"
+  ],
+  "Q745877": [
+   "cibp",
+   "darlehenskasse",
+   "darlehenskassenverein",
+   "darlehensverein",
+   "darlehnskasse",
+   "darlehnskassenverein",
+   "darlehnsverein",
+   "genossenschaftsbank",
+   "kartoffelbank",
+   "kpkg",
+   "kreditgenossenschaft",
+   "kreditverein",
+   "raiba",
+   "raiffeisenbank",
+   "raiffeisenkasse",
+   "sparverein",
+   "voba",
+   "volksbank"
+  ],
+  "Q747074": [
+   "komun"
+  ],
+  "Q749150": [
+   "ordonnanz",
+   "tercio",
+   "tertsiya",
+   "third"
+  ],
+  "Q752080": [
+   "divaniharp",
+   "kriegsgericht",
+   "militargericht",
+   "militargerichtsbarkeit",
+   "militartribunal",
+   "oberkriegsgericht",
+   "truppengericht"
+  ],
+  "Q752404": [
+   "jieji"
+  ],
+  "Q756102": [
+   "freilandmuseum",
+   "freilichtmuseum",
+   "freiluftmuseum"
+  ],
+  "Q763256": [
+   "luftrettung"
+  ],
+  "Q76611": [
+   "gewaltfreiheit",
+   "gewaltlosigkeit",
+   "gewaltverzicht",
+   "nenasilie",
+   "nonkekerasan",
+   "nonviolence",
+   "siddetsizlik"
+  ],
+  "Q770881": [
+   "kazik",
+   "kazinych"
+  ],
+  "Q772547": [
+   "armia",
+   "army",
+   "askeriye",
+   "streitkrafte",
+   "tentara"
+  ],
+  "Q778575": [
+   "conglomerate",
+   "conglomeration",
+   "konglomerat",
+   "konqlomerat",
+   "mischkombinat",
+   "mischkonzern",
+   "multikonzern"
+  ],
+  "Q781132": [
+   "teilstreitkraft",
+   "tsk"
+  ],
+  "Q783794": [
+   "airma",
+   "compagnie",
+   "company",
+   "firm",
+   "firma",
+   "gesellschaft",
+   "kompanie",
+   "kompaniya",
+   "personenverband",
+   "personenvereinigung",
+   "perusahaan",
+   "sirket"
+  ],
+  "Q7843791": [
+   "consulate",
+   "konsolosluk",
+   "konsulat",
+   "konsullik",
+   "konsulluq"
+  ],
+  "Q791974": [
+   "icvc",
+   "publikumsfonds",
+   "reksadana"
+  ],
+  "Q79751": [
+   "oligarchia",
+   "oligarchie",
+   "oligarchisch",
+   "oligarchy",
+   "oligarisch",
+   "oligarkhiya",
+   "oligarki",
+   "oligarkia",
+   "oligarsi",
+   "oligarsik",
+   "oligarxiya",
+   "oligokratie",
+   "oliqarxiya"
+  ],
+  "Q79913": [
+   "lsm",
+   "nichtregierungsorganisation",
+   "npo",
+   "nro",
+   "onp",
+   "ornop",
+   "qht",
+   "stk",
+   "sto"
+  ],
+  "Q816321": [
+   "derwischorden",
+   "suluk",
+   "tarekat",
+   "tarika",
+   "tarikat",
+   "tarikatlar",
+   "tarikaty",
+   "tariqa",
+   "tariqah",
+   "tariqas",
+   "tariqat",
+   "teriqet",
+   "thariqat",
+   "turuk",
+   "turuq"
+  ],
+  "Q817144": [
+   "russenmafia"
+  ],
+  "Q828310": [
+   "panapticon",
+   "panopticon",
+   "panoptikan",
+   "panoptikon",
+   "panoptikum"
+  ],
+  "Q830104": [
+   "devon",
+   "divan",
+   "divani",
+   "diwan"
+  ],
+  "Q831663": [
+   "campaign",
+   "ekspedisiya",
+   "emeliyyat",
+   "feldzug",
+   "harekat",
+   "heerzug",
+   "kriegszug",
+   "operasyon",
+   "sefer"
+  ],
+  "Q83204": [
+   "triarchy",
+   "triumvir",
+   "triumvirat",
+   "triumvirate",
+   "triumviri",
+   "triumvirlik"
+  ],
+  "Q833941": [
+   "judenaltester",
+   "judenrat",
+   "judenrate",
+   "yudenrat"
+  ],
+  "Q83405": [
+   "fabrik",
+   "fabrika",
+   "fabrikbau",
+   "factories",
+   "factory",
+   "manufactories",
+   "manufactory",
+   "mill",
+   "pabrik",
+   "pabrikan",
+   "plant",
+   "produktionsstatte",
+   "uretimevi",
+   "workshop",
+   "workshops",
+   "zavod"
+  ],
+  "Q837142": [
+   "altenheim",
+   "altenpflegeheim",
+   "altersheim",
+   "bakimevi",
+   "behindertenheim",
+   "behindertenwohnheim",
+   "essms",
+   "huzurevi",
+   "langzeitpflegeeinrichtung",
+   "pflegeheim",
+   "pflegezentrum"
+  ],
+  "Q837416": [
+   "koalitionsregierung",
+   "regierungskoalition"
+  ],
+  "Q837675": [
+   "juri",
+   "juries",
+   "jury"
+  ],
+  "Q837834": [
+   "kapselhotel",
+   "kapuseruhoteru",
+   "sarghotel",
+   "wabenhotel"
+  ],
+  "Q837999": [
+   "noviciate",
+   "novisiat",
+   "novitiate",
+   "novitsiat",
+   "novitsiy",
+   "novizen",
+   "noviziat"
+  ],
+  "Q841535": [
+   "consistory",
+   "kirchenleitung",
+   "konsistori",
+   "konsistorialrat",
+   "konsistorium",
+   "konsistoriya",
+   "landeskirchenamt",
+   "oberkonsistorialrat",
+   "oberkonsistorium"
+  ],
+  "Q842623": [
+   "chek",
+   "kandam",
+   "paadam",
+   "persawahan",
+   "reisfeld",
+   "sawah"
+  ],
+  "Q842803": [
+   "eroba",
+   "semstwo",
+   "zemstva",
+   "zemstvo"
+  ],
+  "Q8436": [
+   "aile",
+   "familie",
+   "familien",
+   "families",
+   "family",
+   "geschlecht",
+   "keluarga",
+   "nesil",
+   "oila",
+   "ojakhi",
+   "otbasy",
+   "soy",
+   "soyad"
+  ],
+  "Q844793": [
+   "duma",
+   "staatsduma"
+  ],
+  "Q845477": [
+   "etfs",
+   "etn"
+  ],
+  "Q845763": [
+   "milet",
+   "millet"
+  ],
+  "Q845945": [
+   "chozuya",
+   "dzindzia",
+   "dzindzya",
+   "honden",
+   "jinja",
+   "jinjya",
+   "kumirnya",
+   "schintoschrein",
+   "shintoschrein",
+   "shrine"
+  ],
+  "Q847017": [
+   "sportclub",
+   "sportgemeinschaft",
+   "sportklub",
+   "sportverein"
+  ],
+  "Q847201": [
+   "automitbenutzung",
+   "autoteilen",
+   "carsharing",
+   "karsharing",
+   "karshering",
+   "teilauto"
+  ],
+  "Q8473": [
+   "armee",
+   "armia",
+   "armiya",
+   "army",
+   "askeriye",
+   "jari",
+   "ketentaraan",
+   "militar",
+   "militarmacht",
+   "military",
+   "militer",
+   "ordu",
+   "streitkraft",
+   "streitkrafte",
+   "streitmacht",
+   "truppen"
+  ],
+  "Q848197": [
+   "caucus",
+   "fraksi",
+   "fraktion",
+   "fraktionsstatus",
+   "fraktsiya",
+   "landtagsfraktion"
+  ],
+  "Q848507": [
+   "geschaftsbank"
+  ],
+  "Q856076": [
+   "kommun",
+   "kunta",
+   "kunty"
+  ],
+  "Q856234": [
+   "unibib",
+   "unibibis",
+   "unibibliothek",
+   "unibibliotheken",
+   "universitatsbibliothek",
+   "universitatsbibliotheken"
+  ],
+  "Q860447": [
+   "ambulance",
+   "emp",
+   "ems",
+   "landrettungsdienst",
+   "neotlozhka",
+   "notfallrettung",
+   "paramedics",
+   "rettungsdienst",
+   "rettungswesen",
+   "sanitat"
+  ],
+  "Q865132": [
+   "handelsflotte",
+   "handelsmarine",
+   "handelsschiffahrt",
+   "handelsschifffahrt",
+   "kauffahrteischifffahrt"
+  ],
+  "Q865588": [
+   "ausschuss",
+   "board",
+   "committee",
+   "dewan",
+   "dinas",
+   "heyet",
+   "jawatan",
+   "komisyon",
+   "komite",
+   "komitee",
+   "komitet",
+   "panitia"
+  ],
+  "Q875157": [
+   "ferienanlage",
+   "hotelanlage",
+   "kurort",
+   "pesanggrahan",
+   "resor",
+   "resort",
+   "sanggraloka"
+  ],
+  "Q876852": [
+   "camp",
+   "feriencamp",
+   "ferienfreizeit",
+   "ferienlager",
+   "kinderferienbetreuung",
+   "kinderferienlager",
+   "sommerferienbetreuung",
+   "sommerlager"
+  ],
+  "Q877998": [
+   "osis",
+   "studentenvertretung",
+   "studierendenvertretung"
+  ],
+  "Q878249": [
+   "aliansi",
+   "alliance",
+   "allianz",
+   "alyans",
+   "bund",
+   "bundnis",
+   "ittifak",
+   "ittifaq",
+   "verbundeter"
+  ],
+  "Q879146": [
+   "denomination"
+  ],
+  "Q88556": [
+   "garnison",
+   "garnisun",
+   "garnizon",
+   "garnizoni",
+   "garrison"
+  ],
+  "Q886783": [
+   "blutsbruder",
+   "blutsbruderschaft",
+   "blutsgeschwister",
+   "dadzmobileba",
+   "pobratim",
+   "pobratimstvo",
+   "pobratimy",
+   "posestrimstvo"
+  ],
+  "Q889870": [
+   "despot",
+   "despotat",
+   "despotes"
+  ],
+  "Q891723": [
+   "oaj",
+   "pao",
+   "publikumsgesellschaft"
+  ],
+  "Q89753": [
+   "dilegi",
+   "dungeon",
+   "dungeons",
+   "kerker",
+   "oubliette",
+   "temnitsa",
+   "ubliet",
+   "verlies",
+   "zindan"
+  ],
+  "Q902104": [
+   "privatuniversitat"
+  ],
+  "Q917182": [
+   "heereshochschule",
+   "militarakademie",
+   "militarhochschule"
+  ],
+  "Q9174": [
+   "agama",
+   "dao",
+   "din",
+   "religia",
+   "religion",
+   "religiya",
+   "spirituality"
+  ],
+  "Q929651": [
+   "basisbewegung",
+   "grassroots",
+   "graswurzel",
+   "graswurzelbewegung"
+  ],
+  "Q930164": [
+   "complot",
+   "conspiracy",
+   "komplo",
+   "plot",
+   "verschworung",
+   "zagovor"
+  ],
+  "Q935773": [
+   "cromlech",
+   "cromleh",
+   "kromlech",
+   "kromlekh",
+   "kromlex"
+  ],
+  "Q936648": [
+   "biarchie",
+   "corule",
+   "diarchy",
+   "diarkhiya",
+   "diarki",
+   "diarkia",
+   "diarsi",
+   "diarxiya",
+   "doppelherrschaft",
+   "duumvirate",
+   "dyarchie"
+  ],
+  "Q938711": [
+   "dipkorpus"
+  ],
+  "Q939871": [
+   "gilda",
+   "gilde",
+   "gildiya",
+   "guild",
+   "lonca"
+  ],
+  "Q955824": [
+   "academy",
+   "akademi",
+   "forschungsgesellschaft",
+   "gelehrtengesellschaft"
+  ],
+  "Q980173": [
+   "arergard",
+   "arerqard",
+   "ariergardi",
+   "nachhut"
+  ],
+  "Q9842": [
+   "grundschule",
+   "ilkokul",
+   "primarschule",
+   "volksschule"
+  ],
+  "Q988108": [
+   "association",
+   "clb",
+   "club",
+   "klub",
+   "kulup",
+   "verein"
+  ],
+  "Q996839": [
+   "bratstvo",
+   "bruderschaft",
+   "fraternitat",
+   "persaudaraan"
+  ]
+ },
+ "languages": [
+  "az",
+  "de",
+  "en",
+  "id",
+  "ka",
+  "kk",
+  "ru",
+  "tr",
+  "uz",
+  "vi"
+ ],
+ "query": "SELECT ?kind ?label WHERE {{\n  hint:Query hint:optimizer \"None\" .\n  {{ ?kind {path} wd:Q43229 . }} UNION {{ VALUES ?kind {{ wd:Q43229 }} }}\n  ?kind wikibase:sitelinks ?links . FILTER(?links >= {sitelinks})\n  {{ ?kind rdfs:label ?label }} UNION {{ ?kind skos:altLabel ?label }}\n  FILTER(LANG(?label) IN ({langs}))\n}}",
+ "retrieved_on": "2026-09-27",
+ "sitelinks_min": 30,
+ "source": "https://query.wikidata.org/sparql"
+}

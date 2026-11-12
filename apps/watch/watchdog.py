@@ -47,6 +47,15 @@ def being_erased(student_field: str) -> Exists:
     )
 
 
+def _watch_application_safely(tenant_id: UUID, application_id: UUID, moment: datetime) -> bool:
+    try:
+        with tenant_transaction(tenant_id):
+            return _watch_one(application_id, moment)
+    except Exception:
+        logger.exception("WatchFailed application=%s", application_id)
+        return False
+
+
 def watch_applications_for_tenant(tenant_id: UUID, *, now: datetime | None = None) -> int:
     """Raise every alert this tenant is owed. Returns how many were raised.
 
@@ -67,15 +76,11 @@ def watch_applications_for_tenant(tenant_id: UUID, *, now: datetime | None = Non
                 .exclude(being_erased("student"))
                 .values_list("id", flat=True)
             )
-        raised = 0
-        for application_id in submitted:
-            try:
-                with tenant_transaction(tenant_id):
-                    if _watch_one(application_id, moment):
-                        raised += 1
-            except Exception:
-                logger.exception("WatchFailed application=%s", application_id)
-        return raised
+        return sum(
+            1
+            for application_id in submitted
+            if _watch_application_safely(tenant_id, application_id, moment)
+        )
 
 
 def _submitted_at(application: Application) -> datetime:

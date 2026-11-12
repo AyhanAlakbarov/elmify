@@ -63,6 +63,7 @@ def test_the_work_message_carries_no_pii_fields():
         "draft_id",
         "programme_id",
         "application_id",
+        "document_id",
     }
 
 
@@ -286,3 +287,50 @@ def test_malformed_scan_result_details_becomes_validation_error_not_attribute_er
 
     with pytest.raises(ValueError):
         ScanResultEvent.model_validate(event)
+
+
+@pytest.mark.django_db
+def test_a_lost_refresh_message_never_fails_what_triggered_it(
+    monkeypatch, django_capture_on_commit_callbacks, caplog
+):
+    from apps.documents import document_queue
+
+    def _boom(message, **kwargs):
+        raise RuntimeError("sqs down")
+
+    monkeypatch.setattr(document_queue, "enqueue_document_work", _boom)
+    with django_capture_on_commit_callbacks(execute=True):
+        document_queue.queue_evidence_refresh(uuid4(), uuid4())
+    assert "could not queue refresh_evidence" in caplog.text
+
+
+def test_the_refresh_message_parses():
+    message = DocumentWorkMessage(
+        action="refresh_evidence", kind="EVIDENCE", tenant_id=uuid4(), student_id=uuid4()
+    )
+    assert DocumentWorkMessage.model_validate_json(message.model_dump_json()) == message
+
+
+@pytest.mark.django_db
+def test_the_refresh_is_sent_only_after_commit(
+    monkeypatch, django_capture_on_commit_callbacks
+):
+    from apps.documents import document_queue
+
+    sent = []
+    monkeypatch.setattr(
+        document_queue, "enqueue_document_work", lambda message, **kwargs: sent.append(message)
+    )
+    with django_capture_on_commit_callbacks(execute=False) as callbacks:
+        document_queue.queue_evidence_refresh(uuid4(), uuid4())
+        assert sent == []
+    assert len(callbacks) == 1
+    callbacks[0]()
+    assert len(sent) == 1
+
+
+def test_delay_seconds_above_the_sqs_cap_is_refused():
+    from apps.queue import enqueue
+
+    with pytest.raises(ValueError):
+        enqueue(_work(), queue_url="q", client=_FakeSQS(), delay_seconds=901)

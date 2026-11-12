@@ -28,3 +28,22 @@ class StudentProfileVersion(TenantScopedModel):
                 name="profile_schema_version_valid",
             ),
         ]
+
+
+class ConsultationDraftRecord(TenantScopedModel):
+    """The onboarding questionnaire in progress, one per student. Kept here rather than
+    in the login session so a student who signs in on another device keeps their
+    answers (onboarding friction design 2026-10-15, variant 8). Deleted when the
+    questionnaire is confirmed; blanked by erasure."""
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    student = models.OneToOneField(Membership, on_delete=models.PROTECT)
+    envelope = models.JSONField(default=dict)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant", "id"), name="consultationdraftrecord_tenant_id_uniq"
+            )
+        ]

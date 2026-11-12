@@ -23,7 +23,7 @@
 - **No silent fallbacks.** A vendor rung skipped for a missing key is logged at WARNING with the vendor's name; the combined failure reason names each rung's error class. Third-party text never enters a reason string (it lands in a 200-character column consultants read).
 - **Bodies stay HTML.** Firecrawl is asked for `html` (its cleaned HTML) plus `markdown` and `changeTracking`; scrape.do for `output=raw`. `readable_text` and `content_digest` are the extraction layer in both modes — the owner's rule: "local extraction covers the rest".
 - **Never `ruff format` this repo** (toolchain memory). `uv run ruff check` and `uv run mypy` are the gates, plus `uv run pytest`.
-- **Test database per worktree:** run pytest with `POSTGRES_DB=tehsil_fetch_path`.
+- **Test database per worktree:** run pytest with `POSTGRES_DB=elmify_fetch_path`.
 
 ---
 
@@ -90,7 +90,7 @@ def test_an_unknown_vendor_is_refused_not_ignored() -> None:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `cd .worktrees/fetch-path && POSTGRES_DB=tehsil_fetch_path uv run pytest tests/research/test_vendors.py -v`
+Run: `cd .worktrees/fetch-path && POSTGRES_DB=elmify_fetch_path uv run pytest tests/research/test_vendors.py -v`
 Expected: FAIL, `ModuleNotFoundError: apps.research.vendors`
 
 - [ ] **Step 3: Minimal implementation**
@@ -206,7 +206,7 @@ class FetchResult:
 
 `snapshot.py`, in the `create(...)` call: add `fetched_via=fetch.fetched_via,` and to `SnapshotResult` nothing (callers read the row).
 
-Then: `POSTGRES_DB=tehsil_fetch_path uv run python manage.py makemigrations funding -n snapshot_fetched_via`
+Then: `POSTGRES_DB=elmify_fetch_path uv run python manage.py makemigrations funding -n snapshot_fetched_via`
 
 - [ ] **Step 4: Run** `tests/research/test_snapshot.py` — PASS; also `uv run python manage.py makemigrations --check`.
 
@@ -637,7 +637,7 @@ def record_host_cost(fetch: VendorFetch | ChargedFailure, *, host: str, vendor: 
     return row
 ```
 
-Then `POSTGRES_DB=tehsil_fetch_path uv run python manage.py makemigrations research -n hostfetchcost`. **Check RLS:** `HostFetchCost` is not tenant data (a host's price), like `DomainLease`; confirm `tests/tenancy/test_database_isolation.py::_SHARED_TABLES` lists `research_domainlease` and add `research_hostfetchcost` beside it if that list is asserted.
+Then `POSTGRES_DB=elmify_fetch_path uv run python manage.py makemigrations research -n hostfetchcost`. **Check RLS:** `HostFetchCost` is not tenant data (a host's price), like `DomainLease`; confirm `tests/tenancy/test_database_isolation.py::_SHARED_TABLES` lists `research_domainlease` and add `research_hostfetchcost` beside it if that list is asserted.
 
 - [ ] **Step 4: Run** `tests/research/test_vendors.py tests/tenancy/test_database_isolation.py` — PASS.
 - [ ] **Step 5: Commit** `git commit -m "research: the price each vendor charged, per host"`
@@ -1036,7 +1036,7 @@ class Command(BaseCommand):
 
 ```bash
 cd .worktrees/fetch-path
-POSTGRES_DB=tehsil_fetch_path uv run pytest -q
+POSTGRES_DB=elmify_fetch_path uv run pytest -q
 uv run ruff check apps tests config
 uv run mypy apps config
 uv run python manage.py makemigrations --check
@@ -1047,7 +1047,7 @@ All clean, or fix.
 - [ ] **Step 2: Live gate (only if the keys are exported in this shell — never read the env files)**
 
 ```bash
-POSTGRES_DB=tehsil_fetch_path uv run python manage.py fetch_ladder --mode quota \
+POSTGRES_DB=elmify_fetch_path uv run python manage.py fetch_ladder --mode quota \
   https://globed.eu/how-to-apply/ https://www.daad.de/en/ https://mischolarship.com/
 ```
 Expected: globed via `EGRESS` (tier zero), DAAD via `SCRAPE_DO` at 1 credit, mischolarship via `SCRAPE_DO` at 25 credits or `UNREACHABLE`; footer under 30 credits. Record the printed lines in the commit message. If the keys are not in the shell, say so in the report and leave the gate unrun.

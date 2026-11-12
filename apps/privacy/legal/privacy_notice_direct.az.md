@@ -4,9 +4,9 @@ DRAFT — translation for legal review, not yet approved.
 
 ## Biz kimik
 
-Tehsil tələbələrə xaricdəki universitetlərə və fondlara müraciətləri tapmaqda, hazırlamaqda və təqdim etməkdə kömək edən xidmət göstərir. Tehsil sizin fərdi məlumatlarınızın mülkiyyətçisidir.
+Elmify tələbələrə xaricdəki universitetlərə və fondlara müraciətləri tapmaqda, hazırlamaqda və təqdim etməkdə kömək edən xidmət göstərir. Elmify sizin fərdi məlumatlarınızın mülkiyyətçisidir.
 
-Əlaqə: privacy@tehsil.example
+Əlaqə: privacy@elmify.example
 
 Şirkətin adı və ünvanı: işə salınmadan əvvəl tamamlanacaq
 
@@ -16,6 +16,7 @@ Tehsil tələbələrə xaricdəki universitetlərə və fondlara müraciətləri
 - Əlaqə məlumatları: e-poçt ünvanınız, telefon nömrəniz və ölkəniz.
 - Təhsil tarixçəsi, transkriptlər və qiymətlər.
 - CV-niz, motivasiya məktublarınız və onların əsaslandığı faktlar.
+- GitHub hesabınızdan və töhfə verdiyiniz repozitoriyalardan açıq məlumat — GitHub istifadəçi adınızı bizə verdikdə və ya CV-niz ona keçid verdikdə.
 - Proqram və maliyyələşdirmə seçimləriniz.
 - Müraciətin statusu və nəticələri.
 - Poçt qutusu funksiyası vasitəsilə qoşmağı seçdiyiniz məktublar.
@@ -27,7 +28,7 @@ Tehsil tələbələrə xaricdəki universitetlərə və fondlara müraciətləri
 - Müraciət məlumatlarınızı seçdiyiniz universitetlərə və fondlara göndərmək.
 - Tövsiyələri yaxşılaşdırmaq, ümumiləşdirilmiş statistika hazırlamaq və modellərimizi yalnız anonimləşdirilmiş məlumatlar üzərində sınaqdan keçirmək.
 - Hesabınız aktiv olduğu müddətdə süni intellekt funksiyalarımızın real sənədlər, məsələn, CV-niz və məktublarınız üzərində düzgün işlədiyini yoxlamaq. Sənədləriniz və məktublarınız fərdi məlumatlarınız silindikdən sonra saxladığımız anonimləşdirilmiş məlumatlara heç vaxt daxil edilmir və bundan sonra onlar üzərində modelləri öyrətmir və ya sınamırıq.
-- Sizə xidmət və məhsul məktubları və marketinq məktubları göndərmək; hər birində onları necə dayandıracağınız barədə qeyd olur. Onları istənilən vaxt privacy@tehsil.example ünvanına yazaraq dayandıra bilərsiniz. Xidmət başa çatdıqdan sonra da fərdi məlumatlarınız silinənə qədər bu məktubları göndərməyə davam edə bilərik.
+- Sizə xidmət və məhsul məktubları və marketinq məktubları göndərmək; hər birində onları necə dayandıracağınız barədə qeyd olur. Onları istənilən vaxt privacy@elmify.example ünvanına yazaraq dayandıra bilərsiniz. Xidmət başa çatdıqdan sonra da fərdi məlumatlarınız silinənə qədər bu məktubları göndərməyə davam edə bilərik.
 
 ## Həssas məlumatlar
 
@@ -49,7 +50,7 @@ Fərdi məlumatları hesabınız aktiv olduğu müddət üstəgəl 12 ay saxlay�
 
 ## Hüquqlarınız
 
-Məlumatlarınıza çıxış, düzəliş, silinmə tələb edə, onların emalını dayandırmağı xahiş edə və səbəb göstərmədən emala etiraz edə bilərsiniz. İstənilən vaxt razılığınızı geri götürə bilərsiniz. Bizə e-poçtla yazın: privacy@tehsil.example; 7 iş günü ərzində cavab veririk. Hesabınızın e-poçt ünvanından göndərilən sorğulara cavab veririk; başqa ünvandan yazsanız, öz ünvanınızdan yazmağınızı xahiş edəcəyik. Əlavə vaxt lazım olsa, bunu sizə bildirir və daha 7 iş günü qədər vaxt götürürük. İmtina etsək, səbəbini 5 iş günü ərzində bildiririk.
+Məlumatlarınıza çıxış, düzəliş, silinmə tələb edə, onların emalını dayandırmağı xahiş edə və səbəb göstərmədən emala etiraz edə bilərsiniz. İstənilən vaxt razılığınızı geri götürə bilərsiniz. Bizə e-poçtla yazın: privacy@elmify.example; 7 iş günü ərzində cavab veririk. Hesabınızın e-poçt ünvanından göndərilən sorğulara cavab veririk; başqa ünvandan yazsanız, öz ünvanınızdan yazmağınızı xahiş edəcəyik. Əlavə vaxt lazım olsa, bunu sizə bildirir və daha 7 iş günü qədər vaxt götürürük. İmtina etsək, səbəbini 5 iş günü ərzində bildiririk.
 
 Razılığınızı geri götürdüyünüz və ya emala etiraz etdiyiniz zaman məlumatlarınızın emalını dərhal dayandırırıq. Bu, davam etməyimizi xahiş edənə qədər hesabınızı dayandırır.
 

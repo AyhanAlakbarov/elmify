@@ -392,3 +392,200 @@ def test_an_unanswered_check_ends_review_required_behind_the_policy(
     assert _behind_the_policy(passport_a) == ("CHECKING", False)
     document_worker.mark_read_failed(_event(passport_a))
     assert _behind_the_policy(passport_a) == ("REVIEW_REQUIRED", False)
+
+
+def test_a_promoted_upload_prepares_the_students_open_applications(
+    agency_a, membership_a, bucket, check, monkeypatch
+):
+    from uuid import uuid4
+
+    from apps.portals import prepare
+    from apps.portals.models import Application
+
+    calls = []
+    monkeypatch.setattr(
+        prepare, "prepare_documents", lambda application, **_kw: calls.append(application.id)
+    )
+    with tenant_scope(agency_a.id):
+        application = Application.objects.create(
+            tenant=agency_a, student=membership_a, program_id=uuid4()
+        )
+    document = _uploaded(agency_a, membership_a, bucket)
+
+    document_worker.handle_scan_result(_event(document))
+
+    assert calls == [application.id]
+    assert _reloaded(document).state == "AVAILABLE"
+
+
+def test_a_promotion_stands_when_preparation_fails(
+    agency_a, membership_a, bucket, check, monkeypatch
+):
+    from uuid import uuid4
+
+    from apps.portals import prepare
+    from apps.portals.models import Application
+
+    def _boom(application, **_kw):
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(prepare, "prepare_documents", _boom)
+    with tenant_scope(agency_a.id):
+        Application.objects.create(tenant=agency_a, student=membership_a, program_id=uuid4())
+    document = _uploaded(agency_a, membership_a, bucket)
+
+    document_worker.handle_scan_result(_event(document))
+
+    document = _reloaded(document)
+    assert (document.state, bucket.get(document.promoted_key)) == ("AVAILABLE", PDF)
+
+
+def test_a_promoted_cv_is_ingested_before_anything_is_prepared(
+    agency_a, membership_a, bucket, check, monkeypatch
+):
+    """Preparation can take minutes; ingestion must not wait behind it (the scan
+    queue's visibility timeout would redeliver and ingest twice)."""
+    from uuid import uuid4
+
+    from apps.portals import prepare
+    from apps.portals.models import Application
+
+    order = []
+    monkeypatch.setattr(
+        document_worker, "ingest_uploaded_cv", lambda **_kw: order.append("ingest") or ()
+    )
+
+    def _boom(application, **_kw):
+        order.append("prepare")
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(prepare, "prepare_documents", _boom)
+    with tenant_scope(agency_a.id):
+        Application.objects.create(tenant=agency_a, student=membership_a, program_id=uuid4())
+    document = _uploaded(agency_a, membership_a, bucket, kind="CV")
+
+    document_worker.handle_scan_result(_event(document))
+
+    assert order == ["ingest", "prepare"]
+    assert _reloaded(document).state == "AVAILABLE"
+
+
+# Replace or add another (plan 4b Task 6) --------------------------------------
+
+
+def _diploma(agency, student, bucket, **mode):
+    document = register(agency.id, student.id, kind="DIPLOMA", **mode)
+    bucket.put(document.object_key, PDF)
+    return document
+
+
+def _retired(document):
+    return _reloaded(document).retired_at is not None
+
+
+def test_review_focus_4_a_replace_retires_only_the_diploma_it_replaces_once_promoted(
+    agency_a, membership_a, bucket, check
+):
+    bachelor = _diploma(agency_a, membership_a, bucket)
+    document_worker.handle_scan_result(_event(bachelor))
+    master = _diploma(agency_a, membership_a, bucket, mode="ADD")
+    document_worker.handle_scan_result(_event(master))
+    passport = _uploaded(agency_a, membership_a, bucket)
+    document_worker.handle_scan_result(_event(passport))
+    assert not _retired(bachelor) and not _retired(master)  # ADD retires nothing
+
+    again = _diploma(agency_a, membership_a, bucket, mode="REPLACE", replaces=master.id)
+    assert not _retired(master)  # registered, not yet checked: the usable copy stays
+    document_worker.handle_scan_result(_event(again))
+
+    assert _reloaded(again).state == "AVAILABLE"
+    assert [_retired(d) for d in (bachelor, master, passport, again)] == [
+        False, True, False, False,
+    ]
+
+
+def test_a_replace_still_being_checked_retires_nothing(agency_a, membership_a, bucket, check):
+    old = _diploma(agency_a, membership_a, bucket)
+    document_worker.handle_scan_result(_event(old))
+    new = _diploma(agency_a, membership_a, bucket)  # REPLACE by default: the one held
+    check.answer = OcrUnavailable("down")
+    with pytest.raises(OcrUnavailable):
+        document_worker.handle_scan_result(_event(new))
+    assert _reloaded(new).state == "CHECKING"
+    assert not _retired(old)
+
+    check.answer = CLEAN
+    document_worker.handle_scan_result(_event(new))
+    assert _retired(old) and not _retired(new)
+
+
+def test_a_rejected_replace_retires_nothing(agency_a, membership_a, bucket, check):
+    old = _diploma(agency_a, membership_a, bucket)
+    document_worker.handle_scan_result(_event(old))
+    new = _diploma(agency_a, membership_a, bucket)
+    check.answer = NOT_ALLOWED
+    document_worker.handle_scan_result(_event(new))
+    assert _reloaded(new).state == "REJECTED_TYPE" and not _retired(old)
+
+
+def test_two_recommendation_letters_are_both_held(agency_a, membership_a, bucket, check):
+    """Fix I1: a letter from another referee is added, not a replacement."""
+    from uuid import uuid4
+
+    from apps.documents.table import table_for
+    from apps.portals.models import Application
+
+    first = register(agency_a.id, membership_a.id, kind="REFERENCE_LETTER")
+    bucket.put(first.object_key, PDF)
+    document_worker.handle_scan_result(_event(first))
+    second = register(agency_a.id, membership_a.id, kind="REFERENCE_LETTER")
+    bucket.put(second.object_key, PDF)
+    document_worker.handle_scan_result(_event(second))
+    assert not _retired(first) and _reloaded(second).replaces is None
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        application = Application.objects.create(
+            tenant=agency_a, student=membership_a, program_id=uuid4(),
+            kit_requirements=["Two letters of recommendation."],
+        )
+        table = table_for(membership_a, [application], [])
+    assert {h.document_id for h in table.held_all_for("REFERENCE_LETTER", application.id)} == {
+        first.id, second.id}
+
+
+JPEG = UploadVerdict(type="image/jpeg", active_content=(), sha256=HANDED)
+
+
+def test_a_photographed_thesis_is_refused_and_told_to_upload_a_pdf(
+    agency_a, membership_a, bucket, check
+):
+    """Spec §8: only text is read as research work, and a photo has none."""
+    document = _uploaded(agency_a, membership_a, bucket, body=b"\xff\xd8\xffjpeg",
+                         kind="THESIS_OR_REPORT")
+    check.answer = JPEG
+
+    document_worker.handle_scan_result(_event(document))
+
+    document = _reloaded(document)
+    assert (document.state, document.promoted_key) == ("REJECTED_TYPE", "")
+    assert "thesis or report as a PDF" in document.rejection_message
+
+
+def test_a_thesis_pdf_is_promoted(agency_a, membership_a, bucket, check):
+    document = _uploaded(agency_a, membership_a, bucket, kind="THESIS_OR_REPORT")
+
+    document_worker.handle_scan_result(_event(document))
+
+    assert _reloaded(document).state == "AVAILABLE"
+
+
+def test_a_second_thesis_is_added_not_replaced(agency_a, membership_a, bucket, check):
+    """A thesis and a project report are two documents; Replace is explicit."""
+    first = _uploaded(agency_a, membership_a, bucket, kind="THESIS_OR_REPORT")
+    document_worker.handle_scan_result(_event(first))
+
+    second = register(agency_a.id, membership_a.id, kind="THESIS_OR_REPORT")
+    replacing = register(agency_a.id, membership_a.id, kind="THESIS_OR_REPORT", mode="REPLACE",
+                         replaces=str(first.id))
+
+    assert second.replaces is None
+    assert replacing.replaces == first.id

@@ -453,6 +453,12 @@ class RegisterEntry(models.Model):
     #: The scheme page on the body's own site, for a FUNDING_READ list. The
     #: reader reads this; the list itself is never provenance (spec 3.2).
     page_url = models.URLField(max_length=2048, blank=True, default="")
+    #: A `pointer` row only (government funding spec 2026-09-27 4.7): the line
+    #: of another body's page that named this body, verbatim, and that page's
+    #: URL. The first sighting is kept; a later one only moves `last_seen`. A
+    #: pointer is a name, never provenance -- neither column vouches for anything.
+    pointer_quote = models.CharField(max_length=300, blank=True, default="")
+    pointer_url = models.URLField(max_length=2048, blank=True, default="")
     #: Cell tags (spec 5): ISO 3166-1 alpha-2, an `apps.funding.regions.REGIONS`
     #: key, or ANY. A tag selects a pool and never decides eligibility -- the
     #: reader's conditions do -- so a tag may be wider than the truth, never
@@ -1053,6 +1059,75 @@ class SweepAngle(models.Model):
         ]
 
 
+class TapQueryRun(models.Model):
+    """A query the tap ran, by hash: so the next student's identical one is skipped.
+
+    Shared catalogue, no tenant and NO text -- a query can carry a student's
+    interest words, so only the sha256 of what the provider received is kept.
+    Unique per (hash, provider, result count, kind) and updated in place on a re-run.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    query_sha256 = models.CharField(max_length=64)
+    provider = models.CharField(max_length=16)
+    results = models.PositiveSmallIntegerField()
+    ran_at = models.DateTimeField()
+    #: The angle kind that rendered it and the academic cycle it ran in: PROGRAMME
+    #: queries are reused for the cycle, MONEY and RECENCY for TAP_QUERY_REUSE_DAYS.
+    kind = models.CharField(max_length=10, default="PROGRAMME")
+    cycle = models.CharField(max_length=9, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("query_sha256", "provider", "results", "kind"),
+                name="tapqueryrun_key_uniq",
+            )
+        ]
+
+
+class ProgrammeAngle(models.Model):
+    """One page-voiced programme query template, stored as data (spec 6.3, 10.5).
+
+    Keyed `(level, language, kind, sample)` and versioned like `SweepAngle`. Its
+    braces are slots `tap_query.render_tap_queries` fills per student; the row
+    itself never holds a person -- the writer's input is a level, a language and
+    a cycle. PROGRAMME rows are a programme's own page and never carry money
+    words; MONEY rows are its funding or fees page; RECENCY rows are this cycle's
+    announcement, asked only for a cell past its economic stop (10.5 step 4).
+    """
+
+    class Kind(models.TextChoices):
+        PROGRAMME = "PROGRAMME"
+        MONEY = "MONEY"
+        RECENCY = "RECENCY"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    level = models.CharField(max_length=10, default="MASTER")
+    language = models.CharField(max_length=12)
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    sample = models.PositiveSmallIntegerField()
+    version = models.PositiveIntegerField()
+    cycle = models.CharField(max_length=9)
+    template = models.CharField(max_length=400)
+    written_by = models.CharField(max_length=60)
+    written_at = models.DateTimeField(auto_now_add=True)
+    retired_at = models.DateTimeField(null=True, blank=True)
+    retired_reason = models.CharField(max_length=200, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("level", "language", "kind", "sample", "version"),
+                name="programmeangle_key_uniq",
+            ),
+            models.CheckConstraint(
+                condition=Q(kind__in=("PROGRAMME", "MONEY", "RECENCY")),
+                name="programmeangle_kind_valid",
+            ),
+        ]
+
+
 class SweepRun(models.Model):
     """One pass over one `(host country, family)` -- the curve it produced and
     why it stopped (spec 6.7: "swept to N queries, plateau R per batch at
@@ -1383,6 +1458,14 @@ class SearchTap(TenantScopedModel):
         STAGE2 = "STAGE2"
         DONE = "DONE"
 
+    class Kind(models.TextChoices):
+        #: The one big search when the intake is finished (spec 10.5, amended
+        #: 2026-10-14): bounded by the wallet less the follow-up reserve, the
+        #: plateau rule and FIRST_SEARCH_MAX_SECONDS.
+        FIRST = "FIRST"
+        #: A small search for only the new part of a changed profile.
+        FOLLOW_UP = "FOLLOW_UP"
+
     class Ending(models.TextChoices):
         COMPLETE = "COMPLETE"
         WALLET_SPENT = "WALLET_SPENT"
@@ -1393,12 +1476,22 @@ class SearchTap(TenantScopedModel):
         STAGE2_UNAVAILABLE = "STAGE2_UNAVAILABLE"
         TENANT_CEILING = "TENANT_CEILING"
         FAILED = "FAILED"
+        #: Angles exist, but none renders for this student's inputs.
+        NO_QUERIES = "NO_QUERIES"
+        #: FIRST only: in some stage, FIRST_SEARCH_PLATEAU_BATCH queries in a
+        #: row brought fewer than FIRST_SEARCH_PLATEAU_MIN_NEW new hosts (that
+        #: stage stopped; later stages still ran) and nothing harder stopped it.
+        PLATEAU = "PLATEAU"
+        #: No search provider could be asked: none configured, or every one
+        #: failed during the tap -- never recorded as a search that found nothing.
+        NO_PROVIDER = "NO_PROVIDER"
 
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     student = models.ForeignKey("tenancy.Membership", on_delete=models.CASCADE)
     wallet = models.ForeignKey(SearchWallet, on_delete=models.CASCADE)
     run_id = models.UUIDField()
     pack_version_id = models.UUIDField(null=True, blank=True)
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.FOLLOW_UP)
     state = models.CharField(max_length=10, choices=State.choices, default=State.QUEUED)
     ending = models.CharField(max_length=20, choices=Ending.choices, blank=True, default="")
     recency_only = models.BooleanField(default=False)
@@ -1407,9 +1500,15 @@ class SearchTap(TenantScopedModel):
     pages_fetched = models.PositiveIntegerField(default=0)
     hosts_seen = models.PositiveIntegerField(default=0)
     hosts_new = models.PositiveIntegerField(default=0)
+    #: Requests skipped because the same query ran within TAP_QUERY_REUSE_DAYS.
+    queries_reused = models.PositiveIntegerField(default=0)
     awards_served = models.PositiveIntegerField(default=0)
     requested_at = models.DateTimeField(auto_now_add=True)
     finished_at = models.DateTimeField(null=True, blank=True)
+    #: FIRST only: where a job that ran out of FIRST_SEARCH_MAX_SECONDS stopped
+    #: (tap._Stage1.resume), for the next job's claim of the same tap. It holds
+    #: the student's query text, so it is cleared when the tap finishes.
+    resume = models.JSONField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -1602,3 +1701,64 @@ class GoldItem(models.Model):
     def save(self, *args: Any, **kwargs: Any) -> None:
         self.line_sha256 = hashlib.sha256(self.line_text.encode()).hexdigest()
         super().save(*args, **kwargs)
+
+
+class WinnerCohortProfile(models.Model):
+    """PII-free aggregate distribution of past scholarship/programme winners.
+
+    Populated via a 3rd-party LinkedIn search provider (`apps/research/winner_scraper.py`).
+    Platform-only (`_PLATFORM_TABLES`), like `ResolutionItem` and `GoldItem`: readable and
+    updatable by `runtime_web` only when `app.tenant_id` is in `research_platformagency`
+    (Elmify staff), and writable by `runtime_engine` (`sync_winner_cohorts` and the spine).
+    B2B agencies hold no access at the database RLS layer or the web view layer.
+    """
+
+    class TargetKind(models.TextChoices):
+        PROGRAM = "PROGRAM"
+        OPPORTUNITY = "OPPORTUNITY"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    #: Plain UUIDs (not ForeignKeys to `_SHARED_TABLES`), matching `SiteJobRecord.program_id`
+    #: and `test_web_tier_models_hold_no_foreign_key_into_the_catalogue`.
+    program_id = models.UUIDField(null=True, blank=True, unique=True)
+    opportunity_id = models.UUIDField(null=True, blank=True, unique=True)
+    target_kind = models.CharField(max_length=16, choices=TargetKind.choices)
+    target_name = models.CharField(max_length=300)
+    holder_name = models.CharField(max_length=300, blank=True, default="")
+    country_code = models.CharField(max_length=2, blank=True, default="")
+    sample_size = models.PositiveIntegerField(default=0)
+    origin_country_counts = models.JSONField(default=dict, blank=True)
+    prior_degree_fields = models.JSONField(default=dict, blank=True)
+    prior_degree_levels = models.JSONField(default=dict, blank=True)
+    work_experience_months_p25 = models.PositiveIntegerField(null=True, blank=True)
+    work_experience_months_median = models.PositiveIntegerField(null=True, blank=True)
+    work_experience_months_p75 = models.PositiveIntegerField(null=True, blank=True)
+    research_signal_rate = models.DecimalField(
+        max_digits=5, decimal_places=4, null=True, blank=True
+    )
+    source_provider = models.CharField(max_length=64, blank=True, default="")
+    last_synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    (
+                        Q(
+                            program_id__isnull=False,
+                            opportunity_id__isnull=True,
+                            target_kind="PROGRAM",
+                        )
+                    )
+                    | (
+                        Q(
+                            program_id__isnull=True,
+                            opportunity_id__isnull=False,
+                            target_kind="OPPORTUNITY",
+                        )
+                    )
+                ),
+                name="winner_cohort_target_xor",
+            ),
+        ]
+

@@ -21,7 +21,9 @@ from apps.documents.render import (
     DraftNotApproved,
     NetworkFetchRefused,
     PreflightBlocked,
+    _render_pdf,
     _section_order,
+    europass_content,
     render_cv,
     render_cv_with_warnings,
     render_draft,
@@ -267,14 +269,13 @@ def test_advisory_high_risk_violation_returned_not_raised():
 def test_a_binding_rule_with_no_checker_still_blocks():
     """The whole catalog leans on this. A rule we cannot verify must never
     pass as satisfied, and a future checker registry change must not loosen it
-    quietly. signature_required is the deliberately-uncheckable key: a wet
-    signature is not visible from here."""
+    quietly."""
     rule = ConstraintRule(
-        rule_id="R-031",
-        key="signature_required",
-        value=True,
+        rule_id="R-UNCHECKED",
+        key="max_words",
+        value=500,
         enforcement=Enforcement.BINDING,
-        rule_text="Germany: signature on the last page for formal CVs.",
+        rule_text="CV must not exceed 500 words.",
     )
     with pytest.raises(PreflightBlocked) as excinfo:
         render_cv(_content(), variant="STANDARD", constraints=(rule,))
@@ -298,10 +299,10 @@ def test_an_uncheckable_binding_rule_fails_closed():
 def test_an_uncheckable_advisory_rule_is_ignored():
     rule = ConstraintRule(
         rule_id="R-UNCHECKED",
-        key="signature_required",
-        value=True,
+        key="max_words",
+        value=500,
         enforcement=Enforcement.ADVISORY_STYLE,
-        rule_text="a signature is customary",
+        rule_text="around 500 words is customary",
         source_url="",
     )
     _artifact, violations = render_cv_with_warnings(
@@ -317,7 +318,7 @@ def test_a_research_position_in_experience_names_its_supervisor():
         experience=(
             ExperienceEntry(
                 employer="University of Strasbourg",
-                title="Master's Thesis",
+                title="Research Intern",
                 supervisor="Prof. Alexandre Varnek",
                 city="Strasbourg",
                 country="FR",
@@ -328,11 +329,11 @@ def test_a_research_position_in_experience_names_its_supervisor():
     )
     text = _text(render_cv(content, variant="STANDARD"))
     assert "Supervisor: Prof. Alexandre Varnek" in text
-    # Was "Master's Thesis, University of Strasbourg" on one bold line. The
+    # Was "Research Intern, University of Strasbourg" on one bold line. The
     # employer moved to its own line -- see
     # test_a_long_title_does_not_bury_the_employer -- so this now checks the
     # same two facts in the shape the page actually has.
-    assert "Master's Thesis" in text
+    assert "Research Intern" in text
     assert any(
         line.strip().startswith("University of Strasbourg")
         for line in text.splitlines()
@@ -366,7 +367,7 @@ def test_an_uncheckable_high_risk_rule_is_reported_not_ignored():
     )
     assert artifact.pdf_bytes is not None
     assert [v.rule.rule_id for v in violations] == ["R-031"]
-    assert "no pre-flight check" in violations[0].detail
+    assert "this CV must be signed by hand before it is uploaded" in violations[0].detail
 
 
 def test_uncheckable_binding_rule_is_returned_as_violation_not_raised():
@@ -888,7 +889,7 @@ def test_dates_render_as_month_and_year_not_iso():
 
 def test_open_ended_entry_still_renders_present():
     text = _text(render_cv(_education_content(end_date=None), variant="STANDARD"))
-    assert "present" in text
+    assert "Present" in text
 
 
 def test_english_gloss_renders_for_a_foreign_degree_and_institution():
@@ -1125,28 +1126,27 @@ def test_release_rate_limits_europass_renders(agency_a, django_user_model, monke
 
 
 def test_no_network_call_when_a_binding_content_rule_already_blocks(monkeypatch):
-    """A BINDING content-only rule (photo_allowed here) is decidable from
-    `clean` alone and will block this render regardless of what europa.eu
-    returns -- render_europass_pdf must never run in that case, or a
-    student's name, email, education and employment history egress to a
-    third party for a render that PreflightBlocked was always going to
-    refuse to hand back."""
+    """A strict content-only rule code cannot apply (a required field the
+    student has not given) blocks before any egress. Rewritten on purpose
+    2026-10-14: it used a BINDING photo ban, which spec §6.4 step 8 now
+    applies to the content first -- so that render is no longer blocked
+    (test_a_strict_ban_code_can_apply_no_longer_stops_the_send)."""
     from apps.documents import render as render_module
 
     monkeypatch.setattr(
         render_module, "render_europass_pdf", lambda content, **_: pytest.fail("network")
     )
     rule = ConstraintRule(
-        rule_id="R-032",
-        key="photo_allowed",
-        value=False,
+        rule_id="R-079",
+        key="required_fields",
+        value=["citizenship"],
         enforcement=Enforcement.BINDING,
-        rule_text="no photograph permitted",
+        rule_text="SISGP: citizenship is a fixed template field.",
         source_url="",
     )
     with pytest.raises(PreflightBlocked):
         render_cv(
-            _content(photo_url="https://example.org/photo.jpg"),
+            _content(),
             variant="EUROPASS_API",
             constraints=(rule,),
             allow_network=True,
@@ -1325,8 +1325,8 @@ def _experience_entry(bullets):
 def test_each_bullet_is_its_own_list_item():
     html = _bullets_html(_experience_entry(("Built the pipeline.", "Cut runtime by half.")))
     assert html.count("<li>") == 2
-    assert "<li>Built the pipeline.</li>" in html
-    assert "<li>Cut runtime by half.</li>" in html
+    assert "<li>Built the pipeline</li>" in html
+    assert "<li>Cut runtime by half</li>" in html
 
 
 def test_bullets_reach_the_pdf_in_order():
@@ -1339,9 +1339,9 @@ def test_bullets_reach_the_pdf_in_order():
         }
     )
     text = _text(render_cv(content, variant="STANDARD"))
-    assert "Alpha bullet." in text
-    assert "Beta bullet." in text
-    assert text.index("Alpha bullet.") < text.index("Beta bullet.")
+    assert "Alpha bullet" in text
+    assert "Beta bullet" in text
+    assert text.index("Alpha bullet") < text.index("Beta bullet")
 
 
 # --- ResearchEntry carries where and when, not just what ---------------------
@@ -1399,7 +1399,7 @@ def test_an_undated_research_entry_renders_no_date_range():
 def test_an_open_ended_research_entry_reads_as_ongoing():
     entry = _research_entry(end_date=None)
     text = _text(render_cv(_content_with_research(entry), variant="STANDARD"))
-    assert "Jan 2026 – present" in text.replace("\n", " ")
+    assert "Jan 2026 – Present" in text.replace("\n", " ")
 
 
 # --- Skills keep the applicant's own grouping --------------------------------
@@ -2374,9 +2374,41 @@ def test_a_publication_without_a_doi_prints_its_landing_page():
     )
     text = _text(render_cv(_content_with_publications((no_doi, with_doi)), variant="STANDARD"))
 
-    assert "dl.iafastro.directory/event/IAC-2023/paper/76798/" in text
-    assert "doi.org/10.1021/acscatal.5c00348" in text
-    assert "pubs.example.org/landing" not in text
+    # a long address may wrap at a slash; the wrap is not part of the address
+    flat = text.replace("\n", "")
+    assert "dl.iafastro.directory/event/IAC-2023/paper/76798/" in flat
+    assert "doi.org/10.1021/acscatal.5c00348" in flat
+    assert "pubs.example.org/landing" not in flat
+
+
+def test_a_wrapped_link_never_gains_a_hyphen():
+    """Stage 1 review, seen on the owner's own render: justified list text is
+    hyphenated (hyphens: auto), and the IAC address wrapped as ".../pa-" /
+    "per/76798/" -- a hyphen that is not in the address, so a reader typing it
+    from paper reaches nothing. A link may wrap, never gain a character."""
+    from apps.documents.schemas import PublicationEntry
+
+    iac = PublicationEntry(
+        authors=("Orkhan Abdullayev", "Nihat Abdullayev", "Laman Aliyeva", "Atakhan Ahmadov"),
+        self_author_index=0,
+        year=2023,
+        title=(
+            "Revolutionizing Spectral Analysis of Stars Using Machine Learning Techniques "
+            "for Improved Classification and Identification"
+        ),
+        venue=(
+            "Proceedings of the International Astronautical Congress (IAC 2023), "
+            "International Astronautical Federation (IAF)"
+        ),
+        url="https://dl.iafastro.directory/event/IAC-2023/paper/76798/",
+    )
+    text = _text(render_cv(_content_with_publications((iac,)), variant="STANDARD"))
+
+    flat = text.replace("\n", "")
+    assert "https://dl.iafastro.directory/event/IAC-2023/paper/76798/" in flat
+    # The title around it may hyphenate (justified prose); the address may not.
+    address = flat[flat.index("https://dl.iafastro") :][: len("https://dl.iafastro.directory/event/IAC-2023/paper/76798/")]
+    assert "\u2010" not in address and "-per/" not in address
 
 
 def test_a_referee_marked_do_not_contact_says_so_beside_their_address():
@@ -2571,7 +2603,7 @@ def test_an_open_gap_row_closes_at_the_next_post():
 
     assert "Full-time job-hunting." in text
     assert "Jun 2023 – Mar 2024" in text
-    assert "present" not in text
+    assert "present" not in text.lower()
 
 
 def test_an_open_gap_row_hides_no_later_gap_from_the_check():
@@ -2628,3 +2660,964 @@ def test_an_oldest_first_programme_reaches_the_europass_render(monkeypatch):
 
     render_cv_with_warnings(_content(), variant="EUROPASS_API", allow_network=True)
     assert seen == {"oldest_first": False}
+
+
+# --- Stage 1, §3.1: the text layer reads in order -----------------------------
+
+def _bullet_content():
+    return _content(
+        experience=(
+            ExperienceEntry(
+                employer="EPFL",
+                title="Research Intern",
+                city="Lausanne",
+                country="CH",
+                start_date="2025-09-01",
+                end_date="2025-12-31",
+                bullets=(
+                    "Benchmarked PyTorch models on peptide data.",
+                    "Wrote the evaluation scripts.",
+                ),
+            ),
+        )
+    )
+
+
+def _every_list_content():
+    from apps.documents.schemas import AwardEntry
+
+    base = _bullet_content()
+    return base.model_copy(
+        update={
+            "awards": (AwardEntry(title="Best Prize", awarding_body="Uni", date="2023-05-01"),),
+            "publications": (
+                PublicationEntry(
+                    authors=("Doe, J.",), title="A paper", year=2024, status="PUBLISHED"
+                ),
+            ),
+            "languages": (LanguageEntry(language="English", cefr_level="C1"),),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "variant,funder",
+    [
+        ("STANDARD", None),
+        ("GERMAN_TABULAR", None),
+        ("EUROPASS", None),
+        ("FUNDER_TEMPLATE", "SISGP"),
+        ("FUNDER_TEMPLATE", "RHODES"),
+    ],
+)
+def test_each_bullet_marker_sits_on_its_own_line(variant, funder):
+    text = _text(render_cv(_every_list_content(), variant=variant, funder_template_id=funder))
+    lines = [line.strip() for line in text.splitlines()]
+    assert "•" not in lines, "a marker extracted on a line of its own"
+    # funder templates carry source whitespace after the no-break space
+    assert any(
+        line.startswith("•\xa0") and line.endswith("Benchmarked PyTorch models on peptide data")
+        for line in lines
+    )
+
+
+def test_award_marker_shares_the_award_title_line():
+    text = _text(render_cv(_every_list_content(), variant="STANDARD"))
+    assert any(
+        ln.startswith("•\xa0") and "Best Prize" in ln for ln in text.splitlines()
+    )
+
+
+def test_kerning_does_not_split_a_word():
+    text = _text(render_cv(_bullet_content(), variant="STANDARD"))
+    assert "PyTorch" in text.replace("\n", " ")
+    assert "PyT orch" not in text
+
+
+# --- Stage 1, 3.2: dates say what is true on the day of the render ----------
+
+_TODAY = date(2026, 10, 13)
+
+
+def test_a_degree_ending_after_today_reads_expected():
+    text = _text(
+        render_cv(
+            _education_content(start_date="2024-09-01", end_date="2026-06-30"),
+            variant="STANDARD",
+            today=date(2026, 3, 1),
+        )
+    ).replace("\n", " ")
+    assert "Sep 2024 – Jun 2026 (expected)" in text
+
+
+def test_a_finished_degree_has_no_expected_label():
+    text = _text(render_cv(_education_content(), variant="STANDARD", today=_TODAY))
+    assert "(expected)" not in text
+
+
+def test_an_open_ended_entry_reads_present_capitalised():
+    text = _text(render_cv(_education_content(end_date=None), variant="STANDARD", today=_TODAY))
+    assert "Present" in text
+
+
+def test_a_post_not_yet_started_is_left_off():
+    future = ExperienceEntry(
+        employer="Future Lab", title="Research Assistant", city="Paris", country="FR",
+        bullets=("Worked.",),
+        start_date="2026-11-01",
+    )
+    text = _text(render_cv(_content(experience=(future,)), variant="STANDARD", today=_TODAY))
+    assert "Future Lab" not in text
+
+
+def test_the_only_degree_starting_later_still_prints_as_admitted():
+    phd = EducationEntry(
+        degree_as_awarded="PhD in Chemoinformatics",
+        institution_original="Université de Strasbourg",
+        city="Strasbourg", country="FR", start_date="2026-11-01",
+    )
+    text = _text(render_cv(_content(education=(phd,)), variant="STANDARD", today=_TODAY))
+    text = text.replace("\n", " ")
+    assert "PhD in Chemoinformatics" in text
+    assert "Admitted; starts Nov 2026" in text
+    assert "Present" not in text
+
+
+def test_the_future_filter_reaches_the_europass_payload():
+    future = ExperienceEntry(
+        employer="Future Lab", title="RA", city="Paris", country="FR",
+        start_date="2026-11-01", bullets=("Worked.",),
+    )
+    clean, _ = europass_content(_content(experience=(future,)), (), today=_TODAY)
+    assert clean.experience == ()
+
+
+# --- Stage 1, 3.4: one tighter render before a binding page cap blocks -------
+
+
+def _one_page_cap(enforcement=Enforcement.BINDING):
+    return ConstraintRule(
+        rule_id="R-TEST-1P",
+        key="max_pages",
+        value=1,
+        enforcement=enforcement,
+        rule_text="one page maximum",
+        source_url="",
+    )
+
+
+def _just_over_one_page():
+    """Grow the bullet count until the normal render is 2 pages, so the test
+    does not depend on one font's exact metrics."""
+    for count in range(1, 40):
+        content = _content(experience=_many_experience(count))
+        if render_cv(content, variant="STANDARD").page_count == 2:
+            return content
+    raise AssertionError("could not build a two-page CV")
+
+
+def test_compact_retry_saves_a_cv_that_just_misses_a_one_page_cap():
+    artifact, violations = render_cv_with_warnings(
+        _just_over_one_page(), variant="STANDARD", constraints=(_one_page_cap(),)
+    )
+    assert artifact.page_count == 1
+    assert not [v for v in violations if v.rule.key == "max_pages"]
+
+
+def test_an_advisory_cap_does_not_trigger_the_compact_retry():
+    artifact, violations = render_cv_with_warnings(
+        _just_over_one_page(),
+        variant="STANDARD",
+        constraints=(_one_page_cap(Enforcement.ADVISORY_STYLE),),
+    )
+    assert artifact.page_count == 2
+    assert [v for v in violations if v.rule.key == "max_pages"]
+
+
+def test_the_compact_render_is_ten_point():
+    artifact = _render_pdf(
+        _content(),
+        variant="STANDARD",
+        today=date(2026, 10, 13),
+        font_family="Charis SIL",
+        font_pt=11.0,
+        compact=True,
+    )
+    assert artifact.page_count == 1
+
+
+def _baseline(pdf_bytes, needle):
+    """How far down page 1 the first text run containing ``needle`` sits.
+
+    WeasyPrint's text matrix counts down from the top of the page, so a larger
+    value is lower on the page."""
+    found = []
+
+    def visit(text, cm, tm, font, size):
+        if needle in text and not found:
+            found.append(tm[5] if tm[5] else cm[5])
+
+    PdfReader(io.BytesIO(pdf_bytes)).pages[0].extract_text(visitor_text=visit)
+    assert found, f"{needle!r} not on page 1"
+    return found[0]
+
+
+def test_compact_keeps_the_gap_between_the_contact_block_and_the_first_heading():
+    """Stage 1 review, seen on the owner's render: compact tightened every h2
+    to 10pt, and with a four-line contact block (email, phone, GitHub,
+    LinkedIn) the last contact line sat level with EDUCATION, reading as part
+    of that section. The header keeps its normal gap; only the space between
+    sections tightens."""
+    content = _content().model_copy(
+        update={
+            "personal_information": PersonalInformation(
+                full_name="Jane Doe",
+                email="jane@example.com",
+                phone="+994 50 000 00 00",
+                github_username="janedoe",
+                linkedin_handle="Jane Doe",
+            )
+        }
+    )
+    kwargs = {
+        "variant": "STANDARD",
+        "today": date(2026, 10, 13),
+        "font_family": "Charis SIL",
+        "font_pt": 11.0,
+    }
+    gaps = {}
+    for compact in (False, True):
+        pdf = _render_pdf(content, compact=compact, **kwargs).pdf_bytes
+        gaps[compact] = _baseline(pdf, "EDUCATION") - _baseline(pdf, "LinkedIn")
+    # Compact's text is 10pt against 11pt, so its line boxes are a little
+    # shorter; the heading gap itself is the same 16pt. Before the fix compact
+    # kept under half the gap (9.5 against 19.3).
+    assert gaps[True] >= 0.85 * gaps[False], gaps
+
+
+def _date_rule():
+    return ConstraintRule(
+        rule_id="R-TEST-DOI",
+        key="date_of_issue_required",
+        value=True,
+        enforcement=Enforcement.ADVISORY_STYLE,
+        rule_text="date of issue",
+        source_url="",
+    )
+
+
+def _page_text(artifact):
+    return " ".join(p.extract_text() for p in PdfReader(io.BytesIO(artifact.pdf_bytes)).pages)
+
+
+@pytest.mark.parametrize("variant", ["STANDARD", "EUROPASS_API"])
+def test_the_compact_render_replays_the_first_render_date_of_issue(variant):
+    content = _just_over_one_page()
+    normal, _ = render_cv_with_warnings(
+        content, variant=variant, constraints=(_date_rule(),)
+    )
+    compact, _ = render_cv_with_warnings(
+        content, variant=variant, constraints=(_date_rule(), _one_page_cap())
+    )
+    assert compact.page_count == 1
+    assert ("Date of issue" in _page_text(compact)) == ("Date of issue" in _page_text(normal))
+
+
+def test_a_kept_compact_render_tells_the_counsellor_the_font_size_changed():
+    font = ConstraintRule(
+        rule_id="P-FONT", key="font", value="Charis SIL, 12 pt",
+        enforcement=Enforcement.ADVISORY_HIGH_RISK, rule_text="12 pt", source_url="",
+    )
+    artifact, violations = render_cv_with_warnings(
+        _just_over_one_page(), variant="STANDARD", constraints=(_one_page_cap(), font)
+    )
+    assert artifact.page_count == 1
+    notes = [v.detail for v in violations if v.rule.key == "font"]
+    assert any("10 pt" in n and "12 pt" in n and "1-page" in n for n in notes)
+
+
+def test_a_compact_render_that_still_overflows_keeps_the_original_and_blocks():
+    content = _content(experience=_many_experience(20))
+    artifact, violations = render_cv_with_warnings(
+        content, variant="STANDARD", constraints=(_one_page_cap(),)
+    )
+    normal = render_cv(content, variant="STANDARD")
+    assert artifact.page_count == normal.page_count
+    assert [v for v in violations if v.rule.key == "max_pages"]
+    with pytest.raises(PreflightBlocked):
+        render_cv(content, variant="STANDARD", constraints=(_one_page_cap(),))
+
+
+@pytest.mark.parametrize(("raw", "shown"), [
+    ("Built X.", "Built X"),
+    ("Wrote tools etc.", "Wrote tools etc."),
+    ("Worked in the U.S.", "Worked in the U.S."),
+    ("Cited by Smith et al.", "Cited by Smith et al."),
+    ("Waited...", "Waited..."),
+    ("Waited…", "Waited…"),
+    ("Shipped it", "Shipped it"),
+])
+def test_trim_stop_filter(raw, shown):
+    from apps.documents.templatetags.cv_text import trim_stop
+
+    assert trim_stop(raw) == shown
+
+
+def test_bullet_endings_are_consistent_in_the_rendered_entry():
+    from django.template.loader import render_to_string
+
+    entry = _many_experience(1)[0].model_copy(
+        update={"bullets": ("Built X.", "Shipped Y", "Wrote Z.")}
+    )
+    html = render_to_string("documents/_cv_bullets.html", {"entry": entry})
+    assert "<li>Built X</li><li>Shipped Y</li><li>Wrote Z</li>" in html
+    assert entry.bullets[0] == "Built X."
+
+
+def test_compact_never_enlarges_text():
+    from unittest import mock
+
+    from apps.documents import render as render_module
+
+    seen = []
+    real = render_module.render_to_string
+    with mock.patch.object(
+        render_module, "render_to_string", side_effect=lambda t, c: seen.append(c) or real(t, c)
+    ):
+        for pt in (9.0, 12.0):
+            _render_pdf(
+                _content(), variant="STANDARD", today=date(2026, 10, 13),
+                font_family="Charis SIL", font_pt=pt, compact=True,
+            )
+    assert [c["font_pt"] for c in seen] == [9.0, 10.0]
+
+
+def test_compact_with_a_nine_point_rule_renders_nine_and_does_not_note_ten():
+    font = ConstraintRule(
+        rule_id="P-FONT", key="font", value="9 pt",
+        enforcement=Enforcement.ADVISORY_HIGH_RISK, rule_text="9 pt", source_url="",
+        scope="PROGRAMME",
+    )
+    _, violations = render_cv_with_warnings(
+        _just_over_one_page(), variant="STANDARD", constraints=(_one_page_cap(), font)
+    )
+    assert not [v for v in violations if v.rule.key == "font" and "10 pt" in v.detail]
+
+
+# --- spec 2026-10-12 §6.4 step 8: the privacy check before europa.eu ----------
+
+
+def _sent(monkeypatch):
+    """Capture the content handed to europa.eu, answering with the genuine fixture."""
+    from apps.documents import render as render_module
+
+    genuine = pathlib.Path("tests/documents/fixtures/europass_api.pdf").read_bytes()
+    sent = []
+
+    def _capture(content, **_):
+        sent.append(content)
+        return genuine
+
+    monkeypatch.setattr(render_module, "render_europass_pdf", _capture)
+    return sent
+
+
+def _with_dob_and_links():
+    content = _content(photo_url="https://example.org/photo.jpg")
+    personal = content.personal_information.model_copy(update={
+        "date_of_birth": date(2000, 1, 1), "github_url": "https://github.com/jane",
+        "orcid": "0000-0002-1825-0097",
+    })
+    return content.model_copy(update={"personal_information": personal})
+
+
+def _ban(key, value, enforcement=Enforcement.ADVISORY_HIGH_RISK):
+    return ConstraintRule(rule_id=f"PAGE-0-{key}"[:20], key=key, value=value,
+                          enforcement=enforcement, rule_text="The page's sentence.")
+
+
+def test_a_soft_page_ban_cannot_let_personal_data_reach_europa_eu(monkeypatch):
+    sent = _sent(monkeypatch)
+    render_cv_with_warnings(
+        _with_dob_and_links(), variant="EUROPASS_API", allow_network=True,
+        constraints=(_ban("date_of_birth_allowed", False), _ban("photo_allowed", False),
+                     _ban("prohibited_content", ["hyperlinks"])),
+    )
+    [personal] = [content.personal_information for content in sent]
+    assert (personal.date_of_birth, personal.photo_url, personal.github_url, personal.orcid) == (
+        None, None, None, None)
+
+
+def test_a_strict_ban_code_can_apply_no_longer_stops_the_send(monkeypatch):
+    sent = _sent(monkeypatch)
+    artifact = render_cv(
+        _content(photo_url="https://example.org/photo.jpg"), variant="EUROPASS_API",
+        constraints=(_ban("photo_allowed", False, Enforcement.BINDING),), allow_network=True,
+    )
+    assert artifact.variant == "EUROPASS_API"
+    assert sent[0].personal_information.photo_url is None
+
+
+def test_a_soft_unmet_content_rule_never_stops_a_send(monkeypatch):
+    sent = _sent(monkeypatch)
+    _artifact, violations = render_cv_with_warnings(
+        _content(), variant="EUROPASS_API", allow_network=True,
+        constraints=(_ban("required_fields", ["citizenship"]),),
+    )
+    assert len(sent) == 1
+    assert [v.rule.key for v in violations] == ["required_fields"]
+
+
+def test_a_local_render_still_reports_a_ban_rather_than_applying_it():
+    """Build step 4.4 applies the bans to every variant; until then only the
+    europa.eu path strips."""
+    _artifact, violations = render_cv_with_warnings(
+        _content(photo_url="https://example.org/photo.jpg"), variant="STANDARD",
+        constraints=(_ban("photo_allowed", False),),
+    )
+    assert [v.detail for v in violations] == ["content includes a photo"]
+
+
+def test_a_required_photo_that_is_missing_is_reported():
+    _artifact, violations = render_cv_with_warnings(
+        _content(), variant="STANDARD", constraints=(_ban("photo_required", True),))
+    assert [v.detail for v in violations] == ["content has no photo"]
+
+
+def test_a_required_photo_that_is_present_is_met():
+    _artifact, violations = render_cv_with_warnings(
+        _content(photo_url="https://example.org/p.jpg"), variant="STANDARD",
+        constraints=(_ban("photo_required", True),))
+    assert not violations
+
+
+def test_a_strict_required_photo_stops_the_europass_send_before_any_call(monkeypatch):
+    from apps.documents import render as render_module
+
+    monkeypatch.setattr(
+        render_module, "render_europass_pdf", lambda content, **_: pytest.fail("network")
+    )
+    with pytest.raises(PreflightBlocked):
+        render_cv(_content(photo_url="https://example.org/p.jpg"), variant="EUROPASS_API",
+                  allow_network=True,
+                  constraints=(_ban("photo_required", True, Enforcement.BINDING),))
+
+
+def test_a_soft_required_photo_is_reported_on_europass_but_never_stops_the_send(monkeypatch):
+    sent = _sent(monkeypatch)
+    _artifact, violations = render_cv_with_warnings(
+        _content(), variant="EUROPASS_API", allow_network=True,
+        constraints=(_ban("photo_required", True),))
+    assert len(sent) == 1
+    assert [v.detail for v in violations] == ["Europass sends no photo"]
+
+
+# --- CV build step 4.2: render checks a draft against its own saved list ------
+
+
+def _list_with(*, max_pages: int | None = None, prohibited: list[str] | None = None):
+    from apps.documents.requirement_list import Requirement, RequirementList
+
+    items = []
+    if max_pages is not None:
+        rule = ConstraintRule(
+            rule_id="P-MAX",
+            key="max_pages",
+            value=max_pages,
+            enforcement=Enforcement.BINDING,
+            rule_text="Max pages.",
+        )
+        items.append(
+            Requirement(
+                key="max_pages",
+                value=max_pages,
+                document="cv",
+                origin="programme",
+                force="strict",
+                rule=rule,
+            )
+        )
+    if prohibited is not None:
+        rule = ConstraintRule(
+            rule_id="P-PROHIB",
+            key="prohibited_content",
+            value=prohibited,
+            enforcement=Enforcement.ADVISORY_HIGH_RISK,
+            rule_text="Prohibited.",
+        )
+        items.append(
+            Requirement(
+                key="prohibited_content",
+                value=prohibited,
+                document="cv",
+                origin="programme",
+                force="soft",
+                rule=rule,
+            )
+        )
+    return RequirementList(items=tuple(items))
+
+
+def _approved_draft_with_list(agency, student, *, requirements):
+    from apps.documents.drafts import create_draft
+    from apps.tenancy.context import tenant_scope
+
+    with tenant_scope(agency.id):
+        draft = create_draft(
+            student=student,
+            kind=DocumentDraft.Kind.CV,
+            content=_content(),
+            requirements=requirements,
+        )
+        DocumentDraft.objects.filter(id=draft.id).update(
+            status=DocumentDraft.Status.APPROVED
+        )
+        draft.refresh_from_db()
+    return draft
+
+
+@pytest.mark.django_db
+def test_render_draft_uses_the_saved_list_not_the_live_rules(
+    agency_a, membership_a, monkeypatch
+):
+    from apps.documents import render as render_module
+    from apps.documents.render import draft_rules
+
+    draft = _approved_draft_with_list(
+        agency_a, membership_a, requirements=_list_with(max_pages=1)
+    )
+    monkeypatch.setattr(
+        render_module, "resolve_rules", lambda *a, **kw: pytest.fail("resolved live")
+    )
+    assert ("max_pages", 1) in {(r.key, r.value) for r in draft_rules(draft, _content())}
+
+
+@pytest.mark.django_db
+def test_a_saved_list_with_no_rules_never_falls_back_to_live(
+    agency_a, membership_a, monkeypatch
+):
+    from apps.documents import render as render_module
+    from apps.documents.requirement_list import RequirementList
+
+    draft = _approved_draft_with_list(
+        agency_a, membership_a, requirements=RequirementList()
+    )
+    monkeypatch.setattr(
+        render_module, "resolve_rules", lambda *a, **kw: pytest.fail("resolved live")
+    )
+    render_draft(draft=draft)
+
+
+@pytest.mark.django_db
+def test_a_legacy_draft_still_resolves_live(agency_a, membership_a):
+    from apps.documents.constraints import resolve_rules
+    from apps.documents.render import draft_rules
+
+    draft = _approved_draft_with_list(agency_a, membership_a, requirements=None)
+    assert draft_rules(draft, _content()) == resolve_rules(
+        draft.programme, draft.funding_opportunity, content=_content()
+    )
+
+
+def test_hyperlinks_ban_catches_and_strips_publication_url():
+    from apps.documents.render import without_banned_content
+    from apps.documents.schemas import PublicationEntry
+
+    pub = PublicationEntry(
+        title="Organocatalysis",
+        authors=("Doe, J.",),
+        venue="Nature",
+        year=2025,
+        doi="10.1038/s41586-025-00001-1",
+        url="https://example.org/paper.pdf",
+    )
+    with_pub = _content().model_copy(update={"publications": (pub,)})
+    rule = _ban("prohibited_content", ["hyperlinks"], Enforcement.BINDING)
+    cleaned = without_banned_content(with_pub, (rule,))
+    assert cleaned.publications[0].doi is None
+    assert cleaned.publications[0].url is None
+    with pytest.raises(PreflightBlocked):
+        render_cv(
+            _content().model_copy(
+                update={"publications": (pub.model_copy(update={"doi": None}),)}
+            ),
+            variant="STANDARD",
+            constraints=(rule,),
+        )
+
+
+@pytest.mark.django_db
+def test_resolve_variant_and_render_draft_use_saved_requirements_and_funder_template_id(
+    agency_a, membership_a
+):
+    from apps.documents.drafts import create_draft
+    from apps.documents.render import draft_directives, resolve_variant
+    from apps.documents.requirement_list import PageDirective, Requirement, RequirementList
+    from apps.funding.models import FundingFamily, FundingOpportunity, OpportunityScope
+    from apps.tenancy.context import tenant_scope
+
+    sisgp = FundingOpportunity.objects.create(
+        canonical_key="sisgp",
+        name="Swedish Institute Scholarship for Global Professionals",
+        family=FundingFamily.PRIVATE_FOUNDATION,
+        scope_type=OpportunityScope.GLOBAL,
+    )
+    directive = PageDirective(
+        action="emphasise",
+        target="research",
+        value=None,
+        rule_text="Emphasise research.",
+        source_url="https://si.se/cv",
+    )
+    req_list = RequirementList(
+        items=(
+            Requirement(
+                document="cv",
+                key="cv_format",
+                value="funder_template",
+                origin="scholarship",
+                force="strict",
+            ),
+            Requirement(
+                document="cv",
+                key="emphasise",
+                value="research",
+                origin="scholarship",
+                force="soft",
+                sentence="Emphasise research.",
+                source_url="https://si.se/cv",
+            ),
+        )
+    )
+    with tenant_scope(agency_a.id):
+        draft = create_draft(
+            student=membership_a,
+            kind=DocumentDraft.Kind.CV,
+            content=_content(),
+            funding_opportunity=sisgp,
+            requirements=req_list,
+        )
+        DocumentDraft.objects.filter(id=draft.id).update(
+            status=DocumentDraft.Status.APPROVED
+        )
+        draft.refresh_from_db()
+        assert resolve_variant(draft) == "FUNDER_TEMPLATE"
+        assert draft_directives(draft) == (directive,)
+        artifact = render_draft(draft=draft)
+        assert artifact.variant == "FUNDER_TEMPLATE"
+        assert artifact.pdf_bytes is not None and artifact.pdf_bytes.startswith(b"%PDF")
+
+
+def test_a_thesis_with_its_own_research_entry_prints_its_title_once():
+    content = _content(
+        education=(
+            EducationEntry(
+                degree_as_awarded="MSc Chemoinformatics",
+                institution_original="University of Strasbourg",
+                start_date=date(2024, 9, 1),
+                end_date=date(2026, 6, 30),
+                thesis_title="AZIMUTH",
+                supervisor="Prof. Varnek",
+            ),
+        ),
+    ).model_copy(
+        update={
+            "research": (
+                ResearchEntry(
+                    thesis_title="AZIMUTH",
+                    supervisor="Prof. Varnek",
+                    methods="Generative topographic mapping.",
+                ),
+            )
+        }
+    )
+    text = _text(render_cv(content, variant="STANDARD"))
+    assert text.count("AZIMUTH") == 1
+    assert "Thesis research" in text
+    assert text.count("Prof. Varnek") == 1
+
+
+@pytest.mark.django_db
+def test_render_draft_carries_its_advisory_warnings_on_the_artifact(
+    agency_a, membership_a, program_factory
+):
+    from apps.documents.drafts import create_draft
+    from apps.documents.models import DocumentDraft
+    from apps.documents.render import warning_record
+    from apps.tenancy.context import tenant_scope
+
+    rule = {
+        "rule_id": "PAGE-0-photo",
+        "key": "photo_required",
+        "value": True,
+        "enforcement": "ADVISORY_HIGH_RISK",
+        "rule_text": "Include a passport photo.",
+        "scope": "PROGRAMME",
+    }
+    programme = program_factory(cv_constraints=[rule])
+    with tenant_scope(agency_a.id):
+        draft = create_draft(
+            student=membership_a,
+            kind=DocumentDraft.Kind.CV,
+            content=_content(),
+            programme=programme,
+        )
+        DocumentDraft.objects.filter(id=draft.id).update(status=DocumentDraft.Status.APPROVED)
+        draft.refresh_from_db()
+        artifact = render_draft(draft=draft)
+    assert [v.rule.rule_id for v in artifact.warnings] == ["PAGE-0-photo"]
+    assert warning_record(artifact.warnings[0]) == {
+        "rule_id": "PAGE-0-photo",
+        "key": "photo_required",
+        "scope": "PROGRAMME",
+        "detail": "content has no photo",
+        "source_url": "",
+    }
+
+
+def test_content_warnings_need_no_artefact_and_skip_binding_rules():
+    from apps.documents.render import content_warnings
+
+    advisory = ConstraintRule(
+        rule_id="PAGE-3-undecided",
+        key="undecided",
+        value="cv:other",
+        enforcement=Enforcement.ADVISORY_HIGH_RISK,
+        rule_text="Please mention your thesis supervisor.",
+        scope="PROGRAMME",
+    )
+    binding = ConstraintRule(
+        rule_id="R-X",
+        key="photo_allowed",
+        value=False,
+        enforcement=Enforcement.BINDING,
+        rule_text="No photo.",
+    )
+    found = content_warnings(
+        _content(photo_url="https://example.test/me.jpg"), (advisory, binding)
+    )
+    assert [v.rule.rule_id for v in found] == ["PAGE-3-undecided"]
+
+
+def test_binding_content_failures_names_only_failing_binding_rules():
+    from apps.documents.render import binding_content_failures
+
+    binding = ConstraintRule(
+        rule_id="R-X",
+        key="photo_allowed",
+        value=False,
+        enforcement=Enforcement.BINDING,
+        rule_text="No photo.",
+    )
+    assert binding_content_failures(_content(), (binding,)) == frozenset()
+    assert binding_content_failures(
+        _content(photo_url="https://example.test/me.jpg"), (binding,)
+    ) == {"R-X"}
+
+
+def _page_rule(key, value, rule_id="PAGE-1-x", scope="PROGRAMME"):
+    return ConstraintRule(
+        rule_id=rule_id, key=key, value=value, enforcement=Enforcement.ADVISORY_HIGH_RISK,
+        rule_text="the page's sentence", scope=scope,
+    )
+
+
+def test_a_missing_school_entry_is_reported_when_the_page_asks_for_it():
+    _, violations = render_cv_with_warnings(
+        _content(), variant="STANDARD",
+        constraints=(_page_rule("cv_start", {"start": "upper_secondary"}),),
+    )
+    assert any("upper secondary school" in v.detail for v in violations)
+
+
+def test_a_school_entry_satisfies_the_start_rule():
+    content = _content(education=(
+        EducationEntry(degree_as_awarded="BSc", institution_original="ADA University",
+                       start_date="2020-09-01"),
+        EducationEntry(degree_as_awarded="Attestat", institution_original="School No. 6",
+                       end_date="2020-06-30"),
+    ))
+    _, violations = render_cv_with_warnings(
+        content, variant="STANDARD",
+        constraints=(_page_rule("cv_start", {"start": "upper_secondary"}),),
+    )
+    assert not [v for v in violations if v.rule.key == "cv_start"]
+
+
+def test_a_section_over_its_cap_is_reported_and_one_under_is_not():
+    pubs = tuple(
+        PublicationEntry(authors=("Doe, J.",), title=f"Paper {n}", year=2020 + n)
+        for n in range(3)
+    )
+    content = _content().model_copy(update={"publications": pubs})
+    over = _page_rule("cv_item_cap", {"section": "publications", "max": 2})
+    under = _page_rule("cv_item_cap", {"section": "publications", "max": 3}, "PAGE-2-x")
+    _, violations = render_cv_with_warnings(content, variant="STANDARD", constraints=(over, under))
+    assert [v.rule.rule_id for v in violations if v.rule.key == "cv_item_cap"] == ["PAGE-1-x"]
+
+
+def test_a_scope_rule_is_never_a_warning():
+    _, violations = render_cv_with_warnings(
+        _content(), variant="STANDARD", constraints=(_page_rule("cv_scope", "complete"),),
+    )
+    assert not [v for v in violations if v.rule.key == "cv_scope"]
+
+
+def test_a_programme_signature_rule_prints_a_line_and_asks_for_a_hand_signature():
+    artifact, violations = render_cv_with_warnings(
+        _content(), variant="STANDARD",
+        constraints=(_page_rule("signature_required", True),),
+    )
+    assert "Signature:" in _text(artifact)
+    assert any("signed by hand" in v.detail for v in violations)
+
+
+def test_a_country_signature_custom_reports_but_prints_no_line():
+    """R-031 stays as today (spec §8): advisory, no line added to German CVs."""
+    artifact, violations = render_cv_with_warnings(
+        _content(), variant="STANDARD",
+        constraints=(_page_rule("signature_required", True, "R-031", scope="COUNTRY"),),
+    )
+    assert "Signature:" not in _text(artifact)
+    assert any("signed by hand" in v.detail for v in violations)
+
+
+def _with_volunteering():
+    return _content(experience=(
+        ExperienceEntry(employer="SOCAR", title="Intern", start_date="2022-06-01",
+                        end_date="2022-08-31", bullets=("Built a dashboard.",)),
+        ExperienceEntry(employer="Red Crescent", title="Volunteer Tutor", unpaid=True,
+                        start_date="2021-01-01", end_date="2021-06-30",
+                        bullets=("Tutored ten pupils.",)),
+    ))
+
+
+@pytest.mark.parametrize("variant", ["STANDARD", "GERMAN_TABULAR", "EUROPASS"])
+def test_unpaid_posts_print_under_their_own_heading_after_experience(variant):
+    text = _text(render_cv(_with_volunteering(), variant=variant))
+    assert text.index("EXPERIENCE") < text.index("Intern") < text.index("VOLUNTEERING")
+    assert text.index("VOLUNTEERING") < text.index("Volunteer Tutor")
+
+
+def test_no_unpaid_post_means_no_volunteering_heading():
+    text = _text(render_cv(_content(), variant="STANDARD"))
+    assert "VOLUNTEERING" not in text.upper()
+
+
+@pytest.mark.parametrize("variant", ["STANDARD", "GERMAN_TABULAR", "EUROPASS"])
+def test_certifications_print_after_skills_and_before_awards(variant):
+    from apps.documents.schemas import AwardEntry, CertificationEntry
+
+    content = _content().model_copy(update={
+        "skills": (SkillEntry(name="Python"),),
+        "certifications": (CertificationEntry(title="First Aid", issuer="Red Crescent",
+                                              date="2022-03-01"),),
+        "awards": (AwardEntry(title="Debate prize"),),
+    })
+    text = _text(render_cv(content, variant=variant))
+    assert text.index("Python") < text.index("CERTIFICATIONS") < text.index("First Aid")
+    assert text.index("First Aid") < text.index("Debate prize")
+    assert "Red Crescent" in text
+
+
+def test_no_certification_means_no_heading():
+    assert "CERTIFICATIONS" not in _text(render_cv(_content(), variant="STANDARD")).upper()
+
+
+def test_a_language_test_in_certifications_is_dropped_only_when_languages_has_it():
+    from apps.documents.render import without_duplicated_language_tests
+    from apps.documents.schemas import CertificationEntry
+
+    ielts = CertificationEntry(title="IELTS Academic 7.5")
+    aid = CertificationEntry(title="First Aid")
+    twin = _content().model_copy(update={
+        "languages": (LanguageEntry(language="English", test_name="IELTS Academic",
+                                    test_score="7.5"),),
+        "certifications": (ielts, aid),
+    })
+    assert without_duplicated_language_tests(twin).certifications == (aid,)
+    alone = twin.model_copy(update={"languages": ()})
+    assert without_duplicated_language_tests(alone).certifications == (ielts, aid)
+
+
+def test_military_service_prints_as_one_dated_line_among_the_posts():
+    """Spec §9: one dated line, no detail, in date order with the posts."""
+    content = _content(experience=(
+        ExperienceEntry(employer="SOCAR", title="Intern", start_date="2026-01-01",
+                        end_date="2026-06-30", bullets=("Built a dashboard.",)),
+    )).model_copy(update={"timeline": (TimelineEntry(
+        start_date="2024-10-01", end_date="2025-10-31",
+        statement="Compulsory military service, Armed Forces of the Republic of Azerbaijan",
+    ),)})
+    text = _text(render_cv(content, variant="STANDARD"))
+    assert text.index("Intern") < text.index("Compulsory military service")
+    assert "Armed Forces of the Republic of Azerbaijan" in " ".join(text.split())
+
+
+@pytest.mark.parametrize("variant", ["STANDARD", "GERMAN_TABULAR", "EUROPASS"])
+def test_include_experience_project_directive_prints_the_project_line(variant):
+    """R-061 / S-038: when a programme's cv_directives include
+    `experience.project`, the experience partial prints `Project: ...`."""
+    from apps.documents.constraints import PageDirective
+
+    entry = _post(project="AZIMUTH catalyst discovery")
+    content = _content().model_copy(update={"experience": (entry,)})
+    directive = PageDirective(
+        action="include",
+        target="experience.project",
+        rule_text="Indicate full names of institutions, universities, projects.",
+    )
+    text = _text(render_cv(content, variant=variant, directives=(directive,)))
+    assert "Project: AZIMUTH catalyst discovery" in " ".join(text.split())
+
+
+def test_europass_variant_prints_education_and_training_heading():
+    """S-042 / R-053: local EUROPASS variant prints 'Education and Training'
+    while STANDARD and GERMAN_TABULAR keep 'Education'."""
+    europass_text = _text(render_cv(_content(), variant="EUROPASS"))
+    standard_text = _text(render_cv(_content(), variant="STANDARD"))
+    tabular_text = _text(render_cv(_content(), variant="GERMAN_TABULAR"))
+    assert "EDUCATION AND TRAINING" in europass_text
+    assert "EDUCATION AND TRAINING" not in standard_text
+    assert "EDUCATION AND TRAINING" not in tabular_text
+
+
+def test_eth_zurich_programme_selects_german_tabular_while_other_swiss_stays_standard():
+    """S-047: ETH Zurich requires a CV 'in table form', whereas Switzerland as
+    a country is trilingual and defaults to STANDARD."""
+    from types import SimpleNamespace
+
+    eth_prog = SimpleNamespace(
+        country_code="CH",
+        cv_format_requirement="",
+        institution=SimpleNamespace(canonical_key="ch:eth zurich"),
+    )
+    epfl_prog = SimpleNamespace(
+        country_code="CH",
+        cv_format_requirement="",
+        institution=SimpleNamespace(canonical_key="ch:epfl"),
+    )
+    assert select_render_variant(eth_prog) == "GERMAN_TABULAR"
+    assert select_render_variant(epfl_prog) == "STANDARD"
+
+
+def test_europass_api_local_preview_emits_required_date_of_issue():
+    """R-010 / R-070: DAAD EPOS resolves to EUROPASS_API with a BINDING
+    date_of_issue_required rule; the local preview path (allow_network=False)
+    must pass date_of_issue so preview rendering succeeds."""
+    from datetime import date
+
+    artifact = render_cv(
+        _content(),
+        variant="EUROPASS_API",
+        constraints=(_date_of_issue_rule(),),
+        allow_network=False,
+    )
+    assert artifact.variant == "EUROPASS"
+    assert date.today().isoformat() in _text(artifact)
+
+
+
+
+
+

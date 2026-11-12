@@ -17,7 +17,7 @@
 - **Per-country adapters are out of scope** (spec §0). This plan gives them something to join against.
 - Gates, all of which must pass before the final commit: `uv run ruff check .`, `uv run mypy apps config`, `uv run pytest`.
 - **Never run `ruff format`** — it rewrites 26 unrelated files in this repo.
-- Set `POSTGRES_DB` per worktree (e.g. `POSTGRES_DB=tehsil_identifier_binding`); the shared `test_tehsil` wedges across parallel sessions.
+- Set `POSTGRES_DB` per worktree (e.g. `POSTGRES_DB=elmify_identifier_binding`); the shared `test_elmify` wedges across parallel sessions.
 - `git -C <worktree>` for every git command. A bare `git commit` lands on the wrong branch because the shell's cwd resets to the main repo.
 - Every new shared-catalog table must be added to `_SHARED_TABLES` in `tests/tenancy/test_database_isolation.py`, or its isolation is untested.
 - TDD: every constraint gets a watched failure before the code that satisfies it.
@@ -53,7 +53,7 @@ Amends PR #47, which is open, `CONFLICTING`, and has **zero reviews** (CodeRabbi
 - [ ] **Step 1: Confirm `ror_id` has no readers**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/institution-screen-schema
+cd /home/orkhan/Desktop/elmify/.worktrees/institution-screen-schema
 grep -rn "ror_id" apps/ tests/ | grep -v "error_identifies"
 ```
 
@@ -82,7 +82,7 @@ Delete this operation from `apps/funding/migrations/0022_register_listing_and_co
 - [ ] **Step 4: Verify Django sees no pending model changes**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run python manage.py makemigrations --check --dry-run funding
+POSTGRES_DB=elmify_identifier_binding uv run python manage.py makemigrations --check --dry-run funding
 ```
 
 Expected: `No changes detected`. If it wants a migration, the model and `0022` disagree — recheck Steps 2 and 3.
@@ -90,7 +90,7 @@ Expected: `No changes detected`. If it wants a migration, the model and `0022` d
 - [ ] **Step 5: Run the funding tests**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run pytest tests/funding/ -q
+POSTGRES_DB=elmify_identifier_binding uv run pytest tests/funding/ -q
 ```
 
 Expected: PASS. If a test references `ror_id`, Step 1 missed it.
@@ -98,7 +98,7 @@ Expected: PASS. If a test references `ror_id`, Step 1 missed it.
 - [ ] **Step 6: Commit and force-push the amended PR**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent
+cd /home/orkhan/Desktop/elmify
 git -C .worktrees/institution-screen-schema add apps/funding/models.py apps/funding/migrations/0022_register_listing_and_coverage.py
 git -C .worktrees/institution-screen-schema commit -m "fix(screen): drop ror_id before it ships
 
@@ -127,7 +127,7 @@ git -C .worktrees/institution-screen-schema push --force-with-lease
 - [ ] **Step 1: Create the branch**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent
+cd /home/orkhan/Desktop/elmify
 git worktree add .worktrees/identifier-binding -b claude/institution-identifier-binding claude/institution-screen-schema
 git -C .worktrees/identifier-binding cherry-pick 4770382 aaeb9a9 094f98a
 ```
@@ -252,7 +252,7 @@ def test_the_scheme_constant_matches_the_choices_class() -> None:
 - [ ] **Step 3: Run them to watch every one fail**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run pytest tests/funding/test_institution_identifier.py -v
+POSTGRES_DB=elmify_identifier_binding uv run pytest tests/funding/test_institution_identifier.py -v
 ```
 
 Expected: all six FAIL with `AttributeError: module 'apps.funding.models' has no attribute 'InstitutionIdentifier'`. **Do not proceed until you have seen them fail.** A test that passes before the code exists is testing nothing.
@@ -346,7 +346,7 @@ class InstitutionIdentifier(models.Model):
 - [ ] **Step 6: Generate the migration**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run python manage.py makemigrations funding --name institution_identifier
+POSTGRES_DB=elmify_identifier_binding uv run python manage.py makemigrations funding --name institution_identifier
 ```
 
 Expected: creates `apps/funding/migrations/0025_institution_identifier.py` depending on `0024_register_constraints`. Open it and add a header comment above the imports:
@@ -362,7 +362,7 @@ Expected: creates `apps/funding/migrations/0025_institution_identifier.py` depen
 - [ ] **Step 7: Run the tests until green**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run pytest tests/funding/test_institution_identifier.py -v
+POSTGRES_DB=elmify_identifier_binding uv run pytest tests/funding/test_institution_identifier.py -v
 ```
 
 Expected: 6 passed.
@@ -370,7 +370,7 @@ Expected: 6 passed.
 - [ ] **Step 8: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent
+cd /home/orkhan/Desktop/elmify
 git -C .worktrees/identifier-binding add apps/funding/models.py apps/funding/migrations/0025_institution_identifier.py tests/funding/test_institution_identifier.py
 git -C .worktrees/identifier-binding commit -m "feat(screen): bind a register row by code, never by name
 
@@ -407,7 +407,7 @@ In `tests/tenancy/test_database_isolation.py`, add after `"funding_registercover
 - [ ] **Step 2: Run the isolation test to watch it fail**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run pytest tests/tenancy/test_database_isolation.py -v
+POSTGRES_DB=elmify_identifier_binding uv run pytest tests/tenancy/test_database_isolation.py -v
 ```
 
 Expected: FAIL — the table is listed as shared catalog but has no RLS policy yet. **Watch this fail before writing the migration.**
@@ -460,7 +460,7 @@ class Migration(migrations.Migration):
 - [ ] **Step 4: Run the isolation test until green**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run pytest tests/tenancy/test_database_isolation.py -v
+POSTGRES_DB=elmify_identifier_binding uv run pytest tests/tenancy/test_database_isolation.py -v
 ```
 
 Expected: PASS.
@@ -468,7 +468,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent
+cd /home/orkhan/Desktop/elmify
 git -C .worktrees/identifier-binding add apps/funding/migrations/0026_institution_identifier_rls.py tests/tenancy/test_database_isolation.py
 git -C .worktrees/identifier-binding commit -m "feat(screen): RLS on the identifier table
 
@@ -617,7 +617,7 @@ def test_it_refuses_to_write_nothing_in_silence(houston, tmp_path, monkeypatch) 
 - [ ] **Step 3: Run them to watch every one fail**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run pytest tests/funding/test_load_institution_identifiers.py -v
+POSTGRES_DB=elmify_identifier_binding uv run pytest tests/funding/test_load_institution_identifiers.py -v
 ```
 
 Expected: all five FAIL with `CommandError: Unknown command: 'load_institution_identifiers'`. **Do not proceed until you have seen them fail.**
@@ -737,7 +737,7 @@ class Command(BaseCommand):
 - [ ] **Step 5: Run the tests until green**
 
 ```bash
-POSTGRES_DB=tehsil_identifier_binding uv run pytest tests/funding/test_load_institution_identifiers.py -v
+POSTGRES_DB=elmify_identifier_binding uv run pytest tests/funding/test_load_institution_identifiers.py -v
 ```
 
 Expected: 5 passed. If `test_a_code_already_bound_elsewhere_stops_the_load` fails on the match string, the `IntegrityError` message did not include the value — widen the `match=` to `"collides"`.
@@ -745,8 +745,8 @@ Expected: 5 passed. If `test_a_code_already_bound_elsewhere_stops_the_load` fail
 - [ ] **Step 6: Run the loader against the real CSV**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/identifier-binding
-POSTGRES_DB=tehsil_identifier_binding DATABASE_ROLE=migration \
+cd /home/orkhan/Desktop/elmify/.worktrees/identifier-binding
+POSTGRES_DB=elmify_identifier_binding DATABASE_ROLE=migration \
   uv run python manage.py load_institution_identifiers docs/research/institution-identifiers.csv
 ```
 
@@ -755,10 +755,10 @@ Expected: `CommandError: line 2: no institution 'institution:houston'` — the c
 - [ ] **Step 7: Run all gates**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/identifier-binding
+cd /home/orkhan/Desktop/elmify/.worktrees/identifier-binding
 uv run ruff check .
 uv run mypy apps config
-POSTGRES_DB=tehsil_identifier_binding uv run pytest
+POSTGRES_DB=elmify_identifier_binding uv run pytest
 ```
 
 All three must pass. **Do not run `ruff format`.**
@@ -766,7 +766,7 @@ All three must pass. **Do not run `ruff format`.**
 - [ ] **Step 8: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent
+cd /home/orkhan/Desktop/elmify
 git -C .worktrees/identifier-binding add docs/research/institution-identifiers.csv apps/funding/management/commands/load_institution_identifiers.py tests/funding/test_load_institution_identifiers.py
 git -C .worktrees/identifier-binding commit -m "feat(screen): curated identifier bindings, loaded loudly
 

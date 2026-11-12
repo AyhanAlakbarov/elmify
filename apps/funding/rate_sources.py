@@ -50,7 +50,13 @@ def parse_cbar_daily(payload: bytes) -> RateTable:
         if code is None or value is None or code not in ISO_4217_CODES:
             continue
         divisor = Decimal(nominal) if nominal and nominal.strip().isdigit() else Decimal("1")
-        rates[code] = Decimal(value) / divisor
+        quoted = Decimal(value)
+        if quoted == 0:
+            continue
+        # CBAR quotes AZN per `nominal` units. RateTable holds units of the
+        # currency per ONE base unit -- what fx.convert reads, and what the ECB
+        # table holds -- so the quote is inverted, never stored as written.
+        rates[code] = divisor / quoted
     _require_rates(rates, "CBAR")
     stamp = root.get("Date")
     if stamp is None:

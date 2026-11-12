@@ -18,6 +18,8 @@ class S3Client(Protocol):
 
     def get_object(self, **kwargs: object) -> dict[str, _StreamingBody]: ...
 
+    def delete_object(self, **kwargs: object) -> object: ...
+
 
 class S3ObjectStore:
     """Concrete ``ObjectStore`` (see snapshot.py's Protocol) backed by boto3.
@@ -37,6 +39,9 @@ class S3ObjectStore:
     def put(self, key: str, body: bytes) -> str:
         response = self._client.put_object(Bucket=self._bucket, Key=key, Body=body)
         return response.get("VersionId", "null")
+
+    def delete_version(self, key: str, version_id: str) -> None:
+        self._client.delete_object(Bucket=self._bucket, Key=key, VersionId=version_id)
 
     def get(self, key: str) -> bytes:
         """Bytes for ``key``, or ``KeyError`` if absent -- what callers catch.
@@ -91,3 +96,8 @@ class _LocalS3:
         if not path.exists():
             raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
         return {"Body": BytesIO(path.read_bytes())}
+
+    def delete_object(self, **kwargs: object) -> object:
+        path = self._path(kwargs["Key"])
+        path.unlink(missing_ok=True)
+        return {}

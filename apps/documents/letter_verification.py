@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from uuid import UUID
@@ -29,9 +30,10 @@ from apps.research.extraction import (
     privacy_safe_identifier,
 )
 
-from .letter_gates import capitalised_phrases
+from .letter_gates import _PERSON_TITLES, capitalised_phrases
 from .letter_schemas import ClaimKind, LetterClaim, LetterContent
 from .models import NarrativeInput, VerifiedFact
+from .research_fit.papers import strip_academic_titles
 from .verification import Verdict
 
 logger = logging.getLogger(__name__)
@@ -44,27 +46,105 @@ def _normalize(text: str) -> str:
     return " ".join(text.split()).casefold()
 
 
+#: Digit runs, with separators kept as written: "1998", "40", "2,500", "3.5".
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+_POSSESSIVE_SUFFIX = re.compile(r"['\u2019]s\b", re.IGNORECASE)
+
+
+def _entity_anchored_in_text(
+    entity: str, text: str, provenance: Mapping[str, object]
+) -> tuple[bool, frozenset[str]]:
+    norm_entity = _normalize(entity)
+    bare_person = strip_academic_titles(entity)
+    is_person = provenance.get("kind") == "named_person" or bare_person != entity
+    person_tokens: frozenset[str] = (
+        frozenset(
+            w.casefold().rstrip(".")
+            for w in _POSSESSIVE_SUFFIX.sub("", bare_person).split()
+            if w.strip(".")
+        )
+        if is_person
+        else frozenset()
+    )
+    if norm_entity in text:
+        return True, person_tokens
+    if is_person and bare_person:
+        norm_bare = _normalize(bare_person)
+        if len(norm_bare.split()) >= 2 and norm_bare in text:
+            return True, person_tokens
+        surname = norm_bare.split()[-1] if norm_bare.split() else ""
+        clean_text = _POSSESSIVE_SUFFIX.sub("", text)
+        if len(surname) >= 3 and re.search(rf"\b{re.escape(surname)}\b", clean_text):
+            return True, person_tokens
+    paper_title = _normalize(str(provenance.get("paper_title") or ""))
+    if paper_title and len(paper_title.split()) >= 2 and paper_title in text:
+        return True, person_tokens
+    return False, person_tokens
+
+
+def _phrase_matches_person(clean_phrase: str, person_tokens: frozenset[str]) -> bool:
+    if not person_tokens:
+        return False
+    words = [w.rstrip(".") for w in clean_phrase.split() if w.rstrip(".")]
+    if not words:
+        return False
+    has_name_token = any(w in person_tokens for w in words)
+    return has_name_token and all(
+        w in person_tokens or w in _PERSON_TITLES for w in words
+    )
+
+
 def sourced_claim_matches(claim: LetterClaim, provenance: Mapping[str, object]) -> bool:
-    """D9's three conditions on an engine-written SOURCED claim.
+    """D9's conditions on an engine-written SOURCED claim.
 
     Entity-level, on the claim's own `text` -- never its span, which hygiene
-    widens to the whole sentence: (1) the provenance entity appears in the
-    text, normalised; (2) every capitalised multi-word phrase in the text
-    appears in the provenance sentence, so a name the model added is caught;
-    (3) the cited URL is the one the sentence was fetched from. The letter may
-    paraphrase the work, never the name.
+    widens to the whole sentence: (1) the provenance entity (or, for a titled
+    person, their name/surname or verified paper title) appears in the text,
+    normalised; (2) every capitalised multi-word phrase in the text appears in
+    the provenance evidence (entity, sentence, or verified paper metadata), so
+    a name the model added is caught; (3) every NUMBER in the text appears in
+    the provenance evidence, so a figure the model added is caught too; (4) the
+    cited URL is one the provenance verified. The letter may paraphrase the
+    work, never the name and never a number.
+
+    Matched on digit boundaries, so the "40" in a sentence's "1940" does not
+    satisfy a claim's "40". Two limits, both deliberate: a spelled-out number
+    ("forty") is not checked, because that needs a language-aware parser and
+    every one of these sentences is quoted verbatim from a page that mostly
+    writes figures as digits; and "40,000" against a sentence's "40000" reads
+    as a mismatch, which fails toward blocking rather than toward shipping an
+    unverifiable figure.
     """
     entity = str(provenance.get("entity") or "")
-    sentence = _normalize(str(provenance.get("sentence") or ""))
+    raw_sentence = str(provenance.get("sentence") or "")
+    sentence = _normalize(raw_sentence)
     if not entity or not sentence:
         return False
+    raw_evidence = " ".join(
+        str(provenance.get(key) or "")
+        for key in ("entity", "sentence", "paper_title", "paper_finding", "paper_year")
+        if provenance.get(key) not in (None, "")
+    )
+    evidence = _normalize(_POSSESSIVE_SUFFIX.sub("", raw_evidence))
     text = _normalize(claim.text)
-    if _normalize(entity) not in text:
+    anchored, person_tokens = _entity_anchored_in_text(entity, text, provenance)
+    if not anchored:
         return False
     for phrase in capitalised_phrases(claim.text):
-        if _normalize(phrase) not in sentence:
+        clean_phrase = _normalize(_POSSESSIVE_SUFFIX.sub("", phrase))
+        if (
+            clean_phrase
+            and clean_phrase not in evidence
+            and not _phrase_matches_person(clean_phrase, person_tokens)
+        ):
             return False
-    return claim.source_url == provenance.get("source_url")
+    for number in _NUMBER.findall(claim.text):
+        if not re.search(rf"(?<!\d){re.escape(number)}(?!\d)", raw_evidence):
+            return False
+    allowed_urls = {
+        u for u in (provenance.get("source_url"), provenance.get("paper_url")) if u
+    }
+    return bool(claim.source_url and claim.source_url in allowed_urls)
 
 
 @dataclass(frozen=True)
@@ -90,11 +170,15 @@ def _classify(
         if not claim.source_url:
             return Verdict.UNSUPPORTED
         if claim.input_id is None:
-            # A home-country context fact (DAAD A10) has no producer yet:
-            # a flag for the counselor, not a block (spec D9, §9).
+            # A home-country context fact (DAAD A10) without a verified
+            # producer row: a flag for the counselor, not a block (spec D9, §9).
             return Verdict.UNCERTAIN
         entry = inputs.get(claim.input_id)
-        if entry is None or entry.kind != NarrativeInput.Kind.RESEARCH_FIT:
+        if entry is None or entry.kind not in (
+            NarrativeInput.Kind.RESEARCH_FIT,
+            NarrativeInput.Kind.HOME_COUNTRY_CIRCUMSTANCES,
+            NarrativeInput.Kind.DEVELOPMENT_IMPACT,
+        ):
             return Verdict.UNSUPPORTED
         provenance = entry.provenance
         if not provenance:

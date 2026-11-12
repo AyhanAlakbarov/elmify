@@ -52,7 +52,7 @@ def test_cbar_is_used_first_and_covers_regional_currencies() -> None:
     table = rates.load_rates(fetch=fetch, today=TODAY)
     assert table is not None
     assert table.source == "CBAR"
-    assert table.rates["KZT"] == Decimal("0.0033")
+    assert table.rates["KZT"] == Decimal("100") / Decimal("0.33")
     assert fetch.asked == [rates.CBAR_URL.format(day=TODAY)]  # the ECB is never asked
 
 
@@ -82,4 +82,4 @@ def test_the_table_is_cached_between_runs() -> None:
     first = rates.current_rates(fetch=fetch, today=TODAY)
     second = rates.current_rates(fetch=_fetcher({}), today=TODAY)
     assert first == second
-    assert second is not None and second.rates["EUR"] == Decimal("1.9")
+    assert second is not None and second.rates["EUR"] == Decimal("1") / Decimal("1.9")

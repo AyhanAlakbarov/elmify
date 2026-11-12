@@ -46,6 +46,7 @@ from apps.tenancy.models import Membership
 from .audit import record_event
 from .gaps import GapQuestion, answer_questions, gap_questions
 from .models import VerifiedFact
+from .profile_bridge import sync_facts_to_profile
 
 
 def field_name(question: GapQuestion) -> str:
@@ -96,4 +97,9 @@ def submit_answers(
     written = answer_questions(answers, student=student)
     for fact in written:
         record_event(actor=actor or student, event="document.gap_answered", object_id=fact.id)
+    if any(
+        fact.category in (VerifiedFact.Category.EDUCATION, VerifiedFact.Category.LANGUAGE)
+        for fact in written
+    ):
+        sync_facts_to_profile(student)
     return written

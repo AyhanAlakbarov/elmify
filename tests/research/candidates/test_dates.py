@@ -157,3 +157,22 @@ def test_a_range_after_an_ordinary_word_stays_a_range(line, expected):
 
 def test_a_label_in_another_language_never_starts_a_range():
     assert parts("Mərhələ 2 – 15 mart") == (None, 3, 15, None, None, None)
+
+
+def test_islamic_hijri_and_japanese_reiwa_dates_normalize_to_gregorian():
+    # Islamic Hijri numeric & named-month dates (SA, AE, QA, KW, BH)
+    assert parts("آخر موعد للتقديم: 15 شعبان 1447 هـ") == (2026, 2, 3, None, None, None)
+    assert parts("Deadline: 1447/08/15 هـ") == (2026, 2, 3, None, None, None)
+    assert parts("Deadline: 15/08/1447 AH") == (2026, 2, 3, None, None, None)
+    assert parts("1 Ramadan 1447 AH") == (2026, 2, 18, None, None, None)
+    assert parts("التقديم خلال شهر شعبان 1447 هـ") == (2026, 2, None, None, None, None)
+    assert parts("من 1 شعبان 1447 هـ إلى 15 شعبان 1447 هـ") == (2026, 1, 20, 2026, 2, 3)
+
+    # Bare Hijri month name without Hijri year is not a date (guards surnames like "Prof. Ramadan")
+    assert find_dates("Supervisor: Prof. Ramadan and Dr. Rajab") == []
+
+    # Japanese Imperial Era (Reiwa 令和N年 -> 2018 + N)
+    assert parts("出願期限：令和8年4月15日") == (2026, 4, 15, None, None, None)
+    assert parts("令和9年10月入学") == (2027, 10, None, None, None, None)
+    assert parts("令和8年4月1日から令和8年5月15日") == (2026, 4, 1, 2026, 5, 15)
+

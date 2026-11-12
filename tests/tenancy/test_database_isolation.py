@@ -69,6 +69,8 @@ _SHARED_TABLES = (
     # what an angle said -- facts about the web, never a person; the angle
     # generator's input has no field a student fact could travel in.
     "research_sweepangle",
+    "research_programmeangle",
+    "research_tapqueryrun",
     "research_sweeprun",
     "research_sweepquery",
     "research_sweepdiscovery",
@@ -84,6 +86,9 @@ _SHARED_TABLES = (
     # resolution applier when an operator pastes a moved page. A URL pair,
     # never a person.
     "research_movedpage",
+    # Anonymised application outcome calibration records (funding/0065, 0066),
+    # written by runtime_engine only; runtime_web holds no grant.
+    "funding_outcomecalibrationrecord",
 )
 _TASK7_TABLES = (*_SHARED_TABLES, "tenancy_agencydatauseagreementversion")
 
@@ -97,7 +102,11 @@ _TASK7_TABLES = (*_SHARED_TABLES, "tenancy_agencydatauseagreementversion")
 #: role). research_platformagency itself is in neither list: it holds one
 #: agency id and no RLS; its guard is a GRANT (SELECT only, for both runtime
 #: roles), pinned in the same module.
-_PLATFORM_TABLES = ("research_resolutionitem", "research_golditem")
+_PLATFORM_TABLES = (
+    "research_resolutionitem",
+    "research_golditem",
+    "research_winnercohortprofile",
+)
 
 _PLATFORM_PREDICATE_FRAGMENT = "research_platformagency"
 

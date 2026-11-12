@@ -9,12 +9,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
+from django.urls import reverse
 from django.utils import timezone
 
+from apps.accounts.models import StudentProfileVersion
 from apps.concierge.models import Notification
 from apps.documents.models import DocumentDraft
+from apps.documents.transcript_check import transcript_to_check
 from apps.portals.pairing import active_pairings
 from apps.tenancy.models import Membership
 
@@ -24,7 +27,6 @@ from .templatetags.dashboard import https_only
 
 #: "Application not started, deadline near" (spec §3).
 START_SOON = timedelta(days=14)
-_FAR = datetime.max.replace(tzinfo=UTC)
 MAILBOX_URL = "/student/settings/mailbox/"
 EXTENSION_URL = "/student/settings/extension/"
 
@@ -41,16 +43,20 @@ class NeedItem:
     acknowledge_url: str = ""
     #: A second, dismissing button ("Ignore") -- only an offer has one.
     ignore_url: str = ""
-
-
-def _deadline_key(item: NeedItem) -> datetime:
-    return item.deadline if item.deadline is not None else _FAR
+    #: The "Apply to ..." button: the dashboard swaps it for a sentence when
+    #: this browser cannot apply.
+    apply: bool = False
+    #: The card's own §9.2 text, so Needs and the card name the same day.
+    deadline_text: str = ""
 
 
 def sort_items(items: Iterable[NeedItem]) -> list[NeedItem]:
     """Dated items by deadline, then undated ones newest first (spec §3)."""
     listed = list(items)
-    dated = sorted((i for i in listed if i.deadline is not None), key=_deadline_key)
+    dated = sorted(
+        (i for i in listed if i.deadline is not None),
+        key=lambda i: i.deadline,  # type: ignore[arg-type,return-value]
+    )
     undated = sorted(
         (i for i in listed if i.deadline is None), key=lambda i: i.created_at, reverse=True
     )
@@ -60,22 +66,73 @@ def sort_items(items: Iterable[NeedItem]) -> list[NeedItem]:
 #: The documents table's label for a motivation letter (documents.table.ROWS).
 LETTER_LABEL = "Motivation letter"
 LETTERS_URL = "/student/writing/#letters"
+REFS_LABEL = "Recommendation letters"
+REFS_PLAN_URL = "/student/referees/plan/"
+
+
+def _grouped_doc_item(
+    cards: list[Card],
+    *,
+    label: str,
+    plural_noun: str,
+    single_button: str,
+    single_url: str,
+    multi_button: str,
+    multi_url: str,
+) -> NeedItem:
+    earliest = min(
+        (card for card in cards if card.deadline is not None),
+        key=lambda card: card.deadline,  # type: ignore[arg-type,return-value]
+        default=None,
+    )
+    first = earliest.deadline if earliest else None
+    first_text = earliest.deadline_text if earliest else cards[0].deadline_text
+    if len(cards) == 1:
+        card = cards[0]
+        return NeedItem(
+            f"{label} — needed for {card.title}",
+            single_button,
+            single_url,
+            "get",
+            card.deadline,
+            card.created_at,
+            deadline_text=card.deadline_text,
+        )
+    return NeedItem(
+        f"{plural_noun} still needed for {len(cards)} applications",
+        multi_button,
+        multi_url,
+        "get",
+        first,
+        min(card.created_at for card in cards),
+        deadline_text=first_text,
+    )
 
 
 def _letters_item(cards: list[Card]) -> NeedItem:
     """Every missing motivation letter as one row: a letter is written, not
     submitted, and thirteen near-identical rows buried everything else on Home."""
-    dated = [card.deadline for card in cards if card.deadline is not None]
-    first = min(dated) if dated else None
-    if len(cards) == 1:
-        card = cards[0]
-        return NeedItem(
-            f"{LETTER_LABEL} — needed for {card.title}", "Write letter",
-            f"/student/writing/letters/{card.application_id}/", "get", first, card.created_at,
-        )
-    return NeedItem(
-        f"Motivation letters still needed for {len(cards)} applications", "Write letters",
-        LETTERS_URL, "get", first, min(card.created_at for card in cards),
+    return _grouped_doc_item(
+        cards,
+        label=LETTER_LABEL,
+        plural_noun="Motivation letters",
+        single_button="Write letter",
+        single_url=f"/student/writing/letters/{cards[0].application_id}/",
+        multi_button="Write letters",
+        multi_url=LETTERS_URL,
+    )
+
+
+def _refs_item(cards: list[Card]) -> NeedItem:
+    """Group multiple missing recommendation letter rows on the student's Home."""
+    return _grouped_doc_item(
+        cards,
+        label=REFS_LABEL,
+        plural_noun="Recommendation letters",
+        single_button="Submit document",
+        single_url=cards[0].documents_url,
+        multi_button="Plan referees",
+        multi_url=REFS_PLAN_URL,
     )
 
 
@@ -86,22 +143,32 @@ def items_from_cards(
     opens the writer. A counsellor keeps one row per application."""
     items: list[NeedItem] = []
     letters: list[Card] = []
+    refs: list[Card] = []
     for card in cards:
+        if card.closed:  # closed for this intake: nothing left to do
+            continue
         # Decided (withdrawn and refused included): nothing sent now changes
         # it, so only a conditional offer's conditions are still asked for.
         for label in card.conditions if card.outcome else card.missing:
             if group_letters and label == LETTER_LABEL and not card.outcome:
                 letters.append(card)
                 continue
+            if group_letters and label == REFS_LABEL and not card.outcome:
+                refs.append(card)
+                continue
             items.append(NeedItem(
                 f"{label} — needed for {card.title}", "Submit document", card.documents_url,
                 "get", card.deadline, card.created_at,
+                deadline_text=card.deadline_text,
             ))
         given, total = card.answers
         if total > given and not card.outcome:
+            missing_answers = total - given
+            word = "answer" if missing_answers == 1 else "answers"
             items.append(NeedItem(
-                f"{total - given} answers missing for {card.title}", "Answer", answer_url,
+                f"{missing_answers} {word} missing for {card.title}", "Answer", answer_url,
                 "get", card.deadline, card.created_at,
+                deadline_text=card.deadline_text,
             ))
         if (
             card.column is Column.TO_START
@@ -112,13 +179,19 @@ def items_from_cards(
             items.append(NeedItem(
                 f"{card.title} is not started yet", card.button.label, card.button.url,
                 card.button.method, card.deadline, card.created_at,
+                apply=card.button.apply, deadline_text=card.deadline_text,
             ))
-        if card.fee and card.column in (Column.TO_START, Column.IN_PROGRESS):
+        if (
+            card.fee
+            and card.fee_state != "PAID"
+            and card.portal_url
+            and card.column in (Column.TO_START, Column.IN_PROGRESS)
+        ):
             items.append(NeedItem(
-                f"Application fee for {card.title}: {card.fee} {card.fee_currency} — "
+                f"Application fee for {card.title}: {card.fee_text} — "
                 "you pay this at submission",
-                "Open portal", card.portal_url or card.kit_url, "get", card.deadline,
-                card.created_at,
+                "Open portal", card.portal_url, "get", card.deadline,
+                card.created_at, deadline_text=card.deadline_text,
             ))
         if card.offer is not None:
             # Owner, 2026-10-04: Accept makes the offered programme a card.
@@ -129,6 +202,8 @@ def items_from_cards(
             ))
     if letters:
         items.append(_letters_item(letters))
+    if refs:
+        items.append(_refs_item(refs))
     return items
 
 
@@ -159,7 +234,7 @@ def items_for(
     answer_url = f"{base}gap-interview/" if counselor_view else "/student/gap-interview/"
     review_url = f"{base}#documents" if counselor_view else "/student/writing/#drafts"
     items = items_from_cards(
-        board.cards, now=now, answer_url=answer_url, group_letters=not counselor_view
+        board.open_cards, now=now, answer_url=answer_url, group_letters=not counselor_view
     )
     for note in (
         Notification.objects.filter(recipient=student, acknowledged_at__isnull=True)
@@ -179,6 +254,25 @@ def items_for(
         items.append(NeedItem(
             f"Your CV (version {draft.version}) is waiting for approval", "Review",
             review_url, "get", None, draft.created_at,
+        ))
+    if not counselor_view and (reading := transcript_to_check(student)) is not None:
+        # Plan 3b: a read transcript waits for the student's check.
+        items.append(NeedItem(
+            "We read your transcript — check it", "Check your transcript",
+            reverse("student-transcript-check"), "get", None, reading.created_at,
+        ))
+    if (
+        not counselor_view
+        and not board.cards
+        and not StudentProfileVersion.objects.filter(student=student).exists()
+    ):
+        items.append(NeedItem(
+            "Complete your profile so we can find programmes and scholarships for you",
+            "Complete your profile",
+            reverse("student-profile"),
+            "get",
+            None,
+            now - timedelta(seconds=1),
         ))
     if (
         not counselor_view

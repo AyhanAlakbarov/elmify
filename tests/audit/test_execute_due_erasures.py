@@ -168,6 +168,50 @@ def test_a_caught_failure_does_not_strand_the_rest_of_the_batch(
     )
 
 
+def test_a_failure_s_secret_name_never_reaches_stderr(agency_a, django_user_model, monkeypatch):
+    """AWS names the SecretId in an AccessDenied message, and the SecretId
+    names the student (elmify/portal/<tenant>/<student>/<host>). The operator
+    gets the error code, never the message."""
+    from io import StringIO
+
+    from botocore.exceptions import ClientError
+
+    request = _due(agency_a, _student(agency_a, django_user_model, "leak-1"))
+    secret = f"elmify/portal/{agency_a.id}/{request.student_id}/apply.example.edu"
+
+    def denied(**_kw):
+        raise ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": f"not allowed on {secret}"}},
+            "DeleteSecret",
+        )
+
+    monkeypatch.setattr("apps.audit.deletion.delete_student_portal_credentials", denied)
+    err = StringIO()
+    call_command("execute_due_erasures", stderr=err)
+
+    assert err.getvalue().strip() == f"{request.id}: AccessDeniedException"
+    assert str(request.student_id) not in err.getvalue()
+
+
+def test_a_blocked_erasure_still_says_why(agency_a, django_user_model, monkeypatch):
+    """DeletionBlocked carries our own fixed reasons (legal hold, no retention
+    policy), never personal data, and the operator needs to know which."""
+    from io import StringIO
+
+    from apps.audit.deletion import DeletionBlocked
+
+    request = _due(agency_a, _student(agency_a, django_user_model, "blocked-1"))
+
+    def blocked(**_kw):
+        raise DeletionBlocked("legal hold prevents deletion")
+
+    monkeypatch.setattr("apps.audit.deletion.delete_student_portal_credentials", blocked)
+    err = StringIO()
+    call_command("execute_due_erasures", stderr=err)
+
+    assert err.getvalue().strip() == f"{request.id}: legal hold prevents deletion"
+
+
 def test_a_completed_erasure_survives_a_later_failure_in_the_batch(
     agency_a, django_user_model, monkeypatch
 ):

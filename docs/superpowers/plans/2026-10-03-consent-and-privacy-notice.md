@@ -18,7 +18,7 @@
 - Direct students (tenant = `research.PlatformAgency.agency`) accept `terms` + `privacy_notice_direct`; agency students accept `terms` + `privacy_notice_agency` (spec §5).
 - Privacy request deadline: 7 working days (Mon–Fri) from receipt (spec §6). No public-holiday calendar.
 - Requests are advertised by e-mail only; a request on paper with ID or by enhanced e-signature is still logged (spec §6). No privacy-settings page (spec §8).
-- Lint: `uv run ruff check .` only, never `ruff format`. Types: `uv run mypy apps config`. Tests: `POSTGRES_DB=tehsil_consent_privacy uv run pytest -q`.
+- Lint: `uv run ruff check .` only, never `ruff format`. Types: `uv run mypy apps config`. Tests: `POSTGRES_DB=elmify_consent_privacy uv run pytest -q`.
 - New tenant tables: `ENABLE` + `FORCE ROW LEVEL SECURITY`, policy `tenant_isolation`, composite FK `(tenant_id, student_id) -> tenancy_membership (tenant_id, id)` (CLAUDE.md, "Row-level security").
 - Every field of a model reachable from `Membership` is classified once in `apps/audit/redaction.py` `REDACT` or `KEEP` (`tests/audit/test_redaction_classification.py`).
 - **Deferred, not in this plan:** the anonymiser and anonymised store (spec §4, build step 3). No admission or funding outcome is recorded anywhere yet (CLAUDE.md, "Derived data"), so there is nothing to anonymise; build it with outcome capture (tailored-programme spec build step 8). The agency data-processing agreement is a document (Task 6), not code.
@@ -141,7 +141,7 @@ def test_runtime_roles_read_but_never_write_legal_documents(role, role_connectio
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.privacy'`.
 
 - [ ] **Step 3: Implement**
@@ -357,10 +357,10 @@ The three `legal/*.en.md` files: copy their text from Task 6, Step 1 (write Task
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy -q`
 Expected: PASS. If `test_runtime_roles_read_but_never_write_legal_documents` fails because `funding/0049`'s default privileges are not applied to this table, check the migration order with `uv run python manage.py showmigrations privacy funding`.
 
-Then run the sweeps a new table can trip: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/tenancy tests/audit -q`. Expected: PASS. `LegalDocument` is not added to `_SHARED_TABLES` (that list is for catalogue tables with `shared_catalog_select`, which the web role cannot read).
+Then run the sweeps a new table can trip: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/tenancy tests/audit -q`. Expected: PASS. `LegalDocument` is not added to `_SHARED_TABLES` (that list is for catalogue tables with `shared_catalog_select`, which the web role cannot read).
 
 - [ ] **Step 5: Commit**
 
@@ -462,7 +462,7 @@ def test_acceptance_rows_are_tenant_isolated(membership_a, agency_b, published, 
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy/test_acceptance.py -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy/test_acceptance.py -q`
 Expected: FAIL — `ImportError: cannot import name 'acceptance'`.
 
 - [ ] **Step 3: Implement**
@@ -583,7 +583,7 @@ If `tests/audit/test_redaction_classification.py` then reports `privacy.LegalDoc
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py -q`
 Expected: PASS (including `test_every_tenant_scoped_model_has_rls_enabled_and_forced`).
 
 - [ ] **Step 5: Commit**
@@ -715,7 +715,7 @@ def test_legal_page_shows_the_current_text(client, domain_a, published):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy/test_signup.py -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy/test_signup.py -q`
 Expected: FAIL — `ImportError` / `NoReverseMatch`.
 
 - [ ] **Step 3: Implement**
@@ -893,7 +893,7 @@ If `/signup/` and `/legal/` are rejected by `TenantMembershipMiddleware` for ano
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -975,7 +975,7 @@ def test_reaccept_without_the_tick_keeps_the_lock(client, user_a, domain_a, acce
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy/test_reacceptance.py -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy/test_reacceptance.py -q`
 Expected: FAIL — `NoReverseMatch: 'privacy-accept'`.
 
 - [ ] **Step 3: Implement**
@@ -1047,7 +1047,7 @@ and in `TenantMembershipMiddleware.__call__`, after the deletion-lock block:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy tests/tenancy tests/audit/test_deletion_views.py -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy tests/tenancy tests/audit/test_deletion_views.py -q`
 Expected: PASS. Existing student-view tests must not start redirecting: they publish no legal documents, and `needs_acceptance` asks for nothing when none is published.
 
 - [ ] **Step 5: Commit**
@@ -1149,7 +1149,7 @@ Also add one test in the same style as the existing reminder-sweep tests (`grep 
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy/test_requests.py -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy/test_requests.py -q`
 Expected: FAIL — `ImportError: cannot import name 'requests'`.
 
 - [ ] **Step 3: Implement**
@@ -1354,7 +1354,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy tests/portals tests/tenancy tests/audit -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy tests/portals tests/tenancy tests/audit -q`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -1404,12 +1404,12 @@ def test_every_translation_is_marked_as_a_draft_for_the_lawyer():
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy/test_documents.py -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy/test_documents.py -q`
 Expected: FAIL — the `az`/`ru` files do not exist.
 
 - [ ] **Step 3: Write the texts**
 
-`privacy_notice_direct.en.md` carries every item of spec §2 in plain sentences, in this order: who we are and `privacy@` (use the placeholder address `privacy@tehsil.example` and the line "Company name and address: to be completed before launch" — the company is not incorporated yet); what we process (the spec §2 list); why, one purpose per line, including "improving recommendations, aggregate statistics and testing our models on anonymised data only"; sensitive information; who receives it, naming the AI providers by company and country, including the People's Republic of China; transfers abroad and that the student's consent permits them; how long ("personal data for as long as your account is active plus 12 months, then deleted; anonymised data, which cannot identify you, indefinitely"); rights and how to use them ("e-mail privacy@…; we reply within 7 working days"); how changes are announced. `privacy_notice_agency.en.md` is the same, with the agency named as controller ("{{ agency }}") and Tehsil as its processor, and no marketing paragraph. `terms.en.md`: the service, the student's obligations (true information, own documents), that the student pays application fees directly to institutions, no admission or funding guarantee, liability limits, termination and deletion, governing law Azerbaijan.
+`privacy_notice_direct.en.md` carries every item of spec §2 in plain sentences, in this order: who we are and `privacy@` (use the placeholder address `privacy@elmify.example` and the line "Company name and address: to be completed before launch" — the company is not incorporated yet); what we process (the spec §2 list); why, one purpose per line, including "improving recommendations, aggregate statistics and testing our models on anonymised data only"; sensitive information; who receives it, naming the AI providers by company and country, including the People's Republic of China; transfers abroad and that the student's consent permits them; how long ("personal data for as long as your account is active plus 12 months, then deleted; anonymised data, which cannot identify you, indefinitely"); rights and how to use them ("e-mail privacy@…; we reply within 7 working days"); how changes are announced. `privacy_notice_agency.en.md` is the same, with the agency named as controller ("{{ agency }}") and Elmify as its processor, and no marketing paragraph. `terms.en.md`: the service, the student's obligations (true information, own documents), that the student pays application fees directly to institutions, no admission or funding guarantee, liability limits, termination and deletion, governing law Azerbaijan.
 
 `az` and `ru` files: faithful translations of the English, each starting with the line `DRAFT — translation for legal review, not yet approved.`.
 
@@ -1419,7 +1419,7 @@ Expected: FAIL — the `az`/`ru` files do not exist.
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_consent_privacy uv run pytest tests/privacy -q`
+Run: `POSTGRES_DB=elmify_consent_privacy uv run pytest tests/privacy -q`
 Expected: PASS.
 
 - [ ] **Step 5: Full validation and commit**
@@ -1431,7 +1431,7 @@ uv run ruff check .
 uv run mypy apps config
 uv run python manage.py check
 uv run python manage.py makemigrations --check --dry-run
-POSTGRES_DB=tehsil_consent_privacy uv run pytest -q
+POSTGRES_DB=elmify_consent_privacy uv run pytest -q
 ```
 
 ```bash

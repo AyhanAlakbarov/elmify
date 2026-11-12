@@ -10,7 +10,6 @@ DATABASES = database_config(os.environ, require_explicit_role=True)
 DEBUG = False
 RESEARCH_QUEUE_URL = os.environ["RESEARCH_QUEUE_URL"]
 EUROPASS_QUEUE_URL = os.environ["EUROPASS_QUEUE_URL"]
-PORTAL_QUEUE_URL = os.environ["PORTAL_QUEUE_URL"]
 DOCUMENT_QUEUE_URL = os.environ["DOCUMENT_QUEUE_URL"]
 DOCUMENT_SCAN_QUEUE_URL = os.environ["DOCUMENT_SCAN_QUEUE_URL"]
 MAILBOX_QUEUE_URL = os.environ["MAILBOX_QUEUE_URL"]

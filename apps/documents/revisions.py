@@ -7,6 +7,7 @@ from apps.tenancy.models import Membership
 from .audit import record_event
 from .drafts import create_draft
 from .models import DocumentDraft, RevisionRequest, VerifiedFact
+from .requirement_list import RequirementList
 from .schemas import CVContent
 
 _STYLE_STRUCTURE_ROUND_CAP = 2
@@ -17,10 +18,17 @@ class RevisionRejected(ValueError):
 
 
 def _style_structure_count(document: DocumentDraft) -> int:
-    return RevisionRequest.objects.filter(
+    qs = RevisionRequest.objects.filter(
         document__student=document.student,
         document__kind=document.kind,
         kind=RevisionRequest.Kind.STYLE_STRUCTURE,
+    )
+    if document.application_id is not None:
+        return qs.filter(document__application_id=document.application_id).count()
+    return qs.filter(
+        document__application__isnull=True,
+        document__programme_id=document.programme_id,
+        document__funding_opportunity_id=document.funding_opportunity_id,
     ).count()
 
 
@@ -69,6 +77,15 @@ def counselor_quick_edit(
         content=content,
         facts=[link.fact for link in document.source_fact_links.select_related("fact")],
         programme=document.programme,
+        funding_opportunity=document.funding_opportunity,
+        application=document.application,
+        requirements=(
+            RequirementList.model_validate(document.requirements)
+            if document.requirements is not None
+            else None
+        ),
+        destination_label=document.destination_label,
+        is_general=document.is_general,
         render_variant=document.render_variant,
         actor=counselor,
     )

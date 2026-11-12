@@ -78,7 +78,7 @@ quarter — and re-opening the §10 terms question in its harder form.
    "what we prepared" in the §5.5 trail.
 
 3. **No portal credential exists anywhere.** The student is already logged in. `auth.py`,
-   the `tehsil/portal/*` secret prefix, `PortalTaskRole`'s `GetSecretValue`, reauthentication,
+   the `elmify/portal/*` secret prefix, `PortalTaskRole`'s `GetSecretValue`, reauthentication,
    recovery-by-portal-identifier and the browser profiles are retired. `WorkerTaskRole`'s
    `DeleteSecret` on that prefix is re-scoped to the mailbox tokens of
    `2026-09-15-student-owned-mailbox-design.md`, not deleted: erasure still needs it.
@@ -168,6 +168,15 @@ numbered decisions above, these govern.
    touching the portal. The extension *applies* the kit. If the extension cannot act on a portal,
    the student falls back to the kit and nothing is lost. The kit is the product; the extension is
    speed.
+
+   **Amended 2026-10-10 (owner):** the student no longer sees the Application Kit. Students apply
+   only through the extension, and nothing on the dashboard shows how to apply by hand (lanes spec
+   §5.1). The kit survives only as "Answers we'll submit", a read-only debugging page for the
+   student's assigned counsellor: every other caller gets the same 404 as a non-existent
+   application, opening it writes nothing, and the student never waits on it. The server-side preparation stays: the Fill Packet, and the stored requirements copy
+   (`capture_requirements`) that the Documents page and the programme page read. Decision 12's
+   fallback becomes "install the extension" / "open this in Chrome or Edge" / "open this on a
+   computer".
 
 2. **Install and pairing are enforced onboarding, not optional extras.** The dashboard detects the
    extension on every load. Without it, the *Start application* button becomes *Install the
@@ -518,7 +527,7 @@ student's own browser needs no evasion, which was the whole point of the 2026-08
 | `learn.py` | keep the PII guard and rate limit; replace Stagehand `observe()` with the snapshot mapper |
 | `reporting.py` | keep |
 | `auth.py`, `profiles.py`, `engine.py`, `resolve.py`, `dispatch.py`, `worker.py`, `queue.py`, `run_portal_worker` | retire (deletion plan) |
-| `infra/template.yaml` Portal* resources, `scripts/validate_portal_sandbox.py` | retire (deletion plan); re-scope `WorkerTaskRole` `DeleteSecret` to `tehsil/mailbox/*` |
+| `infra/template.yaml` Portal* resources, `scripts/validate_portal_sandbox.py` | retire (deletion plan); re-scope `WorkerTaskRole` `DeleteSecret` to `elmify/mailbox/*` |
 | new `apps/portals/ext_api.py`, `packets.py` (`build_kit` + `mint_packet`), `pairing.py`, `actions.py` | server side of the extension |
 | new `apps/portals/views.py` kit page + `templates/portals/kit.html` | the no-extension layer |
 | `apps/concierge` reminder command (`send_deadline_reminders`) + an EventBridge rule beside `EuropassCanaryRule` | owner decision 8's ladder |
@@ -596,5 +605,8 @@ Store publishing and a Playwright job in CI.
    them.
 2. ~~Confirmation evidence~~ — **decided 2026-09-15: capture automatically**; the confirmation mail
    and the portal status read (decision 7) corroborate it.
-3. **Deletion timing**: delete the server tier once the extension's end-to-end suite is green on
-   the fixtures (recommended), or after the first real portal succeeds?
+3. ~~Deletion timing~~ — **decided 2026-10-03: deleted now**, before any real portal has
+   succeeded through the extension. Also deleted with it, beyond the "retire" rows of the table
+   above: `services.py`, `recovery.py` and `fill.py` (nothing outside the server tier called
+   them; read-back lives in the content script) and `challenge.detect_challenge` (only
+   `MARKERS` stays, pinned against the content script). `RecoveryEvent` and `reporting.py` stay.

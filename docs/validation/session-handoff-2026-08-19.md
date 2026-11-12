@@ -9,7 +9,7 @@ this note only carries what those don't.
 
 - **master**: PR #1 (design contract + tokens + badges) and PR #2 (form
   contract + htmx 4xx fix + inline student error paths) merged.
-- **`claude/tehsil-agent-design-authority-501p0l`**: restarted from master
+- **`claude/elmify-design-authority-501p0l`**: restarted from master
   after PR #2, carrying the layout-composition pass (scaffold, §7 panels,
   flow column, §10 empty-state slots) and this note. Its PR merges to master.
 - Suite baseline: 594 passed, 2 skipped on Postgres. CI = ruff check, mypy,
@@ -80,7 +80,7 @@ verbatim.
 ## Tooling notes for local sessions
 
 - Tests need Postgres (`config/settings/test.py` inherits the Postgres
-  config; defaults user/password/db `tehsil` on 127.0.0.1:5432).
+  config; defaults user/password/db `elmify` on 127.0.0.1:5432).
 - Visual QA loop used throughout: `tests/acceptance/test_swap_render.py`
   with `SWAP_RENDER_OUT=<dir>` dumps the student pack page under the three
   §3 hexes; serve the dir with a `static` symlink to the repo's `static/`

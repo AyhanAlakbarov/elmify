@@ -86,10 +86,13 @@ class DiffbotEnhance:
             data = self._get(DIFFBOT_ENHANCE_URL, params={
                 "token": self._token, "type": _ORGANIZATION, "name": name,
             }, headers={})
-        except (SourceBlocked, ValueError):
+        except (SourceBlocked, ValueError) as error:
             # ValueError covers UnsafeTarget and a body that is not JSON; none
             # of them may carry the token out in a chained cause.
-            raise ProviderUnavailable("diffbot enhance failed") from None
+            safe_msg = str(error).replace(self._token, "***") if self._token else str(error)
+            raise ProviderUnavailable(
+                f"diffbot enhance failed ({type(error).__name__}: {safe_msg})"
+            ) from None
         items = data.get("data")
         for item in items if isinstance(items, list) else []:
             entity = item.get("entity") if isinstance(item, dict) else None

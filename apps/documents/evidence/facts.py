@@ -1,54 +1,62 @@
-"""Write evidence into the shared ledger.
+"""Every database read and write of the evidence package (CV evidence spec §7.5, §9, §11).
 
-This is the only module in the package that WRITES to the ledger -- the
-property Task 8's structural invariant tests pin
-(tests/documents/evidence/test_invariants.py). `intake.py` also imports
-Django models (VerifiedFact, DocumentVersion, Membership), but only for type
-annotations; it calls no `.objects.` and no `.save()`, which is exempted and
-separately checked there. Every other module in this package is pure or
-plain HTTP, which is what makes the interesting logic testable without a
-database.
+The only module here that touches the database (tests/documents/evidence/
+test_invariants.py pins it). Each function opens its own short
+tenant_transaction: the document worker runs as runtime_engine behind FORCE
+ROW LEVEL SECURITY, and refresh.py must never hold a transaction across an
+HTTP or model call, so it calls these one at a time between them.
 
-Every payload is built by verification.fact_payload -- "the place payload keys
-are defined in exactly one place, the place the verifier reads them from". A
-hand-built dict here would drift from the verifier and the drift would be
-silent.
-
-WHY MECHANICAL FACTS ARE CONFIRMED AT INGEST. ingest_uploaded_cv writes
-confirmed_by=None and its docstring explains why: "the anti-fabrication design
-collapses if a model's reading of an unverified file can flow into a generated
-document." That rule is about a MODEL'S READING. Crossref and the GitHub API
-return structured records parsed deterministically with no model in the path,
-and every field is re-derivable from the registry at any time. Confirming them
-would mean a human re-reading what the parser read. The student supplying the
-source is the act of confirmation, so confirmed_by is the student.
-
-Anything extraction.py proposes is the opposite case and is written
-confirmed_by=None -- it is not a fact until a human accepts or edits it.
+WHAT IS CONFIRMED. A publication from Crossref or OpenAlex is parsed with no
+model in the path, so the student naming the DOI confirms it. Everything a
+repo or thesis suggests -- languages included (decision 9) -- is an
+unconfirmed SKILL fact the student accepts or drops. A reading is not a fact
+at all: it lives in EvidenceReading, which nothing but this module reads, so
+it never reaches the confirm list, tailoring, the portal profile or
+generation.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import NamedTuple
+from datetime import datetime
+from typing import Any
+from uuid import UUID
 
 from django.utils import timezone
 
+from apps.concierge.models import DocumentVersion
+from apps.tenancy.db import tenant_transaction
+from apps.tenancy.middleware import deletion_lock_target
 from apps.tenancy.models import Membership
 
-from ..models import VerifiedFact
-from ..schemas import PublicationEntry, PublicationStatus, ResearchEntry, SkillEntry
-from ..verification import fact_payload
+from ..models import EvidenceReading, VerifiedFact
+from ..schemas import PublicationEntry, PublicationStatus, SkillEntry
+from ..verification import fact_payload, unsuperseded_facts
 from .extraction import Technique
+from .github import login_from_identity
 from .publication import PublicationRecord
-from .repo import RepoSnapshot
 
-#: Crossref and OpenAlex types we are willing to record as published. Anything
-#: else -- a preprint, posted content, a dataset -- is not guessed at: the
-#: schema forbids upgrading unpublished work, so it goes to the student.
+#: Crossref and OpenAlex types recorded as published; anything else needs the student.
 _PUBLISHED_TYPES = frozenset(
     {"journal-article", "proceedings-article", "book-chapter", "article"}
 )
+#: The source_ref of every IDENTITY row written for a typed or cleared login.
+GITHUB_LOGIN_REF = "github-login"
+#: Below this a language is a stray file (371 bytes of R must go, 828 of Shell stay).
+_LANGUAGE_FLOOR_BYTES = 500
+#: Ranked by per-file import count -- an alphabetical cut kept `ase` and dropped `torch`.
+_MAX_LIBRARY_SKILLS = 15
+_MAX_TECHNIQUE_SKILLS = 12
+#: SkillEntry.name's ceiling.
+_MAX_SKILL_NAME = 100
+_HEADINGS = {
+    "language": "Languages and tools",
+    "library": "Libraries and frameworks",
+    "technique": "Core competencies",
+}
+#: Namespaces the source_ref so a library and a language of one name stay two rows.
+_PREFIXES = {"language": "", "library": "lib:", "technique": "method:"}
 
 
 class UnusablePublication(ValueError):
@@ -56,12 +64,7 @@ class UnusablePublication(ValueError):
 
 
 def publication_entry(record: PublicationRecord) -> PublicationEntry:
-    """A registry record as a schema entry.
-
-    self_author_index is deliberately None. Name matching cannot distinguish
-    the applicant from a co-author with a similar surname, which is exactly why
-    the schema stores an index rather than a name -- and the student picks it.
-    """
+    """A registry record as a schema entry. self_author_index stays None: the student picks."""
     if record.work_type not in _PUBLISHED_TYPES:
         raise UnusablePublication(f"unrecognised work type: {record.work_type!r}")
     return PublicationEntry(
@@ -78,13 +81,18 @@ def publication_entry(record: PublicationRecord) -> PublicationEntry:
     )
 
 
-def _previous(student: Membership, source_ref: str, category: str) -> VerifiedFact | None:
-    """The unsuperseded fact this one replaces, if the artefact was seen before.
+def refreshable_student(tenant_id: UUID, student_id: UUID) -> Membership | None:
+    """The active student, unless they asked to be erased (then nothing of theirs is read
+    or sent to a model: the lock transcript_pages._erasing applies). Call inside
+    tenant_scope."""
+    with tenant_transaction(tenant_id):
+        student = Membership.objects.filter(id=student_id, active=True).first()
+        if student is None or deletion_lock_target(student) is not None:
+            return None
+        return student
 
-    VerifiedFact is append-only: re-ingesting supersedes rather than
-    duplicating, so a student who pastes the same repository twice does not end
-    up with two of every skill.
-    """
+
+def _previous(student: Membership, source_ref: str, category: str) -> VerifiedFact | None:
     return (
         VerifiedFact.objects.filter(
             student=student,
@@ -97,249 +105,338 @@ def _previous(student: Membership, source_ref: str, category: str) -> VerifiedFa
     )
 
 
-def write_publication_fact(
-    *, student: Membership, record: PublicationRecord
-) -> VerifiedFact:
+def write_publication_fact(*, student: Membership, record: PublicationRecord) -> VerifiedFact:
     entry = publication_entry(record)
     source_ref = f"doi:{record.doi}"
-    return VerifiedFact.objects.create(
-        student=student,
-        category=VerifiedFact.Category.PUBLICATION,
-        payload=fact_payload(entry, category=VerifiedFact.Category.PUBLICATION),
-        source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
-        source_ref=source_ref,
-        confirmed_by=student,
-        confirmed_at=timezone.now(),
-        supersedes=_previous(student, source_ref, VerifiedFact.Category.PUBLICATION),
-        created_by=student,
-    )
+    with tenant_transaction(student.tenant_id):
+        return VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.PUBLICATION,
+            payload=fact_payload(entry, category=VerifiedFact.Category.PUBLICATION),
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref=source_ref,
+            confirmed_by=student,
+            confirmed_at=timezone.now(),
+            supersedes=_previous(student, source_ref, VerifiedFact.Category.PUBLICATION),
+            created_by=student,
+        )
 
 
-#: Below this a language is a stray file, not a skill. The validated
-#: repository carried 371 bytes of R (must be excluded) alongside 828 bytes
-#: of Shell (must be included) in a Python chemistry project, so the floor
-#: has to land above 371 and at or below 828. 500 is a round number inside
-#: that window; the exact value beyond that is a judgement call, not derived.
-_LANGUAGE_FLOOR_BYTES = 500
+# --- skill suggestions ---------------------------------------------------------------
 
 
 @dataclass(frozen=True)
-class ProjectDescription:
-    """What a project did, once the student has accepted it as his words."""
-
-    thesis_title: str
-    methods: str | None
-    outcomes: str | None
-
-
-def _repo_source_ref(snapshot: RepoSnapshot) -> str:
-    return f"repo:{snapshot.ref.host}:{snapshot.ref.owner}/{snapshot.ref.name}"
-
-
-#: A repository can import a long tail; the most-imported head is the story.
-#: The rank is intake's per-file import count, not the name -- an alphabetical
-#: cut kept `ase` and dropped `torch`.
-_MAX_LIBRARY_SKILLS = 15
-#: Same reasoning for methods the model reads out of the code.
-_MAX_TECHNIQUE_SKILLS = 12
-
-class _Kind(NamedTuple):
-    """Everything the kind of a skill name decides."""
-
-    heading: str
-    #: Namespaces the source_ref so a library and a language of the same name
-    #: supersede their own row and not each other's.
-    prefix: str
-    tier: str
-    confirmed: bool
-
-
-#: The three kinds of name a skills section holds. They differ in what the
-#: name IS:
-#:
-#:   language  -- a language the host measured in bytes. Mechanical, and the
-#:                only kind confirmed without a human: confirming a byte count
-#:                would mean re-reading what the API already computed.
-#:   library   -- a third-party import, or a dependency the project's own
-#:                manifest declares. Mechanical that it is there, interpretive
-#:                that it is a skill.
-#:   technique -- a named method that exists independently of this project,
-#:                read by a model out of the project's prose.
-#:
-#: One table, not four arguments per call site: a technique written
-#: AUTHORITATIVE_DOCUMENT and confirmed would auto-confirm a model's reading.
-#: Here that combination cannot be spelled.
-#:
-#: What is deliberately NOT a skill: anything whose meaning depends on the
-#: project it came from. A parameter, a dataset or its size, a metric or a
-#: score, a data format, the particular input representation a project chose.
-#: The test is transferability -- would the name mean the same thing to
-#: someone on an unrelated project in a different field? Those details belong
-#: in the project's description, where they describe the work instead of
-#: inflating a list. The domain they add up to is a competency the student
-#: claims, not one this package derives from a file listing.
-_KINDS = {
-    "language": _Kind(
-        "Languages and tools", "", VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT, True
-    ),
-    "library": _Kind(
-        "Libraries and frameworks", "lib:", VerifiedFact.SourceTier.STUDENT_STATEMENT, False
-    ),
-    "technique": _Kind(
-        "Core competencies", "method:", VerifiedFact.SourceTier.STUDENT_STATEMENT, False
-    ),
-}
+class SkillSuggestion:
+    name: str
+    #: "language", "library" or "technique" -- what tailoring reads (SkillEntry.kind).
+    kind: str
+    #: What backs it, in words a student can check: "60731 bytes", "imported by 9
+    #: files", or the verified excerpt that named a technique.
+    evidence: str
+    source_ref: str
 
 
 def _import_evidence(count: int) -> str:
-    """What backs a library name, in words a student reads on a review screen.
-
-    Count 0 means the manifest declared it and no parsed file imports it --
-    which is still worth proposing, just weaker than declared and used.
-    """
     if not count:
         return "declared in the project's manifest"
     return f"imported by {count} file{'s' if count != 1 else ''}"
 
 
-def _write_skills(
-    *, student: Membership, snapshot: RepoSnapshot, entries: tuple[tuple[str, str], ...], kind: str
-) -> tuple[VerifiedFact, ...]:
-    """One skill row per (name, evidence) pair. The kind decides the rest.
+def suggestions(
+    *,
+    source_ref: str,
+    languages: Mapping[str, int],
+    libraries: Iterable[tuple[str, int]],
+    techniques: Iterable[Technique],
+) -> tuple[SkillSuggestion, ...]:
+    """What one reading proposes as skills. Pure: save_reading writes them."""
 
-    ``kind`` is what a later tailoring pass reads; the heading it maps to is
-    only how the name renders, and can be renamed without touching tailoring.
-    """
-    spec = _KINDS[kind]
-    source_ref = _repo_source_ref(snapshot)
-    now = timezone.now() if spec.confirmed else None
-    return tuple(
+    def made(name: str, kind: str, evidence: str) -> SkillSuggestion:
+        return SkillSuggestion(name, kind, evidence, f"{source_ref}#{_PREFIXES[kind]}{name}")
+
+    found = [
+        made(name, "language", f"{size} bytes")
+        for name, size in sorted(languages.items())
+        if size >= _LANGUAGE_FLOOR_BYTES
+    ]
+    ranked = sorted(libraries, key=lambda item: (-item[1], item[0]))[:_MAX_LIBRARY_SKILLS]
+    found += [made(name, "library", _import_evidence(count)) for name, count in ranked]
+    first: dict[str, Technique] = {}
+    for technique in techniques:
+        first.setdefault(technique.name, technique)
+    found += [
+        made(t.name, "technique", t.excerpt)
+        for t in list(first.values())[:_MAX_TECHNIQUE_SKILLS]
+    ]
+    return tuple(s for s in found if len(s.name) <= _MAX_SKILL_NAME)
+
+
+def _write_suggestions(student: Membership, skills: tuple[SkillSuggestion, ...]) -> None:
+    """Unconfirmed SKILL facts, never superseding one (spec §7.5): a name already held
+    unsuperseded -- same kind, or typed with no kind -- is skipped, confirmed or not."""
+    held: set[tuple[str, str]] = set()
+    for payload in unsuperseded_facts(student).filter(
+        category=VerifiedFact.Category.SKILL
+    ).values_list("payload", flat=True):
+        if isinstance(payload, dict):
+            held.add((str(payload.get("kind") or ""), str(payload.get("name") or "").casefold()))
+    for skill in skills:
+        name = skill.name.casefold()
+        if (skill.kind, name) in held or ("", name) in held:
+            continue
+        held.add((skill.kind, name))
         VerifiedFact.objects.create(
             student=student,
             category=VerifiedFact.Category.SKILL,
             payload=fact_payload(
-                SkillEntry(name=name, category=spec.heading, kind=kind, evidence=evidence),
+                SkillEntry(name=skill.name, category=_HEADINGS[skill.kind], kind=skill.kind,
+                           evidence=skill.evidence),
                 category=VerifiedFact.Category.SKILL,
             ),
-            source_tier=spec.tier,
-            source_ref=f"{source_ref}#{spec.prefix}{name}",
-            confirmed_by=student if spec.confirmed else None,
-            confirmed_at=now,
-            supersedes=_previous(
-                student, f"{source_ref}#{spec.prefix}{name}", VerifiedFact.Category.SKILL
-            ),
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref=skill.source_ref,
+            confirmed_by=None,
+            confirmed_at=None,
             created_by=student,
         )
-        for name, evidence in entries
-    )
 
 
-def write_skill_facts(
-    *, student: Membership, snapshot: RepoSnapshot
-) -> tuple[VerifiedFact, ...]:
-    """Languages the host measured, as confirmed skill facts.
-
-    A byte count is not an opinion and is re-derivable from the API at any
-    time, so this is the AUTHORITATIVE_DOCUMENT tier and needs no human.
-    """
-    return _write_skills(
-        student=student,
-        snapshot=snapshot,
-        entries=tuple(
-            (language, f"{size} bytes")
-            for language, size in sorted(snapshot.languages.items())
-            if size >= _LANGUAGE_FLOOR_BYTES
-        ),
-        kind="language",
-    )
+# --- readings ------------------------------------------------------------------------
 
 
-def write_library_skill_facts(
-    *,
+def save_reading(
     student: Membership,
-    snapshot: RepoSnapshot,
-    libraries: tuple[tuple[str, int], ...],
-) -> tuple[VerifiedFact, ...]:
-    """Third-party imports as PROPOSED skills, for the student to confirm.
+    *,
+    source_kind: str,
+    changed_at: datetime,
+    reader_version: int,
+    reading: dict[str, Any],
+    skills: tuple[SkillSuggestion, ...],
+    repo: str = "",
+    document: DocumentVersion | None = None,
+) -> None:
+    """A reading and its suggestions, together or not at all (one short transaction,
+    after the model call has returned). A re-read updates the one row, matched
+    case-insensitively on the repo."""
+    fields = {
+        "repo": repo,
+        "changed_at": changed_at,
+        "reader_version": reader_version,
+        "read_at": timezone.now(),
+        "reading": reading,
+    }
+    with tenant_transaction(student.tenant_id):
+        existing = EvidenceReading.objects.filter(
+            student=student, source_kind=source_kind, repo__iexact=repo, document=document
+        ).first()
+        if existing is None:
+            EvidenceReading.objects.create(
+                student=student, source_kind=source_kind, document=document, **fields
+            )
+        else:
+            for name, value in fields.items():
+                setattr(existing, name, value)
+            existing.save(update_fields=list(fields))
+        _write_suggestions(student, skills)
 
-    Deliberately weaker than write_skill_facts, which auto-confirms. Two
-    reasons, both measured on real repositories:
 
-    * That a file imports `torch` is mechanical; that the student therefore
-      *has* PyTorch as a skill is interpretive, and the language byte counts
-      at least come from the host's own measurement.
-    * An import need not resolve to anything. MicroKatc imports
-      `copasi_parser` and contains no such file; cdr_bench imports `cdr`. A
-      name that is neither stdlib, nor local, nor installable is not a
-      technology, and nothing offline can tell the difference.
+def github_readings(student: Membership) -> dict[str, tuple[datetime, int, str]]:
+    """(changed_at, reader_version, tree_etag) of every github reading, by casefolded
+    repo. The etag is what refresh.py sends as If-None-Match (spec §7.1)."""
+    with tenant_transaction(student.tenant_id):
+        rows = EvidenceReading.objects.filter(
+            student=student, source_kind=EvidenceReading.SourceKind.GITHUB
+        ).values_list("repo", "changed_at", "reader_version", "reading")
+        return {
+            repo.casefold(): (changed, version, str(reading.get("tree_etag") or ""))
+            for repo, changed, version, reading in rows
+        }
 
-    So these are written STUDENT_STATEMENT with confirmed_by=None -- recorded,
-    attributed to nobody yet, and his to accept or drop. The same state
-    ingest_uploaded_cv writes for a claim read off an unverified CV.
-    """
-    return _write_skills(
-        student=student,
-        snapshot=snapshot,
-        entries=tuple(
-            (name, _import_evidence(count))
-            for name, count in sorted(libraries, key=lambda item: (-item[1], item[0]))
-        )[:_MAX_LIBRARY_SKILLS],
-        kind="library",
+
+def delete_github_reading(student: Membership, repo: str) -> int:
+    with tenant_transaction(student.tenant_id):
+        deleted, _ = EvidenceReading.objects.filter(
+            student=student, source_kind=EvidenceReading.SourceKind.GITHUB, repo__iexact=repo
+        ).delete()
+    return deleted
+
+
+def delete_github_readings_not_in(student: Membership, seen: frozenset[str]) -> int:
+    """After a COMPLETE discovery only (refresh.py): readings of repos no source named.
+    `seen` may be in GitHub's own spelling; both sides are casefolded."""
+    seen = frozenset(name.casefold() for name in seen)
+    with tenant_transaction(student.tenant_id):
+        rows = EvidenceReading.objects.filter(
+            student=student, source_kind=EvidenceReading.SourceKind.GITHUB
+        ).values_list("id", "repo")
+        gone = [row_id for row_id, repo in rows if repo.casefold() not in seen]
+        deleted, _ = EvidenceReading.objects.filter(id__in=gone).delete()
+    return deleted
+
+
+def reports_to_read(
+    student: Membership, *, reader_version: int
+) -> tuple[DocumentVersion, ...]:
+    """Live THESIS_OR_REPORT uploads with no reading by this reader version, oldest first."""
+    with tenant_transaction(student.tenant_id):
+        current = EvidenceReading.objects.filter(
+            student=student,
+            source_kind=EvidenceReading.SourceKind.PDF,
+            reader_version=reader_version,
+        ).values_list("document_id", flat=True)
+        return tuple(
+            DocumentVersion.objects.filter(
+                student=student,
+                kind="THESIS_OR_REPORT",
+                state="AVAILABLE",
+                retired_at__isnull=True,
+            )
+            .exclude(id__in=current)
+            .order_by("created_at", "id")
+        )
+
+
+def delete_report_reading(student: Membership, document_id: UUID) -> int:
+    with tenant_transaction(student.tenant_id):
+        deleted, _ = EvidenceReading.objects.filter(
+            student=student, document_id=document_id
+        ).delete()
+    return deleted
+
+
+def delete_retired_report_readings(student: Membership) -> int:
+    """A retired upload's reading goes. retire_replaced retires exactly the upload a new
+    one `replaces`, so this is also "replaces replaces"; "Add another" retires nothing."""
+    with tenant_transaction(student.tenant_id):
+        deleted, _ = EvidenceReading.objects.filter(
+            student=student,
+            source_kind=EvidenceReading.SourceKind.PDF,
+            document__retired_at__isnull=False,
+        ).delete()
+    return deleted
+
+
+def latest_cv(student: Membership) -> DocumentVersion | None:
+    with tenant_transaction(student.tenant_id):
+        return (
+            DocumentVersion.objects.filter(
+                student=student, kind="CV", state="AVAILABLE", retired_at__isnull=True
+            )
+            .order_by("-created_at", "-id")
+            .first()
+        )
+
+
+@dataclass(frozen=True)
+class StoredReading:
+    source_kind: str
+    repo: str
+    document_id: UUID | None
+    changed_at: datetime
+    reading: dict[str, Any]
+
+
+def stored_readings(student: Membership) -> tuple[StoredReading, ...]:
+    with tenant_transaction(student.tenant_id):
+        rows = EvidenceReading.objects.filter(student=student).order_by(
+            "source_kind", "repo", "changed_at"
+        )
+        return tuple(
+            StoredReading(
+                source_kind=row.source_kind,
+                repo=row.repo,
+                document_id=row.document_id,
+                changed_at=row.changed_at,
+                reading=row.reading if isinstance(row.reading, dict) else {},
+            )
+            for row in rows
+        )
+
+
+# --- the GitHub login ----------------------------------------------------------------
+
+
+def _identity_tips(student: Membership) -> list[VerifiedFact]:
+    return list(
+        unsuperseded_facts(student)
+        .filter(category=VerifiedFact.Category.IDENTITY)
+        .order_by("-created_at", "-id")
     )
 
 
-def write_technique_skill_facts(
-    *, student: Membership, snapshot: RepoSnapshot, techniques: tuple[Technique, ...]
-) -> tuple[VerifiedFact, ...]:
-    """Named methods the model read out of the project, as PROPOSED skills.
-
-    A technique is transferable: PCA, GTM, UMAP and t-SNE mean the same thing
-    on somebody else's project, which is what makes them a skill rather than a
-    fact about this repository. The model is asked for exactly that and told
-    to leave a project's own features -- a descriptor, a metric, a file format,
-    a dataset dimension -- in the description where they belong.
-
-    Unconfirmed, like the libraries: this is the model's reading, so it has no
-    author until he gives it one.
-    """
-    return _write_skills(
-        student=student,
-        snapshot=snapshot,
-        entries=tuple(
-            {t.name: (t.name, t.excerpt) for t in techniques}.values()
-        )[:_MAX_TECHNIQUE_SKILLS],
-        kind="technique",
-    )
+def github_login(student: Membership) -> str:
+    """The newest login any IDENTITY tip carries, confirmed or not (decision 1)."""
+    with tenant_transaction(student.tenant_id):
+        tips = _identity_tips(student)
+    for tip in tips:
+        if isinstance(tip.payload, dict) and (login := login_from_identity(tip.payload)):
+            return login
+    return ""
 
 
-def write_project_fact(
-    *, student: Membership, snapshot: RepoSnapshot, description: ProjectDescription
-) -> VerifiedFact:
-    """A project the student has described in his own words.
-
-    STUDENT_STATEMENT, not AUTHORITATIVE_DOCUMENT: the repository proves the
-    code exists and who committed to it, never what it achieved. Dates come
-    from the repository's commit range (the last 100 commits fetched, not
-    necessarily the student's own -- see repo.py's fetch_repo), not from
-    memory.
-    """
-    entry = ResearchEntry(
-        thesis_title=description.thesis_title,
-        institution=None,
-        start_date=snapshot.first_commit.date() if snapshot.first_commit else None,
-        end_date=snapshot.last_commit.date() if snapshot.last_commit else None,
-        methods=description.methods,
-        outcomes=description.outcomes,
-    )
-    source_ref = _repo_source_ref(snapshot)
+def _supersede(tip: VerifiedFact, update: Mapping[str, object]) -> VerifiedFact:
+    """A copy of `tip` with `update` applied. It inherits the tip's confirmation and
+    never grants one: the row also carries the name a model read off the CV."""
+    payload = dict(tip.payload) if isinstance(tip.payload, dict) else {}
     return VerifiedFact.objects.create(
-        student=student,
-        category=VerifiedFact.Category.RESEARCH,
-        payload=fact_payload(entry, category=VerifiedFact.Category.RESEARCH),
+        student=tip.student,
+        category=VerifiedFact.Category.IDENTITY,
+        payload={**payload, **update},
         source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
-        source_ref=source_ref,
-        confirmed_by=student,
-        confirmed_at=timezone.now(),
-        supersedes=_previous(student, source_ref, VerifiedFact.Category.RESEARCH),
-        created_by=student,
+        source_ref=GITHUB_LOGIN_REF,
+        confirmed_by=tip.confirmed_by,
+        confirmed_at=tip.confirmed_at,
+        supersedes=tip,
+        created_by=tip.student,
     )
+
+
+def _login_tip(tips: list[VerifiedFact]) -> VerifiedFact | None:
+    """The IDENTITY row a typed login may rewrite: the student's own named statement,
+    else the standalone login row. Never a row read off a document (a passport writes
+    one AUTHORITATIVE_DOCUMENT row per field): superseding it would downgrade its tier
+    and rewrite its source_ref."""
+    statements = [
+        tip for tip in tips
+        if tip.source_tier == VerifiedFact.SourceTier.STUDENT_STATEMENT
+        and isinstance(tip.payload, dict)
+    ]
+    named = [tip for tip in statements if tip.payload.get("full_name")]
+    standalone = [tip for tip in statements if tip.source_ref == GITHUB_LOGIN_REF]
+    found = named or standalone
+    return found[0] if found else None
+
+
+def set_github_login(student: Membership, login: str) -> VerifiedFact:
+    """The login the student typed, kept on IDENTITY (spec §5.1). The caller validated it."""
+    github = {"github_url": f"https://github.com/{login}", "github_username": login}
+    with tenant_transaction(student.tenant_id):
+        tip = _login_tip(_identity_tips(student))
+        if tip is not None:
+            return _supersede(tip, github)
+        return VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.IDENTITY,
+            payload=github,
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref=GITHUB_LOGIN_REF,
+            confirmed_by=None,
+            confirmed_at=None,
+            created_by=student,
+        )
+
+
+def clear_github_login(student: Membership) -> int:
+    """No login anywhere on IDENTITY, and every github reading deleted. Skill
+    suggestions already written stay, as suggestions (spec §5.1)."""
+    with tenant_transaction(student.tenant_id):
+        for tip in _identity_tips(student):
+            payload = tip.payload if isinstance(tip.payload, dict) else {}
+            if tip.source_tier != VerifiedFact.SourceTier.STUDENT_STATEMENT:
+                continue
+            if payload.get("github_url") or payload.get("github_username"):
+                _supersede(tip, {"github_url": None, "github_username": None})
+        deleted, _ = EvidenceReading.objects.filter(
+            student=student, source_kind=EvidenceReading.SourceKind.GITHUB
+        ).delete()
+    return deleted

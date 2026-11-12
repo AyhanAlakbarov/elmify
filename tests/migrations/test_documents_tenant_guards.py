@@ -13,6 +13,13 @@ _RLS_TABLES = (
     "funding_constraintoverride",
     "documents_transcriptupload",
     "documents_transcriptpage",
+    "documents_documentreading",
+    "documents_referee",
+    "documents_refereerequest",
+    "documents_evidencereading",
+    "documents_cvfixrevert",
+    "documents_cvrelevanceanswer",
+    "documents_cvitemchoice",
 )
 
 _COMPOSITE_FKS = {
@@ -59,6 +66,24 @@ _COMPOSITE_FKS = {
         "transcriptreading_document_tenant_fk",
         "transcriptreading_cycle_tenant_fk",
     },
+    "documents_documentreading": {
+        "documentreading_student_tenant_fk",
+        "documentreading_document_tenant_fk",
+    },
+    "documents_referee": {"referee_student_tenant_fk"},
+    "documents_refereerequest": {
+        "refereerequest_referee_tenant_fk",
+        "refereerequest_application_tenant_fk",
+    },
+    "documents_evidencereading": {
+        "evidencereading_student_tenant_fk",
+        "evidencereading_document_tenant_fk",
+    },
+    "documents_cvfixrevert": {
+        "cvfixrevert_student_tenant_fk",
+    },
+    "documents_cvrelevanceanswer": {"cvrelevanceanswer_student_tenant_fk"},
+    "documents_cvitemchoice": {"cvitemchoice_student_tenant_fk"},
     "funding_constraintoverride": {
         "constraintoverride_student_tenant_fk",
         "constraintoverride_decided_by_tenant_fk",

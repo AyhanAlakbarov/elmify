@@ -15,3 +15,10 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]
+      - id: instruction-files
+        name: CLAUDE.md stays an index (area rules live in .claude/rules/)
+        entry: uv run pytest -q -p no:cacheprovider tests/test_instruction_files.py
+        language: system
+        files: ^(CLAUDE\.md|\.claude/rules/.*)$
+        pass_filenames: false
+        stages: [pre-commit]

@@ -1,6 +1,7 @@
 import pytest
 
-from apps.research.funding_terms import funding_terms
+from apps.research.angles import STEERING
+from apps.research.funding_terms import FUNDING_TERMS_FILE, funding_terms
 
 
 @pytest.mark.parametrize("line", [
@@ -20,9 +21,29 @@ from apps.research.funding_terms import funding_terms
     "Logement et assurance",
     "Studiengebühren und Förderung",
     "Becas para estudiantes",
+    "Bolsa de estudo e isenção de propina",
+    "Studiebeurs en collegegeld",
+    "Apuraha ja lukukausimaksu",
+    "Υποτροφίες και απαλλαγή από δίδακτρα",
+    "Bursă de studiu și scutire de taxă de școlarizare",
+    "სტიპენდია და სწავლის საფასური",
+    "Կրթաթոշակ և ուսման վարձի զեղչ",
+    "Beasiswa dan biaya pendidikan",
+    "Học bổng và miễn giảm học phí",
+    "منحة دراسية وإعفاء من الرسوم الدراسية",
+    "अंतर्राष्ट्रीय छात्रों के लिए छात्रवृत्ति",
+    "طلبا کے لیے وظیفہ اور فیس معافی",
 ])
 def test_a_funding_section_in_every_page_language_is_kept(line):
     assert funding_terms().search(line)
+
+
+def test_every_steering_language_has_funding_terms():
+    import csv
+    with FUNDING_TERMS_FILE.open(encoding="utf-8", newline="") as handle:
+        langs_in_csv = {row["language"] for row in csv.DictReader(handle)}
+    steering_langs = {s.language for s in STEERING.values()}
+    assert steering_langs <= langs_in_csv
 
 
 @pytest.mark.parametrize("line", [

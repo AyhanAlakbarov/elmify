@@ -146,7 +146,7 @@ def validate_public_url(url: str) -> ResolvedTarget:
 
 #: Sent on every outbound fetch. Measured 2026-09-19 on globed.eu/how-to-apply/, one of the
 #: hosts the 2026-09-18 recovery run recorded as SourceBlocked: **no** User-Agent -> 403,
-#: `python-urllib3/2.0` -> 403, `TehsilAgent/1.0 (+...)` -> 200. So that 403 was never a bot
+#: `python-urllib3/2.0` -> 403, `Elmify/1.0 (+...)` -> 200. So that 403 was never a bot
 #: wall we had to pay a vendor to climb -- it was a headerless request, and one of the
 #: fifteen labelled rules was lost to it.
 #:
@@ -155,7 +155,7 @@ def validate_public_url(url: str) -> ResolvedTarget:
 #: ordinary users is not" -- so this is a stable identifier carrying a contact URL, never a
 #: browser string. A browser mimic also returned 200 in that measurement and is still not
 #: what goes here; the vendor tiers exist for hosts an honest client cannot read.
-USER_AGENT = "TehsilAgent/1.0 (+https://tehsil-agent.example/bot)"
+USER_AGENT = "Elmify/1.0 (+https://elmify.example/bot)"
 
 
 def _request(
@@ -502,6 +502,8 @@ def fetch_json_api(
     transport: Callable[..., Response] = _request,
     read_timeout: float | None = None,
     accept: tuple[str, ...] = ("application/json",),
+    retry_throttled: bool = False,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, object]:
     """Call a contracted JSON API under the same egress rules as a fetch.
 
@@ -519,6 +521,12 @@ def fetch_json_api(
 
     `accept` widens the content types a caller will parse (SPARQL's
     `application/sparql-results+json`); the default is unchanged.
+
+    `retry_throttled` waits out a 429/503 like `fetch_data_file` does (the same
+    `_backoff_seconds`, Retry-After honoured, `_RETRY_ATTEMPTS` waits). Opt-in:
+    the search tap's providers share one team-wide limit across parallel calls
+    and an unbilled refusal costs nothing to repeat, while the card engine
+    holds its own retry and a wall-clock deadline a wait would overrun.
     """
     if payload is not None and params is not None:
         raise ValueError("fetch_json_api takes payload or params, never both")
@@ -547,15 +555,21 @@ def fetch_json_api(
         body = json.dumps(payload or {}, sort_keys=True).encode()
         # Only a request that carries a JSON body says it carries one.
         sent["Content-Type"] = "application/json"
-    try:
-        timeout_kwargs = {} if read_timeout is None else {"read_timeout": read_timeout}
-        response = transport(
-            target, path, method=method, body=body, extra_headers=sent, **timeout_kwargs
-        )
-    except urllib3.exceptions.HTTPError as error:
-        # Same reasoning as fetch_data_file: urllib3's own exceptions do
-        # not inherit from OSError, and retries=False means they surface raw.
-        raise SourceBlocked(f"{type(error).__name__}: {error}") from error
+    timeout_kwargs = {} if read_timeout is None else {"read_timeout": read_timeout}
+    for waited in range(_RETRY_ATTEMPTS + 1):
+        try:
+            response = transport(
+                target, path, method=method, body=body, extra_headers=sent, **timeout_kwargs
+            )
+        except urllib3.exceptions.HTTPError as error:
+            # Same reasoning as fetch_data_file: urllib3's own exceptions do
+            # not inherit from OSError, and retries=False means they surface raw.
+            raise SourceBlocked(f"{type(error).__name__}: {error}") from error
+        if not (retry_throttled and response.status in _THROTTLED and waited < _RETRY_ATTEMPTS):
+            break
+        delay = _backoff_seconds(response, waited)
+        response.release_conn()
+        sleep(delay)
     try:
         if response.status >= 300:
             raise SourceBlocked(f"api returned HTTP {response.status}")

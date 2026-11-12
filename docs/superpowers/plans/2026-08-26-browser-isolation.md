@@ -18,7 +18,7 @@ CloudFormation, pytest, `uv`.
 
 ## Global Constraints
 
-- Branch: `claude/cv-render-fidelity`, worktree `/home/orkhan/Desktop/tehsil_agent/.worktrees/phase2-cv-engine`.
+- Branch: `claude/cv-render-fidelity`, worktree `/home/orkhan/Desktop/elmify/.worktrees/phase2-cv-engine`.
   **Use `git -C <absolute-path>` for every git command** — the shell cwd resets to the main
   repo, and a commit has already landed on the wrong branch once because of it.
 - Every command runs through `uv run`. Never invoke `python` or `pytest` bare.
@@ -354,7 +354,7 @@ Cases, all required:
 ```python
 import os
 
-BROWSER_SERVICE_URL = "http://browser.tehsil.internal:8080/render"
+BROWSER_SERVICE_URL = "http://browser.elmify.internal:8080/render"
 
 
 def render_via_browser_service(url: str, *, service_url: str | None = None) -> FetchResult:
@@ -465,10 +465,10 @@ CMD ["python", "-m", "apps.research.browser_server"]
 - [ ] **Step 3: Verify** both stages build and the worker no longer has Chromium:
 
 ```
-docker build --target worker  -t tehsil-worker-check  .
-docker build --target browser -t tehsil-browser-check .
-docker run --rm tehsil-browser-check python -c "import scrapling; print('browser stage ok')"
-docker run --rm --entrypoint sh tehsil-worker-check -c '! ls /ms-playwright 2>/dev/null && echo "worker has no browser"'
+docker build --target worker  -t elmify-worker-check  .
+docker build --target browser -t elmify-browser-check .
+docker run --rm elmify-browser-check python -c "import scrapling; print('browser stage ok')"
+docker run --rm --entrypoint sh elmify-worker-check -c '! ls /ms-playwright 2>/dev/null && echo "worker has no browser"'
 ```
 
 If Docker is unavailable in the execution environment, say so in the commit message and
@@ -522,7 +522,7 @@ loader whose `!Ref X` parses to `{"Ref": "X"}`. Do not write a second parser.
   existing `ProbeImage` precedent — do **not** overload `AppImage`), `BrowserSecurityGroup`
   with its warning comment, one `EndpointSecurityGroup` ingress rule from it on 443,
   `BrowserLogGroup`, `BrowserNamespace` + `BrowserDiscoveryService`
-  (`AWS::ServiceDiscovery::PrivateDnsNamespace` / `::Service` on `tehsil.internal`),
+  (`AWS::ServiceDiscovery::PrivateDnsNamespace` / `::Service` on `elmify.internal`),
   `BrowserTaskDefinition`, and `BrowserService` with `ServiceRegistries` and
   `DesiredCount: !Ref BrowserDesiredCount`.
 

@@ -4,7 +4,7 @@
 
 **Goal:** Close the two actionable gaps identified in the prior security-audit review (no secret scanning, no pre-commit safety net), and lock in AI/LLM-specific security rules — both in this repo and in the global rule set — so every future AI SaaS project inherits them automatically.
 
-**Architecture:** Two CI/tooling changes in `tehsil_agent` (a blocking gitleaks CI job, a local `pre-commit` config wrapping the project's existing `uv run bandit`/`uv run pip-audit` commands), plus documentation-only additions to the global `~/.config/ai_rules/rules/engineering.md` and the `security-baseline-setup` skill, plus this repo's `CLAUDE.md`. No application code changes — the LLM code (`apps/research/extraction.py`, `apps/funding/explanations.py`) was reviewed during brainstorming and already follows the pattern being codified (untrusted content explicitly labeled as data, schema-constrained output, capped tokens); the new rules exist to keep that pattern from eroding, not to fix a defect.
+**Architecture:** Two CI/tooling changes in `elmify` (a blocking gitleaks CI job, a local `pre-commit` config wrapping the project's existing `uv run bandit`/`uv run pip-audit` commands), plus documentation-only additions to the global `~/.config/ai_rules/rules/engineering.md` and the `security-baseline-setup` skill, plus this repo's `CLAUDE.md`. No application code changes — the LLM code (`apps/research/extraction.py`, `apps/funding/explanations.py`) was reviewed during brainstorming and already follows the pattern being codified (untrusted content explicitly labeled as data, schema-constrained output, capped tokens); the new rules exist to keep that pattern from eroding, not to fix a defect.
 
 **Tech Stack:** GitHub Actions, `gitleaks/gitleaks-action@v3`, `pre-commit` (Python, via `uv`), Markdown rule files.
 
@@ -15,7 +15,7 @@
 - Follow this repo's existing `uv`-based tooling: all Python tool invocations go through `uv run`.
 - Third-party GitHub Actions are pinned by version tag, matching this repo's existing convention for `actions/checkout@v4` / `astral-sh/setup-uv@v6` (only the Prowler *Docker* image is digest-pinned, per `security-aws.yml`).
 - Do not add a second, independently-versioned copy of Bandit/pip-audit config — pre-commit must call the exact same `uv run bandit -c pyproject.toml -r apps config` / `uv run pip-audit` commands already declared in `CLAUDE.md` and `.github/workflows/ci.yml`, not a separate upstream pre-commit hook repo with its own pinned tool version.
-- Global rule edits go in `~/.config/ai_rules/rules/engineering.md` and `~/.agents/skills/security-baseline-setup/SKILL.md` — this is how `tehsil_agent`'s `CLAUDE.md` router already resolves global policy, and how future projects will inherit it via the `security-baseline-setup` skill.
+- Global rule edits go in `~/.config/ai_rules/rules/engineering.md` and `~/.agents/skills/security-baseline-setup/SKILL.md` — this is how `elmify`'s `CLAUDE.md` router already resolves global policy, and how future projects will inherit it via the `security-baseline-setup` skill.
 
 ---
 
@@ -221,7 +221,7 @@ Expected: one match each.
 
 - [x] **Step 6: Commit**
 
-These files live outside the `tehsil_agent` git repo (`~/.config/ai_rules/` and `~/.agents/skills/`) — check whether each is its own git repository before attempting a commit:
+These files live outside the `elmify` git repo (`~/.config/ai_rules/` and `~/.agents/skills/`) — check whether each is its own git repository before attempting a commit:
 
 ```bash
 git -C ~/.config/ai_rules status
@@ -246,7 +246,7 @@ If either is a git repository, commit the change there with a message like `"doc
 Current content (`CLAUDE.md`):
 
 ```markdown
-# tehsil_agent
+# elmify
 
 ## Security tooling
 
@@ -259,7 +259,7 @@ Current content (`CLAUDE.md`):
 Replace with:
 
 ```markdown
-# tehsil_agent
+# elmify
 
 ## Security tooling
 

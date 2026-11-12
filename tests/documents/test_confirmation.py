@@ -141,3 +141,19 @@ def test_every_confirmation_is_audited(agency_a, membership_a):
         events = AuditEvent.objects.filter(event="fact.confirmed", object_id=fact.id)
         assert events.count() == 1
         assert events.get().actor_id == membership_a.id
+
+
+def test_a_login_only_identity_is_skipped_not_confirmed(agency_a, membership_a):
+    """Confirming facts.set_github_login's nameless row by id must not open the
+    generate endpoint's identity gate (api.generate checks exactly this query)."""
+    from apps.documents.evidence import facts
+
+    with tenant_scope(agency_a.id):
+        login = facts.set_github_login(membership_a, "0rkhann")
+
+        confirmed = confirm_facts(student=membership_a, fact_ids=[login.id], actor=membership_a)
+
+        assert confirmed == 0
+        assert not generatable_facts(membership_a).filter(
+            category=VerifiedFact.Category.IDENTITY
+        ).exists()

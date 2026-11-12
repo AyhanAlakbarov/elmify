@@ -380,7 +380,7 @@ def _mailbox_statements(role: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         statement
         for statement in statements
-        if "tehsil/mailbox/*" in str(statement.get("Resource", ""))
+        if "elmify/mailbox/*" in str(statement.get("Resource", ""))
     ]
 
 
@@ -394,7 +394,7 @@ def test_the_worker_may_read_rotate_and_delete_mailbox_grants_but_not_create_or_
     be resource-scoped, so granting it would grant every tenant's secrets to
     answer a question about one student."""
     mailbox = _mailbox_statements(template.resource("WorkerTaskRole"))
-    assert mailbox, "WorkerTaskRole has no statement for tehsil/mailbox/*"
+    assert mailbox, "WorkerTaskRole has no statement for elmify/mailbox/*"
     actions = {action for statement in mailbox for action in statement["Action"]}
     assert actions == {
         "secretsmanager:GetSecretValue",
@@ -412,7 +412,7 @@ def test_the_web_tier_may_create_and_delete_mailbox_grants_but_never_read_them(
     GetSecretValue stays off this statement -- only the worker's sync job
     needs it."""
     mailbox = _mailbox_statements(template.resource("WebTaskRole"))
-    assert mailbox, "WebTaskRole has no statement for tehsil/mailbox/*"
+    assert mailbox, "WebTaskRole has no statement for elmify/mailbox/*"
     actions = {action for statement in mailbox for action in statement["Action"]}
     assert actions == {
         "secretsmanager:CreateSecret",
@@ -570,7 +570,7 @@ def test_runtime_role_bootstrap_never_grants_bypassrls() -> None:
         "rolsuper OR rolcreatedb OR rolreplication OR rolbypassrls" in _bootstrap_sql()
     )
     assert "rolname IN ('runtime_engine', 'runtime_web')" in _bootstrap_sql()
-    assert "tehsil_erasure_guard" not in _bootstrap_sql()
+    assert "elmify_erasure_guard" not in _bootstrap_sql()
 
 
 def test_bypassrls_grants_reads_grants_not_error_messages() -> None:
@@ -602,16 +602,16 @@ def test_only_the_erasure_guard_role_gets_bypassrls() -> None:
     member of it, so only a superuser can SET ROLE to it.
     """
     assert _bypassrls_grants(_guard_sql()) == [
-        "CREATE ROLE tehsil_erasure_guard NOLOGIN NOINHERIT BYPASSRLS;",
+        "CREATE ROLE elmify_erasure_guard NOLOGIN NOINHERIT BYPASSRLS;",
         "NOINHERIT NOREPLICATION BYPASSRLS;",
     ]
     statements = [
         line for line in _guard_sql().splitlines() if not line.lstrip().startswith("--")
     ]
-    assert not [line for line in statements if "GRANT tehsil_erasure_guard TO" in line]
+    assert not [line for line in statements if "GRANT elmify_erasure_guard TO" in line]
     # And says so as an action: an older bootstrap granted that membership, and
     # deleting the GRANT from a file revokes nothing on a database that has it.
-    assert any("REVOKE tehsil_erasure_guard FROM" in line for line in statements)
+    assert any("REVOKE elmify_erasure_guard FROM" in line for line in statements)
 
 
 def test_only_the_engine_role_may_call_the_erasure_guard() -> None:
@@ -649,7 +649,7 @@ def test_catalog_grants_migration_creates_runtime_roles_only_as_superuser() -> N
     """A non-superuser creating the runtime roles would own their ADMIN OPTION.
 
     On PG16+ only a role holding ADMIN may ALTER another, so if production's
-    `tehsil_migration` created them the admin bootstrap could never make them
+    `elmify_migration` created them the admin bootstrap could never make them
     logins. `scripts/deploy.sh` runs the migration right after the stack deploy,
     so the first deploy reaches funding/0049 before anyone thinks to bootstrap:
     it must refuse there, before any CREATE ROLE, not create and strand them.
@@ -765,7 +765,9 @@ def test_erasure_can_reach_the_students_uploaded_original(template: Template) ->
     )
     assert {"s3:DeleteObject", "s3:DeleteObjectVersion"} <= worker
 
-    for role_id in ("WebTaskRole", "DocumentWorkerTaskRole", "EuropassWorkerTaskRole"):
+    # DocumentWorkerTaskRole's one exception (prepared/ only) is pinned in
+    # test_the_document_worker_reads_quarantine_and_writes_tenants.
+    for role_id in ("WebTaskRole", "EuropassWorkerTaskRole"):
         actions = _policy_actions(template.resource(role_id))
         assert not any(action.startswith("s3:Delete") for action in actions), role_id
 
@@ -855,7 +857,6 @@ _PRODUCTION_REQUIRED_ENV_VARS = frozenset(
         "DJANGO_ALLOWED_HOSTS",
         "RESEARCH_QUEUE_URL",
         "EUROPASS_QUEUE_URL",
-        "PORTAL_QUEUE_URL",
         "DOCUMENT_QUEUE_URL",
         "DOCUMENT_SCAN_QUEUE_URL",
         "MAILBOX_QUEUE_URL",
@@ -890,10 +891,6 @@ ROLE_BY_TASK = {
     "EuropassWorkerTaskDefinition": "runtime_engine",
     # The same role the sweep syncs as on WorkerTaskDefinition.
     "MailboxWorkerTaskDefinition": "runtime_engine",
-    # runtime_web: the portal tier reads no catalogue (2026-09-25 final review
-    # I3), and as the engine a renderer-sandbox escape could write the
-    # catalogue every tenant reads.
-    "PortalTaskDefinition": "runtime_web",
     "WebTaskDefinition": "runtime_web",
     "MigrationTaskDefinition": "migration",
 }
@@ -954,14 +951,6 @@ def test_the_web_execution_role_cannot_read_the_engine_secret(template: Template
     # starts (master added it there before the split reached it).
     assert "FirecrawlWebhookSecret" in web_secrets
     assert "FirecrawlWebhookSecret" not in engine_secrets
-    portal_secrets = _granted_secret_refs("PortalExecutionRole")
-    assert "EngineDatabaseSecret" not in portal_secrets
-    assert "WebDatabaseSecret" in portal_secrets
-    assert "LlmApiKeySecretArn" in portal_secrets
-    assert "LlmApiKeySecretArn" not in engine_secrets | web_secrets
-    assert template.resource("PortalTaskDefinition")["Properties"]["ExecutionRoleArn"] == {
-        "Fn::GetAtt": "PortalExecutionRole.Arn"
-    }
 
 
 @pytest.mark.parametrize(
@@ -971,7 +960,6 @@ def test_the_web_execution_role_cannot_read_the_engine_secret(template: Template
         "WorkerTaskDefinition",
         "MigrationTaskDefinition",
         "EuropassWorkerTaskDefinition",
-        "PortalTaskDefinition",
         "DocumentWorkerTaskDefinition",
         "MailboxWorkerTaskDefinition",
     ],
@@ -1013,7 +1001,6 @@ def test_europass_worker_task_role_can_read_and_write_evidence_bucket(template: 
         ("EuropassCanaryRule", "EuropassWorkerTaskDefinition"),
         ("RetryDueFetchesRule", "WorkerTaskDefinition"),
         ("ProvenanceRecheckRule", "WorkerTaskDefinition"),
-        ("ExecuteDueErasuresRule", "WorkerTaskDefinition"),
         ("VerifyDueCyclesRule", "WorkerTaskDefinition"),
         ("SyncMailboxesRule", "WorkerTaskDefinition"),
     ],
@@ -1063,9 +1050,9 @@ def test_the_events_role_may_run_only_the_scheduled_task_definitions(
 ) -> None:
     """One role now invokes two rules, so its scope is the thing that quietly
     widens. A `Resource: "*"` on either statement hands EventBridge RunTask on
-    every task definition in the account -- including the portal tier, whose
-    task role reaches per-tenant portal credentials -- and PassRole on every
-    role, which is RunTask on anything with a role attached."""
+    every task definition in the account -- including the web tier, whose task
+    role writes students' mailbox grants -- and PassRole on every role, which
+    is RunTask on anything with a role attached."""
     statements = template.resource("EventsInvokeEcsRole")["Properties"]["Policies"][0][
         "PolicyDocument"
     ]["Statement"]
@@ -1099,7 +1086,7 @@ def test_the_europass_age_alarm_outlasts_the_whole_retry_envelope(template: Temp
 #
 # The isolation design this section used to pin (2026-08-26-browser-isolation)
 # no longer applies: the research fetch path is vendor-only, so there is no
-# Chromium task left to secure. test_the_database_admits_web_worker_and_portal_only
+# Chromium task left to secure. test_the_database_admits_web_and_worker_only
 # still guards the group DatabaseSecurityGroup admits; test_no_browser_tier_remains
 # below asserts the browser tier's absence instead of its shape.
 
@@ -1127,7 +1114,7 @@ def _admitted_groups(group: dict[str, Any]) -> list[Any]:
     return sources
 
 
-def test_the_database_admits_web_worker_and_portal_only(template: Template) -> None:
+def test_the_database_admits_web_and_worker_only(template: Template) -> None:
     """An exact allowlist, not "the browser is absent".
 
     The most likely way the isolation gets silently undone is reusing
@@ -1137,27 +1124,22 @@ def test_the_database_admits_web_worker_and_portal_only(template: Template) -> N
     spelling of the mistake. Pinning the whole list catches every widening,
     including the CIDR rule that an absence check cannot see at all.
 
-    Task 14 deliberately widens this allowlist to three: PortalSecurityGroup
-    is admitted because the portal task reads field maps and writes the
-    §5.5 audit trail while it types, so unlike the browser task it cannot be
-    credential-free. What makes that acceptable is the renderer sandbox
-    (apps/portals/engine.py refuses to run without it) and the EC2 launch
-    type that makes the sandbox possible (Fargate cannot give Chrome the
-    user namespaces the sandbox needs). BrowserSecurityGroup stays absent --
-    that reasoning is unchanged, and this test still fails the instant
-    someone adds it.
+    Task 14 widened this allowlist to admit PortalSecurityGroup for the
+    server-side portal browser; that tier was deleted on 2026-10-03 (the
+    glass-box extension fills the portal in the student's own tab), so the
+    list is back to two and this test fails the instant either browser group
+    returns.
     """
     assert _admitted_groups(template.resource("DatabaseSecurityGroup")["Properties"]) == [
         {"Ref": "WebSecurityGroup"},
         {"Ref": "WorkerSecurityGroup"},
-        {"Ref": "PortalSecurityGroup"},
     ]
 
 
-def test_the_cache_admits_web_worker_and_portal_only(template: Template) -> None:
-    """Same three-group shape as DatabaseSecurityGroup, and the same reasoning:
+def test_the_cache_admits_web_and_worker_only(template: Template) -> None:
+    """Same two-group shape as DatabaseSecurityGroup, and the same reasoning:
     WorkerSecurityGroup is shared by worker, europass-worker, document-worker and
-    the migration RunTask, so this list already covers all six app task
+    the migration RunTask, so this list already covers all five app task
     definitions. OcrSecurityGroup is never in it -- the OCR function parses
     untrusted uploads and has no route to anything but S3 (audit fix-1 review,
     2026-09-27: a node-based Valkey replication group, cluster mode disabled,
@@ -1165,7 +1147,6 @@ def test_the_cache_admits_web_worker_and_portal_only(template: Template) -> None
     assert _admitted_groups(template.resource("CacheSecurityGroup")["Properties"]) == [
         {"Ref": "WebSecurityGroup"},
         {"Ref": "WorkerSecurityGroup"},
-        {"Ref": "PortalSecurityGroup"},
     ]
 
 
@@ -1210,7 +1191,7 @@ def test_no_browser_tier_remains(template: Template) -> None:
     shipped stopped — are all satisfied by the resource not existing.
 
     Deliberately NOT deleted: the DatabaseSecurityGroup ingress test above. Its
-    list is still load-bearing for web, worker and portal.
+    list is still load-bearing for web and worker.
     """
     assert [name for name in template.resource_ids() if name.startswith("Browser")] == []
     assert [name for name in template.parameter_ids() if name.startswith("Browser")] == []
@@ -1272,94 +1253,27 @@ def test_the_database_major_matches_the_postgres_the_tests_run_on(template: Temp
     )
 
 
-# --- Portal execution (Task 14: EC2 launch type, shipped stopped) -----------
+# --- Portal execution tier, now deleted (owner decision 2026-10-03) --------
 
 
-def test_the_portal_service_runs_on_ec2_not_fargate(template: Template) -> None:
-    """Fargate refuses unprivileged user namespaces (measured, us-east-1,
-    2026-08-26), so Chrome's renderer sandbox cannot engage there. The sandbox
-    is the only boundary between a hostile portal page and a process holding
-    the database password, the LLM key and live student cookies, so the launch
-    type follows the sandbox rather than the other way around."""
-    task = template.resource("PortalTaskDefinition")["Properties"]
-    service = template.resource("PortalService")["Properties"]
-
-    assert task["RequiresCompatibilities"] == ["EC2"]
-    assert "FARGATE" not in task["RequiresCompatibilities"]
-    assert service["LaunchType"] == "EC2"
-
-
-def test_the_portal_volume_is_encrypted(template: Template) -> None:
-    """The browser profile holding live portal session cookies lives on this
-    volume, and volume-level encryption is what "encrypted at rest" means for a
-    directory Chrome holds open (apps/portals/profiles.py)."""
-    mappings = template.resource("PortalLaunchTemplate")["Properties"]["LaunchTemplateData"][
-        "BlockDeviceMappings"
-    ]
-
-    assert all(mapping["Ebs"]["Encrypted"] is True for mapping in mappings)
-
-
-def test_the_portal_service_ships_stopped(template: Template) -> None:
-    """Portal terms (§10) gate running this against a real portal at all, and
-    an idle EC2 instance is not free.
-
-    MaxValue is pinned too, and is load-bearing in two places nothing else
-    guards: a second task cannot resume an application the first one paused
-    (browser profiles are local to their instance), and
-    handle_portal_message's "no row lock, there is only one consumer" comment
-    rests on it.
-    """
-    assert template.parameter("PortalDesiredCount")["Default"] == 0
-    assert template.parameter("PortalDesiredCount")["MaxValue"] == 1
-    assert template.resource("PortalService")["Properties"]["DesiredCount"] == {
-        "Ref": "PortalDesiredCount"
-    }
-    assert template.resource("PortalAutoScalingGroup")["Properties"]["MinSize"] == "0"
-
-
-def test_the_portal_capacity_provider_never_manages_scaling(template: Template) -> None:
-    """PortalService uses LaunchType: EC2, so its tasks are never attributed
-    to PortalCapacityProvider's own reservation count. With ManagedScaling
-    ENABLED, ECS would see zero tasks reserved against the provider and drive
-    the ASG back to MinSize "0" -- pulling the instance out from under a
-    running task, since ManagedTerminationProtection is DISABLED. Browser
-    profiles that let a paused application resume are local to that
-    instance (PortalDesiredCount's own description), so this is not a
-    "capacity fix" waiting to happen -- re-enabling it breaks the resume
-    story it looks like it is protecting."""
-    scaling = template.resource("PortalCapacityProvider")["Properties"]["AutoScalingGroupProvider"][
-        "ManagedScaling"
-    ]
-    assert scaling["Status"] == "DISABLED"
-
-
-def test_the_portal_task_role_consumes_only_the_portal_queue(template: Template) -> None:
-    """An exact allowlist, not an absence check on the other two queues --
-    the same failure test_the_database_admits_web_worker_and_portal_only's
-    own docstring argues against. An absence check passes unchanged if a
-    future statement grants Resource: "*" for sqs:*, or names some other
-    queue added later; pinning the whole resource list closes both."""
-    actions = _policy_actions(template.resource("PortalTaskRole"))
-    assert any("sqs:ReceiveMessage" in action for action in actions)
-
-    statements = [
-        statement
-        for policy in template.resource("PortalTaskRole")["Properties"]["Policies"]
-        for statement in policy["PolicyDocument"]["Statement"]
-    ]
-    resources = [statement["Resource"] for statement in statements]
-    # This module's Fn::GetAtt constructor parses the scalar form (!GetAtt
-    # X.Y) into a plain "X.Y" string, not a two-element list -- see line ~214
-    # above (EvidenceBucket.Arn) for the established precedent.
-    assert resources == [
-        {"Fn::GetAtt": "PortalQueue.Arn"},
-        {
-            "Fn::Sub": (
-                "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/portal/*"
-            )
-        },
-    ]
+def test_no_portal_tier_remains(template: Template) -> None:
+    """The glass-box extension fills the portal in the student's own tab, so no
+    server-side browser, portal queue or portal credential exists. The deleted
+    tests pinned that tier's shape (EC2 launch type, encrypted profile volume,
+    shipped stopped, capacity provider never managing scaling, task role scoped
+    to its queue and elmify/portal/*); all are satisfied by it not existing.
+    The escalation filter and its alarm stay: escalate() is still reached, now
+    from the web tier's extension API."""
+    kept = {"PortalEscalationFilter", "PortalEscalationRateAlarm", "PortalCredentialsKey"}
+    assert [n for n in template.resource_ids() if n.startswith("Portal") and n not in kept] == []
+    assert [n for n in template.parameter_ids() if n.startswith("Portal")] == []
+    assert not any(
+        r["Type"] in {"AWS::ECS::CapacityProvider", "AWS::AutoScaling::AutoScalingGroup"}
+        for r in template.all_resources()
+    )
+    for resource in template.all_resources():
+        if resource["Type"] == "AWS::ECS::TaskDefinition":
+            assert "PORTAL_QUEUE_URL" not in _container_env_names(resource)
 
 
 def test_the_portal_escalation_filter_matches_what_escalate_actually_logs(
@@ -1367,7 +1281,11 @@ def test_the_portal_escalation_filter_matches_what_escalate_actually_logs(
 ) -> None:
     """Same failure this codebase has already had once: a metric filter whose
     pattern never matches is an alarm that never fires."""
-    pattern = template.resource("PortalEscalationFilter")["Properties"]["FilterPattern"]
+    metric_filter = template.resource("PortalEscalationFilter")["Properties"]
+    pattern = metric_filter["FilterPattern"]
+    # escalate()'s only callers are ext_api.py and packets.py, both web tier;
+    # a filter on any other group is the same never-firing alarm.
+    assert metric_filter["LogGroupName"] == {"Ref": "WebLogGroup"}
 
     assert "PortalEscalation" in pattern
     source = (
@@ -1503,7 +1421,43 @@ def test_the_document_worker_reads_quarantine_and_writes_tenant_objects(
         "s3:GetObject",
         "s3:PutObject",
     }
-    assert "s3:DeleteObject" not in _policy_actions(role)
+    # The single delete grant: the platform's own prepared copies, nothing wider.
+    assert _object_actions(
+        role, "${EvidenceBucket.Arn}/tenants/*/students/*/prepared/*"
+    ) == {"s3:DeleteObject", "s3:DeleteObjectVersion"}
+    _assert_one_prepared_only_delete(role)
+
+
+_PREPARED_ARN = {"Fn::Sub": "${EvidenceBucket.Arn}/tenants/*/students/*/prepared/*"}
+
+
+def _assert_one_prepared_only_delete(role: dict[str, Any]) -> None:
+    """Exactly one statement carries any s3:Delete*, on exactly the prepared ARN."""
+    statements = [
+        st
+        for policy in role["Properties"].get("Policies", [])
+        for st in policy["PolicyDocument"]["Statement"]
+        if any(
+            a.startswith("s3:Delete")
+            for a in (st["Action"] if isinstance(st["Action"], list) else [st["Action"]])
+        )
+    ]
+    assert len(statements) == 1
+    assert statements[0]["Resource"] == _PREPARED_ARN
+    assert set(statements[0]["Action"]) == {"s3:DeleteObject", "s3:DeleteObjectVersion"}
+
+
+def test_a_second_delete_statement_would_fail_the_pin(template: Template) -> None:
+    import copy
+
+    role = copy.deepcopy(template.resource("DocumentWorkerTaskRole"))
+    _assert_one_prepared_only_delete(role)  # the real shape passes
+    role["Properties"]["Policies"][0]["PolicyDocument"]["Statement"].append(
+        {"Effect": "Allow", "Action": "s3:DeleteObject",
+         "Resource": {"Fn::Sub": "${EvidenceBucket.Arn}/tenants/*"}}
+    )
+    with pytest.raises(AssertionError):
+        _assert_one_prepared_only_delete(role)
 
 
 def test_the_document_worker_may_hand_off_to_the_europass_queue(template: Template) -> None:
@@ -1735,16 +1689,6 @@ def test_the_ladder_ships_with_its_schedule(template: Template) -> None:
     same silent way."""
     assert "ReminderLadderRule" in template.resource_ids()
 
-
-def test_erasure_ships_with_its_schedule_enabled(template: Template) -> None:
-    """The deployment blocker CLAUDE.md records, closed: a deletion request is
-    executed only if something runs execute_due_erasures, daily, as the worker."""
-    rule = template.resource("ExecuteDueErasuresRule")["Properties"]
-    assert rule["State"] == "ENABLED"
-    assert rule["ScheduleExpression"] == "rate(1 day)"
-    overrides = json.loads(rule["Targets"][0]["Input"]["Fn::Sub"])["containerOverrides"][0]
-    assert overrides["command"] == ["python", "manage.py", "execute_due_erasures"]
-
 # --- the fetch vendors' keys reach the research worker ------------------------
 
 
@@ -1855,7 +1799,14 @@ def test_the_watch_invokes_the_command_that_exists(template: Template) -> None:
 
 
 @pytest.mark.parametrize(
-    "rule", ["ReminderLadderRule", "WatchApplicationsRule", "SyncMailboxesRule"]
+    "rule",
+    [
+        "ReminderLadderRule",
+        "WatchApplicationsRule",
+        "SyncMailboxesRule",
+        "FetchCbarRatesRule",
+        "ExecuteDueErasuresRule",
+    ],
 )
 def test_a_schedule_that_stops_invoking_sets_off_an_alarm(template: Template, rule: str) -> None:
     alarm = template.resource(f"{rule}FailedInvocationsAlarm")["Properties"]
@@ -1981,6 +1932,23 @@ def test_the_provenance_recheck_runs_daily_and_ships_enabled(template: Template)
     ]
 
 
+def test_the_erasure_schedule_runs_daily_and_ships_enabled(template: Template) -> None:
+    """Erasure console spec §4 / scheduled work spec §5.1: without it a student
+    who asked to be erased stays locked out indefinitely and is never erased."""
+    rule = template.resource("ExecuteDueErasuresRule")["Properties"]
+    assert rule["ScheduleExpression"] == "rate(1 day)"
+    assert rule["State"] == "ENABLED"
+    target = rule["Targets"][0]
+    assert target["EcsParameters"]["TaskDefinitionArn"] == {"Ref": "WorkerTaskDefinition"}
+    assert target["RoleArn"] == {"Fn::GetAtt": "EventsInvokeEcsRole.Arn"}
+    raw_input = target["Input"]
+    body = raw_input["Fn::Sub"] if isinstance(raw_input, dict) else raw_input
+    assert json.loads(body)["containerOverrides"][0] == {
+        "name": "worker",
+        "command": ["python", "manage.py", "execute_due_erasures"],
+    }
+
+
 def test_no_rule_schedules_the_mill_list_diff(template: Template) -> None:
     """mill_list_diff is an operator-run comparison, never a scheduled job --
     confirms the plan's decision not to add a rule for it stayed true."""
@@ -2077,7 +2045,7 @@ def test_the_transcript_resume_sweep_runs_every_fifteen_minutes_with_the_azure_k
 # --- Graph push for Microsoft mailboxes (watch spec §3a) ---------------------
 
 _MAILBOX_SECRETS = {
-    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/mailbox/*"
+    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/mailbox/*"
 }
 
 
@@ -2195,6 +2163,18 @@ def test_the_mailbox_sweep_runs_every_six_hours_and_ships_enabled(template: Temp
     assert overrides["command"] == ["python", "manage.py", "sync_mailboxes"]
 
 
+def test_the_cbar_rates_are_fetched_daily_by_the_worker(template: Template) -> None:
+    """A rate table nothing fetches leaves every pack saying "No exchange-rate
+    table is loaded", with every screen otherwise looking right."""
+    rule = template.resource("FetchCbarRatesRule")["Properties"]
+    assert rule["ScheduleExpression"] == "rate(1 day)"
+    assert rule["State"] == "ENABLED"
+    target = rule["Targets"][0]
+    assert target["EcsParameters"]["TaskDefinitionArn"] == {"Ref": "WorkerTaskDefinition"}
+    overrides = json.loads(target["Input"]["Fn::Sub"])["containerOverrides"][0]
+    assert overrides == {"name": "worker", "command": ["python", "manage.py", "fetch_cbar_rates"]}
+
+
 def test_mailbox_push_defaults_off_and_only_takes_0_or_1(template: Template) -> None:
     parameter = template.parameter("MailboxPushEnabled")
     assert parameter["Default"] == "0"
@@ -2271,10 +2251,10 @@ def test_the_mailbox_oauth_secret_arn_is_required_and_cannot_be_a_wildcard(
     assert "Default" not in parameter
     pattern = parameter["AllowedPattern"]
     prefix = "arn:aws:secretsmanager:eu-central-1:123456789012:secret:"
-    full = f"{prefix}tehsil/mailbox/oauth-client-AbC123"
+    full = f"{prefix}elmify/mailbox/oauth-client-AbC123"
     assert re.fullmatch(pattern, full)
     assert not re.fullmatch(pattern, f"{prefix}*")
-    assert not re.fullmatch(pattern, f"{prefix}tehsil/*")
+    assert not re.fullmatch(pattern, f"{prefix}elmify/*")
     # Already carries a JSON key: the task definitions' ":microsoft::" would break it.
     assert not re.fullmatch(pattern, f"{full}:microsoft::")
     assert not re.fullmatch(pattern, "REPLACE_WITH_SECRET_ARN")
@@ -2349,13 +2329,6 @@ def test_the_mailbox_execution_roles_may_read_exactly_the_oauth_secret(
         assert execution_role == {"Fn::GetAtt": f"{role_id}.Arn"}, task_id
 
 
-def test_the_portal_execution_role_cannot_read_the_mailbox_oauth_secret(
-    template: Template,
-) -> None:
-    role = template.resource("PortalExecutionRole")
-    assert "MailboxOAuthClientSecretArn" not in json.dumps(role)
-
-
 def test_promotion_needs_no_grant_on_guarddutys_role(template: Template) -> None:
     """Uploads are promoted to tenants/ by handle_scan_result, which runs under
     DocumentWorkerTaskRole (get quarantine/*, get+put tenants/*). DocumentScanRole
@@ -2385,3 +2358,112 @@ def test_promotion_needs_no_grant_on_guarddutys_role(template: Template) -> None
     ]
     web = template.resource("WebTaskRole")
     assert "s3:GetObject" in _object_actions(web, "${EvidenceBucket.Arn}/tenants/*")
+
+
+def _portal_statements(role: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        statement
+        for policy in role["Properties"]["Policies"]
+        for statement in policy["PolicyDocument"]["Statement"]
+        if "elmify/portal/*" in str(statement.get("Resource", ""))
+    ]
+
+
+def test_the_web_tier_creates_reads_and_deletes_portal_passwords_and_never_lists(
+    template: Template,
+) -> None:
+    """apps/portals/ext_api.py::portal_login creates and reads; the student's
+    takeover (views.portal_takeover) deletes. Never ListSecrets."""
+    portal = _portal_statements(template.resource("WebTaskRole"))
+    actions = {
+        action
+        for statement in portal
+        for action in (
+            [statement["Action"]] if isinstance(statement["Action"], str) else statement["Action"]
+        )
+    }
+    assert actions == {
+        "secretsmanager:CreateSecret",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DeleteSecret",
+    }
+
+
+def test_the_worker_may_only_delete_portal_passwords(template: Template) -> None:
+    """Erasure runs under WorkerTaskRole (advance_deletion ->
+    credentials.delete_student_portal_credentials). Without DeleteSecret every
+    erasure fails AccessDenied and stays APPROVED. PR #169 rewrites this role
+    and must keep the grant. Never Create or Get: the worker has no reason to
+    make or read a student's portal password."""
+    portal = _portal_statements(template.resource("WorkerTaskRole"))
+    assert portal, "WorkerTaskRole has no statement for elmify/portal/*"
+    actions = {
+        action
+        for statement in portal
+        for action in (
+            [statement["Action"]] if isinstance(statement["Action"], str) else statement["Action"]
+        )
+    }
+    assert actions == {"secretsmanager:DeleteSecret"}
+
+
+def test_portal_passwords_have_their_own_rotating_key_used_only_through_secrets_manager(
+    template: Template,
+) -> None:
+    key = template.resource("PortalCredentialsKey")
+    assert key["Type"] == "AWS::KMS::Key"
+    assert key["Properties"]["EnableKeyRotation"] is True
+    # Losing the key makes every stored portal password unreadable.
+    assert key["DeletionPolicy"] == "Retain"
+    assert key["UpdateReplacePolicy"] == "Retain"
+    statements = [
+        statement
+        for policy in template.resource("WebTaskRole")["Properties"]["Policies"]
+        for statement in policy["PolicyDocument"]["Statement"]
+        if "PortalCredentialsKey" in str(statement.get("Resource", ""))
+    ]
+    assert len(statements) == 1
+    assert set(statements[0]["Action"]) == {"kms:Decrypt", "kms:GenerateDataKey"}
+    assert "kms:ViaService" in str(statements[0]["Condition"])
+
+
+def test_the_web_task_names_the_portal_key(template: Template) -> None:
+    containers = template.resource("WebTaskDefinition")["Properties"]["ContainerDefinitions"]
+    env = {item["Name"]: item["Value"] for c in containers for item in c.get("Environment", [])}
+    assert "PortalCredentialsKey" in str(env["PORTAL_SECRETS_KMS_KEY_ID"])
+
+
+def test_staff_file_views_have_a_metric_filter_and_no_alarm(template: Template) -> None:
+    """Owner decision 2026-10-11: Elmify staff open students' files routinely, so the
+    count is there to review, not to page on."""
+    resource = template.resource("StaffFileViewsMetricFilter")
+    props = resource["Properties"]
+    assert resource["Type"] == "AWS::Logs::MetricFilter"
+    assert props["LogGroupName"] == {"Ref": "WebLogGroup"}
+    assert props["FilterPattern"] == '"StaffFileView"'
+    assert props["MetricTransformations"][0]["MetricName"] == "StaffFileViews"
+    for logical_id in template.resource_ids():
+        other = template.resource(logical_id)
+        if other["Type"] == "AWS::CloudWatch::Alarm":
+            assert other["Properties"].get("MetricName") != "StaffFileViews"
+
+
+def test_the_document_worker_gets_the_github_token_as_a_secret(template: Template) -> None:
+    """CV evidence spec §12.2: the evidence refresh's one GitHub key. A Secrets entry,
+    never Environment (template text would put the credential in the repo), resolved
+    through AppExecutionRole, and on no other task: the web tier never calls GitHub."""
+    worker = template.resource("DocumentWorkerTaskDefinition")
+    container = worker["Properties"]["ContainerDefinitions"][0]
+    assert _container_secrets(worker)["GITHUB_TOKEN"] == {"Ref": "GithubTokenSecret"}
+    assert "GITHUB_TOKEN" not in {entry["Name"] for entry in container["Environment"]}
+    assert template.resource("GithubTokenSecret")["Type"] == "AWS::SecretsManager::Secret"
+    assert "SecretString" not in template.resource("GithubTokenSecret")["Properties"]
+    granted = [
+        resource
+        for policy in template.resource("AppExecutionRole")["Properties"]["Policies"]
+        for statement in policy["PolicyDocument"]["Statement"]
+        if statement["Action"] == "secretsmanager:GetSecretValue"
+        for resource in statement["Resource"]
+    ]
+    assert {"Ref": "GithubTokenSecret"} in granted
+    assert "GITHUB_TOKEN" not in _container_secrets(template.resource("WebTaskDefinition"))

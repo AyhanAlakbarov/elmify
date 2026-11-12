@@ -323,3 +323,123 @@ def test_sisgp_cap_counts_only_paid_work():
     text = _text(render_sisgp(_content(experience=_experience(3) + volunteering)))
     assert sum(f"Employer {index}" in text for index in range(3)) == 3
     assert sum(f"Charity {index}" in text for index in range(3)) == 3
+
+
+@pytest.mark.parametrize("render_fn", ["render_sisgp", "render_rhodes", "render_australia_awards"])
+def test_a_funder_template_prints_certifications(render_fn):
+    import io
+
+    from pypdf import PdfReader
+
+    from apps.documents.funder_templates import australia_awards, rhodes, sisgp
+    from apps.documents.schemas import CertificationEntry
+
+    fn = {
+        "render_sisgp": sisgp.render_sisgp,
+        "render_rhodes": rhodes.render_rhodes,
+        "render_australia_awards": australia_awards.render_australia_awards,
+    }[render_fn]
+    content = _content().model_copy(update={
+        "certifications": (CertificationEntry(title="First Aid", issuer="Red Crescent"),),
+    })
+    artifact = fn(content)
+    text = "".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(artifact.pdf_bytes)).pages)
+    assert "First Aid" in text
+
+
+_AUSTRALIA_AWARDS_HEADINGS = (
+    "PERSONAL DETAILS",
+    "WORK EXPERIENCE",
+    "ACADEMIC RECORD",
+    "AWARDS / HONOURS / COMMENDATIONS / ACHIEVEMENTS",
+    "DETAILS OF RESEARCH EXPERIENCE INCLUDING PUBLICATIONS",
+    "DETAILS OF NETWORKS AND MEMBERSHIPS",
+)
+
+
+def test_australia_awards_renders_mandated_headings_and_computes_duration():
+    from datetime import date
+
+    from apps.documents.funder_templates.australia_awards import (
+        australia_awards_fields,
+        render_australia_awards,
+    )
+
+    content = _content(
+        experience=(
+            ExperienceEntry(
+                employer="SOCAR",
+                title="Process Engineer",
+                city="Baku",
+                country="AZ",
+                start_date="2024-01-01",
+                end_date="2024-06-30",
+                bullets=("Operated distillation unit",),
+                unpaid=False,
+            ),
+            ExperienceEntry(
+                employer="Green Baku",
+                title="Board Member",
+                city="Baku",
+                country="AZ",
+                start_date="2023-03-01",
+                end_date="2023-09-01",
+                bullets=("Organised coastal cleanup",),
+                unpaid=True,
+            ),
+        ),
+        awards=(AwardEntry(title="Presidential Scholarship", awarding_body="Ministry"),),
+    )
+    fields = australia_awards_fields(content, today=date(2026, 10, 28))
+    assert fields["personal_details"]["date_of_birth"] == "04/05/1999"
+    assert len(fields["work_experience"]) == 1
+    assert fields["work_experience"][0]["total_duration_months"] == 6
+    assert fields["work_experience"][0]["start_dmy"] == ("01", "01", "2024")
+    assert fields["work_experience"][0]["end_dmy"] == ("30", "06", "2024")
+    assert len(fields["networks_and_memberships"]) == 1
+
+    artifact, violations = render_cv_with_warnings(
+        content, variant="FUNDER_TEMPLATE", funder_template_id="AUSTRALIA_AWARDS"
+    )
+    assert violations == ()
+    assert artifact.variant == "FUNDER_TEMPLATE"
+    assert artifact.field_mapped is not None
+    text = _text(render_australia_awards(content))
+    _assert_headings_in_order(text, _AUSTRALIA_AWARDS_HEADINGS)
+    assert "04/05/1999" in text
+    assert "SOCAR" in text
+    assert "Green Baku" in text
+
+
+def test_fill_australia_awards_docx_populates_formtext_and_split_date_fields():
+    from datetime import date
+
+    from apps.documents.funder_templates.australia_awards import fill_australia_awards_docx
+    from apps.documents.ingestion import extract_text
+
+    content = _content(
+        experience=(
+            ExperienceEntry(
+                employer="Azercell",
+                title="Data Scientist",
+                city="Baku",
+                country="AZ",
+                start_date="2023-02-01",
+                end_date="2024-01-31",
+                bullets=("Built churn model",),
+                unpaid=False,
+            ),
+        ),
+        awards=(AwardEntry(title="Best Thesis Award", awarding_body="ADA University"),),
+    )
+    filled_bytes = fill_australia_awards_docx(content, today=date(2026, 10, 28))
+    extracted = extract_text(filled_bytes)
+    assert "Jane Doe" in extracted
+    assert "04/05/1999" in extracted
+    assert "Azercell" in extracted
+    assert "Data Scientist" in extracted
+    assert "12" in extracted  # 12 months duration
+    assert "Best Thesis Award" in extracted
+    assert "insert text response here" not in extracted
+
+

@@ -1,37 +1,206 @@
 {% load dashboard %}
-<section id="consultation" aria-labelledby="consultation-heading">
+<section id="consultation"{% if review %} class="consultation-review"{% endif %} aria-labelledby="consultation-heading">
   {% if review %}
     <h2 id="consultation-heading">Check your answers</h2>
     {% if error %}<p role="alert">{{ error }}</p>{% endif %}
-    <dl>
-      {% for key, value in draft.answers.items %}<dt>{{ labels|lookup:key|default:key }}</dt><dd>{{ value|answer }}</dd>{% endfor %}
+    {% if late_reading %}
+      <form method="post" action="{% url 'student-profile' %}" class="note note-ok">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="use_reading">
+        <p>Your transcript has been read. Use it instead of the degree you typed?</p>
+        <button type="submit">Use my transcript</button>
+      </form>
+    {% endif %}
+    <dl class="review-list">
+      {% if full_name %}<dt>Full name</dt><dd><span>{{ full_name }}</span> <a href="/student/settings/account/" class="btn btn-quiet">Change</a></dd>{% endif %}
+      {% if current_study %}<dt>Where do you study</dt><dd><span>{{ current_study }}</span> <form method="post" action="{% url 'student-profile' %}" class="consultation-inline-form">{% csrf_token %}<input type="hidden" name="action" value="correct"><input type="hidden" name="key" value="academic_history"><button type="submit" class="btn-quiet">Change</button></form></dd>{% endif %}
+      {% for key, value in draft.answers.items %}<dt>{{ labels|lookup:key|default:key }}</dt><dd><span>{{ value|answer }}</span> <form method="post" action="{% url 'student-profile' %}" class="consultation-inline-form">{% csrf_token %}<input type="hidden" name="action" value="correct"><input type="hidden" name="key" value="{{ key }}"><button type="submit" class="btn-quiet">Change</button></form></dd>{% endfor %}
     </dl>
     <form method="post" action="{% url 'student-profile' %}">
       {% csrf_token %}
       <input type="hidden" name="action" value="confirm">
-      <button type="submit">Confirm and start research</button>
+      <button type="submit">{% if has_existing_profile %}Save changes &amp; refresh matches{% else %}Confirm and start research{% endif %}</button>
     </form>
   {% else %}
-    <h2 id="consultation-heading">Question {{ progress_answered|add:1 }} of {{ progress_total }}</h2>
+    <div class="consultation-progress-wrap">
+      <h2 id="consultation-heading">Question {{ progress_answered|add:1 }} of {{ progress_total }}</h2>
+      <progress class="consultation-progress" value="{{ progress_answered|add:1 }}" max="{{ progress_total }}">{{ progress_answered|add:1 }} of {{ progress_total }}</progress>
+    </div>
     {% if error %}<p role="alert">{{ error }}</p>{% endif %}
     {% for message in form.value.errors %}<p role="alert">{{ message }}</p>{% endfor %}
     <form method="post" action="{% url 'student-profile' %}">
       {% csrf_token %}
       <input type="hidden" name="key" value="{{ question.key }}">
-      {% if form.value.field.widget.is_composite or form.value.field.widget.input_type == "radio" %}
-        <fieldset class="question">
-          <legend>{{ question.label }}</legend>
-          {% if form.value.help_text %}<p class="muted">{{ form.value.help_text }}</p>{% endif %}
-          {{ form.value }}
+      <p>
+        <label for="{{ form.value.id_for_label }}">{{ question.label }}</label><br>
+        {{ form.value }}
+        {% if form.value.help_text %}<br><small class="muted">{{ form.value.help_text }}</small>{% endif %}
+      </p>
+      {% if popular_destinations %}
+        <fieldset>
+          <legend>Quick-select countries (or leave empty for {% if question.key == "allowed_countries" %}anywhere{% else %}none{% endif %})</legend>
+          {% for code, name in popular_destinations %}
+            {% if code in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ code }}">{% endif %}
+            <label class="consultation-preset-label">
+              <input type="checkbox" name="country_ticks" value="{{ code }}"{% if code in selected_ticks %} checked{% endif %}> {{ code|flag }}{{ name }} ({{ code }})
+            </label>
+          {% endfor %}
         </fieldset>
-      {% else %}
-        <p>
-          <label for="{{ form.value.id_for_label }}">{{ question.label }}</label><br>
-          {{ form.value }}
-          {% if form.value.help_text %}<br><small class="muted">{{ form.value.help_text }}</small>{% endif %}
-        </p>
+      {% endif %}
+      {% if popular_languages %}
+        <fieldset>
+          <legend>Quick-select languages</legend>
+          {% for lang in popular_languages %}
+            {% if lang in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ lang }}">{% endif %}
+            <label class="consultation-preset-label">
+              <input type="checkbox" name="language_ticks" value="{{ lang }}"{% if lang in selected_ticks %} checked{% endif %}> {{ lang }}
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      {% if interest_suggestions %}
+        <fieldset>
+          <legend>Suggested directions (tick any that fit, or leave blank to include all)</legend>
+          {% for track_val, track_label in interest_suggestions %}
+            {% if track_val in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ track_val }}">{% endif %}
+            <label class="consultation-preset-label">
+              <input type="checkbox" name="interest_ticks" value="{{ track_val }}"{% if track_val in selected_ticks %} checked{% endif %}> {{ track_label }}
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      {% if question.key == "language_evidence" %}
+        {% if language_context_note %}
+          <p role="note"><strong>Prior degree language note:</strong> {{ language_context_note }}</p>
+        {% endif %}
+        <fieldset>
+          <legend>Quick fill (optional)</legend>
+          <label class="consultation-preset-label">
+            <input type="radio" name="language_quick_preset" value="IELTS"> IELTS Academic
+          </label>
+          <label class="consultation-preset-label">
+            <input type="radio" name="language_quick_preset" value="TOEFL"> TOEFL iBT
+          </label>
+          <label class="consultation-preset-label">
+            <input type="radio" name="language_quick_preset" value="DUOLINGO"> Duolingo
+          </label>
+          <label class="consultation-preset-label">
+            <input type="radio" name="language_quick_preset" value="TESTDAF"> TestDaF (German)
+          </label>
+          <label class="consultation-preset-label">
+            <input type="radio" name="language_quick_preset" value="NONE"> No official language certificate yet — skip for now
+          </label>
+        </fieldset>
+      {% endif %}
+      {% if date_presets %}
+        <fieldset>
+          <legend>Quick-select term</legend>
+          {% for iso_date, term_label in date_presets %}
+            <label class="consultation-preset-label">
+              <input type="radio" name="intake_preset" value="{{ iso_date }}"{% if iso_date in selected_ticks %} checked{% endif %}> {{ term_label }}
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      {% if money_presets %}
+        <fieldset>
+          <legend>Quick-select amount</legend>
+          {% for preset_val, preset_label in money_presets %}
+            <label class="consultation-preset-label">
+              <input type="radio" name="amount_preset" value="{{ preset_val }}"> {{ preset_label }}
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      {% if duration_tick_options %}
+        <fieldset>
+          <legend>Program duration preference</legend>
+          {% for phrase, label in duration_tick_options %}
+            {% if phrase and phrase in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ phrase }}">{% endif %}
+            <label class="consultation-block-label">
+              <input type="radio" name="duration_tick" value="{{ phrase }}"{% if phrase in selected_ticks %} checked{% endif %}> {{ label }}
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      {% if priority_tick_options %}
+        <fieldset>
+          <legend>Quick-tick your priorities (optional)</legend>
+          {% for phrase, label in priority_tick_options %}
+            {% if phrase in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ phrase }}">{% endif %}
+            <label class="consultation-block-label">
+              <input type="checkbox" name="priority_ticks" value="{{ phrase }}"{% if phrase in selected_ticks %} checked{% endif %}> {{ label }}
+            </label>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      {% if question.key == "nationality" or question.key == "country_of_residence" or question.key == "academic_history" %}
+        <datalist id="country-datalist">
+          <option value="Azerbaijan"></option>
+          <option value="Germany"></option>
+          <option value="United Kingdom"></option>
+          <option value="Netherlands"></option>
+          <option value="Sweden"></option>
+          <option value="France"></option>
+          <option value="Italy"></option>
+          <option value="Switzerland"></option>
+          <option value="Austria"></option>
+          <option value="Belgium"></option>
+          <option value="Finland"></option>
+          <option value="Ireland"></option>
+          <option value="Spain"></option>
+          <option value="Denmark"></option>
+          <option value="Norway"></option>
+          <option value="Czechia"></option>
+          <option value="Estonia"></option>
+          <option value="Lithuania"></option>
+          <option value="Hungary"></option>
+          <option value="Poland"></option>
+          <option value="United States"></option>
+          <option value="Canada"></option>
+          <option value="Australia"></option>
+          <option value="New Zealand"></option>
+          <option value="Türkiye"></option>
+          <option value="South Korea"></option>
+          <option value="Japan"></option>
+          <option value="Singapore"></option>
+          <option value="China"></option>
+          <option value="United Arab Emirates"></option>
+          <option value="Saudi Arabia"></option>
+          <option value="Qatar"></option>
+        </datalist>
+      {% endif %}
+      {% if popular_fields %}
+        <datalist id="field-datalist">
+          {% for f in popular_fields %}<option value="{{ f }}"></option>{% endfor %}
+        </datalist>
+      {% endif %}
+      {% if question.key == "academic_history" %}
+        <datalist id="qualification-datalist">
+          <option value="BSc"></option>
+          <option value="BA"></option>
+          <option value="BEng"></option>
+          <option value="BBA"></option>
+          <option value="LLB"></option>
+          <option value="MSc"></option>
+          <option value="MA"></option>
+        </datalist>
+        <datalist id="grading-scale-datalist">
+          <option value="0-100"></option>
+          <option value="4.0"></option>
+          <option value="5.0"></option>
+          <option value="10.0"></option>
+          <option value="1.0-5.0"></option>
+        </datalist>
       {% endif %}
       <button type="submit">Next</button>
     </form>
+    {% if can_go_back %}
+      <form method="post" action="{% url 'student-profile' %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="back">
+        <button type="submit">Back</button>
+      </form>
+    {% endif %}
   {% endif %}
 </section>

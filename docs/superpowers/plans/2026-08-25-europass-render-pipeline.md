@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Branch: `claude/cv-render-fidelity`, worktree `/home/orkhan/Desktop/tehsil_agent/.worktrees/phase2-cv-engine`.
+- Branch: `claude/cv-render-fidelity`, worktree `/home/orkhan/Desktop/elmify/.worktrees/phase2-cv-engine`.
 - Every command runs through `uv run`. Never invoke `python` or `pytest` bare.
 - Gates before any commit: `uv run ruff check apps tests`, `uv run mypy apps`, `uv run pytest -q`, `uv run bandit -c pyproject.toml -r apps config` (0 findings, no `# nosec`), and `uv run python manage.py makemigrations --check --dry-run`.
 - Line length is 100; ruff enforces it. `target-version = "py312"`.
@@ -1440,7 +1440,7 @@ After the existing worker service definition, mirroring its shape (same cluster,
   EuropassWorkerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/europass-worker"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/europass-worker"
       RetentionInDays: 30
 
   EuropassWorkerService:
@@ -1499,7 +1499,7 @@ Then add a metric filter and alarm so a failing canary pages someone, following 
       LogGroupName: !Ref EuropassWorkerLogGroup
       FilterPattern: '"EuropassCallMade"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/App
+        - MetricNamespace: Elmify/App
           MetricName: EuropassCallsTotal
           MetricValue: "1"
           DefaultValue: 0
@@ -1510,7 +1510,7 @@ Then add a metric filter and alarm so a failing canary pages someone, following 
       LogGroupName: !Ref EuropassWorkerLogGroup
       FilterPattern: '?"Europass API failed" ?"Traceback (most recent call last)"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/App
+        - MetricNamespace: Elmify/App
           MetricName: EuropassCanaryFailures
           MetricValue: "1"
           DefaultValue: 0
@@ -1518,7 +1518,7 @@ Then add a metric filter and alarm so a failing canary pages someone, following 
   EuropassCanaryFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: EuropassCanaryFailures
       Statistic: Sum
       Period: 3600

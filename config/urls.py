@@ -10,7 +10,7 @@ def index(request: HttpRequest) -> HttpResponse:
     """Send a student to the board, a counsellor or owner to their list, others to login.
 
     The Outlook callback ends on the mailbox page now, but any other link to the
-    bare host lands somewhere useful instead of on the word "Tehsil".
+    bare host lands somewhere useful instead of on the word "Elmify".
     """
     role = getattr(getattr(request, "membership", None), "role", None)
     if role == Membership.Role.STUDENT:

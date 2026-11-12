@@ -170,3 +170,60 @@ def test_another_students_letter_cannot_be_approved(
         )
     assert response.status_code == 404
     enqueue.assert_not_called()
+
+
+def test_tailored_cv_versions_display_destination_and_switch_via_query_param(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        add_card(agency_a, membership_a, programme)
+        _identity(agency_a, membership_a)
+        general_cv = DocumentDraft.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            kind=DocumentDraft.Kind.CV,
+            version=1,
+            is_general=True,
+            destination_label="General Master CV",
+            render_variant="STANDARD",
+            status=DocumentDraft.Status.APPROVED,
+            content={
+                "personal_information": {
+                    "full_name": "Aysel Example",
+                    "email": "aysel@example.com",
+                },
+                "summary": "General master summary.",
+            },
+        )
+        tailored_cv = DocumentDraft.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            kind=DocumentDraft.Kind.CV,
+            version=2,
+            is_general=False,
+            programme_id=programme.program_id,
+            destination_label="M.Sc. Informatics, Technical University",
+            render_variant="GERMAN_TABULAR",
+            status=DocumentDraft.Status.APPROVED,
+            content={
+                "personal_information": {
+                    "full_name": "Aysel Example",
+                    "email": "aysel@example.com",
+                },
+                "summary": "German tabular summary for Informatics.",
+            },
+        )
+    client.force_login(user_a)
+    body_default = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert "M.Sc. Informatics, Technical University" in body_default
+    assert "German Tabular CV" in body_default
+    assert "General Master CV" in body_default
+    assert "German tabular summary for Informatics." in body_default
+
+    body_selected = client.get(
+        f"{PAGE}?cv={general_cv.id}", HTTP_HOST=domain_a.host
+    ).content.decode()
+    assert "General master summary." in body_selected
+    assert f'?cv={tailored_cv.id}"' in body_selected
+

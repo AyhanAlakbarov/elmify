@@ -62,6 +62,11 @@ LOGIN_LIMIT = 10
 LOGIN_WINDOW_SECONDS = 900
 
 
+def actor_key(value: str) -> int:
+    """rate_limited takes UUID | int; SHA-256 so a crafted value cannot collide."""
+    return int.from_bytes(hashlib.sha256(value.encode()).digest()[:8], "big")
+
+
 def _login_key(username: str) -> str:
     """The form `authenticate` treats as one account: Django's UsernameField strips
     and NFKC-normalizes, and the JSON door resolves case-insensitively, so every
@@ -79,7 +84,7 @@ def login_rate_limited(username: str) -> bool:
     """
     return rate_limited(
         "api-login",
-        int.from_bytes(hashlib.sha256(_login_key(username).encode()).digest()[:8], "big"),
+        actor_key(_login_key(username)),
         limit=LOGIN_LIMIT,
         window_seconds=LOGIN_WINDOW_SECONDS,
     )
@@ -98,3 +103,8 @@ def pack_command_rate_limited(student_id: UUID | int) -> bool:
         "pack-command", student_id, limit=PACK_COMMAND_LIMIT,
         window_seconds=PACK_COMMAND_WINDOW_SECONDS,
     )
+
+
+def seconds_until_reset(window_seconds: int) -> int:
+    """Seconds left until the current fixed rate-limit window rolls over."""
+    return window_seconds - int(time.time()) % window_seconds

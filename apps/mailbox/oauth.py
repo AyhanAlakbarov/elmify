@@ -32,6 +32,7 @@ from apps.mailbox.providers import (
     _json,
 )
 from apps.mailbox.secrets import refresh_token_for, replace_refresh_token
+from apps.portals.credentials import aws_code
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +165,8 @@ def _address_from_id_token(id_token: str) -> str:
         return ""
     try:
         claims = json.loads(base64.urlsafe_b64decode(parts[1] + "==="))
-    except (binascii.Error, json.JSONDecodeError, UnicodeDecodeError):
+    except (binascii.Error, json.JSONDecodeError, UnicodeDecodeError) as error:
+        logger.warning("could not decode Google id_token claims (%s)", type(error).__name__)
         return ""
     if not isinstance(claims, dict) or claims.get("email_verified") is not True:
         return ""
@@ -271,11 +273,13 @@ def access_token_for(
                 refresh_token=rotated,
                 client=secrets_client,
             )
-        except botocore.exceptions.ClientError:
+        except botocore.exceptions.ClientError as error:
             # The old token still works until it expires, so this sync goes on.
-            # Logged without the error: botocore's message names the secret,
+            # Logged with aws_code only: botocore's message names the secret,
             # and the secret's name names the student.
             logger.warning(
-                "could not store a rotated refresh token for connection %s", connection.id
+                "could not store a rotated refresh token for connection %s (%s)",
+                connection.id,
+                aws_code(error),
             )
     return token

@@ -34,7 +34,12 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from apps.funding.models import AuditEvent, OfficialSourceSnapshot
-from apps.research.models import GoldItem, PlatformAgency, ResolutionItem
+from apps.research.models import (
+    GoldItem,
+    PlatformAgency,
+    ResolutionItem,
+    WinnerCohortProfile,
+)
 from apps.research.resolution.kinds import KINDS
 from apps.research.resolution.operator import (
     DecisionRefused,
@@ -85,10 +90,9 @@ def firecrawl_webhook(request: HttpRequest) -> HttpResponse:
         # FAILS in production: the web tier runs as `runtime_web`, which holds
         # no grant on this catalogue table, so this raises `permission denied`
         # (pinned by test_under_the_web_role_the_write_is_refused_not_silent).
-        # Moving it to the worker alone is not enough either: the snapshot
-        # table has no UPDATE policy, so under `runtime_engine` it matches zero
-        # rows, silently (`poll_monitor_checks._mark`). Enabling the flag needs
-        # both: the write queued to `runtime_engine`, and that policy.
+        # funding/0067 added the UPDATE policy and column grant for
+        # `runtime_engine`, so the one remaining prerequisite before enabling
+        # the flag is moving this write off the web tier to the worker.
         OfficialSourceSnapshot.objects.filter(final_url=url).update(retrieval_status=status)
     return JsonResponse({"ok": True})
 
@@ -168,13 +172,13 @@ def resolution_decide(request: HttpRequest, item_id: UUID) -> HttpResponse:
     kind = ResolutionItem.objects.filter(id=item_id).values_list("kind", flat=True).first()
     if kind is None:
         raise Http404("no such item")
-    form = {key: request.POST.get(key, "") for key in request.POST}
+    form = request.POST.dict()
     try:
         decide(item_id, operator, KINDS[kind].from_form(form), now=timezone.now())
     except ResolutionItem.DoesNotExist as error:
         raise Http404("no live item") from error
     except DecisionRefused as refused:
-        return HttpResponseBadRequest(str(refused))
+        return HttpResponseBadRequest(str(refused), content_type="text/plain; charset=utf-8")
     return redirect("resolution-queue")
 
 
@@ -187,7 +191,7 @@ def resolution_park(request: HttpRequest, item_id: UUID) -> HttpResponse:
     except ResolutionItem.DoesNotExist as error:
         raise Http404("no live item") from error
     except DecisionRefused as refused:
-        return HttpResponseBadRequest(str(refused))
+        return HttpResponseBadRequest(str(refused), content_type="text/plain; charset=utf-8")
     return redirect("resolution-queue")
 
 
@@ -231,3 +235,24 @@ def gold_label(request: HttpRequest, item_id: UUID) -> HttpResponse:
     if not updated:
         return HttpResponse("already labelled", status=409)
     return redirect("gold-queue")
+
+
+@login_required
+@require_GET
+def catalogue_overview(request: HttpRequest) -> HttpResponse:
+    """Platform-staff-only view of anonymised winner cohort benchmarks (`/platform/catalogue/`).
+
+    Gated by `_operator(request)` (Elmify `PlatformAgency` + `PLATFORM_ADMIN` + verified MFA)
+    and backed by `WinnerCohortProfile` (`_PLATFORM_TABLES`, `platform_operator_select` RLS).
+    B2B agencies receive `403 PermissionDenied` here and `0` rows at the database layer.
+    """
+    _operator(request)
+    cohorts = list(
+        WinnerCohortProfile.objects.order_by("target_kind", "country_code", "target_name")[:200]
+    )
+    return render(
+        request,
+        "research/catalogue_overview.html",
+        {"cohorts": cohorts},
+    )
+

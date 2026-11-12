@@ -140,12 +140,21 @@ def _update(entry: RegisterEntry, *, as_asked: bool, **values: object) -> None:
 
 
 def record_resolution(
-    entry: RegisterEntry, resolution: Resolution, *, spec: RegisterSpec, now: datetime
+    entry: RegisterEntry,
+    resolution: Resolution,
+    *,
+    spec: RegisterSpec,
+    now: datetime,
+    found_via: str = "",
 ) -> None:
     """Write one answer onto the row it answers, or refuse (see module docstring).
 
     `spec` is `spec_for(entry, register_spec)`: an organisation is written
     with the country and kind the list vouched for, so both must be known.
+    `found_via` overrides the route tag the organisation is recorded with --
+    a pointer's body is `POINTER:<naming host>`, the route that FOUND it
+    (spec 2026-09-27 4.7); the resolver is only how it was placed, which
+    `resolved_via` on the row still records.
     """
     if not (spec.country_code and spec.kind):
         raise ValueError(f"register entry {entry.pk}: no country or kind to vouch for")
@@ -169,7 +178,8 @@ def record_resolution(
             with transaction.atomic():
                 org = record_organisation(
                     domain=resolution.domain, name=entry.name, names=names, kind=spec.kind,
-                    country_code=spec.country_code, found_via=f"RESOLVER:{resolution.via}",
+                    country_code=spec.country_code,
+                    found_via=found_via or f"RESOLVER:{resolution.via}",
                     identifiers=identifiers,
                 )
         except ValueError:

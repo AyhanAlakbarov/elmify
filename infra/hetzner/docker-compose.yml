@@ -1,0 +1,216 @@
+# Elmify Production Stack (Hetzner Cloud / Coolify)
+# Services:
+# - PostgreSQL 16 with RLS role split (`runtime_engine`, `runtime_web`, `migration`)
+# - Valkey 8 for atomic rate-limiting and shared cache (`CACHE_URL`)
+# - LocalStack (S3 / SQS / SecretsManager endpoints) or Cloudflare R2 (`AWS_ENDPOINT_URL_S3`)
+# - Isolated OCR container (`ocr/Dockerfile`)
+# - Caddy automatic HTTPS reverse proxy
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_MIGRATION_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_MIGRATION_PASSWORD}
+      POSTGRES_ENGINE_USER: ${POSTGRES_ENGINE_USER}
+      POSTGRES_ENGINE_PASSWORD: ${POSTGRES_ENGINE_PASSWORD}
+      POSTGRES_WEB_USER: ${POSTGRES_WEB_USER}
+      POSTGRES_WEB_PASSWORD: ${POSTGRES_WEB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init-db-roles.sh:/docker-entrypoint-initdb.d/10-init-db-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_MIGRATION_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-lru"]
+    volumes:
+      - valkeydata:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  localstack:
+    image: localstack/localstack:3
+    restart: unless-stopped
+    environment:
+      SERVICES: s3,sqs,secretsmanager
+      DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      PERSISTENCE: "1"
+    volumes:
+      - localstackdata:/var/lib/localstack
+      - ./init-localstack.sh:/etc/localstack/init/ready.d/10-init-localstack.sh:ro
+    healthcheck:
+      test: ["CMD", "awslocal", "sqs", "list-queues"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ocr:
+    build:
+      context: ../../ocr
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    environment:
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_ENDPOINT_URL_S3: ${AWS_ENDPOINT_URL_S3}
+      DOCUMENT_BUCKET_NAME: ${DOCUMENT_BUCKET_NAME}
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: runtime
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py load_closed_lists"
+    env_file: .env
+    environment:
+      DATABASE_ROLE: migration
+      POSTGRES_HOST: postgres
+      CACHE_URL: redis://valkey:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+    restart: "no"
+
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_ROLE: runtime_web
+      POSTGRES_HOST: postgres
+      CACHE_URL: redis://valkey:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    expose:
+      - "8000"
+
+  research-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: worker
+    command: ["python", "manage.py", "run_research_worker"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_ROLE: runtime_engine
+      POSTGRES_HOST: postgres
+      CACHE_URL: redis://valkey:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  document-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: web
+    command: ["python", "manage.py", "run_document_worker"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_ROLE: runtime_engine
+      POSTGRES_HOST: postgres
+      CACHE_URL: redis://valkey:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  europass-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: worker
+    command: ["python", "manage.py", "run_europass_worker"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_ROLE: runtime_engine
+      POSTGRES_HOST: postgres
+      CACHE_URL: redis://valkey:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  mailbox-worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: worker
+    command: ["python", "manage.py", "run_mailbox_worker"]
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_ROLE: runtime_engine
+      POSTGRES_HOST: postgres
+      CACHE_URL: redis://valkey:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  scheduler:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: worker
+    command: >
+      sh -c "while true; do
+        python manage.py fetch_cbar_rates || true;
+        python manage.py poll_ministry_channels --cheap-http-first || true;
+        python manage.py verify_due_cycles --active-only --max 25 || true;
+        sleep 21600;
+      done"
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_ROLE: runtime_engine
+      POSTGRES_HOST: postgres
+      CACHE_URL: redis://valkey:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  pgdata:
+  valkeydata:
+  localstackdata:
+  caddy_data:
+  caddy_config:

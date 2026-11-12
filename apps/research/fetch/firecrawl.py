@@ -57,6 +57,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Callable, Mapping
+from html import escape
 from types import SimpleNamespace
 from typing import Any
 
@@ -130,11 +131,14 @@ JSON_FORMAT_CREDITS = 4
 Post = Callable[..., tuple[int, bytes, Mapping[str, str]]]
 
 
-def _post(url: str, *, json_body: dict[str, Any], headers: dict[str, str], timeout: int
-          ) -> tuple[int, bytes, Mapping[str, str]]:
+def _post(url: str, *, json_body: dict[str, Any], headers: dict[str, str], timeout: int,
+          total_s: float | None = None) -> tuple[int, bytes, Mapping[str, str]]:
+    # `total_s` caps connect and read together for a caller with a deadline; None is urllib3's
+    # own default, no cap.
     response = urllib3.request(
         "POST", url, json=json_body, headers=headers,
-        timeout=urllib3.Timeout(connect=10, read=timeout / 1000 + 30), retries=False,
+        timeout=urllib3.Timeout(connect=10, read=timeout / 1000 + 30, total=total_s),
+        retries=False,
     )
     # response.headers, not dict(...): it is urllib3's case-insensitive
     # HTTPHeaderDict and _backoff_seconds looks up "Retry-After" by that exact
@@ -142,28 +146,56 @@ def _post(url: str, *, json_body: dict[str, Any], headers: dict[str, str], timeo
     return response.status, response.data, response.headers
 
 
-def scrape(
+def _first(value: Any) -> str:
+    """Firecrawl reports a repeated meta tag as a list; the first is the page's."""
+    if isinstance(value, list):
+        value = value[0] if value else ""
+    return " ".join(str(value or "").split())
+
+
+def _with_head(html: bytes, metadata: Mapping[str, Any]) -> bytes:
+    """Put the page's own title and og:site_name back at the top of the body.
+
+    Measured 2026-09-27: Firecrawl's `html` carries no `<head>`, so a page's
+    <title> reached nobody (tev.org.tr, cusanuswerk.de: none) or was an
+    embedded video's (hrantdink.org read "... - YouTube" at byte 39,181) --
+    while `metadata.title` held the real one. The resolver's title check reads
+    the FIRST <title>, so the vendor's is prepended unconditionally rather than
+    only when the body has none. A body's digest moves once for pages already
+    stored, which costs one re-read each.
+    """
+    title = _first(metadata.get("title"))
+    site = _first(metadata.get("ogSiteName"))
+    head = f"<title>{escape(title)}</title>" if title else ""
+    if site:
+        head += f'<meta property="og:site_name" content="{escape(site)}">'
+    return head.encode() + html if head else html
+
+
+def _build_scrape_request(
     url: str,
     *,
     api_key: str,
-    tag: str | None = None,
-    actions: bool = False,
-    profile: Any = None,
-    request_id: str | None = None,
-    screenshot: bool = False,
-    json_format: Mapping[str, Any] | None = None,
-    post: Post = _post,
-    sleep: Callable[[float], None] = time.sleep,
-) -> FetchedPage:
-    if not api_key:
-        raise VendorUnavailable("FIRECRAWL_API_KEY is not set")
-
-    rung = 2 if actions else 1
+    tag: str | None,
+    actions: bool,
+    profile: Any,
+    request_id: str | None,
+    screenshot: bool,
+    json_format: Mapping[str, Any] | None,
+    timeout_s: float | None,
+) -> tuple[dict[str, Any], dict[str, str], int, dict[str, float], int]:
     # HostProfile.timeout_ms (models.py) carries the per-host override once one
     # is learned; with no profile yet, this reads a setting rather than a
     # second hardcoded literal that would silently diverge from the column's
     # own default (Task 2 obligation, CLAUDE.md).
     timeout_ms = getattr(profile, "timeout_ms", 0) or settings.FETCH_DEFAULT_TIMEOUT_MS
+    bound: dict[str, float] = {}
+    retries = _RETRY_ATTEMPTS
+    if timeout_s is not None:
+        # A caller someone waits on (fetch_page's `timeout_s`): the vendor's page timeout and
+        # the HTTP wait both end at the time left, and there is no time to back off and retry.
+        timeout_ms = min(timeout_ms, max(1, int(timeout_s * 1000)))
+        bound, retries = {"total_s": timeout_s}, 0
     formats: list[Any] = ["markdown", "links", "html"]
     if tag:
         # changeTracking compares pages via their MARKDOWN, so that format must
@@ -232,16 +264,48 @@ def scrape(
         # id; the header is sent anyway because a concurrent duplicate is the
         # one case it does prevent.
         headers["x-request-id"] = request_id
+    return body, headers, timeout_ms, bound, retries
+
+
+def scrape(
+    url: str,
+    *,
+    api_key: str,
+    tag: str | None = None,
+    actions: bool = False,
+    profile: Any = None,
+    request_id: str | None = None,
+    screenshot: bool = False,
+    json_format: Mapping[str, Any] | None = None,
+    post: Post = _post,
+    sleep: Callable[[float], None] = time.sleep,
+    timeout_s: float | None = None,
+) -> FetchedPage:
+    if not api_key:
+        raise VendorUnavailable("FIRECRAWL_API_KEY is not set")
+
+    rung = 2 if actions else 1
+    body, headers, timeout_ms, bound, retries = _build_scrape_request(
+        url,
+        api_key=api_key,
+        tag=tag,
+        actions=actions,
+        profile=profile,
+        request_id=request_id,
+        screenshot=screenshot,
+        json_format=json_format,
+        timeout_s=timeout_s,
+    )
 
     started = time.monotonic()
     status = 0
     raw = b""
     response_headers: Mapping[str, str] = {}
-    for attempt in range(_RETRY_ATTEMPTS + 1):
-        last = attempt == _RETRY_ATTEMPTS
+    for attempt in range(retries + 1):
+        last = attempt == retries
         try:
             status, raw, response_headers = post(
-                ENDPOINT, json_body=body, headers=headers, timeout=timeout_ms
+                ENDPOINT, json_body=body, headers=headers, timeout=timeout_ms, **bound
             )
         except urllib3.exceptions.HTTPError as error:
             # urllib3's own exceptions -- timeouts, TLS and DNS failures,
@@ -335,6 +399,8 @@ def scrape(
     content_type = (metadata.get("contentType") or "").split(";", 1)[0]
     markdown = data.get("markdown") or ""
     html = (data.get("html") or "").encode()
+    if content_type in {"", "text/html"}:
+        html = _with_head(html, metadata)
     page_count = metadata.get("numPages")
     total_pages = metadata.get("totalPages")
     # A PDF is billed per page; everything else is one credit for the call.

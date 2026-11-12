@@ -795,3 +795,105 @@ def test_a_legacy_language_condition_still_escalates_when_evidence_is_present() 
 
     assert result.outcome == "POSSIBLY_ELIGIBLE_REVIEW"
     assert any("kas" in reason for reason in result.reasons)
+
+
+def test_affordability_scores_what_is_left_after_the_student_s_own_money() -> None:
+    """A gap the family can cover is affordable: the score reads the shortfall,
+    not the funding gap, so 10,000 a year against a 6,000 gap scores 100."""
+    from apps.accounts.schemas import Money
+    from apps.funding.evaluation import evaluate
+
+    covered = make_profile(self_funding_capacity=Money(amount=Decimal("10000"), currency="EUR"))
+    short = make_profile(self_funding_capacity=Money(amount=Decimal("3000"), currency="EUR"))
+    candidate = make_candidate(
+        duration_months=12, cost_components=(make_cost("TUITION", "6000.00"),), benefits=()
+    )
+
+    def affordability(profile):
+        scores = evaluate(profile, candidate, EUR_RATES).scores
+        assert scores is not None
+        return next(d.score for d in scores.dimensions if d.dimension == "AFFORDABILITY")
+
+    assert affordability(covered) == Decimal("100")
+    assert affordability(short) == Decimal("50")
+
+
+def test_undecidable_condition_on_secondary_benefit_does_not_block_clean_funding_route() -> None:
+    """When a programme has a verified open benefit with no undecidable conditions
+    alongside a secondary benefit with an undecidable condition, the programme
+    remains ELIGIBLE on the clean route rather than being blocked from the pack."""
+    from apps.funding.pack import rank_candidates
+
+    profile = make_profile(
+        strategy="FUNDING_FIRST",
+        funding_dependency="MANDATORY",
+        self_funding_capacity=None,
+    )
+    candidate = make_candidate(
+        duration_months=12,
+        cost_components=(make_cost("TUITION", "6000.00"),),
+        benefits=(
+            make_benefit(id="clean-merit", amount="5000.00"),
+            make_benefit(id="hardship-topup", amount="2000.00"),
+        ),
+        applicant_conditions=(
+            make_applicant_condition(
+                "SOCIOECONOMIC",
+                benefit_id="hardship-topup",
+                rule_text="Household income below threshold.",
+            ),
+        ),
+    )
+
+    result = evaluate(profile, candidate, EUR_RATES)
+
+    assert result.outcome == "ELIGIBLE"
+    ranked = rank_candidates(profile, (candidate,), EUR_RATES)
+    assert len(ranked) == 1
+    # Affordability uses only the clean 5,000 EUR route, not the unverified 2,000 EUR top-up
+    assert ranked[0].affordability.gap == Decimal("1000.00")
+    assert any("hardship-topup" in t and "Household income" in t for t in ranked[0].tradeoffs)
+
+
+def test_language_evidence_gate_requires_evidence_in_candidates_teaching_language() -> None:
+    from datetime import date
+
+    from apps.accounts.schemas import LanguageEvidence
+    from apps.funding.evaluation import evaluate
+
+    profile = make_profile(
+        acceptable_teaching_languages=("English", "German"),
+        language_evidence=(
+            LanguageEvidence(
+                language="English",
+                level="IELTS 7.5",
+                evidence_type="TEST",
+                available_by=date(2026, 6, 1),
+            ),
+        ),
+    )
+    german_only_candidate = make_candidate(
+        teaching_languages=("German",),
+        language_evidence_required=True,
+        application_deadline=date(2027, 1, 15),
+    )
+    outcome = evaluate(profile, german_only_candidate, EUR_RATES)
+    assert outcome.outcome == "NOT_ELIGIBLE"
+    assert any("language evidence" in r for r in outcome.reasons)
+
+    # Canonical alias ("Deutsch") satisfies "German" when German evidence is present
+    profile_with_deutsch = make_profile(
+        acceptable_teaching_languages=("English", "Deutsch"),
+        language_evidence=(
+            LanguageEvidence(
+                language="Deutsch",
+                level="TestDaF 16",
+                evidence_type="TEST",
+                available_by=date(2026, 6, 1),
+            ),
+        ),
+    )
+    outcome_de = evaluate(profile_with_deutsch, german_only_candidate, EUR_RATES)
+    assert outcome_de.outcome == "ELIGIBLE"
+
+

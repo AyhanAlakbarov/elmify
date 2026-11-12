@@ -1,4 +1,5 @@
-"""Azure Document Intelligence, prebuilt-layout: the reader for scanned pages and photos.
+"""Azure Document Intelligence: prebuilt-layout for scanned pages and photos, prebuilt-idDocument
+for passports and ID cards.
 
 An OCR service, not a generative model: it returns the characters it recognised, each word with a
 polygon and a confidence, and tables as cells (spec 2026-10-03-transcript-reader-redesign §4). It
@@ -57,6 +58,8 @@ class AzurePage(BaseModel):
     width: float
     height: float
     unit: str
+    #: How far the page's text is turned clockwise, in degrees (-180, 180]; absent on a blank page.
+    angle: float | None = None
     words: tuple[AzureWord, ...] = ()
     lines: tuple[AzureLine, ...] = ()
 
@@ -93,16 +96,53 @@ class AzureLayout(BaseModel):
     tables: tuple[AzureTable, ...] = ()
 
 
-def analyze_layout(
+class AzureField(BaseModel):
+    """One field of a prebuilt model's document (2024-11-30 schema)."""
+
+    model_config = _IGNORE
+    type: str = ""
+    content: str = ""
+    confidence: float = 0.0
+    valueString: str | None = None
+    valueDate: str | None = None
+    valueCountryRegion: str | None = None
+    spans: tuple[AzureSpan, ...] = ()
+    valueObject: dict[str, AzureField] = {}
+
+    def text(self) -> str:
+        """The typed value when Azure gave one, else the printed content."""
+        return (self.valueString or self.valueDate or self.valueCountryRegion
+                or self.content or "").strip()
+
+
+AzureField.model_rebuild()
+
+
+class AzureIdDocument(BaseModel):
+    model_config = _IGNORE
+    docType: str
+    confidence: float = 0.0
+    fields: dict[str, AzureField] = {}
+
+
+class AzureIdResult(BaseModel):
+    model_config = _IGNORE
+    content: str = ""
+    pages: tuple[AzurePage, ...] = ()
+    documents: tuple[AzureIdDocument, ...] = ()
+
+
+def _analyze(
+    model: str,
     content: bytes,
     *,
-    pages: str | None = None,
-    locale: str | None = None,
-    start: Callable[..., str] = start_json_operation,
-    poll: Callable[..., dict[str, object]] = fetch_json_api,
-    sleep: Callable[[float], None] = time.sleep,
-) -> AzureLayout:
-    """`pages` is Azure's own selector ("2,3"), so a PDF's text-layer pages are never billed."""
+    pages: str | None,
+    locale: str | None,
+    start: Callable[..., str],
+    poll: Callable[..., dict[str, object]],
+    sleep: Callable[[float], None],
+) -> dict[str, object]:
+    """The guarded start/poll loop; returns the raw analyzeResult for the caller to validate."""
     if not settings.AZURE_DI_ENDPOINT or not settings.AZURE_DI_KEY:
         raise OcrUnavailable("Azure Document Intelligence is not configured")
     query = {"api-version": settings.AZURE_DI_API_VERSION}
@@ -112,7 +152,7 @@ def analyze_layout(
         query["locale"] = locale
     url = (
         f"{settings.AZURE_DI_ENDPOINT.rstrip('/')}/documentintelligence/documentModels/"
-        f"prebuilt-layout:analyze?{urlencode(query)}"
+        f"{model}:analyze?{urlencode(query)}"
     )
     headers = {"Ocp-Apim-Subscription-Key": settings.AZURE_DI_KEY}
     try:
@@ -127,14 +167,50 @@ def analyze_layout(
                 result = body.get("analyzeResult")
                 if not result:
                     raise OcrUnavailable("Azure answered succeeded with no result")
-                return AzureLayout.model_validate(result)
+                return result  # type: ignore[return-value]
             if status not in ("notStarted", "running"):
                 raise OcrUnavailable(f"Azure analyze {status or 'ended without a status'}")
     except (SourceBlocked, UnsafeTarget) as error:
         # The exception's own text only: it carries a status code, never the request headers.
         raise OcrUnavailable(f"Azure unreachable: {error}") from error
-    except ValidationError as error:
-        raise OcrUnavailable("Azure answered outside the layout schema") from error
     except ValueError as error:  # a 200 whose body is not JSON (JSONDecodeError)
         raise OcrUnavailable("Azure answered with an unreadable body") from error
     raise OcrUnavailable("Azure analyze timed out")
+
+
+def analyze_layout(
+    content: bytes,
+    *,
+    pages: str | None = None,
+    locale: str | None = None,
+    start: Callable[..., str] = start_json_operation,
+    poll: Callable[..., dict[str, object]] = fetch_json_api,
+    sleep: Callable[[float], None] = time.sleep,
+) -> AzureLayout:
+    """`pages` is Azure's own selector ("2,3"), so a PDF's text-layer pages are never billed."""
+    try:
+        return AzureLayout.model_validate(
+            _analyze("prebuilt-layout", content, pages=pages, locale=locale,
+                     start=start, poll=poll, sleep=sleep)
+        )
+    except ValidationError as error:
+        raise OcrUnavailable("Azure answered outside the layout schema") from error
+
+
+def analyze_id_document(
+    content: bytes,
+    *,
+    pages: str,
+    start: Callable[..., str] = start_json_operation,
+    poll: Callable[..., dict[str, object]] = fetch_json_api,
+    sleep: Callable[[float], None] = time.sleep,
+) -> AzureIdResult:
+    """prebuilt-idDocument (spec 2026-10-12 §5.2): a passport, ID card or residence
+    permit, the printed page and the strip. `pages` caps what is analysed and billed."""
+    try:
+        return AzureIdResult.model_validate(
+            _analyze("prebuilt-idDocument", content, pages=pages, locale=None,
+                     start=start, poll=poll, sleep=sleep)
+        )
+    except ValidationError as error:
+        raise OcrUnavailable("Azure answered outside the ID document schema") from error

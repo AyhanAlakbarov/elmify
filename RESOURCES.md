@@ -1,4 +1,4 @@
-# Tehsil Agent System Design Resources
+# Elmify System Design Resources
 
 ## Knowledge
 

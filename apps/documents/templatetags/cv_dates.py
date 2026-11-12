@@ -25,3 +25,23 @@ def month_year(value: date | None, default: str = "") -> str:
     if value is None:
         return default
     return f"{_MONTHS[value.month - 1]} {value.year}"
+
+
+@register.simple_tag(takes_context=True)
+def date_range(context: template.Context, start: date | None, end: date | None) -> str:
+    """One entry's dates, true on the day of the render (spec 3.2).
+
+    "Present" for an open entry; "(expected)" when the end is after today; an
+    entry that has not started yet reads "Admitted; starts Nov 2026". That last
+    is only ever printed when it is the CV's sole education entry, because
+    render.without_future_starts drops every other future start. ``today``
+    comes from the render context so tests can fix it; funder templates have
+    none and fall back to the real date.
+    """
+    today = context.get("today") or date.today()
+    if start is not None and start > today:
+        return f"Admitted; starts {month_year(start)}"
+    if end is None:
+        return f"{month_year(start)} – Present"
+    label = " (expected)" if end > today else ""
+    return f"{month_year(start)} – {month_year(end)}{label}"

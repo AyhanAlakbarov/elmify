@@ -46,6 +46,7 @@ def test_every_new_column_is_classified_for_erasure() -> None:
         "redeemed_at",
         "last_seen_at",
         "revoked_at",
+        "passwords_allowed_at",
     }
 
 
@@ -115,3 +116,41 @@ def test_issuing_a_second_code_leaves_the_first_pairing_unusable(agency_a, membe
             pairing_module.redeem_pairing_code(first, "install-1")
         pairing, _token = pairing_module.redeem_pairing_code(second, "install-1")
     assert pairing.installation_id == "install-1"
+
+
+def test_device_token_expires_after_absolute_ttl(agency_a, membership_a, monkeypatch) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.portals import pairing as pairing_module
+    from apps.portals.models import ExtensionPairing
+
+    with tenant_scope(agency_a.id):
+        code = pairing_module.issue_pairing_code(membership_a)
+        pairing, token = pairing_module.redeem_pairing_code(code, "install-1")
+        assert pairing_module.authenticate_device(token) is not None
+        # Even if last_seen_at is kept fresh, the token expires past DEVICE_TOKEN_TTL.
+        future = timezone.now() + pairing_module.DEVICE_TOKEN_TTL + timedelta(seconds=1)
+        ExtensionPairing.objects.filter(pk=pairing.pk).update(last_seen_at=future)
+        monkeypatch.setattr(pairing_module, "_now", lambda: future)
+        assert pairing_module.authenticate_device(token) is None
+        assert not pairing_module.active_pairings(membership_a).exists()
+
+
+def test_device_token_expires_after_idle_ttl(agency_a, membership_a, monkeypatch) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.portals import pairing as pairing_module
+
+    with tenant_scope(agency_a.id):
+        code = pairing_module.issue_pairing_code(membership_a)
+        _pairing, token = pairing_module.redeem_pairing_code(code, "install-1")
+        assert pairing_module.authenticate_device(token) is not None
+        future = timezone.now() + pairing_module.DEVICE_IDLE_TTL + timedelta(seconds=1)
+        monkeypatch.setattr(pairing_module, "_now", lambda: future)
+        assert pairing_module.authenticate_device(token) is None
+        assert not pairing_module.active_pairings(membership_a).exists()
+

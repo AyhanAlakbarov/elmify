@@ -6,6 +6,7 @@ inside href (apps/funding/requirements.py says so of RequirementItem.source_url)
 Every template that renders a URL it did not build passes it through here.
 """
 
+import re
 from functools import cache
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -16,8 +17,13 @@ from django.core.validators import URLValidator
 from django.templatetags.static import static
 from django.utils.html import format_html
 
+from apps.accounts.question_widgets import CHOICE_LABELS
+
 register = template.Library()
 _validate = URLValidator(schemes=["https"])
+_CHOICE_WORDS: dict[str, str] = {
+    code: label for group in CHOICE_LABELS.values() for code, label in group.items()
+}
 
 
 @register.filter
@@ -59,7 +65,10 @@ def answer(value: object) -> str:
         )
     if isinstance(value, list):
         return "; ".join(answer(item) for item in value) if value else "none"
-    return "" if value is None else str(value)
+    if value is None or value == "":
+        return "none"
+    text = str(value)
+    return _CHOICE_WORDS.get(text, text)
 
 
 _COVERAGE = {
@@ -136,3 +145,32 @@ def month_year(value: object) -> str:
     if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit() and 1 <= int(parts[1]) <= 12:
         return f"{_MONTH_NAMES[int(parts[1]) - 1]} {parts[0]}"
     return text
+
+
+@register.filter
+def student_risk_note(value: object) -> str:
+    """Format internal pack-assembly placement notes cleanly for students."""
+    text = str(value or "").strip()
+    if text.startswith("the pack already holds "):
+        return f"Placement note — {text}."
+    return text
+
+
+_DEGREE_PREFIX_RE = re.compile(
+    r"^(?:M\.?Sc\.?|M\.?A\.?|M\.?Eng\.?|LL\.?M\.?|M\.?B\.?A\.?|Master(?:'s)?(?:\s+of\s+\w+)?)(?:\s+in\b)?\s+",
+    re.IGNORECASE,
+)
+
+
+@register.filter
+def programme_in_university(title: object, institution: object) -> str:
+    """Format a Master's programme card heading as 'MSc in <field> in <university>'."""
+    raw_title = str(title or "").strip()
+    raw_inst = str(institution or "").strip()
+    if not raw_title:
+        return raw_inst
+    field = _DEGREE_PREFIX_RE.sub("", raw_title, count=1).strip() or raw_title
+    heading = f"MSc in {field}"
+    if raw_inst and raw_inst.casefold() not in heading.casefold():
+        heading = f"{heading} in {raw_inst}"
+    return heading

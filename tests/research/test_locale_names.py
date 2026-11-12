@@ -1,6 +1,8 @@
 import re
 
+from apps.research.angles import STEERING
 from apps.research.locale_names import (
+    LANGUAGES,
     country_forms,
     country_names,
     inflected,
@@ -9,11 +11,22 @@ from apps.research.locale_names import (
 )
 
 
+def test_every_steering_language_is_covered_by_locale_names():
+    steering_langs = {s.language for s in STEERING.values()}
+    assert steering_langs <= set(LANGUAGES)
+
+
 def test_month_names_come_from_the_format_context():
     assert month_names("tr")["şubat"] == 2
     assert month_names("az")["fevral"] == 2
     assert month_names("ru")["февраля"] == 2 and month_names("ru")["февраль"] == 2
     assert month_names("hu")["február"] == 2
+    assert month_names("cs")["února"] == 2 and month_names("cs")["únor"] == 2
+    assert month_names("fi")["helmikuuta"] == 2 and month_names("fi")["helmikuu"] == 2
+    assert month_names("el")["φεβρουαρίου"] == 2 and month_names("el")["φεβρουάριοσ"] == 2
+    assert month_names("ar")["فبراير"] == 2
+    assert month_names("ka")["თებერვალი"] == 2
+    assert month_names("vi")["tháng 2"] == 2
     # Babel 2.18's stand-alone context falls back to another locale ("fevral" for Turkish)
     assert "fevral" not in month_names("tr")
     assert "feb" not in month_names("en", wide_only=True)

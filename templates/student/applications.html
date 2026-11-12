@@ -28,11 +28,10 @@
         <ul class="option-list">
           {% for entry in group.entries %}
             {% with card=entry.card %}
-            <li class="option-row">
+            <li class="option-row" id="card-{{ card.application_id }}">
               <div class="option-main">
                 <p class="option-kind kind-{% if entry.is_award %}award{% else %}programme{% endif %}">{% if entry.is_award %}Scholarship{% else %}Programme{% endif %}</p>
-                <h3><a href="{{ entry.detail_url }}">{{ card.title }}</a></h3>
-                {% if card.institution %}<p class="option-inst">{{ card.institution }}</p>{% endif %}
+                <h3><a href="{{ entry.detail_url }}">{% if entry.is_award %}{{ card.title }}{% else %}{{ card.title|programme_in_university:card.institution }}{% endif %}</a></h3>
                 {% for line in card.funding %}<p class="option-funding tone-{{ line.name|tone }}">{{ line.name }}{% if line.covers %}: {{ line.covers }}{% endif %}</p>{% endfor %}
               </div>
               <div class="option-status">
@@ -46,7 +45,7 @@
                   <p class="option-missing-label">Still missing</p>
                   <ul class="option-missing">{% for item in entry.missing %}<li><a href="{{ item.url }}">{{ item.label }}</a></li>{% endfor %}</ul>
                 {% elif card.documents.1 %}
-                  <p class="option-ready">All {{ card.documents.1 }} documents ready</p>
+                  <p class="option-ready">{% if card.documents.1 == 1 %}1 document ready{% else %}All {{ card.documents.1 }} documents ready{% endif %}</p>
                 {% endif %}
               </div>
               <a class="option-open" href="{{ entry.detail_url }}" aria-label="Open {{ card.title }}">Details</a>

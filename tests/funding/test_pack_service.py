@@ -245,3 +245,51 @@ def test_a_command_on_a_superseded_version_asks_for_a_reload(
             reject_candidate(pack, candidate_b.id, membership_a)
         with tenant_transaction(agency_a.id), pytest.raises(PackCommandError, match="reload"):
             replace_candidate(pack, candidate_b.id, spare.id, membership_a)
+
+
+@pytest.mark.django_db
+def test_replace_candidate_refuses_ineligible_replacement_and_strips_replaced_award(
+    agency_a, membership_a, run, pack, candidate_a, candidate_b
+) -> None:
+    from uuid import uuid4
+
+    from apps.funding.models import FundingOpportunity
+
+    opp = FundingOpportunity.objects.create(
+        canonical_key=f"award:p4:{uuid4()}",
+        name="DAAD Stipend",
+        family="UNIVERSITY_WIDE",
+        scope_type="COUNTRY",
+        country_code="DE",
+    )
+    with tenant_scope(agency_a.id):
+        award_cand = make_db_candidate(
+            agency_a,
+            run,
+            program_name="DAAD Stipend",
+        )
+        RecommendationCandidate.objects.filter(id=award_cand.id).update(
+            opportunity=opp, program=None
+        )
+        award_cand.refresh_from_db()
+        PackCandidate.objects.create(pack_version=pack, candidate=award_cand)
+        RecommendationCandidate.objects.filter(id=candidate_a.id).update(
+            calibration_features={"winnable_with": ["DAAD Stipend"]},
+            funding_condition="Depends on winning DAAD Stipend",
+        )
+        ineligible_spare = make_db_candidate(
+            agency_a, run, program_name="MSc Ineligible", eligible=False
+        )
+        with pytest.raises(PackCommandError, match="no longer eligible"):
+            replace_candidate(pack, award_cand.id, ineligible_spare.id, membership_a)
+
+        eligible_spare = make_db_candidate(
+            agency_a, run, program_name="MSc Eligible Replacement", eligible=True
+        )
+        replace_candidate(pack, award_cand.id, eligible_spare.id, membership_a)
+        candidate_a.refresh_from_db()
+        assert "DAAD Stipend" not in (
+            candidate_a.calibration_features.get("winnable_with") or []
+        )
+        assert "removed from your pack" in candidate_a.funding_condition
+

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Run tests as `POSTGRES_DB=tehsil_ei uv run pytest -q`. The shared `test_tehsil` database wedges across parallel sessions and the symptom looks like an unrelated regression.
+- Run tests as `POSTGRES_DB=elmify_ei uv run pytest -q`. The shared `test_elmify` database wedges across parallel sessions and the symptom looks like an unrelated regression.
 - `uv run ruff check apps config tests` and `uv run mypy apps config` must pass **before every commit**, and every commit must be independently landable. Where two tasks cannot both satisfy that separately, commit them together and say so.
 - Do **not** run `ruff format`; this repo is lint-only. `ruff check --fix` is fine.
 - No new third-party dependency.
@@ -93,7 +93,7 @@ Build `program` inline as in `tests/research/test_profile.py`; reuse that file's
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/research/test_refresh.py -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/research/test_refresh.py -q`
 Expected: FAIL with `ModuleNotFoundError: apps.research.refresh`.
 
 - [ ] **Step 3: Write the module**
@@ -176,7 +176,7 @@ def refresh_program_profile(
 - [ ] **Step 4: Run, gates, commit**
 
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest -q
+POSTGRES_DB=elmify_ei uv run pytest -q
 uv run ruff check apps config tests
 uv run mypy apps config
 git add apps/research/refresh.py tests/research/test_refresh.py
@@ -255,7 +255,7 @@ def test_what_does_not_match_exactly_is_returned_for_the_model_to_judge():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/test_tailoring.py -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/test_tailoring.py -q`
 Expected: FAIL with `ModuleNotFoundError: apps.documents.tailoring`.
 
 - [ ] **Step 3: Write the module**
@@ -330,7 +330,7 @@ def exact_matches(
 - [ ] **Step 4: Run to verify they pass, then gates and commit**
 
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest -q
+POSTGRES_DB=elmify_ei uv run pytest -q
 uv run ruff check apps config tests
 uv run mypy apps config
 git add apps/documents/tailoring.py tests/documents/test_tailoring.py
@@ -395,7 +395,7 @@ def test_the_call_is_capped_and_not_stored():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/test_tailoring.py -k model -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/test_tailoring.py -k model -q`
 Expected: FAIL with `ImportError: cannot import name 'ProposedMatches'`.
 
 - [ ] **Step 3: Write the schema and the call**
@@ -497,7 +497,7 @@ def test_the_gap_list_states_what_it_looked_at():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/documents/test_tailoring.py -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/documents/test_tailoring.py -q`
 Expected: FAIL — `tailor_skills` and `TailoredSkills` do not exist.
 
 - [ ] **Step 3: Write the assembly**
@@ -567,7 +567,7 @@ def tailor_skills(
 - [ ] **Step 4: Run, gates, commit**
 
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest -q
+POSTGRES_DB=elmify_ei uv run pytest -q
 uv run ruff check apps config tests
 uv run mypy apps config
 git add apps/documents/tailoring.py tests/documents/test_tailoring.py

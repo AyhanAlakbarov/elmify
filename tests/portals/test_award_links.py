@@ -306,7 +306,12 @@ def test_a_counsellors_remove_is_recorded_under_the_counsellor(
     assert event.actor_id == counselor_membership.id
 
 
-from apps.portals.award_links import award_lines  # noqa: E402
+from apps.portals.award_links import award_lines_for  # noqa: E402
+
+
+def award_lines(card):
+    board = list(Application.objects.filter(student=card.student).select_related("candidate"))
+    return award_lines_for(board)[card.id]
 
 
 def test_lines_say_what_the_student_does(agency_a, membership_a) -> None:
@@ -325,9 +330,11 @@ def test_lines_say_what_the_student_does(agency_a, membership_a) -> None:
         "Merit scholarship": (
             "SAME_APPLICATION", "Considered with your application — nothing extra to submit",
         ),
-        "Dean's award": ("NOMINATED", "Nominated by the university — you cannot apply for it"),
+        "Dean's award": ("NOMINATED", "Nominated by the university"),
         "EMJM scholarship": ("COMBINED", "Programme + scholarship, one application"),
-        "Mystery fund": ("NOT_STATED", "How to apply for this is not stated — open its page"),
+        "Mystery fund": (
+            "NOT_STATED", "How to apply for this is not stated — see its official page",
+        ),
     }
 
 
@@ -338,9 +345,43 @@ def test_possibly_eligible_separate_award_is_a_suggestion(agency_a, membership_a
     with tenant_scope(agency_a.id):
         card = add_application(student=membership_a, candidate_id=programme.id, actor=membership_a)
         (line,) = award_lines(card)
-    assert (line.kind, line.text) == (
-        "SUGGESTED", "Suggested for this programme — check you qualify, then add it",
-    )
+    assert (line.kind, line.text) == ("ASK", "Does this apply to you?")
+    assert line.claim == "Official source confirms funding."
+
+
+def test_the_not_stated_line_carries_the_official_page(agency_a, membership_a) -> None:
+    programme, (award,) = _pack(agency_a, membership_a, awards=[("Mystery fund", "UNSTATED", {})])
+    with tenant_scope(agency_a.id):
+        card = add_application(student=membership_a, candidate_id=programme.id, actor=membership_a)
+        (line,) = award_lines(card)
+        url = award.evidence.source_url
+    assert line.source_url == url
+
+
+def test_award_lines_for_the_whole_board_reads_the_pool_once_per_run(
+    agency_a, membership_a
+) -> None:
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    run = make_run(agency_a, membership_a)
+    first = make_db_candidate(agency_a, run, program_name="MSc Chemistry")
+    second = make_db_candidate(agency_a, run, program_name="MSc Physics")
+    award = _award(agency_a, run, "Chevening", "UNSTATED")
+    make_published_pack(agency_a, run, (first, second, award))
+    with tenant_scope(agency_a.id):
+        one = add_application(student=membership_a, candidate_id=first.id, actor=membership_a)
+        two = add_application(student=membership_a, candidate_id=second.id, actor=membership_a)
+        board = list(
+            Application.objects.filter(student=membership_a).select_related("candidate__evidence")
+        )
+        with CaptureQueriesContext(connection) as both:
+            lines = award_lines_for(board)
+        with CaptureQueriesContext(connection) as single:
+            award_lines_for([a for a in board if a.id == one.id])
+    assert set(lines) == {one.id, two.id}
+    assert [line.name for line in lines[one.id]] == ["Chevening"]
+    assert len(both) == len(single)  # a second card in the run adds no query
 
 
 def test_an_award_already_on_the_board_is_not_a_line(agency_a, membership_a) -> None:
@@ -490,3 +531,64 @@ def test_the_award_lock_does_not_block_foreign_key_checks(agency_a, membership_a
         add_application(student=membership_a, candidate_id=programme.id, actor=membership_a)
     locks = [q["sql"] for q in queries if "FOR " in q["sql"] and "UPDATE" in q["sql"]]
     assert locks and all("FOR NO KEY UPDATE" in sql for sql in locks)
+
+
+def test_expired_or_rejected_award_is_not_linked_except_submitted_external_award(
+    agency_a, membership_a
+) -> None:
+    run = make_run(agency_a, membership_a)
+    first = make_db_candidate(agency_a, run, program_name="MSc Chemistry")
+    second = make_db_candidate(agency_a, run, program_name="MSc Physics")
+    expired_unsubmitted = _award(agency_a, run, "Expired Stipend", SEP)
+    rejected_on_board = _award(agency_a, run, "Rejected Stipend", SEP)
+    submitted_external = _award(agency_a, run, "Submitted DAAD", SEP)
+    make_published_pack(
+        agency_a,
+        run,
+        (first, second, expired_unsubmitted, rejected_on_board, submitted_external),
+    )
+    with tenant_scope(agency_a.id):
+        RecommendationCandidate.objects.filter(id=expired_unsubmitted.id).update(
+            funding_card={"scope": "GLOBAL", "route": SEP, "deadline": "2026-10-01"},
+        )
+        RecommendationCandidate.objects.filter(id=rejected_on_board.id).update(
+            funding_card={"scope": "GLOBAL", "route": SEP, "deadline": "2027-03-01"},
+        )
+        RecommendationCandidate.objects.filter(id=submitted_external.id).update(
+            funding_card={"scope": "HOLDER", "route": SEP, "deadline": "2026-10-15"},
+            country_code="DE",
+        )
+        RecommendationCandidate.objects.filter(id__in=[first.id, second.id]).update(
+            country_code="DE"
+        )
+        # Put rejected_on_board and submitted_external on the board before their state changes
+        rej_card = add_application(
+            student=membership_a, candidate_id=rejected_on_board.id, actor=membership_a
+        )
+        Application.objects.filter(id=rej_card.id).update(
+            outcome=Application.Outcome.REJECTED
+        )
+        sub_card = add_application(
+            student=membership_a, candidate_id=submitted_external.id, actor=membership_a
+        )
+        Application.objects.filter(id=sub_card.id).update(
+            state=Application.State.SUBMITTED
+        )
+
+        # Now student adds MSc Chemistry
+        prog_card = add_application(
+            student=membership_a, candidate_id=first.id, actor=membership_a
+        )
+        # 1. Expired unsubmitted award was NOT auto-created as a card or linked
+        assert not Application.objects.filter(candidate=expired_unsubmitted).exists()
+        # 2. Rejected award card on the board was NOT linked to MSc Chemistry
+        assert not ApplicationLink.objects.filter(
+            from_app=rej_card, to_app=prog_card
+        ).exists()
+        # 3. Already-submitted external HOLDER award WAS linked to MSc Chemistry after its deadline
+        assert ApplicationLink.objects.filter(
+            from_app=sub_card, to_app=prog_card
+        ).exists()
+        # 4. And expired_unsubmitted does NOT appear in award_lines_for
+        assert [line.name for line in award_lines(prog_card)] == []
+

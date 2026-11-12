@@ -1,36 +1,37 @@
-from datetime import datetime
+"""facts.py: the package's only database access."""
+
+from __future__ import annotations
 
 import pytest
+from django.utils import timezone
+from pydantic import ValidationError
 
+from apps.concierge.models import DocumentVersion
+from apps.documents.evidence import facts
 from apps.documents.evidence.extraction import Technique
 from apps.documents.evidence.facts import (
-    ProjectDescription,
+    SkillSuggestion,
     UnusablePublication,
     publication_entry,
-    write_project_fact,
+    suggestions,
     write_publication_fact,
-    write_skill_facts,
 )
 from apps.documents.evidence.publication import PublicationRecord
-from apps.documents.evidence.repo import RepoSnapshot
-from apps.documents.evidence.sources import RepoRef
-from apps.documents.models import VerifiedFact
+from apps.documents.models import EvidenceReading, VerifiedFact
 from apps.documents.schemas import PublicationStatus
+from apps.documents.verification import fact_payload, generatable_facts, unsuperseded_facts
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.models import Membership
 
 pytestmark = pytest.mark.django_db
+WHEN = timezone.now()
 
 
 def _record(**overrides):
     base = dict(
         doi="10.1021/acscatal.5c00348",
         title="Microkinetic Assessment of Ligand-Exchanging Catalytic Cycles",
-        venue="ACS Catalysis",
-        year=2025,
-        volume="15",
-        issue="6",
-        pages="4739-4745",
+        venue="ACS Catalysis", year=2025, volume="15", issue="6", pages="4739-4745",
         authors=("Orkhan Abdullayev", "Diego Garay-Ruiz", "Berta Bori-Bru", "Carles Bo"),
         work_type="journal-article",
     )
@@ -38,347 +39,309 @@ def _record(**overrides):
     return PublicationRecord(**base)
 
 
-def _student(agency, django_user_model, name):
-    user = django_user_model.objects.create(username=name)
-    return Membership.objects.create(
-        tenant=agency, user=user, role=Membership.Role.STUDENT, active=True
+@pytest.fixture
+def student(agency_a, django_user_model):
+    with tenant_scope(agency_a.id):
+        user = django_user_model.objects.create(username="facts-student")
+        member = Membership.objects.create(
+            tenant=agency_a, user=user, role=Membership.Role.STUDENT, active=True
+        )
+    with tenant_scope(agency_a.id):
+        yield member
+
+
+def _identity(student, payload, *, confirmed):
+    return VerifiedFact.objects.create(
+        student=student, category=VerifiedFact.Category.IDENTITY, payload=payload,
+        source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT, source_ref="upload:cv",
+        confirmed_by=student if confirmed else None,
+        confirmed_at=timezone.now() if confirmed else None, created_by=student,
     )
 
 
+def _upload(student, kind="THESIS_OR_REPORT", *, state="AVAILABLE", retired=False):
+    return DocumentVersion.objects.create(
+        tenant_id=student.tenant_id, student=student, object_key="quarantine/x", kind=kind,
+        state=state, retired_at=timezone.now() if retired else None,
+    )
+
+
+def _save(student, repo="0rkhann/MicroKatc", skills=(), **reading):
+    facts.save_reading(student, source_kind="github", repo=repo, changed_at=WHEN,
+                       reader_version=1, reading={"summary": "s", **reading}, skills=skills)
+
+
+def _skills(student):
+    return list(unsuperseded_facts(student).filter(category=VerifiedFact.Category.SKILL))
+
+
+# --- publications (unchanged behaviour) -------------------------------------------
+
+
 def test_a_record_becomes_a_publication_entry_with_no_self_author_index():
-    """Which author the applicant is, is his call. Name matching cannot tell
-    'Abdullayev O.' from a co-author's similar surname, so the index is left
-    null and he selects it."""
     entry = publication_entry(_record())
-    assert entry.title.startswith("Microkinetic Assessment")
-    assert entry.authors[0] == "Orkhan Abdullayev"
-    assert len(entry.authors) == 4
     assert entry.self_author_index is None
-    assert entry.doi == "10.1021/acscatal.5c00348"
     assert entry.status == PublicationStatus.PUBLISHED
-
-
-def test_the_locator_survives_all_the_way_into_the_fact_payload(
-    agency_a, django_user_model
-):
-    """The gap this closes. publication.py fetched issue "6" from Crossref and
-    PublicationEntry had nowhere to put it, so fact_payload dropped it between
-    the registry and the ledger -- a fetched-then-discarded field, invisible to
-    every test that stopped at PublicationRecord. The CV this was validated
-    against prints that issue number as "XXX"."""
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-locator")
-        fact = write_publication_fact(student=student, record=_record())
-        assert fact.payload["volume"] == "15"
-        assert fact.payload["issue"] == "6"
-        assert fact.payload["pages"] == "4739-4745"
+    assert entry.issue == "6"
 
 
 def test_an_unpublished_work_type_is_refused_rather_than_upgraded():
-    """The schema forbids upgrading unpublished work to PUBLISHED. A type we
-    do not recognise as published is not guessed at -- it needs the student."""
     with pytest.raises(UnusablePublication):
         publication_entry(_record(work_type="posted-content"))
 
 
-def test_writing_the_fact_stamps_provenance_and_auto_confirms(agency_a, django_user_model):
-    """Crossref is an external registry parsed deterministically -- no model in
-    the path -- so the fact is confirmed at ingest. See the module docstring."""
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-1")
-        fact = write_publication_fact(student=student, record=_record())
-        assert fact.category == VerifiedFact.Category.PUBLICATION
-        assert fact.source_tier == VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT
-        assert fact.source_ref == "doi:10.1021/acscatal.5c00348"
-        assert fact.confirmed_by_id == student.id
-        assert fact.confirmed_at is not None
-        assert fact.created_by_id == student.id
+def test_a_publication_is_confirmed_at_ingest_and_supersedes_on_re_ingest(student):
+    first = write_publication_fact(student=student, record=_record())
+    second = write_publication_fact(student=student, record=_record(year=2026))
+    assert first.confirmed_by_id == student.id
+    assert first.payload == fact_payload(publication_entry(_record()),
+                                         category=VerifiedFact.Category.PUBLICATION)
+    assert second.supersedes_id == first.id
 
 
-def test_the_payload_comes_from_the_canonical_builder(agency_a, django_user_model):
-    """fact_payload is the one place payload keys are defined -- the place the
-    verifier reads them from. A hand-built dict would drift."""
-    from apps.documents.verification import fact_payload
-
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-2")
-        record = _record()
-        fact = write_publication_fact(student=student, record=record)
-        assert fact.payload == fact_payload(
-            publication_entry(record), category=VerifiedFact.Category.PUBLICATION
-        )
+# --- skill suggestions -------------------------------------------------------------
 
 
-def test_re_ingesting_the_same_doi_supersedes_rather_than_duplicates(
-    agency_a, django_user_model
-):
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-3")
-        first = write_publication_fact(student=student, record=_record())
-        second = write_publication_fact(student=student, record=_record(year=2026))
-        assert second.supersedes_id == first.id
-        assert VerifiedFact.objects.filter(source_ref=first.source_ref).count() == 2
-
-
-def _snapshot(**overrides):
-    base = dict(
-        ref=RepoRef("github", "0rkhann", "MicroKatc"),
-        description="Quantitative assessment of catalytic cycles",
-        is_fork=False,
-        parent=None,
-        languages={"Python": 60731, "Shell": 828},
-        contributors={"0rkhann": 21},
-        commit_count=21,
-        first_commit=datetime.fromisoformat("2024-08-28T00:00:00+00:00"),
-        last_commit=datetime.fromisoformat("2025-02-22T00:00:00+00:00"),
-        ahead_by=None,
-        file_names=("main.py", "README.md"),
+def test_suggestions_rank_libraries_floor_languages_and_dedupe_techniques():
+    found = suggestions(
+        source_ref="repo:github:0rkhann/MicroKatc",
+        languages={"Python": 60731, "R": 371},
+        libraries=tuple((f"pkg{i:02d}", 1) for i in range(20)) + (("torch", 9), ("d3", 0)),
+        techniques=(Technique(name="PCA", excerpt="first PCA"),
+                    Technique(name="PCA", excerpt="second PCA"),
+                    Technique(name="x" * 101, excerpt="too long a name")),
     )
-    base.update(overrides)
-    return RepoSnapshot(**base)
+    by_kind = {kind: [s for s in found if s.kind == kind] for kind in ("language", "library",
+                                                                         "technique")}
+    assert [s.name for s in by_kind["language"]] == ["Python"]
+    assert by_kind["language"][0].evidence == "60731 bytes"
+    assert len(by_kind["library"]) == 15 and by_kind["library"][0].name == "torch"
+    assert [s.name for s in by_kind["technique"]] == ["PCA"]
+    assert by_kind["technique"][0].evidence == "first PCA"
+    assert by_kind["technique"][0].source_ref == "repo:github:0rkhann/MicroKatc#method:PCA"
+    assert "imported by 1 file" in {s.evidence for s in by_kind["library"]}
 
 
-def test_languages_become_confirmed_skill_facts(agency_a, django_user_model):
-    """A byte count is not an opinion. The host computed it and it is
-    re-derivable, so confirming it would mean re-reading what we read."""
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-4")
-        facts = write_skill_facts(student=student, snapshot=_snapshot())
-        names = {fact.payload["name"] for fact in facts}
-        assert names == {"Python", "Shell"}
-        for fact in facts:
-            assert fact.category == VerifiedFact.Category.SKILL
-            assert fact.source_tier == VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT
-            # One ref per language, so re-ingesting supersedes per skill
-            # rather than leaving two Pythons in the ledger.
-            assert fact.source_ref.startswith("repo:github:0rkhann/MicroKatc#")
-            assert fact.confirmed_by_id == student.id
+def test_a_reading_and_its_suggestions_are_saved_unconfirmed(student):
+    _save(student, skills=suggestions(source_ref="repo:github:0rkhann/MicroKatc",
+                                      languages={"Python": 6000}, libraries=(("numpy", 2),),
+                                      techniques=()))
+    [reading] = EvidenceReading.objects.filter(student=student)
+    assert (reading.source_kind, reading.repo, reading.reader_version) == (
+        "github", "0rkhann/MicroKatc", 1)
+    skills = _skills(student)
+    assert {s.payload["name"] for s in skills} == {"Python", "numpy"}
+    assert all(s.confirmed_by_id is None for s in skills)  # decision 9: languages too
+    assert {s.payload["category"] for s in skills} == {"Languages and tools",
+                                                       "Libraries and frameworks"}
 
 
-def test_a_language_below_the_noise_floor_is_not_a_skill(agency_a, django_user_model):
-    """371 bytes of R in a chemistry repo is a stray file, not a skill. The
-    validated repository had exactly that."""
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-5")
-        facts = write_skill_facts(
-            student=student,
-            snapshot=_snapshot(languages={"Python": 60731, "R": 371}),
-        )
-        assert {fact.payload["name"] for fact in facts} == {"Python"}
+def test_a_re_read_never_supersedes_a_confirmed_skill(student):
+    python = (SkillSuggestion("Python", "language", "6000 bytes",
+                              "repo:github:0rkhann/MicroKatc#Python"),)
+    _save(student, skills=python)
+    [fact] = _skills(student)
+    fact.confirmed_by, fact.confirmed_at = student, timezone.now()
+    fact.save(update_fields=["confirmed_by", "confirmed_at"])
+
+    _save(student, skills=python)
+
+    [still] = _skills(student)
+    assert still.id == fact.id and still.confirmed_by_id == student.id
 
 
-def test_an_accepted_description_becomes_the_students_own_claim(
-    agency_a, django_user_model
-):
-    """The LLM proposes; he authors. A description reaches the ledger only
-    once he has accepted or edited it, and then it is his statement."""
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-6")
-        fact = write_project_fact(
-            student=student,
-            snapshot=_snapshot(),
-            description=ProjectDescription(
-                thesis_title="MicroKatc — automated microkinetic analysis",
-                methods="Gaussian DFT output to COPASI microkinetic simulation.",
-                outcomes="Apparent activation energies by Arrhenius linearisation.",
-            ),
-        )
-        assert fact.category == VerifiedFact.Category.RESEARCH
-        assert fact.source_tier == VerifiedFact.SourceTier.STUDENT_STATEMENT
-        assert fact.confirmed_by_id == student.id
-        assert fact.payload["thesis_title"].startswith("MicroKatc")
+def test_one_name_across_eight_repos_is_one_suggestion(student):
+    for i in range(8):
+        _save(student, repo=f"0rkhann/r{i}", skills=(
+            SkillSuggestion("numpy", "library", "imported by 1 file",
+                            f"repo:github:0rkhann/r{i}#lib:numpy"),))
+    assert [s.payload["name"] for s in _skills(student)] == ["numpy"]
+    assert EvidenceReading.objects.filter(student=student).count() == 8
 
 
-def test_the_project_fact_carries_the_commit_range_as_its_dates(
-    agency_a, django_user_model
-):
-    """His CV claims Jul-Aug 2024; the commits run to Feb 2025. The dates come
-    from the repository, not from memory."""
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-7")
-        fact = write_project_fact(
-            student=student,
-            snapshot=_snapshot(),
-            description=ProjectDescription("MicroKatc", None, None),
-        )
-        assert fact.payload["start_date"] == "2024-08-28"
-        assert fact.payload["end_date"] == "2025-02-22"
+def test_a_skill_the_cv_already_lists_is_not_suggested_again(student):
+    VerifiedFact.objects.create(
+        student=student, category=VerifiedFact.Category.SKILL,
+        payload={"name": "python", "category": None, "kind": None, "evidence": None},
+        source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT, source_ref="upload:cv",
+        created_by=student,
+    )
+    _save(student, skills=(SkillSuggestion("Python", "language", "6000 bytes", "r#Python"),))
+    assert [s.source_ref for s in _skills(student)] == ["upload:cv"]
 
 
-def test_reingesting_the_same_repo_chains_supersedes_per_language(
-    agency_a, django_user_model
-):
-    """The source_ref for each row is built twice -- once to create it, once
-    in _previous's lookup -- so a drift between the two would silently
-    duplicate rather than chain. Only a live re-ingest catches that."""
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-8")
-        first = write_skill_facts(student=student, snapshot=_snapshot())
-        second = write_skill_facts(
-            student=student,
-            snapshot=_snapshot(languages={"Python": 70000, "Shell": 900}),
-        )
-        first_by_name = {fact.payload["name"]: fact for fact in first}
-        second_by_name = {fact.payload["name"]: fact for fact in second}
-        assert second_by_name["Python"].supersedes_id == first_by_name["Python"].id
-        assert second_by_name["Shell"].supersedes_id == first_by_name["Shell"].id
-        # Neither language's chain crosses into the other's.
-        assert second_by_name["Python"].supersedes_id != first_by_name["Shell"].id
-        assert second_by_name["Shell"].supersedes_id != first_by_name["Python"].id
+def test_saving_is_one_step(student):
+    """The model call succeeded; then the save raises an error nobody catches. No
+    reading and no suggestion survives (spec §14, saving in one step)."""
+    bad = (SkillSuggestion("numpy", "library", "imported by 1 file", "r#lib:numpy"),
+           SkillSuggestion("x" * 101, "library", "too long for SkillEntry", "r#lib:x"))
+    with pytest.raises(ValidationError):
+        _save(student, skills=bad)
+    assert not EvidenceReading.objects.filter(student=student).exists()
+    assert _skills(student) == []
 
 
-def test_reingesting_the_same_repo_chains_the_project_fact(
-    agency_a, django_user_model
-):
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-9")
-        first = write_project_fact(
-            student=student,
-            snapshot=_snapshot(),
-            description=ProjectDescription("MicroKatc", None, None),
-        )
-        second = write_project_fact(
-            student=student,
-            snapshot=_snapshot(),
-            description=ProjectDescription("MicroKatc v2", None, None),
-        )
-        assert second.supersedes_id == first.id
+def test_a_re_read_updates_the_one_row_whatever_the_case(student):
+    _save(student, repo="0rkhann/MicroKatc", summary="old")
+    _save(student, repo="0rkhann/microkatc", summary="new", tree_etag='W/"t1"')
+    [reading] = EvidenceReading.objects.filter(student=student)
+    assert (reading.repo, reading.reading["summary"]) == ("0rkhann/microkatc", "new")
+    assert facts.github_readings(student) == {"0rkhann/microkatc": (WHEN, 1, 'W/"t1"')}
+    _save(student, repo="0rkhann/microkatc", summary="no etag")
+    assert facts.github_readings(student)["0rkhann/microkatc"][2] == ""
 
 
-def test_library_skills_are_proposed_not_confirmed(agency_a, django_user_model):
-    """A language byte count is the host's own measurement; an import is not.
-    MicroKatc imports `copasi_parser` and contains no such file, so a library
-    name can be a technology that does not exist. These are recorded with no
-    author until he accepts them."""
-    from apps.documents.evidence.facts import write_library_skill_facts
-
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-libs")
-        facts = write_library_skill_facts(
-            student=student,
-            snapshot=_snapshot(),
-            libraries=(("torch", 4), ("rdkit", 2), ("copasi_parser", 1)),
-        )
-        assert {f.payload["name"] for f in facts} == {"torch", "rdkit", "copasi_parser"}
-        for fact in facts:
-            assert fact.source_tier == VerifiedFact.SourceTier.STUDENT_STATEMENT
-            assert fact.confirmed_by_id is None
-            assert fact.confirmed_at is None
-            # "lib:" keeps a library from colliding with a language of the
-            # same name, so re-ingest supersedes the right row.
-            assert "#lib:" in fact.source_ref
+def test_readings_outside_a_complete_discovery_go(student):
+    _save(student, repo="0rkhann/Kept")
+    _save(student, repo="0rkhann/gone")
+    assert facts.delete_github_readings_not_in(student, frozenset({"0rkhann/kept"})) == 1
+    assert list(EvidenceReading.objects.values_list("repo", flat=True)) == ["0rkhann/Kept"]
+    assert facts.delete_github_reading(student, "0RKHANN/KEPT") == 1
 
 
-def test_the_three_skill_headings_are_kept_apart(agency_a, django_user_model):
-    """A skills section has three different kinds of name in it, and they are
-    not interchangeable: a language the host measured, a library parsed from
-    an import, and a transferable method read out of the prose. Project
-    features -- MACCS keys, Tanimoto, HDF5, '1024 to 2 components' -- are none
-    of these and never become skills at all."""
-    from apps.documents.evidence.facts import (
-        write_library_skill_facts,
-        write_technique_skill_facts,
+def test_a_discovery_in_githubs_own_spelling_keeps_its_readings(student):
+    """refresh.py passes owner/name as GitHub spells them; the comparison is casefolded."""
+    _save(student, repo="0rkhann/MicroKatc")
+    assert facts.delete_github_readings_not_in(student, frozenset({"0rkhann/MicroKatc"})) == 0
+    assert EvidenceReading.objects.filter(student=student).count() == 1
+
+
+# --- uploads ----------------------------------------------------------------------
+
+
+def test_reports_to_read_are_live_thesis_uploads_without_a_current_reading(student):
+    fresh = _upload(student)
+    old_reader = _upload(student)
+    current = _upload(student)
+    _upload(student, retired=True)
+    _upload(student, state="REJECTED_TYPE")
+    _upload(student, kind="CV")
+    for document, version in ((old_reader, 1), (current, 2)):
+        facts.save_reading(student, source_kind="pdf", document=document, changed_at=WHEN,
+                           reader_version=version, reading={}, skills=())
+    assert facts.reports_to_read(student, reader_version=2) == (fresh, old_reader)
+
+
+def test_a_retired_uploads_reading_goes(student):
+    kept, retired = _upload(student), _upload(student)
+    for document in (kept, retired):
+        facts.save_reading(student, source_kind="pdf", document=document, changed_at=WHEN,
+                           reader_version=1, reading={}, skills=())
+    DocumentVersion.objects.filter(id=retired.id).update(retired_at=timezone.now())
+    assert facts.delete_retired_report_readings(student) == 1
+    assert facts.delete_report_reading(student, kept.id) == 1
+
+
+def test_latest_cv_is_the_newest_live_cv(student):
+    _upload(student, kind="CV")
+    newest = _upload(student, kind="CV")
+    _upload(student, kind="CV", retired=True)
+    assert facts.latest_cv(student) == newest
+
+
+# --- the GitHub login -------------------------------------------------------------
+
+
+def test_setting_a_login_supersedes_the_identity_and_inherits_its_confirmation(student):
+    tip = _identity(student, {"full_name": "Jane Doe"}, confirmed=True)
+    written = facts.set_github_login(student, "0rkhann")
+    assert written.supersedes_id == tip.id
+    assert written.payload == {"full_name": "Jane Doe", "github_url": "https://github.com/0rkhann",
+                               "github_username": "0rkhann"}
+    assert written.confirmed_by_id == student.id
+    assert written.source_ref == facts.GITHUB_LOGIN_REF
+    assert facts.github_login(student) == "0rkhann"
+
+
+def test_review_focus_4_a_login_never_confirms_what_nobody_confirmed(student):
+    """No IDENTITY yet, or only the model's reading of the CV: typing a login must not
+    open the generate endpoint's identity gate (api.generate checks exactly this)."""
+    facts.set_github_login(student, "0rkhann")
+    assert not generatable_facts(student).filter(category=VerifiedFact.Category.IDENTITY).exists()
+    _identity(student, {"full_name": "Model Reading"}, confirmed=False)
+    facts.set_github_login(student, "other-login")
+    assert not generatable_facts(student).filter(category=VerifiedFact.Category.IDENTITY).exists()
+    assert facts.github_login(student) == "other-login"
+
+
+def _document_identity(student, payload):
+    """An IDENTITY row read off an identity document (a passport), as the document
+    fact reader writes one per field. A typed login must never rewrite it."""
+    return VerifiedFact.objects.create(
+        student=student, category=VerifiedFact.Category.IDENTITY, payload=payload,
+        source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+        source_ref="upload:passport:1", confirmed_by=None, confirmed_at=None,
+        created_by=student,
     )
 
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-headings")
-        snapshot = _snapshot()
-        languages = write_skill_facts(student=student, snapshot=snapshot)
-        libraries = write_library_skill_facts(
-            student=student, snapshot=snapshot, libraries=(("rdkit", 2), ("torch", 1))
-        )
-        techniques = write_technique_skill_facts(
-            student=student, snapshot=snapshot, techniques=(
-                Technique(name="PCA", excerpt="reduced with PCA"),
-                Technique(name="UMAP", excerpt="UMAP embedding of the set"),
-                Technique(name="t-SNE", excerpt="t-SNE for the 2-D map"),
-            )
-        )
 
-        assert {f.payload["category"] for f in languages} == {"Languages and tools"}
-        assert {f.payload["category"] for f in libraries} == {"Libraries and frameworks"}
-        assert {f.payload["category"] for f in techniques} == {"Core competencies"}
+def test_a_login_never_supersedes_a_document_identity_row(student):
+    named = _identity(student, {"full_name": "Jane Doe"}, confirmed=True)
+    passport = _document_identity(student, {"date_of_birth": "2001-02-03"})
 
-        # Only the host's own byte counts are auto-confirmed.
-        assert all(f.confirmed_by_id == student.id for f in languages)
-        assert all(f.confirmed_by_id is None for f in libraries + techniques)
+    written = facts.set_github_login(student, "0rkhann")
 
-        # A library and a language of the same name occupy different rows.
-        refs = {f.source_ref for f in languages + libraries + techniques}
-        assert len(refs) == len(languages + libraries + techniques)
-        assert any(r.endswith("#Python") for r in refs)
-        assert any(r.endswith("#lib:torch") for r in refs)
-        assert any(r.endswith("#method:PCA") for r in refs)
+    assert written.supersedes_id == named.id
+    assert written.payload["full_name"] == "Jane Doe"
+    passport.refresh_from_db()
+    assert not VerifiedFact.objects.filter(supersedes=passport).exists()
+    assert passport.source_tier == VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT
+    assert facts.github_login(student) == "0rkhann"
+
+    facts.clear_github_login(student)
+    assert not VerifiedFact.objects.filter(supersedes=passport).exists()
+    assert facts.github_login(student) == ""
 
 
-def test_a_duplicated_technique_is_written_once(agency_a, django_user_model):
-    from apps.documents.evidence.facts import write_technique_skill_facts
+def test_with_only_a_document_identity_the_login_gets_its_own_row(student):
+    passport = _document_identity(student, {"date_of_birth": "2001-02-03"})
 
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-dupe")
-        facts = write_technique_skill_facts(
-            student=student, snapshot=_snapshot(), techniques=(
-                Technique(name="PCA", excerpt="first mention of PCA"),
-                Technique(name="PCA", excerpt="second mention of PCA"),
-                Technique(name="UMAP", excerpt="UMAP embedding"),
-            )
-        )
-        assert [f.payload["name"] for f in facts] == ["PCA", "UMAP"]
+    first = facts.set_github_login(student, "0rkhann")
+    second = facts.set_github_login(student, "other-login")
+
+    assert first.supersedes_id is None and first.source_ref == facts.GITHUB_LOGIN_REF
+    assert second.supersedes_id == first.id
+    assert not VerifiedFact.objects.filter(supersedes=passport).exists()
+    assert facts.github_login(student) == "other-login"
 
 
-def test_the_library_cut_keeps_the_most_imported_not_the_alphabetically_first(
-    agency_a, django_user_model
-):
-    """`ase` beat `torch` only because the truncation sorted by name."""
-    from apps.documents.evidence.facts import write_library_skill_facts
-
-    libraries = tuple((f"pkg{index:02d}", 1) for index in range(20)) + (("torch", 9),)
-
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-rank")
-        facts = write_library_skill_facts(
-            student=student, snapshot=_snapshot(), libraries=libraries
-        )
-
-    names = [fact.payload["name"] for fact in facts]
-    assert len(names) == 15
-    assert names[0] == "torch"
+def test_an_unconfirmed_cv_profile_link_is_read(student):
+    _identity(student, {"full_name": "Jane", "github_url": "https://github.com/0rkhann"},
+              confirmed=False)
+    assert facts.github_login(student) == "0rkhann"
 
 
-def test_each_skill_row_records_what_backs_it(agency_a, django_user_model):
-    """Every kind of skill name carries a different kind of evidence, and the
-    row says which. A byte count is the host's measurement, an import count is
-    ours, and a manifest declaration is the project's own statement."""
-    from apps.documents.evidence.facts import (
-        write_library_skill_facts,
-        write_technique_skill_facts,
+def test_clearing_removes_the_login_and_every_github_reading_but_keeps_skills(student):
+    _identity(student, {"full_name": "Jane", "github_url": "https://github.com/0rkhann"},
+              confirmed=True)
+    _save(student, skills=(SkillSuggestion("Python", "language", "6000 bytes", "r#Python"),))
+    thesis = _upload(student)
+    facts.save_reading(student, source_kind="pdf", document=thesis, changed_at=WHEN,
+                       reader_version=1, reading={}, skills=())
+
+    assert facts.clear_github_login(student) == 1
+
+    assert facts.github_login(student) == ""
+    assert list(EvidenceReading.objects.values_list("source_kind", flat=True)) == ["pdf"]
+    assert [s.payload["name"] for s in _skills(student)] == ["Python"]
+
+
+def test_nothing_picks_a_reading_up_by_accident(student):
+    """Spec §14: a saved reading appears in none of generatable_facts, the confirm list
+    (api.fact_candidates' query), tailoring.fact_pool or the portal profile."""
+    from apps.documents.tailoring import fact_pool
+    from apps.portals.profile import verified_values
+
+    _identity(student, {"full_name": "Jane Doe"}, confirmed=True)
+    marker = "MARKER-READING-7731"
+    _save(student, summary=marker, bullets=[{"text": marker, "evidence": [marker],
+                                             "verdict": "supported"}])
+    surfaces = (
+        list(generatable_facts(student).values_list("payload", flat=True)),
+        list(unsuperseded_facts(student).filter(confirmed_by__isnull=True)
+             .values_list("payload", flat=True)),
+        fact_pool(student),
+        verified_values(student),
     )
-
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, "ev-evidence")
-        snapshot = _snapshot()
-        languages = write_skill_facts(student=student, snapshot=snapshot)
-        libraries = write_library_skill_facts(
-            student=student,
-            snapshot=snapshot,
-            libraries=(("torch", 9), ("ase", 1), ("d3", 0)),
-        )
-        techniques = write_technique_skill_facts(
-            student=student,
-            snapshot=snapshot,
-            techniques=(Technique(name="PCA", excerpt="reduced with PCA"),),
-        )
-
-    assert {f.payload["kind"] for f in languages} == {"language"}
-    assert {f.payload["name"]: f.payload["evidence"] for f in languages}["Python"] == (
-        "60731 bytes"
-    )
-
-    assert {f.payload["kind"] for f in libraries} == {"library"}
-    evidence = {f.payload["name"]: f.payload["evidence"] for f in libraries}
-    assert evidence["torch"] == "imported by 9 files"
-    # Singular, because "imported by 1 files" is read by a student.
-    assert evidence["ase"] == "imported by 1 file"
-    assert evidence["d3"] == "declared in the project's manifest"
-
-    assert {f.payload["kind"] for f in techniques} == {"technique"}
+    for surface in surfaces:
+        assert marker not in repr(surface)

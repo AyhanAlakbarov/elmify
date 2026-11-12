@@ -33,6 +33,7 @@ from apps.research.models import (
     MovedPage,
     Organisation,
     OrganisationDomain,
+    RegisterEntry,
     ResolutionItem,
 )
 
@@ -145,6 +146,30 @@ def withdraw_item(kind: str, subject_key: str) -> bool:
         state__in=(ResolutionItem.State.OPEN, ResolutionItem.State.PARKED),
     ).delete()
     return bool(deleted)
+
+
+def file_site_unknown(
+    entry: RegisterEntry, *, names: Sequence[str], why: str
+) -> ResolutionItem:
+    """File (or refresh) "which site is this body's own?" for one register row.
+
+    No candidates: the resolver keeps a domain or a reason, never a candidate
+    list (resolver.Resolution), so the operator pastes one. The applier binds
+    the row exactly as for any register (apply._site_unknown).
+    """
+    subject = f"register:{entry.register}:{entry.external_key}"
+    evidence: dict[str, object] = {
+        "register": entry.register,
+        "external_key": entry.external_key,
+        "names": [name[:300] for name in names][:20] or [entry.name],
+        "country_code": entry.country_code,
+        "candidates": [],
+        "why": why[:300],
+    }
+    country_code, registered = subject_facts(subject, evidence)
+    return file_item(
+        "SITE_UNKNOWN", subject, evidence, country_code=country_code, registered=registered
+    )
 
 
 # --- AWARD_DISPUTED (plan Task 8) -------------------------------------------

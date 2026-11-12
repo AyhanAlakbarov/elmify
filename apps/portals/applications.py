@@ -23,18 +23,26 @@ from apps.dashboard.templatetags.dashboard import https_only
 from apps.documents.document_queue import DocumentWorkMessage, enqueue_document_work
 from apps.documents.table import sendable
 from apps.funding.models import AuditEvent, RecommendationCandidate
-from apps.funding.services import LastInPack, PackCommandError, reject_for_student
+from apps.funding.services import (
+    LastInPack,
+    PackCommandError,
+    clear_overflow_pack_notes,
+    reject_for_student,
+)
 from apps.mailbox.filter import host_in
 from apps.mailbox.models import MailSignal
 from apps.ratelimit import pack_command_rate_limited, rate_limited
 from apps.research.hosts import registrable_domain
+from apps.research.provenance import BLOCKED_REASONS, RECOGNISED_REASONS, WAITING_REASONS
 from apps.tenancy.models import CounselorAssignment, Membership
 
 from .actions import queue_action
 from .award_links import link_awards
+from .fees import fee_state_for
 from .models import Application, DeviceAction, PortalForm
 from .outcome import correct_outcome, is_funding_application, record_refusal_from_offer
 from .pairing import active_pairings
+from .prepare import queue_for_student
 from .route_snapshot import snapshot_from_portal
 
 logger = logging.getLogger(__name__)
@@ -56,7 +64,7 @@ REFUSALS = {
         "your counsellor has been asked to find it."
     ),
     "automation_prohibited": (
-        "This portal does not allow filling tools. Use your Application Kit to apply by hand."
+        "This portal does not allow filling tools, so the extension cannot apply here."
     ),
     "not_paired": "Connect the browser extension first (Settings, Extension).",
     "rate_limited": "Too many requests. Try again shortly.",
@@ -66,6 +74,10 @@ REFUSALS = {
         "Add another option first."
     ),
     "pack_changed": "Your list just changed \u2014 reload and try again.",
+    "provenance_blocked": "This programme can't be added: its institution did not pass our checks.",
+    "provenance_checking": "This programme is still being checked. Try again shortly.",
+    "provenance_unconfirmed": "This programme's recognition isn't confirmed, so it can't be added.",
+    "not_eligible": "Your updated profile no longer meets this programme's requirements.",
     "document_unusable": "That document cannot be sent to this application.",
 }
 
@@ -133,19 +145,37 @@ def _ask_for_portal(application: Application, programme_name: str) -> None:
     application.save(update_fields=["exception_item"])
 
 
-def add_application(*, student: Membership, candidate_id: UUID, actor: Membership) -> Application:
-    """"Add to my applications" on a pack or pool item (spec §5, §7)."""
-    if pack_command_rate_limited(student.id):
-        raise ApplicationRefused("rate_limited")
-    candidate = RecommendationCandidate.objects.filter(
+def own_candidate(student: Membership, candidate_id: UUID) -> RecommendationCandidate | None:
+    """A reviewed candidate from one of this student's own runs, or None."""
+    return RecommendationCandidate.objects.filter(
         id=candidate_id,
         run__profile_version__student=student,
         state=RecommendationCandidate.State.VISIBLE,
     ).first()
+
+
+def add_application(*, student: Membership, candidate_id: UUID, actor: Membership) -> Application:
+    """"Add to my applications" on a pack or pool item (spec §5, §7)."""
+    if pack_command_rate_limited(student.id):
+        raise ApplicationRefused("rate_limited")
+    candidate = own_candidate(student, candidate_id)
     if candidate is None:
         raise ApplicationRefused("not_found")
+    if not candidate.eligible:
+        raise ApplicationRefused("not_eligible")
     if (candidate.funding_card or {}).get("route") == "AUTOMATIC_ON_ADMISSION":
         raise ApplicationRefused("comes_with_admission")
+    # Provenance spec §7.5: the same check replace_candidate makes, from the
+    # tenant copy the worker wrote. A body BLOCKED after the pack was shown
+    # stays VISIBLE (with a "Cannot be added" note), so VISIBLE is not enough.
+    code = candidate.provenance_reason_code
+    if code in BLOCKED_REASONS:
+        raise ApplicationRefused("provenance_blocked")
+    if settings.PROVENANCE_GATE_ENFORCED and code not in RECOGNISED_REASONS:
+        if not code or code in WAITING_REASONS:
+            raise ApplicationRefused("provenance_checking")
+        raise ApplicationRefused("provenance_unconfirmed")
+    clear_overflow_pack_notes(candidate)
     existing = _existing_card(student, candidate)
     if existing is not None:
         if not existing.kit_requirements and not existing.kit_letter_cycle:
@@ -200,6 +230,7 @@ def _create(
         name=name,
         portal_form=portal,
         route_snapshot=snapshot_from_portal(portal),
+        fee_state=fee_state_for(candidate),
     )
     if portal is None:
         _ask_for_portal(application, application.title)
@@ -310,9 +341,12 @@ def remove_application(application: Application, *, actor: Membership) -> None:
     withdrawn instead, so the §5.5 trail survives."""
     if pack_command_rate_limited(application.student_id):
         raise ApplicationRefused("rate_limited")
+    # A paid fee is touched too: deleting the card would erase the only record
+    # of the payment the budget line counts (lanes final review I3).
     untouched = (
         application.state == Application.State.PREPARING
         and application.started_at is None
+        and application.fee_state != Application.FeeState.PAID
         and not application.steps.exists()
     )
     if not untouched:
@@ -351,7 +385,7 @@ def _require_device_ready(application: Application) -> None:
 
 
 def is_startable(application: Application) -> bool:
-    """No outcome, and not past READY_TO_SUBMIT. The kit page asks the same."""
+    """No outcome, and not past READY_TO_SUBMIT."""
     # Named by what may start, not by the submitted states: nothing outside
     # ext_api.py and models.py names them (tests/portals/test_boundary.py).
     startable = application.state in (
@@ -378,6 +412,8 @@ def start_application(application: Application, *, actor: Membership) -> DeviceA
     action = queue_action(
         application.student, DeviceAction.Kind.START_FILL, {}, application=application
     )
+    # A cheap no-op in the worker when the prepared files are current.
+    queue_for_student(application.tenant_id, application.student_id)
     _audit(actor, "application.start_requested", application)
     return action
 

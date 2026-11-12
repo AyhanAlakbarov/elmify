@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import functools
 import io
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
-from typing import NoReturn, Protocol, cast
+from typing import Any, NoReturn, Protocol, cast
 
 from django.template.loader import render_to_string
 from pydantic import BaseModel, ValidationError
@@ -23,9 +24,12 @@ from .constraints import (
     directives_from_program,
     resolve_rules,
 )
+from .coverage import LANGUAGE_TEST, is_secondary, items_of
+from .cv_fonts import choose_font, embedded_font_names, parse_font_rule
 from .europass import EuropassUnavailable, assert_europass_provenance, render_europass_pdf
 from .hygiene import normalize_text, scrub_pdf_metadata, to_ascii_punctuation
 from .models import DocumentDraft
+from .requirement_list import RequirementList
 from .schemas import (
     CVContent,
     EducationEntry,
@@ -51,10 +55,18 @@ _TEMPLATE_BY_VARIANT = {
 #: format (Europass, a funder's own template, structured fields) is a
 #: published instruction and outranks a country convention.
 #:
-#: Austria shares the convention (S-008 names DACH). Switzerland does not:
-#: it is trilingual, and ETH's own requirement is a gapless history, which is
-#: about content rather than layout -- it is seeded as a COUNTRY rule instead.
+#: Austria shares the convention (S-008 names DACH). Switzerland as a country
+#: does not (it is trilingual), while ETH Zurich explicitly demands a CV "in
+#: table form" on its master's admissions page (S-047).
 _TABULAR_COUNTRIES = frozenset({"DE", "AT"})
+_TABULAR_INSTITUTIONS = frozenset({"ch:eth zurich"})
+
+
+def _uses_tabular_layout(program: Program | None) -> bool:
+    if getattr(program, "country_code", "") in _TABULAR_COUNTRIES:
+        return True
+    institution = getattr(program, "institution", None)
+    return getattr(institution, "canonical_key", "") in _TABULAR_INSTITUTIONS
 
 _REQUIREMENT_TO_VARIANT = {
     "europass_required": "EUROPASS_API",
@@ -88,6 +100,9 @@ class RenderedArtifact:
     field_mapped: dict[str, object] | None
     page_count: int | None
     byte_size: int
+    #: Non-binding violations the release render encountered. Populated by
+    #: render_draft so the worker can store them without rendering twice.
+    warnings: tuple[ConstraintViolation, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -131,10 +146,15 @@ class ContentHygieneFailed(ValueError):
 def _funder_dispatch() -> dict[str, Callable[[CVContent], RenderedArtifact]]:
     """Imported lazily: the funder modules import render.py for RenderedArtifact
     and render_html_to_artifact, so a module-level import here is a cycle."""
+    from .funder_templates.australia_awards import render_australia_awards
     from .funder_templates.rhodes import render_rhodes
     from .funder_templates.sisgp import render_sisgp
 
-    return {"SISGP": render_sisgp, "RHODES": render_rhodes}
+    return {
+        "SISGP": render_sisgp,
+        "RHODES": render_rhodes,
+        "AUSTRALIA_AWARDS": render_australia_awards,
+    }
 
 
 def select_render_variant(
@@ -154,7 +174,7 @@ def select_render_variant(
         program, "cv_format_requirement", ""
     )
     variant = _REQUIREMENT_TO_VARIANT.get(requirement, "STANDARD")
-    if variant == "STANDARD" and getattr(program, "country_code", "") in _TABULAR_COUNTRIES:
+    if variant == "STANDARD" and _uses_tabular_layout(program):
         return "GERMAN_TABULAR"
     return variant
 
@@ -168,9 +188,24 @@ def resolve_variant(draft: DocumentDraft) -> str:
     expression is how the worker and the renderer end up disagreeing about
     what a draft is.
     """
-    return draft.render_variant or select_render_variant(
-        draft.programme, draft.funding_opportunity
-    )
+    if draft.render_variant:
+        return draft.render_variant
+    if draft.requirements is not None:
+        req_list = RequirementList.model_validate(draft.requirements)
+        format_value = next(
+            (
+                item.value
+                for item in req_list.for_document("cv")
+                if item.key == "cv_format" and isinstance(item.value, str) and item.value
+            ),
+            None,
+        )
+        if format_value is not None:
+            variant = str(_REQUIREMENT_TO_VARIANT.get(format_value, "STANDARD"))
+            if variant == "STANDARD" and _uses_tabular_layout(draft.programme):
+                return "GERMAN_TABULAR"
+            return variant
+    return select_render_variant(draft.programme, draft.funding_opportunity)
 
 
 def _clean(value: object) -> object:
@@ -232,7 +267,7 @@ def _newest_first[T: _Dated](entries: tuple[T, ...]) -> tuple[T, ...]:
 
 
 def _experience_rows(
-    content: CVContent, *, oldest_first: bool
+    content: CVContent, *, oldest_first: bool, unpaid: bool = False
 ) -> tuple[ExperienceEntry | TimelineEntry, ...]:
     """Posts and gap statements in one run, in whatever direction experience is in.
 
@@ -254,8 +289,12 @@ def _experience_rows(
     the directives (`_oldest_first_sections`) because a CV with zero or one post
     has no direction to read back off `experience`.
     """
+    # S-042 / spec §7.1: unpaid posts print under their own Volunteering
+    # heading on the cv_base variants, as SISGP and Rhodes already do. Gap
+    # statements stay with the paid run: a gap is a period like a post.
+    posts = tuple(entry for entry in content.experience if entry.unpaid == unpaid)
     combined: tuple[ExperienceEntry | TimelineEntry, ...] = (
-        content.experience + closed_timeline(content)
+        posts if unpaid else posts + closed_timeline(content)
     )
     rows = _newest_first(combined)
     return tuple(reversed(rows)) if oldest_first else rows
@@ -281,6 +320,7 @@ def reverse_chronological(content: CVContent) -> CVContent:
             "education": _newest_first(content.education),
             "experience": _newest_first(content.experience),
             "research": _newest_first(content.research),
+            "projects": _newest_first(content.projects),
         }
     )
 
@@ -316,6 +356,23 @@ def without_duplicated_posts(content: CVContent) -> CVContent:
     )
 
 
+def without_duplicated_language_tests(content: CVContent) -> CVContent:
+    """R-041: a language test prints in Languages. A certification naming the
+    same test as a Languages entry is the same claim twice and is dropped; one
+    with no Languages twin is a misfiled test and still prints."""
+    named = {
+        match.group(1).casefold()
+        for entry in content.languages
+        if entry.test_name and (match := LANGUAGE_TEST.search(entry.test_name))
+    }
+    if not named:
+        return content
+    return content.model_copy(update={"certifications": tuple(
+        cert for cert in content.certifications
+        if not ((match := LANGUAGE_TEST.search(cert.title)) and match.group(1).casefold() in named)
+    )})
+
+
 def _fold(value: object) -> object:
     if isinstance(value, str):
         return to_ascii_punctuation(value)
@@ -326,9 +383,19 @@ def _fold(value: object) -> object:
     return value
 
 
+@functools.lru_cache(maxsize=8)
+def _pdf_reader(pdf_bytes: bytes) -> PdfReader:
+    return PdfReader(io.BytesIO(pdf_bytes))
+
+
+@functools.lru_cache(maxsize=8)
+def _pdf_page_texts(pdf_bytes: bytes) -> tuple[str, ...]:
+    return tuple(page.extract_text() or "" for page in _pdf_reader(pdf_bytes).pages)
+
+
 def _pdf_artifact(pdf_bytes: bytes, *, variant: str) -> RenderedArtifact:
     scrubbed = scrub_pdf_metadata(pdf_bytes)
-    reader = PdfReader(io.BytesIO(scrubbed))
+    reader = _pdf_reader(scrubbed)
     return RenderedArtifact(
         variant=variant,
         pdf_bytes=scrubbed,
@@ -413,20 +480,27 @@ def render_html_to_artifact(html: str, *, variant: str) -> RenderedArtifact:
 #: R-027. Measured on a real CV: four research posts at EPFL, Groningen, ICIQ
 #: and Strasbourg rendered below a list of hackathon placements, putting the
 #: weakest evidence in the most prominent position on page one.
+#: Volunteering follows Experience and Certifications follow Skills (spec §7.1, plan decision 22).
 _TAUGHT_SECTIONS = (
     "documents/_cv_experience.html",
+    "documents/_cv_volunteering.html",
+    "documents/_cv_projects.html",
     "documents/_cv_research.html",
     "documents/_cv_publications.html",
     "documents/_cv_presentations.html",
     "documents/_cv_skills.html",
+    "documents/_cv_certifications.html",
     "documents/_cv_awards.html",
 )
 _RESEARCH_SECTIONS = (
     "documents/_cv_research.html",
     "documents/_cv_publications.html",
     "documents/_cv_presentations.html",
+    "documents/_cv_projects.html",
     "documents/_cv_experience.html",
+    "documents/_cv_volunteering.html",
     "documents/_cv_skills.html",
+    "documents/_cv_certifications.html",
     "documents/_cv_awards.html",
 )
 
@@ -438,9 +512,12 @@ _RESEARCH_SECTIONS = (
 #: does not exist.
 _SECTION_TEMPLATE = {
     "experience": "documents/_cv_experience.html",
+    "volunteering": "documents/_cv_volunteering.html",
+    "projects": "documents/_cv_projects.html",
     "research": "documents/_cv_research.html",
     "publications": "documents/_cv_publications.html",
     "skills": "documents/_cv_skills.html",
+    "certifications": "documents/_cv_certifications.html",
     "awards": "documents/_cv_awards.html",
 }
 
@@ -485,14 +562,69 @@ def _section_order(content: CVContent, *, emphasise: tuple[str, ...] = ()) -> tu
     return tuple(front) + tuple(t for t in base if t not in front)
 
 
+def without_future_starts(content: CVContent, today: date) -> CVContent:
+    """Leave out what has not started yet (spec 3.2).
+
+    A place accepted but not begun is not part of the record, and printing it
+    as "Oct 2026 - present" said the student was already enrolled. Education
+    keeps its future entries when they are all it has -- CVContent requires one
+    education entry, and a CV with none is worse than one announcing an
+    admitted place (cv_dates.date_range prints "Admitted; starts ...").
+    """
+
+    def started(entry: object) -> bool:
+        start = getattr(entry, "start_date", None)
+        return start is None or bool(start <= today)
+
+    education = tuple(e for e in content.education if started(e)) or content.education
+    return content.model_copy(
+        update={
+            "education": education,
+            "experience": tuple(e for e in content.experience if started(e)),
+            "research": tuple(e for e in content.research if started(e)),
+            "projects": tuple(e for e in content.projects if started(e)),
+            "timeline": tuple(e for e in content.timeline if started(e)),
+        }
+    )
+
+
+def thesis_printed_once(content: CVContent) -> CVContent:
+    """Spec §5.4: a Research entry describing the thesis a degree already names
+    is headed "Thesis research", and its own supervisor line goes, so the title
+    and supervisor print once, under the degree. Only for the cv_base.html
+    paths, which print the thesis under the degree. The Europass API sends no
+    thesis per degree, so there the Research entry stays the only place it is
+    named."""
+    theses = {
+        normalize_text(d.thesis_title).casefold() for d in content.education if d.thesis_title
+    }
+    return content.model_copy(
+        update={
+            "research": tuple(
+                entry.model_copy(update={"thesis_title": "Thesis research", "supervisor": None})
+                if normalize_text(entry.thesis_title).casefold() in theses
+                else entry
+                for entry in content.research
+            )
+        }
+    )
+
+
 def _render_pdf(
     content: CVContent,
     *,
     variant: str,
+    today: date,
     date_of_issue: date | None = None,
     emphasise: tuple[str, ...] = (),
     oldest_first_sections: frozenset[str] = frozenset(),
+    include_targets: frozenset[str] = frozenset(),
+    font_family: str,
+    font_pt: float,
+    compact: bool = False,
+    signature: bool = False,
 ) -> RenderedArtifact:
+    content = thesis_printed_once(content)
     template = _TEMPLATE_BY_VARIANT.get(variant)
     if template is None:
         raise UnsupportedRenderVariant(f"no render template for variant {variant!r}")
@@ -502,6 +634,13 @@ def _render_pdf(
             "content": content,
             "section_order": _section_order(content, emphasise=emphasise),
             "date_of_issue": date_of_issue,
+            "today": today,
+            "font_family": font_family,
+            # Compact only ever shrinks: a 9 pt programme rule stays 9 pt.
+            "font_pt": min(font_pt, 10.0) if compact else font_pt,
+            "compact": compact,
+            "signature": signature,
+            "include_targets": include_targets,
             # S-008 (docs/research/cv-style-rules.csv): the tabellarischer
             # Lebenslauf is a dates-LEFT two-column grid; partials branch on
             # this instead of duplicating the R-027 section-order logic.
@@ -511,6 +650,9 @@ def _render_pdf(
             "experience_rows": _experience_rows(
                 content, oldest_first="experience" in oldest_first_sections
             ),
+            "volunteering_rows": _experience_rows(
+                content, oldest_first="experience" in oldest_first_sections, unpaid=True
+            ),
         },
     )
     return render_html_to_artifact(html, variant=variant)
@@ -518,7 +660,7 @@ def _render_pdf(
 
 #: The sections an `order` directive can act on: the ones whose entries carry
 #: dates. Everything else in the CV is an unordered list.
-_DATED_SECTIONS = ("education", "experience", "research")
+_DATED_SECTIONS = ("education", "experience", "research", "projects")
 
 
 def _oldest_first_sections(directives: tuple[PageDirective, ...]) -> frozenset[str]:
@@ -604,8 +746,8 @@ def _check_final_page_fill(
         # would raise rather than report.
         return None
     pages = [
-        len((page.extract_text() or "").strip())
-        for page in PdfReader(io.BytesIO(artifact.pdf_bytes)).pages
+        len(page_text.strip())
+        for page_text in _pdf_page_texts(artifact.pdf_bytes)
     ]
     average = sum(pages[:-1]) / len(pages[:-1])
     if average == 0:
@@ -635,6 +777,19 @@ def _check_photo(
     if rule.value is False and content.personal_information.photo_url:
         return "content includes a photo"
     return None
+
+
+def _check_photo_required(
+    rule: ConstraintRule, content: CVContent, artifact: RenderedArtifact
+) -> str | None:
+    """Spec 2026-10-12 §8: a page requiring a photo. The engine never supplies
+    one; build step 4.3 asks the student for it. europass.py sends
+    `profilePicture: None`, so on EUROPASS_API the rule can never be met."""
+    if rule.value is not True:
+        return None
+    if artifact.variant == "EUROPASS_API":
+        return "Europass sends no photo"
+    return None if content.personal_information.photo_url else "content has no photo"
 
 
 def _check_date_of_birth(
@@ -680,8 +835,7 @@ def _check_date_of_issue(
         return None
     if artifact.pdf_bytes is None:
         return "variant produces no PDF to carry a date of issue"
-    pages = PdfReader(io.BytesIO(artifact.pdf_bytes)).pages
-    text = "".join(page.extract_text() or "" for page in pages)
+    text = "".join(_pdf_page_texts(artifact.pdf_bytes))
     return None if date.today().isoformat() in text else "no date-of-issue line in the artefact"
 
 
@@ -716,8 +870,10 @@ def _check_prohibited_content(
     for entry in cast(list[str], rule.value):
         if entry != "hyperlinks":
             return f"unrecognised prohibited-content token {entry!r}"
-        if content.personal_information.links or any(
-            pub.doi for pub in content.publications
+        if (
+            content.personal_information.links
+            or any(pub.doi or pub.url for pub in content.publications)
+            or any(proj.url for proj in content.projects)
         ):
             found.append(entry)
     return f"content includes prohibited {', '.join(found)}" if found else None
@@ -810,11 +966,96 @@ def _check_surfaced(
     return f"the page states: {rule.rule_text}"
 
 
+_OWN_LAYOUT_VARIANTS = frozenset({"STANDARD", "GERMAN_TABULAR", "EUROPASS"})
+
+
+def _check_font(
+    rule: ConstraintRule, content: CVContent, artifact: RenderedArtifact
+) -> str | None:
+    """The programme's font is honoured on our own templates (spec 3.5).
+
+    Funder templates and the EU's PDF keep their own layout, so for them the
+    rule is reported, not applied; it is advisory, so this never blocks.
+    """
+    if artifact.variant not in _OWN_LAYOUT_VARIANTS or artifact.pdf_bytes is None:
+        return f"{artifact.variant} keeps its own font; {rule.value!r} not applied"
+    choice = choose_font(rule, content)
+    if choice.note:
+        return choice.note
+    wanted = _squash(choice.family)
+    if not any(wanted in _squash(face) for face in embedded_font_names(artifact.pdf_bytes)):
+        return f"{choice.family} was requested but is not installed"
+    return None
+
+
+def _squash(name: str) -> str:
+    return name.replace(" ", "").replace("-", "")
+
+
+def _check_cv_scope(
+    rule: ConstraintRule, content: CVContent, artifact: RenderedArtifact
+) -> str | None:
+    """Acted on at generation (selection.py switches the relevance engine off
+    on `complete`); there is nothing in the artefact to report."""
+    return None
+
+
+def _check_cv_start(
+    rule: ConstraintRule, content: CVContent, artifact: RenderedArtifact
+) -> str | None:
+    """Spec §8: a missing school-leaving entry is asked for, never invented,
+    and until it is answered the CV is not presented as complete."""
+    value = cast(dict[str, object], rule.value)
+    start = value.get("start") or value.get("milestone")
+    if start == "upper_secondary":
+        if any(is_secondary(entry) for entry in content.education):
+            return None
+        return (
+            "the programme asks the CV to begin with upper secondary school, "
+            "and no secondary school is on this CV"
+        )
+    if start == "last_n_years" or (start is None and value.get("years")):
+        years = int(cast(int, value["years"]))
+        today = date.today()
+        cutoff = date(today.year - years, today.month, min(today.day, 28))
+        older = (
+            sum(1 for i in items_of(content) if i.when is not None and i.when < cutoff)
+            + sum(1 for e in content.education if (e.end_date or e.start_date or today) < cutoff)
+        )
+        if older:
+            return f"{older} entries end before the last {years} years the programme asks for"
+    return None
+
+
+def _check_cv_item_cap(
+    rule: ConstraintRule, content: CVContent, artifact: RenderedArtifact
+) -> str | None:
+    value = cast(dict[str, object], rule.value)
+    section, limit = str(value["section"]), int(cast(int, value["max"]))
+    count = sum(1 for item in items_of(content) if item.section == section)
+    if count <= limit:
+        return None
+    return f"{section} lists {count} entries; the programme asks for at most {limit}"
+
+
+def _check_signature(
+    rule: ConstraintRule, content: CVContent, artifact: RenderedArtifact
+) -> str | None:
+    """The engine cannot sign for the student (spec §8): a PROGRAMME rule gets
+    a place/date/signature line on the cv_base variants, and every rule tells
+    the student to sign by hand before uploading."""
+    if not rule.value:
+        return None
+    return "this CV must be signed by hand before it is uploaded"
+
+
 _CHECKERS: dict[str, Callable[[ConstraintRule, CVContent, RenderedArtifact], str | None]] = {
     "max_pages": _check_max_pages,
+    "font": _check_font,
     "max_bytes": _check_max_bytes,
     "min_final_page_fill": _check_final_page_fill,
     "photo_allowed": _check_photo,
+    "photo_required": _check_photo_required,
     "date_of_birth_allowed": _check_date_of_birth,
     "max_entries_per_section": _check_max_entries,
     "language": _check_language,
@@ -825,15 +1066,20 @@ _CHECKERS: dict[str, Callable[[ConstraintRule, CVContent, RenderedArtifact], str
     "ai_use_policy": _check_ai_use_policy,
     "undecided": _check_surfaced,
     "unapplied": _check_surfaced,
+    "cv_scope": _check_cv_scope,
+    "cv_start": _check_cv_start,
+    "cv_item_cap": _check_cv_item_cap,
+    "signature_required": _check_signature,
 }
 
 #: Checkers decidable from `clean` alone, with no artefact required --
-#: date_of_issue_required is included because EUROPASS_API can never satisfy
-#: it (there is no way to inject our date line into a Europass-rendered PDF),
+#: date_of_issue_required and photo_required are included because EUROPASS_API
+#: can never satisfy them (there is no way to inject our date line into a Europass-rendered PDF),
 #: so it is as decidable pre-render as the others.
 _CONTENT_ONLY_KEYS = frozenset(
     {
         "photo_allowed",
+        "photo_required",
         "date_of_birth_allowed",
         "language",
         "max_entries_per_section",
@@ -843,6 +1089,86 @@ _CONTENT_ONLY_KEYS = frozenset(
         "no_unexplained_gaps",
     }
 )
+
+
+#: Keys whose checker reads the content or the rule alone, never the artefact.
+#: _CONTENT_ONLY_KEYS plus the always-reported ones. Used where nothing was
+#: rendered (a Europass cache hit) so the stored warnings are not empty.
+_ARTIFACT_FREE_KEYS = _CONTENT_ONLY_KEYS | frozenset(
+    {
+        "undecided",
+        "unapplied",
+        "ai_use_policy",
+        "cv_scope",
+        "cv_start",
+        "cv_item_cap",
+        "signature_required",
+    }
+)
+
+_NO_ARTIFACT = RenderedArtifact(
+    variant="", pdf_bytes=None, field_mapped=None, page_count=None, byte_size=0
+)
+
+
+def _evaluate(rule: ConstraintRule, content: CVContent, artifact: RenderedArtifact) -> str | None:
+    checker = _CHECKERS[rule.key]
+    try:
+        return checker(rule, content, artifact)
+    except (TypeError, ValueError, KeyError, AttributeError) as exc:
+        return f"could not evaluate rule: {exc}"
+
+
+def content_warnings(
+    content: CVContent,
+    constraints: tuple[ConstraintRule, ...],
+    *,
+    variant: str = "STANDARD",
+    today: date | None = None,
+) -> tuple[ConstraintViolation, ...]:
+    """The non-BINDING violations decidable without rendering."""
+    clean, _ = europass_content(
+        content, (), today=today,
+        constraints=constraints if variant == "EUROPASS_API" else (),
+    )
+    return tuple(
+        ConstraintViolation(rule, detail)
+        for rule in constraints
+        if rule.enforcement != Enforcement.BINDING
+        and rule.key in _ARTIFACT_FREE_KEYS
+        and rule.key in _CHECKERS
+        and (detail := _evaluate(rule, clean, _NO_ARTIFACT)) is not None
+    )
+
+
+def binding_content_failures(
+    content: CVContent, constraints: tuple[ConstraintRule, ...]
+) -> frozenset[str]:
+    """rule_ids of BINDING content-only rules this content fails.
+
+    selection.py compares this before and after leaving items out, so a
+    leave-out can never make a BINDING rule fail (spec §8, plan decision 18).
+    """
+    return frozenset(
+        rule.rule_id
+        for rule in constraints
+        if rule.enforcement == Enforcement.BINDING
+        and rule.key in _CONTENT_ONLY_KEYS
+        and rule.key in _CHECKERS
+        and _evaluate(rule, content, _NO_ARTIFACT) is not None
+    )
+
+
+def warning_record(violation: ConstraintViolation) -> dict[str, str]:
+    """One stored warning. The detail already quotes the page for the
+    surfaced keys (_check_surfaced), so rule_text is not stored twice."""
+    return {
+        "rule_id": violation.rule.rule_id,
+        "key": violation.rule.key,
+        "scope": violation.rule.scope,
+        "detail": violation.detail,
+        "source_url": violation.rule.source_url,
+    }
 
 
 def _blocked_by_content_only_rules(
@@ -859,14 +1185,9 @@ def _blocked_by_content_only_rules(
     for rule in constraints:
         if rule.enforcement != Enforcement.BINDING or rule.key not in _CONTENT_ONLY_KEYS:
             continue
-        checker = _CHECKERS.get(rule.key)
-        if checker is None:
+        if rule.key not in _CHECKERS:
             return True
-        try:
-            detail = checker(rule, clean, placeholder)
-        except (TypeError, ValueError, KeyError, AttributeError):
-            detail = "could not evaluate rule"
-        if detail is not None:
+        if _evaluate(rule, clean, placeholder) is not None:
             return True
     return False
 
@@ -918,18 +1239,77 @@ def _with_universal_rules(
     )
 
 
+def without_banned_content(
+    content: CVContent, constraints: tuple[ConstraintRule, ...]
+) -> CVContent:
+    """Spec 2026-10-12 §6.4 step 8: the bans code can apply exactly, applied
+    whatever their enforcement, so a soft rule cannot let personal data out.
+
+    The photo, the date of birth and hyperlinks (contact links and DOIs).
+    Every other content-only key -- a cap, a required field, a gap, a date of
+    issue -- needs the student's facts or a choice, so it stays a check that
+    _blocked_by_content_only_rules runs on what this returns.
+    """
+    def banned(key: str, value: object) -> bool:
+        return any(
+            rule.key == key and (
+                rule.value == value
+                or (isinstance(rule.value, list) and value in rule.value)
+            )
+            for rule in constraints
+        )
+
+    personal: dict[str, object] = {}
+    if banned("photo_allowed", False) or banned("prohibited_content", "photo"):
+        personal["photo_url"] = None
+    if banned("date_of_birth_allowed", False) or banned("prohibited_content", "date_of_birth"):
+        personal["date_of_birth"] = None
+    links = banned("prohibited_content", "hyperlinks")
+    if links:
+        personal |= {"orcid": None, "linkedin_url": None, "github_url": None, "website_url": None}
+    update: dict[str, object] = {}
+    if personal:
+        update["personal_information"] = content.personal_information.model_copy(update=personal)
+    if links:
+        update["publications"] = tuple(
+            pub.model_copy(update={"doi": None, "url": None}) for pub in content.publications
+        )
+        if content.projects:
+            update["projects"] = tuple(
+                proj.model_copy(update={"url": None}) for proj in content.projects
+            )
+    return content.model_copy(update=update) if update else content
+
+
 def europass_content(
-    content: CVContent, directives: tuple[PageDirective, ...]
+    content: CVContent,
+    directives: tuple[PageDirective, ...],
+    *,
+    today: date | None = None,
+    constraints: tuple[ConstraintRule, ...] = (),
 ) -> tuple[CVContent, bool]:
     """What EUROPASS_API sends: the funnel's content, and whether its experience
     runs oldest first. One function because two places need the same answer --
     the render, and the cache key (europass_render.payload_hash), which must
     hash what is sent or two programmes asking different orders share a PDF.
+    `constraints` are applied by `without_banned_content`, so the key also
+    tells a programme that bans hyperlinks from one that does not.
     """
     clean = apply_directives(
-        reverse_chronological(without_duplicated_posts(hygienic_content(content))), directives
+        reverse_chronological(
+            without_future_starts(
+                without_duplicated_language_tests(
+                    without_duplicated_posts(hygienic_content(content))
+                ),
+                today or date.today(),
+            )
+        ),
+        directives,
     )
-    return clean, "experience" in _oldest_first_sections(directives)
+    return (
+        without_banned_content(clean, constraints),
+        "experience" in _oldest_first_sections(directives),
+    )
 
 
 def render_cv_with_warnings(
@@ -940,12 +1320,47 @@ def render_cv_with_warnings(
     funder_template_id: str | None = None,
     allow_network: bool = False,
     directives: tuple[PageDirective, ...] = (),
+    today: date | None = None,
 ) -> tuple[RenderedArtifact, tuple[ConstraintViolation, ...]]:
     # The same funnel the Europass cache key hashes (europass_content), so the
     # key always describes what this render sends.
-    clean, _ = europass_content(content, directives)
+    today = today or date.today()
+    # Step 8 strips banned content only on the path that sends it to
+    # europa.eu; every other variant still reports the rule (build step 4.4
+    # applies the bans to every variant).
+    clean, _ = europass_content(
+        content, directives, today=today,
+        constraints=constraints if variant == "EUROPASS_API" else (),
+    )
     emphasise = tuple(d.target for d in directives if d.action == "emphasise")
     oldest_first = _oldest_first_sections(directives)
+    include_targets = frozenset(
+        [
+            *(d.target for d in directives if d.action == "include"),
+            *(
+                f"personal.{field.strip()}"
+                for rule in constraints
+                if rule.key == "required_fields" and isinstance(rule.value, list)
+                for field in rule.value
+                if isinstance(field, str) and field.strip()
+            ),
+        ]
+    )
+    font_rule = next((rule for rule in constraints if rule.key == "font"), None)
+    font = choose_font(font_rule, clean)
+    # A date-of-issue line is something we EMIT, not something we verify
+    # about the world, so the constraint drives rendering rather than only
+    # judging it after the fact (R-070).
+    wants_date = any(
+        rule.key == "date_of_issue_required" and rule.value for rule in constraints
+    )
+    signature = any(
+        rule.key == "signature_required" and rule.value and rule.scope == "PROGRAMME"
+        for rule in constraints
+    )
+    #: The first _render_pdf call's arguments, so a compact retry replays
+    #: exactly them (None when the artefact came from somewhere else).
+    render_kwargs: dict[str, Any] | None = None
     if variant == "EUROPASS_API":
         if allow_network:
             placeholder = RenderedArtifact(
@@ -975,12 +1390,18 @@ def render_cv_with_warnings(
             # Preview: no network budget, and no consent yet to send a
             # student's data to a third party. Show the local look-alike,
             # labelled as the look-alike it is.
-            artifact = _render_pdf(
-                clean,
-                variant="EUROPASS",
-                emphasise=emphasise,
-                oldest_first_sections=oldest_first,
-            )
+            render_kwargs = {
+                "variant": "EUROPASS",
+                "today": today,
+                "date_of_issue": today if wants_date else None,
+                "emphasise": emphasise,
+                "oldest_first_sections": oldest_first,
+                "include_targets": include_targets,
+                "font_family": font.family,
+                "font_pt": font.pt,
+                "signature": signature,
+            }
+            artifact = _render_pdf(clean, **render_kwargs)
     elif variant == "FUNDER_TEMPLATE":
         dispatch = _funder_dispatch()
         if funder_template_id not in dispatch:
@@ -995,54 +1416,93 @@ def render_cv_with_warnings(
     elif variant == "FIELD_MAPPED":
         artifact = _render_field_mapped(clean)
     else:
-        # A date-of-issue line is something we EMIT, not something we verify
-        # about the world, so the constraint drives rendering rather than only
-        # judging it after the fact (R-070).
-        wants_date = any(
-            rule.key == "date_of_issue_required" and rule.value for rule in constraints
+        render_kwargs = {
+            "variant": variant,
+            "today": today,
+            "date_of_issue": today if wants_date else None,
+            "emphasise": emphasise,
+            "oldest_first_sections": oldest_first,
+            "include_targets": include_targets,
+            "font_family": font.family,
+            "font_pt": font.pt,
+            "signature": signature,
+        }
+        artifact = _render_pdf(clean, **render_kwargs)
+    def _violations(artifact: RenderedArtifact) -> list[ConstraintViolation]:
+        violations: list[ConstraintViolation] = []
+        for rule in _with_universal_rules(constraints):
+            checker = _CHECKERS.get(rule.key)
+            if checker is None:
+                if rule.enforcement != Enforcement.ADVISORY_STYLE:
+                    # We cannot verify it, so we will not pretend the artefact
+                    # satisfies it -- reported as a *violation*, not a raise: this
+                    # function's whole job is to return violations (Task 13's
+                    # override flow reads them), and render_cv below still turns
+                    # any BINDING one into a PreflightBlocked, so fail-closed
+                    # behaviour is unchanged.
+                    #
+                    # ADVISORY_HIGH_RISK is reported here too, and that is the
+                    # whole point of the tier. R-031 (Germany: signature on the
+                    # last page) is the live case: it was downgraded from BINDING
+                    # so it would not block every German CV, and it has no checker
+                    # by design -- a wet signature is not visible from here.
+                    # Staying silent would make the downgrade meaningless, turning
+                    # "blocks everything" into "does nothing" with nothing in
+                    # between. ADVISORY_STYLE stays silent: unverifiable style
+                    # advice is noise, not risk.
+                    violations.append(
+                        ConstraintViolation(rule, f"no pre-flight check for {rule.key!r}")
+                    )
+                continue
+            try:
+                detail = checker(rule, clean, artifact)
+            except (TypeError, ValueError, KeyError, AttributeError) as exc:
+                # Malformed rule.value (wrong type/shape) is the same "we cannot
+                # verify it" case as an unrecognised key above -- fail closed as
+                # a violation instead of crashing this function for every other
+                # rule in the same list.
+                detail = f"could not evaluate rule: {exc}"
+            if detail is not None:
+                violations.append(ConstraintViolation(rule, detail))
+        return violations
+
+    violations = _violations(artifact)
+    blocked_by_pages = any(
+        v.rule.key == "max_pages" and v.rule.enforcement == Enforcement.BINDING
+        for v in violations
+    )
+    if (
+        blocked_by_pages
+        and render_kwargs is not None
+        and render_kwargs["variant"] in _OWN_LAYOUT_VARIANTS
+    ):
+        # Spec 3.4: one tighter render before a binding page cap blocks.
+        # Never content removal; replays the first render's arguments with
+        # only compact=True; kept only if it clears the cap, and every check
+        # runs again on what will actually ship.
+        compact = _render_pdf(clean, **render_kwargs, compact=True)
+        compact_violations = _violations(compact)
+        cap = next(
+            
+                v.rule
+                for v in violations
+                if v.rule.key == "max_pages" and v.rule.enforcement == Enforcement.BINDING
+            
         )
-        artifact = _render_pdf(
-            clean,
-            variant=variant,
-            date_of_issue=date.today() if wants_date else None,
-            emphasise=emphasise,
-            oldest_first_sections=oldest_first,
-        )
-    violations: list[ConstraintViolation] = []
-    for rule in _with_universal_rules(constraints):
-        checker = _CHECKERS.get(rule.key)
-        if checker is None:
-            if rule.enforcement != Enforcement.ADVISORY_STYLE:
-                # We cannot verify it, so we will not pretend the artefact
-                # satisfies it -- reported as a *violation*, not a raise: this
-                # function's whole job is to return violations (Task 13's
-                # override flow reads them), and render_cv below still turns
-                # any BINDING one into a PreflightBlocked, so fail-closed
-                # behaviour is unchanged.
-                #
-                # ADVISORY_HIGH_RISK is reported here too, and that is the
-                # whole point of the tier. R-031 (Germany: signature on the
-                # last page) is the live case: it was downgraded from BINDING
-                # so it would not block every German CV, and it has no checker
-                # by design -- a wet signature is not visible from here.
-                # Staying silent would make the downgrade meaningless, turning
-                # "blocks everything" into "does nothing" with nothing in
-                # between. ADVISORY_STYLE stays silent: unverifiable style
-                # advice is noise, not risk.
+        if not any(
+            v.rule.key == "max_pages" and v.rule.enforcement == Enforcement.BINDING
+            for v in compact_violations
+        ):
+            artifact, violations = compact, compact_violations
+            asked = parse_font_rule(font_rule.value)[1] if font_rule is not None else None
+            if font_rule is not None and asked is not None and asked > 10:
                 violations.append(
-                    ConstraintViolation(rule, f"no pre-flight check for {rule.key!r}")
+                    ConstraintViolation(
+                        font_rule,
+                        f"set at 10 pt (programme asks {asked:g} pt) "
+                        f"to meet the {cap.value}-page limit",
+                    )
                 )
-            continue
-        try:
-            detail = checker(rule, clean, artifact)
-        except (TypeError, ValueError, KeyError, AttributeError) as exc:
-            # Malformed rule.value (wrong type/shape) is the same "we cannot
-            # verify it" case as an unrecognised key above -- fail closed as
-            # a violation instead of crashing this function for every other
-            # rule in the same list.
-            detail = f"could not evaluate rule: {exc}"
-        if detail is not None:
-            violations.append(ConstraintViolation(rule, detail))
     return artifact, tuple(violations)
 
 
@@ -1054,6 +1514,7 @@ def render_cv(
     funder_template_id: str | None = None,
     allow_network: bool = False,
     directives: tuple[PageDirective, ...] = (),
+    today: date | None = None,
 ) -> RenderedArtifact:
     """Preview render. Nothing produced here is persisted -- see render_draft."""
     artifact, violations = render_cv_with_warnings(
@@ -1063,11 +1524,44 @@ def render_cv(
         funder_template_id=funder_template_id,
         allow_network=allow_network,
         directives=directives,
+        today=today,
     )
     binding = [v for v in violations if v.rule.enforcement == Enforcement.BINDING]
     if binding:
         raise PreflightBlocked("; ".join(f"{v.rule.rule_id}: {v.detail}" for v in binding))
     return artifact
+
+
+def draft_rules(
+    draft: DocumentDraft, content: CVContent
+) -> tuple[ConstraintRule, ...]:
+    """The CV rules for `draft`: its own saved `RequirementList` when present,
+    or a live `resolve_rules` lookup for a legacy draft (`requirements=None`)."""
+    if draft.requirements is not None:
+        return RequirementList.model_validate(draft.requirements).cv_rules()
+    return resolve_rules(
+        draft.programme, draft.funding_opportunity, content=content
+    )
+
+
+def draft_directives(draft: DocumentDraft) -> tuple[PageDirective, ...]:
+    """The CV directives for `draft`: its own saved `RequirementList` when
+    present, or a live `directives_from_program` lookup for a legacy draft."""
+    if draft.requirements is not None:
+        return RequirementList.model_validate(draft.requirements).cv_directives()
+    return directives_from_program(draft.programme) if draft.programme is not None else ()
+
+
+def _funder_template_id_for_draft(draft: DocumentDraft) -> str | None:
+    """Resolve the funder template ID (`"SISGP"`, `"RHODES"`, `"AUSTRALIA_AWARDS"`)
+    from `draft.funding_opportunity.canonical_key` when it matches a built-in template."""
+    key = (
+        (getattr(draft.funding_opportunity, "canonical_key", "") or "")
+        .strip()
+        .upper()
+        .replace("-", "_")
+    )
+    return key if key and key in _funder_dispatch() else None
 
 
 def render_draft(
@@ -1081,10 +1575,10 @@ def render_draft(
         raise DraftNotApproved(f"draft is {draft.status}, not APPROVED")
     content = CVContent.model_validate(draft.content)
     if not constraints:
-        constraints = resolve_rules(
-            draft.programme, draft.funding_opportunity, content=content
-        )
+        constraints = draft_rules(draft, content)
     variant = resolve_variant(draft)
+    if funder_template_id is None and variant == "FUNDER_TEMPLATE":
+        funder_template_id = _funder_template_id_for_draft(draft)
     # Per-STUDENT abuse guard only -- "one student cannot trigger a hundred
     # renders", keyed by draft.student_id on Django's cache (shared Redis/Valkey
     # in production, apps/ratelimit.py). The GLOBAL rate control is not here --
@@ -1100,13 +1594,15 @@ def render_draft(
         window_seconds=_EUROPASS_RENDER_WINDOW_SECONDS,
     ):
         raise RenderRateLimited("Europass render rate limit reached; retry later")
-    return render_cv(
+    artifact, violations = render_cv_with_warnings(
         content,
         variant=variant,
         constraints=constraints,
         funder_template_id=funder_template_id,
         allow_network=True,
-        directives=directives_from_program(draft.programme)
-        if draft.programme is not None
-        else (),
+        directives=draft_directives(draft),
     )
+    binding = [v for v in violations if v.rule.enforcement == Enforcement.BINDING]
+    if binding:
+        raise PreflightBlocked("; ".join(f"{v.rule.rule_id}: {v.detail}" for v in binding))
+    return replace(artifact, warnings=violations)

@@ -11,11 +11,14 @@ indistinguishable from a right one to everything downstream) goes to
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
 from django.conf import settings
+from django.core.cache import cache
 from pydantic import BaseModel, ConfigDict, Field
 
 from apps.funding.models import ProgramStatement
@@ -312,8 +315,46 @@ _MODEL_READ_KIND = "technique"
 _ORDER = {"REQUIRED": 0, "DESIRED": 1}
 
 
+def _judge_cache_key(
+    student_id: UUID,
+    facts: Sequence[PooledFact],
+    competencies: Sequence[ProgramStatement],
+) -> str:
+    payload = json.dumps(
+        {
+            "facts": [
+                [
+                    str(f.fact_id),
+                    f.category,
+                    f.kind,
+                    f.name,
+                    f.evidence[:_MAX_JUDGE_ROW_TEXT_CHARS],
+                ]
+                for f in facts[:_MAX_JUDGE_ROWS]
+            ],
+            "wanted": [
+                [
+                    str(c.id),
+                    c.requirement,
+                    c.label,
+                    c.text[:_MAX_JUDGE_ROW_TEXT_CHARS],
+                ]
+                for c in competencies[:_MAX_JUDGE_ROWS]
+            ],
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(payload.encode()).hexdigest()
+    return f"cv-skill-match:{student_id}:{digest}"
+
+
 def tailor_skills(
-    student: Membership, competencies: Sequence[ProgramStatement], *, parser: ResponsesAPI
+    student: Membership,
+    competencies: Sequence[ProgramStatement],
+    *,
+    parser: ResponsesAPI,
+    use_cache: bool = False,
 ) -> TailoredSkills:
     """What prints, in what order, and what the programme asked for in vain.
 
@@ -341,21 +382,47 @@ def tailor_skills(
     # make a guaranteed-empty one, and skip the rate-limit slot with it: the limiter
     # exists to bound paid calls, not calls to this function.
     if unmatched_facts and unmatched_wanted:
-        if rate_limited(
-            _RATE_LIMIT_BUCKET,
-            student.id,
-            limit=_RATE_LIMIT,
-            window_seconds=_RATE_LIMIT_WINDOW_SECONDS,
-        ):
-            raise SkillMatchRateLimited(
-                f"skill-match rate limit exceeded for student {student.id}"
-            )
-        matched += judge_remainder(
-            parser,
-            student_id=str(student.id),
-            facts=unmatched_facts,
-            competencies=unmatched_wanted,
+        cache_key = (
+            _judge_cache_key(student.id, unmatched_facts, unmatched_wanted)
+            if use_cache
+            else ""
         )
+        cached_pairs = cache.get(cache_key) if cache_key else None
+        if isinstance(cached_pairs, list):
+            known_facts = {str(f.fact_id): f for f in unmatched_facts[:_MAX_JUDGE_ROWS]}
+            known_wanted = {str(c.id): c for c in unmatched_wanted[:_MAX_JUDGE_ROWS]}
+            matched += tuple(
+                Match(
+                    fact=known_facts[fact_id],
+                    competency_id=known_wanted[comp_id].id,
+                    requirement=known_wanted[comp_id].requirement,
+                )
+                for fact_id, comp_id in cached_pairs
+                if fact_id in known_facts and comp_id in known_wanted
+            )
+        else:
+            if rate_limited(
+                _RATE_LIMIT_BUCKET,
+                student.id,
+                limit=_RATE_LIMIT,
+                window_seconds=_RATE_LIMIT_WINDOW_SECONDS,
+            ):
+                raise SkillMatchRateLimited(
+                    f"skill-match rate limit exceeded for student {student.id}"
+                )
+            judged = judge_remainder(
+                parser,
+                student_id=str(student.id),
+                facts=unmatched_facts,
+                competencies=unmatched_wanted,
+            )
+            matched += judged
+            if cache_key:
+                cache.set(
+                    cache_key,
+                    [(str(m.fact.fact_id), str(m.competency_id)) for m in judged],
+                    timeout=_RATE_LIMIT_WINDOW_SECONDS,
+                )
 
     matched_ids = {m.fact.fact_id for m in matched}
     still_wanted = {c.id for c in competencies} - {m.competency_id for m in matched}

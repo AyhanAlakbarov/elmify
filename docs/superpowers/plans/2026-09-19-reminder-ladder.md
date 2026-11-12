@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Run the suite against this worktree's own database: `POSTGRES_DB=tehsil_mailbox uv run pytest -q`.** `config/settings/database.py` defaults `POSTGRES_DB` to `"tehsil"`, so every worktree otherwise shares one `test_tehsil` and concurrent sessions kill each other's runs.
+- **Run the suite against this worktree's own database: `POSTGRES_DB=elmify_mailbox uv run pytest -q`.** `config/settings/database.py` defaults `POSTGRES_DB` to `"elmify"`, so every worktree otherwise shares one `test_elmify` and concurrent sessions kill each other's runs.
 - Every command runs through `uv run`. Never invoke `pytest`, `python`, `ruff` or `mypy` directly.
 - **Never run `uv run ruff format` on a directory or on a pre-existing file.** ruff 0.16.6 rewrites this repo's `except (A, B, C):` tuples into invalid Python, and nothing in CI runs the formatter, so there is nothing to conform to. Format only a brand-new file you wrote, then confirm it still parses.
 - Run `uv run ruff check`, `uv run mypy` and `uv run bandit -c pyproject.toml -r apps config` before each commit.
@@ -87,7 +87,7 @@ def test_an_application_starts_with_no_reminder_item(application):
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_model.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_model.py -v`
 Expected: FAIL — `ImportError: cannot import name 'ReminderSent' from 'apps.portals.models'`
 
 - [ ] **Step 3: Add the model and the field**
@@ -149,7 +149,7 @@ In `apps/portals/models.py`, immediately after the `exception_item` field on `Ap
 
 - [ ] **Step 4: Generate the migration, then hand-write its RLS**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run python manage.py makemigrations portals --name reminder_ladder`
+Run: `POSTGRES_DB=elmify_mailbox uv run python manage.py makemigrations portals --name reminder_ladder`
 
 Then edit `apps/portals/migrations/0014_reminder_ladder.py` so it reads as below, keeping the `CreateModel` and `AddField` operations the autodetector wrote and appending the two `RunSQL` operations. The RLS block is copied from `apps/mailbox/migrations/0001_initial.py`.
 
@@ -201,7 +201,7 @@ Append these two operations to the migration's `operations` list, after the gene
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_model.py tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_model.py tests/tenancy/test_database_isolation.py -v`
 Expected: PASS. The isolation suite is included because it is what proves the new table actually carries its policy.
 
 - [ ] **Step 6: Check and commit**
@@ -209,7 +209,7 @@ Expected: PASS. The isolation suite is included because it is what proves the ne
 ```bash
 uv run ruff check apps/portals tests/portals
 uv run mypy apps/portals
-POSTGRES_DB=tehsil_mailbox uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_mailbox uv run python manage.py makemigrations --check --dry-run
 git add apps/portals/models.py apps/portals/migrations/0014_reminder_ladder.py tests/portals/test_reminder_model.py
 git commit -m "feat(portals): a reminder is recorded once, by constraint"
 ```
@@ -283,7 +283,7 @@ def test_the_new_fields_are_classified_for_erasure():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/tenancy/test_quiet_hours_fields.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/tenancy/test_quiet_hours_fields.py -v`
 Expected: FAIL — `ImportError: cannot import name 'validate_timezone_name'`
 
 - [ ] **Step 3: Add the validator and the three fields**
@@ -335,13 +335,13 @@ In `apps/audit/redaction.py`, replace line 125 with:
 
 - [ ] **Step 4: Generate the migration**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run python manage.py makemigrations tenancy --name membership_quiet_hours`
+Run: `POSTGRES_DB=elmify_mailbox uv run python manage.py makemigrations tenancy --name membership_quiet_hours`
 
 No hand-written SQL is needed: `tenancy_membership` is an existing table that already carries its policy, and these are plain column additions.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/tenancy/test_quiet_hours_fields.py tests/audit -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/tenancy/test_quiet_hours_fields.py tests/audit -v`
 Expected: PASS. The audit suite is included because `tests/audit/test_redaction_classification.py` is what fails if a new student-reachable field is left unclassified.
 
 - [ ] **Step 6: Check and commit**
@@ -450,7 +450,7 @@ def test_the_phrase_counts_hours_inside_two_days():
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_logic.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_logic.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.reminders'`
 
 - [ ] **Step 3: Write the module**
@@ -540,7 +540,7 @@ def remaining_phrase(remaining: timedelta) -> str:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_logic.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_logic.py -v`
 Expected: PASS, 12 tests.
 
 - [ ] **Step 5: Check and commit**
@@ -683,7 +683,7 @@ def test_an_inactive_assignment_is_not_a_counselor(
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_channels.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_channels.py -v`
 Expected: FAIL — `ImportError: cannot import name 'notify_student' from 'apps.portals.reminders'`
 
 - [ ] **Step 3: Add the two writers**
@@ -772,7 +772,7 @@ def notify_counselor(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_channels.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_channels.py -v`
 Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Check and commit**
@@ -842,12 +842,12 @@ def test_nothing_is_sent_while_no_from_address_is_configured(settings, applicati
 
 
 def test_a_configured_sender_reaches_the_application_address(settings, application):
-    settings.REMINDER_EMAIL_FROM = "reminders@tehsil.example"
+    settings.REMINDER_EMAIL_FROM = "reminders@elmify.example"
 
     assert email_student(application, timedelta(days=3)) is True
     assert len(mail.outbox) == 1
     assert mail.outbox[0].to == ["student@example.test"]
-    assert mail.outbox[0].from_email == "reminders@tehsil.example"
+    assert mail.outbox[0].from_email == "reminders@elmify.example"
     assert "3 days" in mail.outbox[0].body
 
 
@@ -856,7 +856,7 @@ def test_a_student_with_no_confirmed_address_is_skipped(
 ):
     """No fallback to user.email -- that address is signup and login only, and
     Membership.application_email's own docstring says so."""
-    settings.REMINDER_EMAIL_FROM = "reminders@tehsil.example"
+    settings.REMINDER_EMAIL_FROM = "reminders@elmify.example"
     with tenant_scope(agency_a.id):
         application.student.application_email = ""
         application.student.save(update_fields=["application_email"])
@@ -867,7 +867,7 @@ def test_a_student_with_no_confirmed_address_is_skipped(
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_email.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_email.py -v`
 Expected: FAIL — `ImportError: cannot import name 'email_student'`
 
 - [ ] **Step 3: Add the setting and the channel**
@@ -930,7 +930,7 @@ def email_student(application: Application, remaining: timedelta) -> bool:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_email.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_email.py -v`
 Expected: PASS, 3 tests.
 
 - [ ] **Step 5: Check and commit**
@@ -1117,7 +1117,7 @@ def test_a_student_with_no_address_still_gets_the_dashboard_rung(
     dashboard is the channel that always works."""
     from django.core import mail
 
-    settings.REMINDER_EMAIL_FROM = "reminders@tehsil.example"
+    settings.REMINDER_EMAIL_FROM = "reminders@elmify.example"
     with tenant_scope(agency_a.id):
         membership_a.application_email = ""
         membership_a.save(update_fields=["application_email"])
@@ -1158,7 +1158,7 @@ def test_the_counselor_is_only_asked_inside_a_day(
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_sweep.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_sweep.py -v`
 Expected: FAIL — `ImportError: cannot import name 'send_due_reminders_for_tenant'`
 
 - [ ] **Step 3: Write the sweep**
@@ -1286,7 +1286,7 @@ def _remind_one(application_id: UUID, moment: datetime) -> bool:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_reminder_sweep.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_reminder_sweep.py -v`
 Expected: PASS, 12 tests (the state parametrisation counts as three).
 
 - [ ] **Step 5: Check and commit**
@@ -1382,7 +1382,7 @@ def test_the_sweep_works_behind_real_row_level_security(
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_send_due_reminders_command.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_send_due_reminders_command.py -v`
 Expected: FAIL — `CommandError: Unknown command: 'send_due_reminders'`
 
 - [ ] **Step 3: Write the command**
@@ -1421,7 +1421,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/portals/test_send_due_reminders_command.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/portals/test_send_due_reminders_command.py -v`
 Expected: PASS, 3 tests.
 
 - [ ] **Step 5: Check and commit**
@@ -1492,7 +1492,7 @@ def test_the_ladder_ships_with_its_schedule(template: Template) -> None:
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/infra/test_template.py -k reminder_ladder -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/infra/test_template.py -k reminder_ladder -v`
 Expected: FAIL — `AssertionError: ReminderLadderRule is not defined in infra/template.yaml`
 
 - [ ] **Step 3: Add the rule**
@@ -1530,13 +1530,13 @@ In `infra/template.yaml`, immediately after the `EuropassCanaryRule` resource (i
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/infra/test_template.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/infra/test_template.py -v`
 Expected: PASS, including the four new tests.
 
 - [ ] **Step 5: Run the whole suite and commit**
 
 ```bash
-POSTGRES_DB=tehsil_mailbox uv run pytest -q
+POSTGRES_DB=elmify_mailbox uv run pytest -q
 uv run ruff check apps tests config
 uv run mypy apps
 uv run bandit -c pyproject.toml -r apps config

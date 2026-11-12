@@ -949,3 +949,36 @@ def test_trimming_the_trail_keeps_every_permanent_wayback_answer():
     assert len(row.trail) == 200
     assert [t for t in row.trail if t["outcome"] == "LOOKED"] == looked
     assert row.trail[-1]["outcome"] == "DEAD"  # the newest rows survive too
+
+
+def test_programme_scoped_negation_classified_as_i2_joins_i5_dual_degree_award():
+    em_subject = Subject(
+        name="Erasmus Mundus Joint Master in Chemoinformatics+",
+        kind="I5_FUNDED_DUAL_DEGREE",
+        scope="PROGRAM",
+        own_urls=("https://masterchemoinfo.u-strasbg.fr/",),
+        domains=frozenset({"u-strasbg.fr"}),
+        primary_domain="u-strasbg.fr",
+        ambiguous=False,
+        cadence=None,
+        languages=(),
+    )
+    subpage_negation = _decision(
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        offered="NO",
+        applies_to="2027-2029",
+        suspension_quote=(
+            "The recruitment of the 2027-2029 student intake will be without scholarship."
+        ),
+        quotes=("The recruitment of the 2027-2029 student intake will be without scholarship.",),
+    )
+    assert joins(subpage_negation, em_subject) is True
+    # Positive decisions of a different kind still do not join:
+    subpage_positive = _decision(
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        offered="YES",
+    )
+    assert joins(subpage_positive, em_subject) is False
+

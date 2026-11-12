@@ -391,3 +391,120 @@ def test_prior_institution_with_no_academic_history_is_undecidable_not_failed():
     outcome = decide(_t("PRIOR_INSTITUTION", "IN", "AZ"), _Profile(academic_history=()))
     assert outcome.outcome == "UNDECIDABLE"
     assert "academic history" in outcome.reason.casefold()
+
+
+def test_asean_is_exactly_its_eleven_members():
+    # Source: https://asean.org/member-states/ (checked 2026-10-12): eleven
+    # Member States, Timor-Leste joined 26 October 2025.
+    from apps.funding.regions import REGIONS
+
+    assert set(REGIONS["ASEAN"].countries) == {
+        "BN", "ID", "KH", "LA", "MM", "MY", "PH", "SG", "TH", "TL", "VN",
+    }
+
+
+def test_commonwealth_is_exactly_its_fifty_six_members():
+    # Source: https://thecommonwealth.org/our-member-countries (checked
+    # 2026-10-12): 56 members; Togo joined June 2022, South Sudan is not one.
+    from apps.funding.regions import REGIONS
+
+    assert set(REGIONS["COMMONWEALTH"].countries) == set(
+        "AG AU BS BD BB BZ BW BN CM CA CY DM SZ FJ GA GM GH GD GY IN JM KE KI LS MW MY"
+        " MV MT MU MZ NA NR NZ NG PK PG RW LC WS SC SL SG SB ZA LK KN VC TZ TG TO TT TV"
+        " UG GB VU ZM".split()
+    )
+
+
+def test_grade_slash_scale_german_lte_and_language_test_to_cefr_seams():
+    # 1. Slash-separated GRADE ("3.0/4.0") and space-separated ("3.0 4.0") match "GPA 4.0"
+    profile = _Profile()  # 3.6 on "GPA 4.0"
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), profile).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "GTE", "3.0 4.0"), profile).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "GTE", "3.8/4.0"), profile).outcome == "FAILED"
+
+    # 2. Inverted German scale (1.0 is best, 2.0 <= 2.5 satisfies LTE)
+    de_profile = _Profile(
+        academic_history=(
+            _Academic(grade="ungraded", grading_scale="1.0-4.0"),
+            _Academic(grade="2,0", grading_scale="1.0-4.0"),
+        )
+    )
+    assert decide(_t("GRADE", "LTE", "2.5 1.0-4.0"), de_profile).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "LTE", "1.5 1.0-4.0"), de_profile).outcome == "FAILED"
+
+    # 3. Bare CEFR or test token without a language name escalates as UNDECIDABLE (never FAILED)
+    lang_profile = _Profile(
+        language_evidence=(
+            _Language("English", "B1"),
+            _Language("English", "IELTS 7.0"),
+        )
+    )
+    assert decide(_t("LANGUAGE", "GTE", "B2"), lang_profile).outcome == "UNDECIDABLE"
+    assert decide(_t("LANGUAGE", "PRESENT", "IELTS 6.5"), lang_profile).outcome == "UNDECIDABLE"
+    assert (
+        decide(_t("LANGUAGE", "GTE", "UNSTATED_LANGUAGE B2"), lang_profile).outcome
+        == "UNDECIDABLE"
+    )
+    # Highest level across duplicate English entries ("IELTS 7.0" -> C1 >= B2) satisfies
+    assert decide(_t("LANGUAGE", "GTE", "English B2"), lang_profile).outcome == "SATISFIED"
+    assert (
+        decide(_t("LANGUAGE", "GTE", "English IELTS 6.5"), lang_profile).outcome == "SATISFIED"
+    )
+
+    # 4. Country group expansion from country-groups.csv and compound regions
+    dac_codes = expand_countries("DAC")
+    assert dac_codes is not None and "AZ" in dac_codes and "TR" in dac_codes
+    assert expand_countries("Eastern Partnership") == ("AM", "AZ", "GE", "MD", "UA")
+    eu_ch = expand_countries("EU,CH")
+    assert eu_ch is not None and "FR" in eu_ch and "CH" in eu_ch
+
+
+def test_cross_scale_grade_conversion_residence_12_month_prior_degree_not_in_and_work_years():
+    # 1. Cross-scale GRADE conversion: 90/100 satisfies GTE 3.0/4.0 and LTE 2.0 German 1-5
+    pct_profile = _Profile(academic_history=(_Academic(grade="90", grading_scale="100"),))
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), pct_profile).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "LTE", "2.0 German 1-5"), pct_profile).outcome == "SATISFIED"
+    low_pct_profile = _Profile(academic_history=(_Academic(grade="55", grading_scale="100"),))
+    assert decide(_t("GRADE", "GTE", "3.5/4.0"), low_pct_profile).outcome == "FAILED"
+    assert decide(_t("GRADE", "LTE", "2.0 German 1-5"), low_pct_profile).outcome == "FAILED"
+
+    # 2. PRIOR_DEGREE NOT_IN and LTE for excluded higher degrees
+    msc_profile = _Profile(
+        academic_history=(
+            _Academic(qualification="Bachelor of Science"),
+            _Academic(qualification="Master of Science"),
+        )
+    )
+    bsc_profile = _Profile(academic_history=(_Academic(qualification="Bachelor of Science"),))
+    assert (
+        decide(_t("PRIOR_DEGREE", "NOT_IN", "MASTER,DOCTORATE"), bsc_profile).outcome == "SATISFIED"
+    )
+    assert decide(_t("PRIOR_DEGREE", "NOT_IN", "MASTER,DOCTORATE"), msc_profile).outcome == "FAILED"
+    assert decide(_t("PRIOR_DEGREE", "LTE", "BACHELOR"), bsc_profile).outcome == "SATISFIED"
+    assert decide(_t("PRIOR_DEGREE", "LTE", "BACHELOR"), msc_profile).outcome == "FAILED"
+
+    # 3. RESIDENCE PRESENT evaluates Erasmus 12-month / 5-year rule
+    erasmus_rule = _t(
+        "RESIDENCE",
+        "PRESENT",
+        "12-month rule",
+        quote=(
+            "Applicants must not have resided or carried out their main activity in a "
+            "Programme Country for more than a total of 12 months over the last 5 years."
+        ),
+    )
+    assert decide(erasmus_rule, _Profile(country_of_residence="AZ")).outcome == "SATISFIED"
+    assert decide(erasmus_rule, _Profile(country_of_residence="DE")).outcome == "FAILED"
+
+    # 4. WORK_EXPERIENCE in YEARS or prose ("2 years")
+    exp_profile = _Profile(experience=(_Experience("WORK", 24),))
+    assert decide(_t("WORK_EXPERIENCE", "GTE", "2", "YEARS"), exp_profile).outcome == "SATISFIED"
+    assert decide(_t("WORK_EXPERIENCE", "GTE", "3", "YEARS"), exp_profile).outcome == "FAILED"
+    assert decide(_t("WORK_EXPERIENCE", "GTE", "2 years"), exp_profile).outcome == "SATISFIED"
+
+    # 5. ISO2: compact country code expansion and ALL_COUNTRIES
+    assert expand_countries("ISO2:AZTRGE") == ("AZ", "TR", "GE")
+    all_c = expand_countries("ALL_COUNTRIES")
+    assert all_c is not None and "AZ" in all_c and "ZW" in all_c
+
+

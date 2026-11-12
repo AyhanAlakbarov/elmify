@@ -1,23 +1,29 @@
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Literal
 from uuid import UUID
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.accounts.models import StudentProfileVersion
 from apps.dashboard.board import board_for
+from apps.dashboard.device import apply_blocker
 from apps.dashboard.locks import paused_reason
-from apps.dashboard.mylist import country_groups, missing_links, option_page
+from apps.dashboard.mylist import country_groups
 from apps.dashboard.needs import items_for
+from apps.dashboard.new_for_you import offers_for
 from apps.dashboard.overview import build_overview
+from apps.documents.storage import staff_may_view
+from apps.documents.transcript_check import transcript_to_check
 from apps.funding.models import AuditEvent
 from apps.mailbox.models import MAX_CLASSIFY_ATTEMPTS, MailboxConnection, MailSignal
 from apps.portals.models import Application
+from apps.portals.pairing import active_pairings
 from apps.ratelimit import rate_limited
 from apps.tenancy.models import CounselorAssignment, Membership, SupportGrant
 from apps.tenancy.services import current_membership, require_active_support_grant
@@ -49,21 +55,45 @@ def _counselor_dashboard_page(
     assignments = CounselorAssignment.objects.filter(
         counselor=counselor, active=True
     ).select_related("student__user")
-    student_ids = [assignment.student_id for assignment in assignments]
-    items = RoadmapItem.objects.filter(student_id__in=student_ids).select_related("student__user")
+    students = [assignment.student for assignment in assignments]
+    items = RoadmapItem.objects.filter(student__in=students).select_related("student__user")
     return render(
         request,
         "counselor/dashboard.html",
         # error_form carries the failing roadmap item's id so the alert
         # renders inside that item's form, not at the top of the page.
-        {"assignments": assignments, "items": items, "error": error, "error_form": error_form},
+        {
+            "students": students,
+            "assignments": assignments,
+            "items": items,
+            "error": error,
+            "error_form": error_form,
+        },
         status=status,
     )
 
 
 @login_required
 def counselor_dashboard(request: HttpRequest) -> HttpResponse:
-    counselor = current_membership(request, Membership.Role.COUNSELOR)
+    try:
+        counselor = current_membership(request, Membership.Role.COUNSELOR)
+    except PermissionDenied:
+        # Elmify staff list every student of the agency (owner decision 2026-10-11); no tasks.
+        staff = current_membership(request, Membership.Role.PLATFORM_ADMIN)
+        students = Membership.objects.filter(
+            role=Membership.Role.STUDENT, active=True
+        ).select_related("user")
+        # A paused student is hidden from staff, name included (staff_may_view).
+        visible = [s for s in students if staff_may_view(staff, s)]
+        return render(
+            request,
+            "counselor/dashboard.html",
+            {
+                "students": visible,
+                "assignments": [SimpleNamespace(student=s, student_id=s.id) for s in visible],
+                "items": [],
+            },
+        )
     return _counselor_dashboard_page(request, counselor)
 
 
@@ -104,8 +134,11 @@ def owner_dashboard(request: HttpRequest) -> HttpResponse:
     current_membership(request, Membership.Role.OWNER)
     from apps.leads.models import DemoRequest
 
-    items = RoadmapItem.objects.select_related("student__user", "owner__user").all()
-    demo_requests = DemoRequest.objects.all()[:50]
+    items = RoadmapItem.objects.select_related("student__user", "owner__user").all()[:200]
+    demo_requests = list(DemoRequest.objects.all()[:50])
+    student_roles = {DemoRequest.Role.STUDENT, DemoRequest.Role.PARENT}
+    agency_demo_requests = [d for d in demo_requests if d.role not in student_roles]
+    student_demo_requests = [d for d in demo_requests if d.role in student_roles]
     counselors = list(
         Membership.objects.filter(role=Membership.Role.COUNSELOR, active=True)
         .select_related("user")
@@ -126,6 +159,8 @@ def owner_dashboard(request: HttpRequest) -> HttpResponse:
         {
             "items": items,
             "demo_requests": demo_requests,
+            "agency_demo_requests": agency_demo_requests,
+            "student_demo_requests": student_demo_requests,
             "students": students,
             "counselors": counselors,
         },
@@ -158,6 +193,9 @@ def owner_assign_counselor(request: HttpRequest, student_id: UUID) -> HttpRespon
     CounselorAssignment.objects.filter(student=student, active=True).update(active=False)
     if counselor is not None:
         CounselorAssignment.objects.create(counselor=counselor, student=student)
+        RoadmapItem.objects.filter(
+            student=student, state=RoadmapItem.State.IN_PROGRESS
+        ).update(owner=counselor)
     AuditEvent.objects.create(
         actor=owner,
         actor_kind=AuditEvent.ActorKind.HUMAN,
@@ -173,13 +211,37 @@ def owner_assign_counselor(request: HttpRequest, student_id: UUID) -> HttpRespon
     return redirect("concierge-owner-dashboard")
 
 
-def _student_dashboard_page(request: HttpRequest, student: Membership) -> HttpResponse:
+def _student_dashboard_page(
+    request: HttpRequest,
+    student: Membership,
+    *,
+    status: int = 200,
+    error: str | None = None,
+    error_form: str | None = None,
+    error_field: str | None = None,
+    form_values: dict[str, str] | None = None,
+) -> HttpResponse:
     board = board_for(student)
     needs = items_for(student, board=board)
     return render(
         request,
         "student/dashboard.html",
-        {"needs": needs, "overview": build_overview(student, board, needs)},
+        {
+            "board": board,
+            "needs": needs,
+            "overview": build_overview(student, board, needs),
+            "offers": offers_for(student, board=board, table=board.rates, home=board.home),
+            "outcome_choices": Application.Outcome.choices,
+            "transcript_to_check": transcript_to_check(student),
+            "error": error,
+            "error_form": error_form,
+            "error_field": error_field,
+            "form_values": form_values or {},
+            "apply_blocker": apply_blocker(
+                request.headers.get("User-Agent", ""), paired=active_pairings(student).exists()
+            ),
+        },
+        status=status,
     )
 
 
@@ -191,9 +253,7 @@ def student_dashboard(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def student_applications(request: HttpRequest) -> HttpResponse:
-    """My list: grouped by country (default) or by stage (the board).
-
-    The home page keeps only the milestones and what needs doing next."""
+    """My list: grouped by country (default) or by stage (the board)."""
     student = current_membership(request, Membership.Role.STUDENT)
     board = board_for(student)
     by_stage = request.GET.get("view") == "stage"
@@ -205,35 +265,9 @@ def student_applications(request: HttpRequest) -> HttpResponse:
             "by_stage": by_stage,
             "groups": () if by_stage else country_groups(student.id, board),
             "outcome_choices": Application.Outcome.choices,
-        },
-    )
-
-
-@login_required
-def student_option(request: HttpRequest, application_id: UUID) -> HttpResponse:
-    """One option on the list: everything about it, why the student fits, and
-    where their application stands. Tenant copies only (dashboard.mylist)."""
-    student = current_membership(request, Membership.Role.STUDENT)
-    application = get_object_or_404(
-        Application.objects.select_related("candidate__evidence"),
-        id=application_id,
-        student=student,
-    )
-    if application.candidate is None:
-        raise Http404
-    card = next(
-        (c for c in board_for(student).cards if c.application_id == application.id), None
-    )
-    if card is None:
-        raise Http404
-    return render(
-        request,
-        "student/option.html",
-        {
-            "card": card,
-            "page": option_page(application.candidate),
-            "missing": missing_links(card),
-            "outcome_choices": Application.Outcome.choices,
+            "apply_blocker": apply_blocker(
+                request.headers.get("User-Agent", ""), paired=active_pairings(student).exists()
+            ),
         },
     )
 
@@ -326,14 +360,25 @@ def messages_page(request: HttpRequest) -> HttpResponse:
 def send_student_message(request: HttpRequest) -> HttpResponse:
     student = current_membership(request, Membership.Role.STUDENT)
     raw = request.POST.get("body", "")
-    # The composer lives on the Messages page only, so errors re-render there.
+    # Only the named route; any other value (or a URL) is ignored.
+    back_to_messages = request.POST.get("return_to") == "messages"
 
     def _message_error(message: str, *, status: int) -> HttpResponse:
         # Same inline-error contract as the counselor dashboard (design-lint
         # baseline defect 5, student side): keep the status code, re-render
         # the page with the alert, and preserve the typed message.
-        return _messages_page(
-            request, student, status=status, error=message, form_values={"body": raw.strip()}
+        if back_to_messages:
+            return _messages_page(
+                request, student, status=status, error=message, form_values={"body": raw.strip()}
+            )
+        return _student_dashboard_page(
+            request,
+            student,
+            status=status,
+            error=message,
+            error_form="message",
+            error_field="body",
+            form_values={"body": raw.strip()},
         )
 
     if rate_limited(
@@ -349,11 +394,12 @@ def send_student_message(request: HttpRequest) -> HttpResponse:
     except MessageBodyError as error:
         return _message_error(str(error), status=error.status)
     send_message(student=student, counselor=assignment.counselor, sender=student, body=body)
-    return redirect("student-messages")
+    return redirect("student-messages" if back_to_messages else "concierge-student-dashboard")
 
 
 @login_required
 def admin_support_grant(request: HttpRequest) -> HttpResponse:
+    current_membership(request, Membership.Role.PLATFORM_ADMIN)
     tenant = request.tenant  # type: ignore[attr-defined]
     assert request.user.pk is not None
     try:

@@ -496,3 +496,30 @@ def test_a_success_with_no_cost_header_is_billed_the_tariff_not_zero(public_dns)
     )
 
     assert page.cost_credits == 25
+
+
+def test_a_deadline_caps_scrape_dos_clock_and_the_http_wait(public_dns):
+    seen = {}
+
+    def get(url, total_s=None):
+        seen["url"], seen["total_s"] = url, total_s
+        return 200, b"y" * 1000, urllib3.HTTPHeaderDict(
+            {"scrape.do-resolved-url": "https://example.test/a"})
+
+    scrapedo.scrape("https://example.test/a", api_key="k", get=get, timeout_s=8.0)
+    assert "timeout=8000" in seen["url"] and seen["total_s"] == 8.0
+
+
+def test_a_short_deadline_sends_scrape_dos_documented_floor(public_dns):
+    """scrape.do's `timeout` must be between 5000 and 120000 ms
+    (https://scrape.do/documentation/api-response/timeout/): a 1 s deadline sends the floor,
+    never a value it would refuse; our own HTTP wait still ends at the deadline."""
+    seen = {}
+
+    def get(url, total_s=None):
+        seen["url"], seen["total_s"] = url, total_s
+        return 200, b"y" * 1000, urllib3.HTTPHeaderDict(
+            {"scrape.do-resolved-url": "https://example.test/a"})
+
+    scrapedo.scrape("https://example.test/a", api_key="k", get=get, timeout_s=1.0)
+    assert "timeout=5000" in seen["url"] and seen["total_s"] == 1.0

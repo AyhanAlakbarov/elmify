@@ -1,0 +1,107 @@
+{% load cv_countries %}<!DOCTYPE html>
+<html lang="{{ content.document_language }}">
+<head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 16mm 14mm; }
+  body { font-family: "Arial", "DejaVu Sans", sans-serif; font-size: 10pt; font-kerning: none; line-height: 1.25; }
+  h1 { font-size: 14pt; margin: 0 0 8pt; }
+  h2 { font-size: 10.5pt; text-transform: uppercase; border-bottom: 1px solid #333; margin-top: 12pt; margin-bottom: 4pt; }
+  p.sub { font-size: 9pt; font-style: italic; margin: 0 0 4pt; }
+  table.aa { border-collapse: collapse; width: 100%; margin-top: 4pt; font-size: 9.5pt; }
+  table.aa th, table.aa td { border: 1px solid #666; padding: 3pt 5pt; vertical-align: top; text-align: left; }
+  table.aa th { font-weight: bold; background: #f2f2f2; }
+  table.aa td.label { font-weight: bold; width: 48mm; }
+  ul { margin: 2pt 0 0; padding-left: 14pt; list-style: none; }
+  li { margin-bottom: 2pt; }
+  li::before { content: "•\00a0"; margin-left: -9pt; display: inline-block; width: 9pt; }
+</style></head>
+<body>
+  <h1>Curriculum Vitae Template for Australia Awards Applicants</h1>
+
+  <h2>Personal Details</h2>
+  <table class="aa">
+    <thead><tr><th>Area of Information</th><th>Applicant Details</th></tr></thead>
+    <tbody>
+      <tr><td class="label">Full name:</td><td>{{ fields.personal_details.full_name }}</td></tr>
+      <tr><td class="label">Date of birth:</td><td>{{ fields.personal_details.date_of_birth }}</td></tr>
+      <tr><td class="label">Mailing address:</td><td>{{ fields.personal_details.mailing_address }}</td></tr>
+      <tr><td class="label">Residential address:</td><td>{{ fields.personal_details.residential_address }}</td></tr>
+      <tr><td class="label">Permanent address (if different from above):</td><td>{{ fields.personal_details.permanent_address }}</td></tr>
+      <tr><td class="label">Mobile phone number:</td><td>{{ fields.personal_details.mobile_phone }}</td></tr>
+      <tr><td class="label">Email address:</td><td>{{ fields.personal_details.email }}</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Work Experience</h2>
+  <p class="sub">(full-time, post-Bachelor's degree/diploma; start from most recent experience in reverse chronological order)</p>
+  <table class="aa">
+    <thead>
+      <tr>
+        <th>Organisation name</th>
+        <th>Designation</th>
+        <th>Duty station (municipality/district)</th>
+        <th>Start date</th>
+        <th>End date</th>
+        <th>Total duration (in months)</th>
+        <th>Brief description of major responsibilities</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in fields.work_experience %}
+      <tr>
+        <td>{{ row.organisation_name }}</td>
+        <td>{{ row.designation }}</td>
+        <td>{{ row.duty_station }}</td>
+        <td>{{ row.start_date }}</td>
+        <td>{{ row.end_date }}</td>
+        <td>{% if row.total_duration_months is not None %}{{ row.total_duration_months }}{% endif %}</td>
+        <td>{{ row.responsibilities }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Academic Record</h2>
+  <p class="sub">(start from most recent degree in reverse chronological order)</p>
+  <table class="aa">
+    <thead>
+      <tr>
+        <th>Name and address of institution (school/college)</th>
+        <th>Degree obtained (SLC onwards)</th>
+        <th>Start date</th>
+        <th>End date</th>
+        <th>Final grade/score</th>
+        <th>Medium of instruction</th>
+        <th>Institution type (government or private)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in fields.academic_record %}
+      <tr>
+        <td>{{ row.institution_name_and_address }}</td>
+        <td>{{ row.degree_obtained }}</td>
+        <td>{{ row.start_date }}</td>
+        <td>{{ row.end_date }}</td>
+        <td>{{ row.final_grade }}</td>
+        <td>{{ row.medium_of_instruction }}</td>
+        <td>{{ row.institution_type }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h2>Awards / Honours / Commendations / Achievements</h2>
+  {% if fields.awards %}
+  <ul>{% for line in fields.awards %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  <h2>Details of Research Experience Including Publications</h2>
+  {% if fields.research_and_publications %}
+  <ul>{% for line in fields.research_and_publications %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  <h2>Details of Networks and Memberships</h2>
+  {% if fields.networks_and_memberships %}
+  <ul>{% for line in fields.networks_and_memberships %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
+</body>
+</html>

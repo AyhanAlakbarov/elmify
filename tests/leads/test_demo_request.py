@@ -121,3 +121,34 @@ def test_assigning_refuses_someone_who_is_not_a_counsellor(
     )
     with tenant_scope(agency_a.id):
         assert not CounselorAssignment.objects.exists()
+
+
+@pytest.mark.django_db
+def test_student_and_agency_demo_audiences_and_owner_separation(owner_client, agency_a, domain_a):
+    client, _owner = owner_client
+    student_page = client.get("/demo/?audience=student", HTTP_HOST=domain_a.host).content.decode()
+    assert "Book a student &amp; parent walkthrough" in student_page
+    assert 'value="STUDENT" selected' in student_page
+    assert "Current university (optional)" in student_page
+
+    agency_page = client.get("/demo/agency/", HTTP_HOST=domain_a.host).content.decode()
+    assert "30-day white-label agency pilot" in agency_page
+    assert 'value="AGENCY" selected' in agency_page
+
+    with tenant_scope(agency_a.id):
+        DemoRequest.objects.create(**{**FORM, "email": "nigar@agencyone.az"})
+        DemoRequest.objects.create(
+            full_name="Tural Mammadov",
+            email="tural@student.az",
+            role=DemoRequest.Role.STUDENT,
+            organisation="ADA University",
+            country="Azerbaijan",
+            message="Looking at MSc Data Science in Italy and Germany.",
+        )
+
+    owner_page = client.get("/owner/", HTTP_HOST=domain_a.host).content.decode()
+    assert "Agency &amp; university demo requests (1)" in owner_page
+    assert "Student &amp; parent walkthrough requests (1)" in owner_page
+    assert "Nigar Karimova" in owner_page
+    assert "Tural Mammadov" in owner_page
+

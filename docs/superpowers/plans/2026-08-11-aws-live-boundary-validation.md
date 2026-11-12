@@ -12,7 +12,7 @@
 
 - Tasks 1–4 make no billable AWS changes; authenticated calls in Task 4 are read-only validation calls.
 - Task 5 begins only after the user gives a final go/no-go immediately before ECR creation.
-- Use only `AWS_PROFILE=tehsil-sandbox` and `AWS_REGION=eu-central-1`; reject any other value.
+- Use only `AWS_PROFILE=elmify-sandbox` and `AWS_REGION=eu-central-1`; reject any other value.
 - Use the existing temporary AWS login session and create no access key.
 - Treat `$2 USD` as an operational ceiling, not a guaranteed hard cap.
 - Send `TERM` no later than 30 minutes after starting the live controller; cleanup may continue until deletion is proven.
@@ -113,7 +113,7 @@ def test_sqs_fairness_module_command_is_documented() -> None:
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task1-red uv run pytest tests/research/test_controlled_egress_validation.py tests/research/test_fairness_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-task1-red uv run pytest tests/research/test_controlled_egress_validation.py tests/research/test_fairness_validation.py -q
 ```
 
 Expected: the module `--help` subprocesses pass, while the template, override, and documentation assertions fail because they still use filesystem-script execution.
@@ -174,10 +174,10 @@ uv run python -m scripts.validate_sqs_fairness \
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task1-green uv run pytest tests/research/test_controlled_egress_validation.py tests/research/test_fairness_validation.py -q
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task1-green uv run python -m scripts.validate_controlled_egress --help
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task1-green uv run python -m scripts.validate_sqs_fairness --help
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task1-green uv run ruff check infra scripts tests
+UV_CACHE_DIR=/tmp/elmify-aws-live-task1-green uv run pytest tests/research/test_controlled_egress_validation.py tests/research/test_fairness_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-task1-green uv run python -m scripts.validate_controlled_egress --help
+UV_CACHE_DIR=/tmp/elmify-aws-live-task1-green uv run python -m scripts.validate_sqs_fairness --help
+UV_CACHE_DIR=/tmp/elmify-aws-live-task1-green uv run ruff check infra scripts tests
 ```
 
 Expected: all commands exit zero and make no AWS call.
@@ -291,7 +291,7 @@ def test_failed_controlled_validation_omits_private_stack_values(monkeypatch) ->
 - [x] **Step 2: Run the privacy tests and verify RED**
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task2-red uv run pytest tests/research/test_controlled_egress_validation.py::test_validation_records_substituted_stack_and_fargate_evidence tests/research/test_controlled_egress_validation.py::test_failed_controlled_validation_omits_private_stack_values tests/research/test_fairness_validation.py::test_validation_records_substituted_trials_and_metrics tests/research/test_fairness_validation.py::test_validation_records_client_failure -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-task2-red uv run pytest tests/research/test_controlled_egress_validation.py::test_validation_records_substituted_stack_and_fargate_evidence tests/research/test_controlled_egress_validation.py::test_failed_controlled_validation_omits_private_stack_values tests/research/test_fairness_validation.py::test_validation_records_substituted_trials_and_metrics tests/research/test_fairness_validation.py::test_validation_records_client_failure -q
 ```
 
 Expected: failures expose the current STS identity, queue URL/ARN, stack ID, raw outputs, and task ARN fields.
@@ -366,8 +366,8 @@ Do not add a generic recursive redactor; omitting private fields at construction
 - [x] **Step 6: Run GREEN and privacy scanning**
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task2-green uv run pytest tests/research/test_controlled_egress_validation.py tests/research/test_fairness_validation.py -q
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task2-green uv run ruff check scripts tests
+UV_CACHE_DIR=/tmp/elmify-aws-live-task2-green uv run pytest tests/research/test_controlled_egress_validation.py tests/research/test_fairness_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-task2-green uv run ruff check scripts tests
 ```
 
 Then serialize substituted results in the focused tests and verify that the prohibited strings are absent. Expected: all checks pass.
@@ -426,7 +426,7 @@ def _run_sourced(
         env={
             **os.environ,
             "TRACE": str(trace),
-            "AWS_PROFILE": "tehsil-sandbox",
+            "AWS_PROFILE": "elmify-sandbox",
             "AWS_REGION": "eu-central-1",
         },
         capture_output=True,
@@ -442,11 +442,11 @@ def test_controller_has_bounded_private_cleanup_contract() -> None:
     for fragment in (
         "set -Eeuo pipefail",
         "umask 077",
-        'EXPECTED_PROFILE="tehsil-sandbox"',
+        'EXPECTED_PROFILE="elmify-sandbox"',
         'EXPECTED_REGION="eu-central-1"',
         "trap finish EXIT",
         "trap 'exit 124' INT TERM",
-        "Project=tehsil-agent",
+        "Project=elmify",
         "Purpose=aws-boundary-validation",
         "--cleanup-only",
         "--preflight-only",
@@ -458,9 +458,9 @@ def test_controller_has_bounded_private_cleanup_contract() -> None:
     assert "get-login-password" in source
     assert "--password-stdin" in source
     for fragment in (
-        'LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/flow"',
+        'LogGroupName: !Sub "/elmify/validation/${AWS::StackName}/flow"',
         'ClusterName: !Sub "${AWS::StackName}-probe"',
-        'LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/probe"',
+        'LogGroupName: !Sub "/elmify/validation/${AWS::StackName}/probe"',
     ):
         assert fragment in template
 
@@ -583,7 +583,7 @@ def test_sigterm_still_runs_cleanup(tmp_path: Path) -> None:
         env={
             **os.environ,
             "TRACE": str(trace),
-            "AWS_PROFILE": "tehsil-sandbox",
+            "AWS_PROFILE": "elmify-sandbox",
             "AWS_REGION": "eu-central-1",
         },
         stdout=subprocess.PIPE,
@@ -627,7 +627,7 @@ def test_cleanup_only_refuses_unowned_resources(tmp_path: Path) -> None:
 - [x] **Step 2: Run RED**
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task3-red uv run pytest tests/test_aws_boundary_run_controller.py -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-task3-red uv run pytest tests/test_aws_boundary_run_controller.py -q
 ```
 
 Expected: failure because the controller does not exist.
@@ -648,10 +648,10 @@ Create `scripts/run_aws_boundary_validation.sh` with this fixed state and lifecy
 set -Eeuo pipefail
 umask 077
 
-EXPECTED_PROFILE="tehsil-sandbox"
+EXPECTED_PROFILE="elmify-sandbox"
 EXPECTED_REGION="eu-central-1"
-STACK_NAME="tehsil-phase1-validation"
-REPOSITORY_NAME="tehsil-phase1-validation-probe"
+STACK_NAME="elmify-phase1-validation"
+REPOSITORY_NAME="elmify-phase1-validation-probe"
 CONTROLLED_OUTPUT="docs/validation/controlled-egress.md"
 SQS_OUTPUT="docs/validation/sqs-fair-queue.md"
 RUN_OUTPUT="docs/validation/aws-boundary-run.md"
@@ -759,7 +759,7 @@ Use explicit, auditable resource names in `infra/template.yaml`:
   FlowLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/flow"
+      LogGroupName: !Sub "/elmify/validation/${AWS::StackName}/flow"
       RetentionInDays: 30
 
   ValidationCluster:
@@ -770,7 +770,7 @@ Use explicit, auditable resource names in `infra/template.yaml`:
   ProbeLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/probe"
+      LogGroupName: !Sub "/elmify/validation/${AWS::StackName}/probe"
       RetentionInDays: 7
 ```
 
@@ -796,19 +796,19 @@ preflight() {
   [[ "$(aws_cli sts get-caller-identity --query 'Account != null && Arn != null' --output text)" == "True" ]]
   [[ "$(stack_count)" == "0" ]]
   [[ "$(repository_count)" == "0" ]]
-  [[ "$(aws_cli logs describe-log-groups --log-group-name-prefix "/tehsil/validation/${STACK_NAME}/" --query 'length(logGroups)' --output text)" == "0" ]]
+  [[ "$(aws_cli logs describe-log-groups --log-group-name-prefix "/elmify/validation/${STACK_NAME}/" --query 'length(logGroups)' --output text)" == "0" ]]
 }
 
 publish_image() {
   echo "Deploy: publishing immutable probe image"
   REPOSITORY_URI="$(aws_cli ecr create-repository \
     --repository-name "$REPOSITORY_NAME" \
-    --tags Key=Project,Value=tehsil-agent Key=Purpose,Value=aws-boundary-validation \
+    --tags Key=Project,Value=elmify Key=Purpose,Value=aws-boundary-validation \
     --query 'repository.repositoryUri' --output text)"
   local registry="${REPOSITORY_URI%%/*}"
   aws_cli ecr get-login-password | docker_cli login --username AWS --password-stdin "$registry" >/dev/null 2>&1
-  docker_cli build --platform linux/amd64 --target web --tag tehsil-agent:aws-boundary . >/dev/null 2>&1
-  docker_cli tag tehsil-agent:aws-boundary "${REPOSITORY_URI}:validation"
+  docker_cli build --platform linux/amd64 --target web --tag elmify:aws-boundary . >/dev/null 2>&1
+  docker_cli tag elmify:aws-boundary "${REPOSITORY_URI}:validation"
   docker_cli push "${REPOSITORY_URI}:validation" >/dev/null 2>&1
   IMAGE_DIGEST="$(aws_cli ecr describe-images --repository-name "$REPOSITORY_NAME" \
     --image-ids imageTag=validation --query 'imageDetails[0].imageDigest' --output text)"
@@ -829,7 +829,7 @@ deploy_stack() {
     --template-file infra/template.yaml \
     --parameter-overrides "ProbeImage=${PROBE_IMAGE}" \
     --capabilities CAPABILITY_IAM \
-    --tags Project=tehsil-agent Purpose=aws-boundary-validation >/dev/null
+    --tags Project=elmify Purpose=aws-boundary-validation >/dev/null
   QUEUE_URL="$(stack_output ResearchQueueUrl)"
   CLUSTER_ARN="$(stack_output ProbeClusterArn)"
 }
@@ -852,7 +852,7 @@ Implement ownership checks and deletion without a retain/express escape hatch:
 ```bash
 stack_is_owned() {
   [[ "$(aws_cli cloudformation describe-stacks --stack-name "$STACK_NAME" \
-    --query "Stacks[0].Tags[?Key=='Project'].Value | [0]" --output text)" == "tehsil-agent" ]] &&
+    --query "Stacks[0].Tags[?Key=='Project'].Value | [0]" --output text)" == "elmify" ]] &&
   [[ "$(aws_cli cloudformation describe-stacks --stack-name "$STACK_NAME" \
     --query "Stacks[0].Tags[?Key=='Purpose'].Value | [0]" --output text)" == "aws-boundary-validation" ]]
 }
@@ -862,7 +862,7 @@ repository_is_owned() {
   repository_arn="$(aws_cli ecr describe-repositories --repository-names "$REPOSITORY_NAME" \
     --query 'repositories[0].repositoryArn' --output text)"
   [[ "$(aws_cli ecr list-tags-for-resource --resource-arn "$repository_arn" \
-    --query "tags[?Key=='Project'].Value | [0]" --output text)" == "tehsil-agent" ]] &&
+    --query "tags[?Key=='Project'].Value | [0]" --output text)" == "elmify" ]] &&
   [[ "$(aws_cli ecr list-tags-for-resource --resource-arn "$repository_arn" \
     --query "tags[?Key=='Purpose'].Value | [0]" --output text)" == "aws-boundary-validation" ]]
 }
@@ -906,7 +906,7 @@ audit_absence() {
     --filters Name=tag:aws:cloudformation:stack-name,Values="$STACK_NAME" \
     --query 'length(Addresses)' --output text)" == "0" ]]
   [[ "$(aws_cli logs describe-log-groups \
-    --log-group-name-prefix "/tehsil/validation/${STACK_NAME}/" \
+    --log-group-name-prefix "/elmify/validation/${STACK_NAME}/" \
     --query 'length(logGroups)' --output text)" == "0" ]]
   [[ "$(aws_cli ecs describe-clusters --clusters "${STACK_NAME}-probe" \
     --query "length(clusters[?status=='ACTIVE'])" --output text)" == "0" ]]
@@ -995,7 +995,7 @@ write_run_summary() {
 The operator command is exactly:
 
 ```text
-AWS_PROFILE=tehsil-sandbox AWS_REGION=eu-central-1 timeout --signal=TERM 30m bash scripts/run_aws_boundary_validation.sh
+AWS_PROFILE=elmify-sandbox AWS_REGION=eu-central-1 timeout --signal=TERM 30m bash scripts/run_aws_boundary_validation.sh
 ```
 
 - [x] **Step 5: Add the honest initial run document**
@@ -1013,8 +1013,8 @@ delete its stack and ECR repository, and pass the absence audit before this docu
 
 ```text
 bash -n scripts/run_aws_boundary_validation.sh
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task3-green uv run pytest tests/test_aws_boundary_run_controller.py -q
-UV_CACHE_DIR=/tmp/tehsil-aws-live-task3-green uv run ruff check tests/test_aws_boundary_run_controller.py
+UV_CACHE_DIR=/tmp/elmify-aws-live-task3-green uv run pytest tests/test_aws_boundary_run_controller.py -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-task3-green uv run ruff check tests/test_aws_boundary_run_controller.py
 ```
 
 Expected: success, failure, `SIGTERM`, cleanup-only ownership rejection, and idempotent cleanup cases all pass without AWS or Docker access.
@@ -1047,12 +1047,12 @@ sudo docker compose up -d --wait --wait-timeout 60 postgres
 - [x] **Step 2: Run the complete local verification matrix**
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run pytest -m "not aws" -q
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run ruff check .
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run mypy .
-UV_CACHE_DIR=/tmp/tehsil-aws-live-offline uv run python manage.py check
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run pytest -m "not aws" -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run ruff check .
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run mypy .
+UV_CACHE_DIR=/tmp/elmify-aws-live-offline uv run python manage.py check
 bash -n scripts/run_aws_boundary_validation.sh
-sudo docker build --platform linux/amd64 --target web --tag tehsil-agent:aws-boundary-offline .
+sudo docker build --platform linux/amd64 --target web --tag elmify:aws-boundary-offline .
 ```
 
 Expected: all configured checks pass. Record exact counts and warnings; do not convert warnings into claimed passes.
@@ -1072,20 +1072,20 @@ Expected: no output. Substituted values may exist only inside tests; committed e
 If needed, the user runs:
 
 ```text
-aws login --profile tehsil-sandbox
+aws login --profile elmify-sandbox
 ```
 
 Then run without displaying identity:
 
 ```text
-aws sts get-caller-identity --profile tehsil-sandbox --region eu-central-1 --query 'Account != null && Arn != null' --output text
-aws cloudformation validate-template --template-body file://infra/template.yaml --profile tehsil-sandbox --region eu-central-1
+aws sts get-caller-identity --profile elmify-sandbox --region eu-central-1 --query 'Account != null && Arn != null' --output text
+aws cloudformation validate-template --template-body file://infra/template.yaml --profile elmify-sandbox --region eu-central-1
 ```
 
 Expected: `True` and a valid template response. Run the collision-only preflight:
 
 ```text
-AWS_PROFILE=tehsil-sandbox AWS_REGION=eu-central-1 bash scripts/run_aws_boundary_validation.sh --preflight-only
+AWS_PROFILE=elmify-sandbox AWS_REGION=eu-central-1 bash scripts/run_aws_boundary_validation.sh --preflight-only
 ```
 
 Expected: success with the fixed stack, repository, and log-group names absent; no AWS write.
@@ -1127,7 +1127,7 @@ Do not add the user to the Docker group and do not run the whole controller unde
 - [x] **Step 2: Start the live controller in a resumable terminal session**
 
 ```text
-AWS_PROFILE=tehsil-sandbox AWS_REGION=eu-central-1 timeout --signal=TERM 30m bash scripts/run_aws_boundary_validation.sh
+AWS_PROFILE=elmify-sandbox AWS_REGION=eu-central-1 timeout --signal=TERM 30m bash scripts/run_aws_boundary_validation.sh
 ```
 
 Poll the running session and report safe phase-only progress at least once per minute. Do not expose captured AWS output.
@@ -1139,7 +1139,7 @@ If it exits zero, continue to Step 4.
 If it exits non-zero, immediately run:
 
 ```text
-AWS_PROFILE=tehsil-sandbox AWS_REGION=eu-central-1 bash scripts/run_aws_boundary_validation.sh --cleanup-only
+AWS_PROFILE=elmify-sandbox AWS_REGION=eu-central-1 bash scripts/run_aws_boundary_validation.sh --cleanup-only
 ```
 
 Keep working until cleanup and the absence audit pass. Do not retry the probes automatically and do not commit failed evidence as a completed gate.
@@ -1194,10 +1194,10 @@ Leave every other Phase 1 checkbox unchanged.
 - [x] **Step 3: Run final local verification**
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-aws-live-final uv run pytest -m "not aws" -q
-UV_CACHE_DIR=/tmp/tehsil-aws-live-final uv run ruff check .
-UV_CACHE_DIR=/tmp/tehsil-aws-live-final uv run mypy .
-UV_CACHE_DIR=/tmp/tehsil-aws-live-final uv run python manage.py check
+UV_CACHE_DIR=/tmp/elmify-aws-live-final uv run pytest -m "not aws" -q
+UV_CACHE_DIR=/tmp/elmify-aws-live-final uv run ruff check .
+UV_CACHE_DIR=/tmp/elmify-aws-live-final uv run mypy .
+UV_CACHE_DIR=/tmp/elmify-aws-live-final uv run python manage.py check
 bash -n scripts/run_aws_boundary_validation.sh
 ```
 

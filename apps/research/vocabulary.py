@@ -61,8 +61,15 @@ _KIND_PATHS = {
     2: "wdt:P279|wdt:P279/wdt:P279",
     3: "wdt:P279|wdt:P279/wdt:P279|wdt:P279/wdt:P279/wdt:P279",
 }
+#: `hint:optimizer "None"` makes the query service run the patterns in the order
+#: written: the subclass walk first, then sitelinks and labels for those ~240
+#: items only. Measured 2026-09-27: without it the planner scans sitelinks
+#: across every item and times out at 60s on every run, and `{ BIND(...) }
+#: UNION` alone turns a 0.5s direct-subclass query into a timeout; with it the
+#: whole query answers in 2.4s (236 kinds, 5,256 labels, ten languages).
 _KINDS_Q = """SELECT ?kind ?label WHERE {{
-  {{ BIND(wd:Q43229 AS ?kind) }} UNION {{ ?kind {path} wd:Q43229 . }}
+  hint:Query hint:optimizer "None" .
+  {{ ?kind {path} wd:Q43229 . }} UNION {{ VALUES ?kind {{ wd:Q43229 }} }}
   ?kind wikibase:sitelinks ?links . FILTER(?links >= {sitelinks})
   {{ ?kind rdfs:label ?label }} UNION {{ ?kind skos:altLabel ?label }}
   FILTER(LANG(?label) IN ({langs}))

@@ -119,3 +119,21 @@ def test_another_students_option_is_not_found(
     client.force_login(user_a)
     response = client.get(f"{LIST}{application.id}/", HTTP_HOST=domain_a.host)
     assert response.status_code == 404
+
+
+def test_a_missing_recommendation_letter_links_to_its_references_tab(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        application = add_card(
+            agency_a, membership_a, programme,
+            kit_requirements=["Upload two recommendation letters."],
+        )
+    client.force_login(user_a)
+    body = client.get(LIST, HTTP_HOST=domain_a.host).content.decode()
+    expected_link = (
+        f'href="/student/writing/letters/{application.id}/?doc=references">'
+        "Recommendation letters"
+    )
+    assert expected_link in body

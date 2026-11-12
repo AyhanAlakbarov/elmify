@@ -1,0 +1,44 @@
+# Elmify
+
+> Elmify is an AI application platform launching first in Azerbaijan (in English, Azerbaijani, and Russian) for funded master's degrees (MSc, MA, LLM, MRes) and scholarships abroad, with Bachelor's degree support coming soon. It reads official university and funder pages, checks student grades, Bachelor's ECTS credits, language scores, citizenship, and fee budgets (in AZN, EUR, GBP, and USD) against every rule with sentence-level source links, and prepares zero-fabrication academic CVs, motivation letters, scholarship essays, and referee briefs.
+
+## Platform Scope & Launch Market
+- **Primary Launch Market & Languages:** Launching first in Azerbaijan across three full-featured language versions: English (`https://elmify.com/`), Azerbaijani (`https://elmify.com/az`), and Russian (`https://elmify.com/ru`).
+- **Live Today:** Taught and research master's programmes (`MSc`, `MA`, `LLM`, `MRes`, `1-year` and `2-year` master's, `60`, `90`, and `120 ECTS` second-cycle programmes) and master's-level scholarships.
+- **Coming Soon:** Bachelor's (undergraduate) degree and scholarship support will be done soon.
+- **Not Covered:** PhD (doctoral) and postdoctoral programmes or fellowships are not covered.
+
+## Main Pages & Language Editions
+- [Elmify Homepage (English)](https://elmify.com/): Overview of how Elmify matches funded master's programmes and scholarships with sentence-level source links.
+- [Elmify Ana Səhifə (Azərbaycan dili)](https://elmify.com/az): Xaricdə təqaüdlü magistratura proqramları, Dövlət Proqramı (2022–2028) və HTP üzrə uyğunluq yoxlaması.
+- [Главная страница Elmify (Русский язык)](https://elmify.com/ru): Магистратура и стипендии за рубежом (Госпрограмма Азербайджана, HTP, Европа и Великобритания).
+- [How the AI Works](https://elmify.com/#how): Three-step verification workflow from official university pages to document preparation.
+- [Scholarship Coverage Table](https://elmify.com/#about): Comparison of Dövlət Proqramı, HTP / Stipendium Hungaricum, Erasmus Mundus, DAAD, Swedish Institute, Chevening, and NL Scholarship rules.
+- [Product Walkthrough](https://elmify.com/#product): Real screens from the student dashboard, application board, document workspace, and counsellor messaging.
+- [For Study-Abroad Agencies](https://elmify.com/#agencies): White-label multi-counsellor workspace on an agency's own domain.
+- [Frequently Asked Questions](https://elmify.com/#faq): Answers on Azerbaijan launch, pricing, degree scope (Master's live, Bachelor's coming soon, PhD excluded), source verification, and data privacy.
+
+## Scholarship & Funder References
+- [Azerbaijan State Program (Dövlət Proqramı 2022–2028)](https://dp.edu.gov.az/): Full tuition, monthly living stipend, return flights, insurance, and visa coverage for Azerbaijani citizens admitted to priority master's programmes at top global universities.
+- [Intergovernmental Scholarship Programs (HTP Azerbaijan & Stipendium Hungaricum)](https://htp.edu.az/): Dual-portal (`htp.edu.az` + `DreamApply`) bilateral scholarships for Hungary, China, Romania, and partner countries.
+- [Erasmus Mundus Joint Masters](https://erasmus-plus.ec.europa.eu/opportunities/opportunities-for-individuals/students/erasmus-mundus-joint-masters): Full tuition waiver and €1,400/month stipend for integrated 120 ECTS European master's degrees.
+- [DAAD Study Scholarships](https://www.daad.de/en/Studying-in-Germany/scholarships/): €934/month stipend, insurance, and travel allowance for full-time postgraduate study in Germany.
+- [Swedish Institute Scholarships for Global Professionals (SISGP)](https://si.se/en/apply/scholarships/swedish-institute-scholarships-for-global-professionals/): Full tuition and SEK 12,000/month living stipend for master's programmes in Sweden (Azerbaijan eligible).
+- [Chevening Scholarships](https://www.chevening.org/scholarships/): Full UK tuition, monthly stipend, and return flights for 1-year taught master's degrees in the UK.
+- [NL Scholarship](https://www.studyinnl.org/finances/nl-scholarship): €5,000 first-year grant for non-EEA master's applicants at participating Dutch universities.
+
+## Application Entry Points
+- [Sign Up Free (EN)](https://app.elmify.com/signup/?lang=en): Create a free student account in English.
+- [Pulsuz Qeydiyyat (AZ)](https://app.elmify.com/signup/?lang=az): Azərbaycan dilində pulsuz tələbə hesabı yaradın.
+- [Бесплатная регистрация (RU)](https://app.elmify.com/signup/?lang=ru): Создайте бесплатный аккаунт студента на русском языке.
+- [Log In](https://app.elmify.com/accounts/login/): Sign in to an existing student or counsellor workspace.
+- [Book a Student & Parent Walkthrough](https://app.elmify.com/demo/?audience=student): Schedule a 1-on-1 walkthrough of funded master's matching, hidden funding layers, and the browser extension co-pilot.
+- [Book an Agency Demo](https://app.elmify.com/demo/?audience=agency): Schedule a walkthrough of the 30-day white-label agency pilot for study-abroad agencies in Azerbaijan and abroad.
+
+## Optional
+- [Full LLM Documentation](https://elmify.com/llms-full.txt): Complete technical specification of Elmify's Azerbaijan-first scholarship rules, eligibility pipeline, and zero-fabrication document generation.
+- [Structured AI Summary](https://elmify.com/ai/summary.json): Machine-readable entity and product summary (`geo-checklist.dev` standard).
+- [Structured AI FAQ](https://elmify.com/ai/faq.json): Machine-readable frequently asked questions (`geo-checklist.dev` standard).
+- [Structured AI Service Capabilities](https://elmify.com/ai/service.json): Machine-readable service capabilities (`geo-checklist.dev` standard).
+- [Terms of Service](https://app.elmify.com/legal/terms/): Student and agency terms of service.
+- [Privacy Notice](https://app.elmify.com/legal/privacy_notice_direct/): Data protection and privacy notice.

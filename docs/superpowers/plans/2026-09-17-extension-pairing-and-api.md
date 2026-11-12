@@ -26,7 +26,7 @@ This is plan 2 of 5. Plan 1 (`2026-09-15-application-kit-and-fill-packet.md`) is
 
 - Every command runs through `uv run`. Never invoke `pytest`, `python`, `ruff` or `mypy` directly.
 - **Never run `uv run ruff format`.** The pinned ruff (0.16.6) rewrites this repository's `except (A, B)` tuples into invalid Python. No gate runs the formatter; `uv run ruff check` is the lint gate and it must pass.
-- Run tests with an isolated database: `POSTGRES_DB=tehsil_glassbox uv run pytest ...`. The shared `test_tehsil` is dropped out from under you by other worktrees.
+- Run tests with an isolated database: `POSTGRES_DB=elmify_glassbox uv run pytest ...`. The shared `test_elmify` is dropped out from under you by other worktrees.
 - `pyproject.toml` sets `addopts = "-m 'not live'"`. Nothing in this plan is marked `live`; the one model call is tested against a fake client.
 - Tenant-scoped reads and writes happen inside `tenant_transaction(tenant_id)` (from `apps.tenancy.db`), which sets the `app.tenant_id` GUC that row-level security compares against. A read outside one returns zero rows in production and **passes in tests**, because the test role is `BYPASSRLS`. Task 13 is the only place that difference is observable.
 - **Every new field on a student-reachable model is classified in `apps/audit/redaction.py` in the same commit that adds it.** `ExtensionPairing` and `DeviceAction` are student-reachable (FK to `Membership`). A miss does not fail politely: an unclassified column left the whole suite at 2 failures and 23 errors, every error in a file that passes on its own (measured 2026-09-15 on `Application.deadline`).
@@ -130,7 +130,7 @@ def test_every_new_column_is_classified_for_erasure() -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_pairing.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_pairing.py -v`
 Expected: FAIL — `ImportError: cannot import name 'ExtensionPairing'`.
 
 - [ ] **Step 3: Add the model**
@@ -205,7 +205,7 @@ class ExtensionPairing(TenantScopedModel):
 
 - [ ] **Step 5: Generate the migration**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run python manage.py makemigrations portals --name extension_pairing`
+Run: `POSTGRES_DB=elmify_glassbox uv run python manage.py makemigrations portals --name extension_pairing`
 Expected: `apps/portals/migrations/0010_extension_pairing.py` created, `AddField`/`CreateModel` only.
 
 Then check the RLS policy is applied to the new table the way every other tenant table gets one. Run:
@@ -216,7 +216,7 @@ If tenant tables in this app get their policy from a hand-written `RunSQL` migra
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_pairing.py tests/audit/test_redaction_classification.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_pairing.py tests/audit/test_redaction_classification.py -v`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -319,7 +319,7 @@ def test_issuing_a_second_code_leaves_the_first_pairing_unusable(agency_a, membe
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_pairing.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_pairing.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.pairing'`.
 
 - [ ] **Step 3: Write the module**
@@ -454,7 +454,7 @@ def touch(pairing: ExtensionPairing) -> None:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_pairing.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_pairing.py -v`
 Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
@@ -595,7 +595,7 @@ def test_a_token_from_another_tenant_s_host_is_refused(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -v`
 Expected: FAIL — 404s, because no route exists yet.
 
 - [ ] **Step 3: Write the door**
@@ -816,7 +816,7 @@ urlpatterns = [
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -v`
 Expected: PASS, 7 tests.
 
 - [ ] **Step 7: Commit**
@@ -989,7 +989,7 @@ def test_the_first_packet_on_a_portal_asks_a_consultant_to_look(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -k packet -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -k packet -v`
 Expected: FAIL — 404, no route.
 
 - [ ] **Step 3: Write the view**
@@ -1085,7 +1085,7 @@ from .packets import NoFieldMap, PacketRefused, mint_packet
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -v`
 Expected: PASS, 12 tests.
 
 - [ ] **Step 6: Commit**
@@ -1195,7 +1195,7 @@ def test_a_clean_snapshot_passes() -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_snapshot_learn.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_snapshot_learn.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.snapshot'`.
 
 - [ ] **Step 3: Write the module**
@@ -1280,7 +1280,7 @@ def assert_no_student_values(snapshot: FormSnapshot, forbidden_values: list[str]
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_snapshot_learn.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_snapshot_learn.py -v`
 Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
@@ -1487,7 +1487,7 @@ def test_the_page_s_own_text_is_labelled_as_data(agency_a) -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_snapshot_learn.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_snapshot_learn.py -v`
 Expected: FAIL — `ImportError: cannot import name 'learn_from_snapshot'`.
 
 - [ ] **Step 3: Write the mapper**
@@ -1652,7 +1652,7 @@ from .snapshot import FormSnapshot, SnapshotControl, assert_no_student_values
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_snapshot_learn.py tests/portals/test_learn.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_snapshot_learn.py tests/portals/test_learn.py -v`
 Expected: PASS. `tests/portals/test_learn.py` covers the Stagehand path and must stay green — `_store_map` is the only thing that moved.
 
 - [ ] **Step 5: Commit**
@@ -1798,7 +1798,7 @@ def test_a_portal_form_this_student_has_no_application_for_is_404(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -k snapshot -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -k snapshot -v`
 Expected: FAIL — 404, no route.
 
 - [ ] **Step 3: Write the view**
@@ -1879,7 +1879,7 @@ from .snapshot import FormSnapshot, SnapshotPIILeak
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -v`
 Expected: PASS, 15 tests.
 
 - [ ] **Step 6: Commit**
@@ -1927,7 +1927,7 @@ def test_every_step_kind_a_writer_uses_is_in_the_enum() -> None:
 
 - [ ] **Step 2: Run the test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_models.py -k step_kind -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_models.py -k step_kind -v`
 Expected: FAIL — `AttributeError: type object 'ApplicationStep' has no attribute 'Kind'`.
 
 - [ ] **Step 3: Add the enum**
@@ -1957,12 +1957,12 @@ Expected: FAIL — `AttributeError: type object 'ApplicationStep' has no attribu
 
 No migration: adding `TextChoices` without setting `choices=` on the field changes no schema. Confirm it:
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run python manage.py makemigrations --check --dry-run`
+Run: `POSTGRES_DB=elmify_glassbox uv run python manage.py makemigrations --check --dry-run`
 Expected: "No changes detected".
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_models.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_models.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -2167,7 +2167,7 @@ def test_an_oversized_image_is_refused(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -k event -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -k event -v`
 Expected: FAIL — 404, no route.
 
 - [ ] **Step 3: Write the evidence store**
@@ -2326,7 +2326,7 @@ from .models import Application, ApplicationStep, ExtensionPairing
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py tests/documents/test_storage.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py tests/documents/test_storage.py -v`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -2447,7 +2447,7 @@ def test_every_new_column_is_classified_for_erasure() -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_actions.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_actions.py -v`
 Expected: FAIL — `ImportError`.
 
 - [ ] **Step 3: Add the model**
@@ -2593,8 +2593,8 @@ def complete_action(action: DeviceAction, *, ok: bool, detail: dict[str, object]
 
 - [ ] **Step 6: Generate the migration and run the tests**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run python manage.py makemigrations portals --name device_action`
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_actions.py tests/audit/test_redaction_classification.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run python manage.py makemigrations portals --name device_action`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_actions.py tests/audit/test_redaction_classification.py -v`
 Expected: PASS.
 
 Apply the same RLS check as Task 1 Step 5 to `portals_deviceaction`.
@@ -2695,7 +2695,7 @@ def test_another_student_s_action_is_404(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -k action -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -k action -v`
 Expected: FAIL — 404, no route.
 
 - [ ] **Step 3: Write the views**
@@ -2788,7 +2788,7 @@ Imports to add: `from .actions import complete_action, pending_actions` and `Dev
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -2889,7 +2889,7 @@ def test_an_oversized_status_payload_is_refused(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -k status -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -k status -v`
 Expected: FAIL — 404, no route.
 
 - [ ] **Step 3: Write the view**
@@ -2954,7 +2954,7 @@ Imports to add: `from pydantic import BaseModel, ConfigDict, Field, ValidationEr
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_api.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_api.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -3135,17 +3135,17 @@ def test_a_token_cannot_reach_another_tenant_s_application(
 
 - [ ] **Step 2: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest tests/portals/test_ext_rls.py -v`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest tests/portals/test_ext_rls.py -v`
 Expected: PASS. **If any of these fails, the fix is in the route, never in the test** — a failure here is the production behaviour of the code as written.
 
 `agency_b`, `domain_b`, `user_b` and `membership_b` all exist in `tests/conftest.py` (lines 125, 137, 154, 165) — verified, no new fixture needed.
 
 - [ ] **Step 3: Run everything**
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run pytest -q`
+Run: `POSTGRES_DB=elmify_glassbox uv run pytest -q`
 Expected: the whole suite green. Compare the count against the plan-1 baseline (2477 passed, 45 skipped) plus this plan's additions.
 
-Run: `POSTGRES_DB=tehsil_glassbox uv run python manage.py makemigrations --check --dry-run`
+Run: `POSTGRES_DB=elmify_glassbox uv run python manage.py makemigrations --check --dry-run`
 Expected: "No changes detected". A model edited without its migration is what CI's `makemigrations --check` catches, and catching it here is cheaper.
 
 Run: `uv run ruff check`, `uv run mypy`, `uv run bandit -c pyproject.toml -r apps config`

@@ -1,0 +1,43 @@
+slug,name,purpose,kind,host_scope,hosts,country_code,choice_limit,ranked,one_fee_per_round,prep_lead_days,source_url
+universityadmissions-se,University Admissions Sweden (universityadmissions.se / antagning.se),DEGREE,NATIONAL,SHARED,www.universityadmissions.se www.antagning.se,SE,4,true,true,,https://www.universityadmissions.se/en/apply-to-masters/search-for-courses-and-programmes-masters/
+studyinfo-fi,Studyinfo / Opintopolku joint application,DEGREE,NATIONAL,SHARED,opintopolku.fi studyinfo.fi,FI,6,,true,,https://opintopolku.fi/konfo/en/sivu/joint-application-to-higher-education
+studielink-nl,Studielink,DEGREE,NATIONAL,SHARED,www.studielink.nl,NL,4,,,,https://api-info.studielink.nl/media/a3wddy10/260108-stappenplan-verzoek-tot-inschrijving-fixusopleiding-en.pdf
+uni-assist-de,uni-assist,DEGREE,NATIONAL,SHARED,www.uni-assist.de my.uni-assist.de,DE,,,false,42,https://www.uni-assist.de/en/how-to-apply/plan-your-application/deadlines-processing-time/
+hochschulstart-de,hochschulstart (DoSV),DEGREE,NATIONAL,SHARED,www.hochschulstart.de hochschulstart.de,DE,12,true,,,https://hochschulstart.de/bewerben-beobachten/bewerbung
+monmaster-fr,Mon Master,DEGREE,NATIONAL,SHARED,monmaster.gouv.fr information.monmaster.gouv.fr,FR,15,,,,https://information.monmaster.gouv.fr/candidater/
+etudes-en-france,Etudes en France (Campus France),DEGREE,NATIONAL,SHARED,pastel.diplomatie.gouv.fr www.campusfrance.org,FR,7,,,,https://www.mali.campusfrance.org/1-je-reflechis-a-mon-projet
+universitaly-it,Universitaly pre-enrolment,DEGREE,NATIONAL,SHARED,www.universitaly.it,IT,,,,,https://www.universitaly.it/it/studenti-stranieri
+optagelse-dk,Optagelse.dk,DEGREE,NATIONAL,SHARED,www.optagelse.dk,DK,8,true,,,https://lifeindenmark.borger.dk/school-and-education/higher-education/application-steps-to-higher-education
+samordna-opptak-no,Samordna opptak,DEGREE,NATIONAL,SHARED,www.samordnaopptak.no sok.samordnaopptak.no,NO,10,true,,,https://www.samordnaopptak.no/om/hvaersamordnaopptak.html
+ucas-undergraduate,UCAS Undergraduate,DEGREE,NATIONAL,SHARED,www.ucas.com,GB,5,,true,,https://www.ucas.com/applying/applying-to-university/filling-in-your-ucas-application
+ucas-postgraduate,UCAS Postgraduate (course search; apply direct to provider),DEGREE,NATIONAL,SHARED,www.ucas.com,GB,,,,,https://www.ucas.com/postgraduate/what-to-study/choosing-a-course
+pac-ie,PAC Ireland (ceased trading 2024-09-30),DEGREE,NATIONAL,SHARED,www.pac.ie,IE,,,,,https://www.pac.ie/
+cao-ie,CAO Ireland,DEGREE,NATIONAL,SHARED,www.cao.ie,IE,10,true,,,https://www.cao.ie/index.php?bb=haq&page=faq&type=com
+ouac-ca,OUAC Ontario Universities' Application Centre,DEGREE,NATIONAL,SHARED,www.ouac.on.ca,CA,,,false,,https://www.ouac.on.ca/guide/undergrad-fees/
+uac-au,UAC Universities Admissions Centre,DEGREE,NATIONAL,SHARED,www.uac.edu.au uac.edu.au,AU,5,true,true,,https://uac.edu.au/future-applicants/how-to-apply-for-uni/selecting-your-course-preferences
+vtac-au,VTAC Victorian Tertiary Admissions Centre,DEGREE,NATIONAL,SHARED,vtac.edu.au,AU,8,true,true,,https://vtac.edu.au/help/applying-for-courses
+gks-korea,Global Korea Scholarship (Study in Korea),SCHOLARSHIP,NATIONAL,SHARED,www.studyinkorea.go.kr,KR,3,,,,https://www.studyinkorea.go.kr/en/plan/scholarship.do
+csc-china,CSC Chinese Government Scholarship information system,SCHOLARSHIP,NATIONAL,SHARED,studyinchina.csc.edu.cn www.csc.edu.cn,CN,,,,,https://www.csc.edu.cn/laihua
+stipendium-hungaricum,Stipendium Hungaricum application,SCHOLARSHIP,NATIONAL,SHARED,apply.stipendiumhungaricum.hu,HU,2,true,,,https://stipendiumhungaricum.hu/apply/
+turkiye-burslari,Turkiye Burslari application system (TBBS),SCHOLARSHIP,NATIONAL,SHARED,tbbs.turkiyeburslari.gov.tr,TR,,,,,https://turkiyeburslari.gov.tr/fulltimeprograms
+daad-portal,DAAD portal (Mein DAAD),SCHOLARSHIP,NATIONAL,SHARED,www.meindaad.de,DE,,,,,https://www.meindaad.de/en/help/how-do-i-register-for-an-application/
+si-scholarships,Swedish Institute scholarship portal,SCHOLARSHIP,NATIONAL,SHARED,apply-scholarships.si.se,SE,4,,,,https://si.se/en/apply/scholarships/swedish-institute-scholarships-for-global-professionals/
+chevening,Chevening application,SCHOLARSHIP,NATIONAL,SHARED,www.chevening.org,GB,3,true,,,https://www.chevening.org/resource-hub/guidance/courses/
+fulbright-iie,Fulbright Foreign Student Program (IIE),SCHOLARSHIP,NATIONAL,SHARED,apply.iie.org,US,4,true,,,https://apply.iie.org/ffsp2027
+dreamapply,DreamApply,DEGREE,VENDOR,PER_UNIVERSITY,*.dreamapply.com,,,,,,https://utwente.dreamapply.com/
+slate,Slate (Technolutions),DEGREE,VENDOR,PER_UNIVERSITY,apply.*.edu,,,,,,https://knowledge.technolutions.net/docs/changing-your-slate-subdomain
+collegenet-applyweb,CollegeNET ApplyWeb,DEGREE,VENDOR,SHARED,www.applyweb.com,,,,,,https://applyweb.collegenet.support/hc/en-us/articles/4548566735635-Getting-Started-With-ApplyWeb
+liaison-gradcas,Liaison GradCAS,DEGREE,VENDOR,SHARED,gradcas.liaisoncas.org,,,,,,https://gradcas.liaisoncas.org/apply/
+kira-talent,Kira Talent,DEGREE,VENDOR,SHARED,app.kiratalent.com,,,,,,https://www.kiratalent.com/
+jotform,JotForm,DEGREE,VENDOR,SHARED,form.jotform.com,,,,,,https://form.jotform.com/242865034099362
+tchooz,Tchooz,DEGREE,VENDOR,PER_UNIVERSITY,*.tchooz.app,,,,,,https://tfmasa.tchooz.app/tfmasa-2026-1
+formdesk,Formdesk,DEGREE,VENDOR,SHARED,www.formdesk.com,,,,,,https://formdesk.com/en/login/
+tribal-sits-evision,Tribal SITS:Vision (e:Vision),DEGREE,VENDOR,PER_UNIVERSITY,evision.*.ac.uk,,,,,,https://blogs.city.ac.uk/accessibility/evision-sits/
+ellucian-crm-recruit,Ellucian CRM Recruit,DEGREE,VENDOR,PER_UNIVERSITY,*.elluciancrmrecruit.com,,,,,,https://aacc.elluciancrmrecruit.com/Apply/Account/Login
+etrieve,SoftDocs Etrieve,DEGREE,VENDOR,PER_UNIVERSITY,*.etrieve.cloud,,,,,,https://unlvcontent.etrieve.cloud/Account/Login
+mobility-online,Mobility-Online (service4mobility),DEGREE,VENDOR,SHARED,www.service4mobility.com mo.service4mobility.com,,,,,,https://www.service4mobility.com/europe/LoginServlet
+campusonline,CAMPUSonline,DEGREE,VENDOR,PER_UNIVERSITY,online.uni-graz.at,,,,,,https://www.campusonline.tugraz.at/en/product/for-students
+esse3-cineca,Esse3 (Cineca),DEGREE,VENDOR,PER_UNIVERSITY,*.esse3.cineca.it,,,,,,https://www.univr.it/it/i-nostri-servizi/futuri-studenti/immatricolazioni/procedure-di-immatricolazione/esse3-immatricolazione
+osiris,Osiris Student,DEGREE,VENDOR,PER_UNIVERSITY,*.osiris-student.nl,,,,,,https://uvt.osiris-student.nl/
+ecandidat,eCandidat (ESUP-Portail),DEGREE,VENDOR,PER_UNIVERSITY,ecandidat.*.fr,,,,,,https://www.esup-portail.org/wiki/spaces/PROJESUPOPI/pages/499908610/eCandidat+V2
+fsweb-soknadsweb,fsweb.no Soknadsweb,DEGREE,VENDOR,SHARED,fsweb.no,,,,,,https://fsweb.no/soknadsweb/login.jsf?inst=ntnu

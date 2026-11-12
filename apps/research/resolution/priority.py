@@ -11,6 +11,7 @@ test_operator.py is what says so first.
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
@@ -72,9 +73,7 @@ def corridor_share(
     """
     if items is None:
         items = ResolutionItem.objects.filter(state__in=_WAITING).only("country_code")
-    waiting: dict[str, int] = {}
-    for item in items:
-        waiting[item.country_code] = waiting.get(item.country_code, 0) + 1
+    waiting = Counter(item.country_code for item in items)
     return {
         country: (count, known(country) if known is not None else None)
         for country, count in sorted(waiting.items())

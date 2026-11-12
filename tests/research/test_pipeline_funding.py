@@ -195,6 +195,12 @@ def test_run_discovery_routes_a_funder_lead_past_extraction_to_the_holder_path(
     assert report.written == 0  # a funder page writes no programme row
     assert report.funding.served == 1
     assert report.pointer_names == (("DAAD", "NATIONAL_GOVERNMENT"),)
+    # Spec 2026-09-27 4.7: the name is kept, not only printed.
+    from apps.research.models import RegisterEntry
+
+    entry = RegisterEntry.objects.get(register="pointer")
+    assert (entry.name, entry.kind, entry.country_code) == ("DAAD", "NATIONAL_GOVERNMENT", "DE")
+    assert (entry.pointer_quote, entry.pointer_url) == ("Ein DAAD-Stipendium.", url)
 
 
 from apps.research.model_cost import ReadingTier, ReadingTierRefused, Usage  # noqa: E402

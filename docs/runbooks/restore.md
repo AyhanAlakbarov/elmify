@@ -9,7 +9,7 @@ works without touching the live `Database` (`BackupRetentionPeriod: 7`,
 ```bash
 export AWS_REGION=eu-central-1
 export RESTORE_DB_PASSWORD=<Database master password from Secrets Manager>
-bash scripts/restore_backup.sh tehsil-agent-production
+bash scripts/restore_backup.sh elmify-production
 ```
 
 Optionally pass a specific restore time as the second argument

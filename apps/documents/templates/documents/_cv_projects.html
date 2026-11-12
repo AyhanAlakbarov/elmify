@@ -1,0 +1,20 @@
+{% load cv_dates %}{% if content.projects %}<h2>Projects</h2>
+{% if tabular %}
+<table class="grid">
+  {% for entry in content.projects %}
+  <tr>
+    <td class="when">{% if entry.start_date %}{% date_range entry.start_date entry.end_date %}{% endif %}</td>
+    <td><strong>{{ entry.title }}</strong>{% if entry.url %} — <a href="{{ entry.url }}">{{ entry.url }}</a>{% endif %}<br>
+    {% include "documents/_cv_bullets.html" with entry=entry only %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+{% for entry in content.projects %}
+<div class="entry">
+  <div class="entry-header"><strong>{{ entry.title }}</strong>{% if entry.start_date %}<span>{% date_range entry.start_date entry.end_date %}</span>{% endif %}</div>
+  {% if entry.url %}<div><a href="{{ entry.url }}">{{ entry.url }}</a></div>{% endif %}
+  {% include "documents/_cv_bullets.html" with entry=entry only %}
+</div>
+{% endfor %}
+{% endif %}{% endif %}

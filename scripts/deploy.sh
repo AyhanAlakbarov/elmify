@@ -13,7 +13,7 @@ usage() {
 usage: scripts/deploy.sh <test|production>
 
 Environment variables:
-  STACK_NAME   CloudFormation stack name (default: tehsil-agent-<env>)
+  STACK_NAME   CloudFormation stack name (default: elmify-<env>)
   AWS_REGION   Must be eu-central-1 (Phase 1's single supported region)
 EOF
 }
@@ -37,7 +37,7 @@ esac
   exit 2
 }
 
-STACK_NAME="${STACK_NAME:-tehsil-agent-${ENVIRONMENT}}"
+STACK_NAME="${STACK_NAME:-elmify-${ENVIRONMENT}}"
 PARAMETERS_FILE="infra/parameters/${ENVIRONMENT}.json"
 CLUSTER="${STACK_NAME}-probe"
 
@@ -73,7 +73,7 @@ aws cloudformation deploy \
   --template-file infra/template.yaml \
   --parameter-overrides $OVERRIDES \
   --capabilities CAPABILITY_IAM \
-  --tags Project=tehsil-agent Environment="$ENVIRONMENT"
+  --tags Project=elmify Environment="$ENVIRONMENT"
 
 MIGRATION_TASK_DEF="$(stack_output MigrationTaskDefinitionArn)"
 SUBNET_A="$(stack_output WorkerPrivateSubnetAId)"

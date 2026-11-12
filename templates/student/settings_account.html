@@ -1,10 +1,38 @@
 {% extends "base.html" %}
 {% block title %}Account{% endblock %}
 {% block content %}
-  <div class="page-head"><div><h1>Account</h1><p><a href="/student/settings/">Settings</a> / Account</p></div></div>
-  <section class="panel panel-danger" aria-labelledby="leave-heading">
-    <h2 id="leave-heading">Leave and delete my data</h2>
-    <p>Your access closes as soon as you ask. Your data is erased after thirty days; until then you can restore your account.</p>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/student/settings/">Settings</a><span aria-hidden="true">/</span><span>Account</span></nav>
+  <div class="page-head">
+    <div>
+      <h1>Account</h1>
+      <p>Manage your name, password, personal data and account lifecycle.</p>
+    </div>
+  </div>
+  <section class="panel" aria-labelledby="name-heading">
+    <h2 id="name-heading">Your name</h2>
+    <p class="muted">Used on your profile, consultation dossier and communications.</p>
+    <form method="post" action="{% url 'student-settings-account' %}" class="inline-ask">
+      {% csrf_token %}
+      <p>
+        <label for="account-full-name">Full name</label>
+        <input type="text" id="account-full-name" name="full_name" maxlength="150" required value="{{ full_name|default:'' }}">
+      </p>
+      <button type="submit">Save name</button>
+    </form>
+  </section>
+  <section class="panel" aria-labelledby="password-heading">
+    <h2 id="password-heading">Password and security</h2>
+    <p class="muted">Updating your password invalidates other active sessions and disconnects paired browser extensions.</p>
+    <p><a href="{% url 'accounts-password-change' %}" class="btn btn-quiet">Change password</a></p>
+  </section>
+  <section class="panel" aria-labelledby="export-heading">
+    <h2 id="export-heading">Download my personal data</h2>
+    <p class="muted">Download a portable ZIP archive containing your profile history, roadmap, manual operations, fee ledger, receipts and audit manifest.</p>
+    <p><a href="{% url 'audit-export-personal-data' %}" class="btn btn-quiet" hx-boost="false">Download my personal data (.zip)</a></p>
+  </section>
+  <section class="panel" aria-labelledby="delete-heading">
+    <h2 id="delete-heading">Leave and delete my data</h2>
+    <p class="muted">Your access closes as soon as you ask. Your data is erased after thirty days; until then you can restore your account.</p>
     <form method="post" action="{% url 'audit-request-account-deletion' %}">
       {% csrf_token %}
       <p>

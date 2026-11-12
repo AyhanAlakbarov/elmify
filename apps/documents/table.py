@@ -41,7 +41,7 @@ ROWS: tuple[tuple[str, str], ...] = (
     ("LANGUAGE_CERTIFICATE", "Language certificate"),
     ("CV", "CV"),
     ("MOTIVATION_LETTER", "Motivation letter"),
-    ("RECOMMENDATION", "Recommendation letters"),
+    ("REFERENCE_LETTER", "Recommendation letters"),
 )
 EXPIRING = frozenset({"PASSPORT", "LANGUAGE_CERTIFICATE"})
 #: The cells a document fills, and so the only ones Submit document may send.
@@ -66,7 +66,7 @@ _WORDS: dict[str, re.Pattern[str]] = {
         r"|\bletter of intent\b",
         re.I,
     ),
-    "RECOMMENDATION": re.compile(
+    "REFERENCE_LETTER": re.compile(
         r"\brecommendation\b|\bletters? of reference|\breference letters?"
         r"|\breferees?\b|\b(?:two|three|\d|academic|professional)\s+references\b",
         re.I,
@@ -143,16 +143,26 @@ class Table:
         Not necessarily sendable: a re-upload still being checked comes back as a
         Cell.CHECKING entry when nothing usable is held. Submit sends only an UPLOADED or
         APPROVED one."""
+        every = self.held_all_for(kind, application_id)
+        return every[0] if every else None
+
+    def held_all_for(self, kind: str, application_id: UUID) -> tuple[Held, ...]:
+        """Every entry the cell holds, `held_for`'s first: the application's own, else the
+        general ones. Several only for uploads ("Add another": a bachelor's and a master's
+        diploma, plan 4b Task 6); a draft has versions, not siblings, so only its newest."""
         index = self._index(application_id)
         if index is None:
-            return None
-        needs_certified = _needed(self.columns[index]).get(kind, False)
+            return ()
+        needs_certified = needed_kinds(self.columns[index]).get(kind, False)
         usable = [h for h in self.held if h.kind == kind and (h.certified or not needs_certified)]
-        own = next((h for h in usable if h.application_id == application_id), None)
-        return own or next((h for h in usable if h.application_id is None), None)
+        mine = [h for h in usable if h.application_id == application_id]
+        every = mine or [h for h in usable if h.application_id is None]
+        if every and every[0].source == "draft":
+            return (every[0],)
+        return tuple(h for h in every if h.source == "upload")
 
 
-def _needed(column: ApplicationNeeds) -> dict[str, bool]:
+def needed_kinds(column: ApplicationNeeds) -> dict[str, bool]:
     """kind -> whether a certified copy is asked for, for every kind named."""
     out: dict[str, bool] = {}
     for sentence in column.sentences:
@@ -168,7 +178,7 @@ def _needed(column: ApplicationNeeds) -> dict[str, bool]:
 def build_table(columns: Sequence[ApplicationNeeds], held: Iterable[Held]) -> Table:
     held_rows = tuple(held)
     table = Table(tuple(columns), (), held_rows)
-    wanted = [_needed(column) for column in columns]
+    wanted = [needed_kinds(column) for column in columns]
     rows = []
     for kind, label in ROWS:
         cells = []
@@ -220,6 +230,7 @@ def table_for(
         )
         for application in applications
     ]
+    app_ids = {application.id for application in applications}
     by_programme = {application.program_id: application.id for application in applications}
     held: list[Held] = []
     for draft in DocumentDraft.objects.filter(
@@ -229,10 +240,13 @@ def table_for(
     ).exclude(rendered_filename="").order_by("-version"):
         # Unrendered (packets.py's rule): nothing stored yet for the extension to fetch.
         application_id = None
-        if draft.programme_id:
-            # A document made for a programme this student has no application
-            # to is for nobody here, never a general one.
-            application_id = by_programme.get(draft.programme_id)
+        target_id = draft.programme_id or draft.funding_opportunity_id
+        if draft.application_id in app_ids:
+            application_id = draft.application_id
+        elif target_id:
+            # A document made for a programme or scholarship this student has no
+            # application to is for nobody here, never a general one.
+            application_id = by_programme.get(target_id)
             if application_id is None:
                 continue
         if draft.kind == DocumentDraft.Kind.MOTIVATION_LETTER and application_id is None:
@@ -241,9 +255,30 @@ def table_for(
             Held(draft.kind, Cell.APPROVED, application_id=application_id,
                  document_id=draft.id, source="draft")
         )
-    uploads = DocumentVersion.objects.filter(
-        student=student, state__in=("AVAILABLE", "CHECKING")
-    ).order_by("-created_at")
+    from .models import TranscriptUpload
+    from .verification import disowned_refs
+
+    disowned_ids = {
+        UUID(ref.removeprefix("document:"))
+        for ref in disowned_refs(student)
+        if ref.startswith("document:")
+    }
+    refused_tx_ids = set(
+        TranscriptUpload.objects.filter(
+            student=student, state=TranscriptUpload.State.REFUSED
+        ).values_list("document_id", flat=True)
+    ) - set(
+        TranscriptUpload.objects.filter(student=student)
+        .exclude(state=TranscriptUpload.State.REFUSED)
+        .values_list("document_id", flat=True)
+    )
+    uploads = (
+        DocumentVersion.objects.filter(
+            student=student, state__in=("AVAILABLE", "CHECKING"), retired_at__isnull=True
+        )
+        .exclude(id__in=disowned_ids | refused_tx_ids)
+        .order_by("-created_at")
+    )
     # A usable upload is listed before one still being checked: held_for takes the first,
     # so a re-upload under check never hides the copy Submit can already send.
     for upload in sorted(uploads, key=lambda upload: upload.state != "AVAILABLE"):
@@ -257,7 +292,7 @@ def table_for(
 def sendable(application: Application, *, document_id: UUID, source: str) -> bool:
     """Whether Submit document may send this document to this application.
 
-    True only for the entry the application's own cell shows (``held_for``),
+    True only for an entry the application's own cell holds (``held_all_for``),
     in a state that fills it. Ownership is by construction: the table holds
     the student's own rows only. That one lookup is also what refuses a
     document still being checked or rendered, an uncertified copy for a
@@ -283,5 +318,5 @@ def sendable(application: Application, *, document_id: UUID, source: str) -> boo
     return (
         entry is not None
         and entry.state in SENDABLE
-        and table.held_for(entry.kind, application.id) == entry
+        and entry in table.held_all_for(entry.kind, application.id)
     )

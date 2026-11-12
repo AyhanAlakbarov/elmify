@@ -1,6 +1,6 @@
 # Review of the generated CV, and what an academic CV should look like
 
-Reviewed 2026-08-30 against `~/Desktop/tehsil-out/generated-cv-abdullayev.pdf`
+Reviewed 2026-08-30 against `~/Desktop/elmify-out/generated-cv-abdullayev.pdf`
 (01:27) and `generated-cv-v2.pdf` (01:40), both produced by
 `tests/documents/test_live_tailoring.py` from
 `CV-2026-07-UMR7140-01-ABDULLAYEV-ORKHAN.pdf`. Compared against the applicant's

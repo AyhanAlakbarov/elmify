@@ -16,6 +16,9 @@ PACKAGE = pathlib.Path(__file__).resolve().parents[3] / "apps" / "documents" / "
 #: `__package__`, so the same base works for all of them.
 _PACKAGE_DOTTED = "apps.documents.evidence"
 
+#: Import Django models for annotations only and write nothing: facts.py does both for them.
+_ANNOTATION_ONLY = frozenset({"intake.py", "readings.py", "refresh.py"})
+
 
 def _imports(path):
     """Yield every module name a file imports, as an absolute dotted path.
@@ -55,14 +58,13 @@ def test_only_facts_imports_django_models(module):
     - facts.py is excluded from this parametrize entirely: it is the only
       module that WRITES to the ledger, so it is expected to import Django
       models and django.db.
-    - intake.py stays IN the parametrize, but is exempted from the `.models`
-      check only, one line below. It imports VerifiedFact, DocumentVersion
-      and Membership for type annotations only and writes nothing itself --
-      a property the Task 7 review verified by grepping the module for
-      `.objects.` and `.save(` and finding neither, and which stays true here
-      (see test_intake_writes_nothing_itself below). The django.db check
-      still applies to it: nothing documents or justifies intake.py reaching
-      for the database, so if it ever does, this must fail.
+    - The _ANNOTATION_ONLY modules stay IN the parametrize, but are exempted
+      from the `.models` check only, one line below. They import Django models
+      (VerifiedFact, DocumentVersion, Membership) for type annotations only and
+      write nothing themselves -- pinned by
+      test_annotation_only_modules_write_nothing below. The django.db check
+      still applies to them: nothing documents or justifies either reaching
+      for the database, so if one ever does, this must fail.
 
     The rule is deliberately wider than "apps.documents.models": Django models
     in this repo live in several apps (apps.documents.models,
@@ -70,30 +72,23 @@ def test_only_facts_imports_django_models(module):
     named one of them would miss the other two entirely.
     """
     for name in _imports(PACKAGE / module):
-        if module != "intake.py":
+        if module not in _ANNOTATION_ONLY:
             assert not name.endswith(".models"), (
                 f"{module} imports a Django models module ({name}); only facts.py may"
             )
         assert name != "django.db", f"{module} imports django.db; only facts.py may"
 
 
-def test_intake_writes_nothing_itself():
-    """intake.py is exempted above because it imports models for type
-    annotations only. Pin that with the same grep the Task 7 review used, so
-    the exemption cannot silently go stale if a write is added later.
-    .delete( and .update( are the other two ORM write verbs -- a queryset
-    .update() or .delete() call needs neither .objects. nor .save() to reach
-    the database, so the original two-string grep would miss either."""
-    text = (PACKAGE / "intake.py").read_text()
-    assert ".objects." not in text
-    assert ".save(" not in text
-    assert ".delete(" not in text
-    assert ".update(" not in text
+@pytest.mark.parametrize("module", sorted(_ANNOTATION_ONLY))
+def test_annotation_only_modules_write_nothing(module):
+    """.delete( and .update( need neither .objects. nor .save( to reach the database."""
+    text = (PACKAGE / module).read_text()
+    for verb in (".objects.", ".save(", ".delete(", ".update("):
+        assert verb not in text, f"{module} contains {verb}"
 
 
 def test_no_module_imports_a_view_form_or_template():
-    """The interaction surface is out of scope. IntakeResult carries a
-    question; nothing here renders one."""
+    """The interaction surface is out of scope; nothing here renders anything."""
     for path in PACKAGE.glob("*.py"):
         for name in _imports(path):
             assert "views" not in name, f"{path.name} imports a view"
@@ -107,3 +102,26 @@ def test_sources_reaches_no_network_module():
     for name in _imports(PACKAGE / "sources.py"):
         assert name not in {"urllib3", "requests", "httpx"}
         assert not name.endswith(".transport")
+
+
+#: Besides facts.py, only the model itself and erasure (which deletes a student's
+#: rows) may name EvidenceReading -- the model's docstring promises nothing else
+#: reads it, which is what keeps readings out of every fact surface.
+_READING_ALLOWED = {
+    pathlib.Path("apps/documents/evidence/facts.py"),
+    pathlib.Path("apps/documents/models.py"),
+    pathlib.Path("apps/audit/deletion.py"),
+}
+
+
+def test_only_facts_touches_evidence_reading():
+    root = PACKAGE.parents[2]
+    for path in sorted((root / "apps").rglob("*.py")):
+        relative = path.relative_to(root)
+        if relative in _READING_ALLOWED or "migrations" in relative.parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text())):
+            name = getattr(node, "id", None) or getattr(node, "attr", None) or getattr(
+                node, "name", None
+            )
+            assert name != "EvidenceReading", f"{relative} names EvidenceReading"

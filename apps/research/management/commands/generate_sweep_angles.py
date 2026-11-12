@@ -1,33 +1,30 @@
 """Write one (country, family)'s angle set -- operator-run, one call per language.
 
-The vocabulary is item 8's kind-word store. Item 8's `apps/research/vocabulary.py`
-exists but holds no per-language kind words for our holder kinds: it maps a folded
-word to Wikidata kind QIDs with no language key and no map from our holder kinds,
-and ships no committed data file. An adapter from it is owed -- per-language labels
-kept in kinds.json, and a holder-kind -> Wikidata-QID map -- before this command can
-generate. Until it exists this command refuses rather than let the model translate
-"foundation" itself (lever 3), and names the one interim the spec permits:
-`--from-steering`, which writes today's hand-written STEERING query as a single
-labelled angle.
+The kind words come from `kind_words.load_kind_words()`: the committed
+`resolver_data/kind_words.json`, built from Wikidata by `manage.py
+build_kind_words`. Where that file is absent this command refuses rather than
+let the model translate "foundation" itself (lever 3), and names the one
+interim the spec permits: `--from-steering`, which writes today's hand-written
+STEERING query as a single labelled angle. A language the file has no word in
+is reported `no_vocabulary` and not generated.
 """
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from apps.research.angles import PASS_SHAPES, KindVocabulary, generate_angles, steering_angle
+from apps.research.angles import (
+    PASS_SHAPES,
+    generate_angles,
+    openrouter_parser,
+    steering_angle,
+)
 from apps.research.domains import STEERING
-from apps.research.extraction import ResponsesAPI
-from apps.research.languages import _ISO2, WikidataLanguages, home_language, pass_languages
-
-
-def _vocabulary() -> KindVocabulary | None:
-    """Item 8's store, once it lands. Replace this body with its constructor;
-    until then there is none, and that is a refusal, not a fallback."""
-    return None
+from apps.research.kind_words import load_kind_words
+from apps.research.languages import _ISO2, CldrLanguages, home_language, pass_languages
 
 
 class Command(BaseCommand):
@@ -70,23 +67,23 @@ class Command(BaseCommand):
                 raise CommandError(str(error)) from error
             self.stdout.write(f"wrote 1 STEERING angle ({row.language}): {row.query}")
             return
-        vocabulary = _vocabulary()
+        vocabulary = load_kind_words()
         if vocabulary is None:
             raise CommandError(
-                "no kind-word vocabulary (build item 8) -- kind words are never translated by "
-                "the generator. The spec's interim is --from-steering: one angle, labelled."
+                "no kind-word vocabulary: run manage.py build_kind_words -- kind words are never "
+                "translated by the generator. The spec's interim is --from-steering: one angle, "
+                "labelled."
             )
         languages = pass_languages(
-            country, family, source=WikidataLanguages(), home_language=home
+            country, family, source=CldrLanguages(), home_language=home
         )
         if options["dry_run"]:
             self.stdout.write(f"would generate {country}/{family} in {', '.join(languages)}")
             return
-        from openai import OpenAI
-
         outcomes = generate_angles(
             country_code=country, family=family, languages=languages, vocabulary=vocabulary,
-            parser=cast(ResponsesAPI, OpenAI().responses), now=timezone.now(),
+            parser=openrouter_parser(),
+            now=timezone.now(),
             home_language=home, regenerate=options["regenerate"],
         )
         for language, outcome in outcomes.items():

@@ -14,6 +14,16 @@ urlpatterns = [
         name="counselor-student-application-add",
     ),
     path(
+        "student/applications/<uuid:application_id>/",
+        views.student_programme,
+        name="student-programme",
+    ),
+    path(
+        _BASE + "applications/<uuid:application_id>/",
+        views.counselor_programme,
+        name="counselor-student-programme",
+    ),
+    path(
         _BASE + "applications/<uuid:application_id>/outcome/",
         views.record_outcome,
         name="counselor-student-outcome",
@@ -27,6 +37,11 @@ urlpatterns = [
         _BASE + "applications/<uuid:application_id>/portal/",
         views.portal,
         name="counselor-student-application-portal",
+    ),
+    path(
+        _BASE + "applications/<uuid:application_id>/answers/",
+        views.application_answers,
+        name="counselor-student-application-kit",
     ),
     path(
         _BASE + "notifications/<uuid:notification_id>/acknowledge/",

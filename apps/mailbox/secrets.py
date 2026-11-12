@@ -16,7 +16,13 @@ from uuid import UUID
 import boto3  # type: ignore[import-untyped]
 import botocore.exceptions  # type: ignore[import-untyped]
 
+from apps.portals.credentials import aws_code
+
 logger = logging.getLogger(__name__)
+
+
+def _client(client: object | None) -> object:
+    return client if client is not None else boto3.client("secretsmanager")
 
 #: Both providers, always. delete_student_mailbox_tokens walks this rather than
 #: reading MailboxConnection rows: an erasure that trusted the table would miss
@@ -27,11 +33,7 @@ PROVIDERS = ("GOOGLE", "MICROSOFT")
 
 def secret_id(tenant_id: UUID, student_id: UUID, provider: str) -> str:
     """One secret per student per provider."""
-    return f"tehsil/mailbox/{tenant_id}/{student_id}/{provider}"
-
-
-def _client(client: object | None) -> object:
-    return client if client is not None else boto3.client("secretsmanager")
+    return f"elmify/mailbox/{tenant_id}/{student_id}/{provider}"
 
 
 def store_refresh_token(
@@ -54,7 +56,7 @@ def store_refresh_token(
     try:
         secrets.create_secret(Name=name, SecretString=payload)  # type: ignore[attr-defined]
     except botocore.exceptions.ClientError as error:
-        if error.response.get("Error", {}).get("Code") != "ResourceExistsException":
+        if aws_code(error) != "ResourceExistsException":
             raise
         secrets.put_secret_value(SecretId=name, SecretString=payload)  # type: ignore[attr-defined]
 
@@ -86,10 +88,15 @@ def refresh_token_for(
     try:
         response = secrets.get_secret_value(SecretId=secret_id(tenant_id, student_id, provider))  # type: ignore[attr-defined]
         token = json.loads(response["SecretString"])["refresh_token"]
-    except (botocore.exceptions.ClientError, KeyError, TypeError, json.JSONDecodeError):
+    except botocore.exceptions.ClientError as error:
         # Deliberately not logging the exception or the id: botocore puts the
         # SecretId in its message, and the SecretId names the student.
-        logger.warning("no mailbox grant for provider %s", provider)
+        logger.warning("no mailbox grant for provider %s (%s)", provider, aws_code(error))
+        return None
+    except (KeyError, TypeError, json.JSONDecodeError) as error:
+        logger.warning(
+            "corrupt mailbox grant payload for provider %s (%s)", provider, type(error).__name__
+        )
         return None
     return str(token)
 
@@ -121,7 +128,7 @@ def delete_student_mailbox_tokens(
                 ForceDeleteWithoutRecovery=True,
             )
         except botocore.exceptions.ClientError as error:
-            if error.response.get("Error", {}).get("Code") != "ResourceNotFoundException":
+            if aws_code(error) != "ResourceNotFoundException":
                 raise
             continue
         destroyed += 1

@@ -500,7 +500,74 @@ def check_named_program(
         if check is not None
         else check_named_url(source_url, name, now=timezone.now(), deps=Deps())
     )
-    with tenant_scope(message.tenant_id), tenant_transaction(message.tenant_id):
-        RecommendationCandidate.objects.filter(id=message.candidate_id).update(
-            provenance_reason_code=code, provenance_body_id=body_id
+    from apps.funding.models import OutcomeCalibrationRecord
+    from apps.funding.probability import (
+        estimate_named_program_chance,
+        infer_country_from_url,
+    )
+
+    org_country = ""
+    if body_id is not None:
+        org_country = (
+            Organisation.objects.filter(id=body_id)
+            .values_list("country_code", flat=True)
+            .first()
+            or ""
         )
+    resolved_country = org_country or infer_country_from_url(source_url)
+    cal_rows = (
+        tuple(
+            OutcomeCalibrationRecord.objects.filter(
+                program_id__isnull=False,
+                country_code=resolved_country,
+            )[:40]
+        )
+        if resolved_country
+        else ()
+    )
+    with tenant_scope(message.tenant_id), tenant_transaction(message.tenant_id):
+        updates: dict[str, object] = {
+            "provenance_reason_code": code,
+            "provenance_body_id": body_id,
+        }
+        cand = (
+            RecommendationCandidate.objects.filter(id=message.candidate_id)
+            .select_related("run__profile_version")
+            .first()
+        )
+        if cand is not None and cand.eligible:
+            from pydantic import ValidationError
+
+            from apps.accounts.schemas import StudentProfileSnapshot
+
+            eff_country = cand.country_code or resolved_country
+            pv = cand.run.profile_version if cand.run_id is not None else None
+            profile: StudentProfileSnapshot | None = None
+            if pv is not None and pv.schema_version == 3:
+                try:
+                    profile = StudentProfileSnapshot.model_validate(pv.snapshot)
+                except ValidationError as error:
+                    details = "; ".join(
+                        f"{'.'.join(str(p) for p in e.get('loc', ()))}: {e.get('msg', '')}"
+                        for e in error.errors(include_input=False)
+                    )
+                    logger.warning(
+                        "profile version %s for candidate %s failed "
+                        "StudentProfileSnapshot validation (%s)",
+                        pv.id,
+                        message.candidate_id,
+                        details,
+                    )
+                    profile = None
+            est = estimate_named_program_chance(
+                cand.program_name,
+                eff_country,
+                profile,
+                source_url=source_url,
+                calibration_rows=cal_rows,
+            )
+            if eff_country and not cand.country_code:
+                updates["country_code"] = eff_country
+            updates["estimated_chance_pct"] = est.chance_pct
+            updates["calibration_features"] = dict(est.features)
+        RecommendationCandidate.objects.filter(id=message.candidate_id).update(**updates)

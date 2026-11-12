@@ -166,12 +166,16 @@ def test_no_claude_means_two_openai_readings():
     assert out == Alignment(strength="strong", readings=2, excerpt="legged locomotion")
 
 
-def test_the_second_family_is_withheld_unless_the_setting_says_otherwise(settings) -> None:
+def test_the_second_family_is_withheld_when_the_setting_says_so(settings) -> None:
     """`anchor_text` is the student's own fact text -- strictly more
-    identifying than the letter `check_written_requirements` already gates."""
-    import config.settings.base as base
+    identifying than the letter `check_written_requirements` already gates.
 
-    assert base.LETTER_JUDGE_SECOND_FAMILY is False, "the shipped default must be off"
+    The SETTING is what withholds it, which is why this test sets it rather
+    than reading the shipped default. That default is now ON (owner decision,
+    2026-09-24), so a test asserting "off" would pin a decision the owner has
+    since taken -- but the gate itself still has to work when it is off, and
+    that is what this pins.
+    """
     settings.LETTER_JUDGE_SECOND_FAMILY = False
     parser = _Scripted(_reading("strong"), _reading("strong"))
     claude = _Scripted(_reading("strong"))

@@ -46,7 +46,9 @@ def process_europass_message(
         # work, ever commits (ruling F-G).
         with transaction.atomic():
             set_local_tenant(message.tenant_id)
-            draft = DocumentDraft.objects.get(id=message.draft_id)
+            draft = DocumentDraft.objects.select_related(
+                "programme", "funding_opportunity"
+            ).get(id=message.draft_id)
 
         try:
             outcome = render_and_store(draft=draft)
@@ -61,6 +63,15 @@ def process_europass_message(
             # merely wasted time, not a correctness problem (ruling F-H).
             sleep(_INTER_CALL_DELAY_SECONDS)
             raise
+
+    # The stored Europass CV is a new source for the student's prepared files.
+    # Queueing is best-effort: a render that is stored must not fail over it.
+    try:
+        from apps.portals.prepare import queue_for_student
+
+        queue_for_student(message.tenant_id, draft.student_id)
+    except Exception:
+        logger.warning("could not queue prepare_documents after a Europass render")
 
     if outcome.called_remote:
         # One line per real call. A CloudWatch metric filter turns these into

@@ -35,10 +35,20 @@ _STOP_PHRASES = re.compile(
     r"New Jersey)(?!\w)", re.IGNORECASE)
 _TURKIC_LANGUAGE_NAME = re.compile(r"(?:ca|ce|ça|çe)$", re.IGNORECASE)
 _GROUPS = re.compile(
-    r"(?<!\w)(?:developing countries|partner countries|programme countries|program countries|"
+    r"(?<!\w)(?:develop\w* and (?:emerging|newly industriali[sz]ed) (?:countries|economies)|"
+    r"Global South|Глобальн\w* Юг|emerging (?:economies|countries|markets)|Schwellenländer|"
+    r"newly industriali[sz]ed (?:countries|economies)|"
+    r"low-?\s*and[- ]middle[- ]income (?:countries|economies)|(?-i:LMICs?)|"
+    r"sub-Saharan Africa|Африк\w* к югу от Сахары|ODA recipients|"
+    r"Müstəqil Dövlətlər Birliyi|Bağımsız Devletler Topluluğu|наименее развит\w* стран|"
+    r"развивающ\w* стран|inkişaf etməkdə olan ölkələr|gelişmekte olan ülkeler|"
+    r"Entwicklungsländer|"
+    r"developing countries|partner countries|programme countries|program countries|"
     r"non-(?-i:[A-Z]{2,}(?:/[A-Z]{2,})*)|DAC list|least developed countries|CIS countries|"
     r"Commonwealth of Independent States|"
-    r"СНГ|Turkic States|Türk Dövlətləri|Türk Devletleri|OIC|İslam Əməkdaşlıq|İslam İşbirliği|"
+    r"СНГ|Turkic States|Türk Dövlətləri|Türk Devletleri|OIC|"
+    r"Organi[sz]ation of Islamic Cooperation|İslam Əməkdaşlıq|İslam İşbirliği|"
+    r"منظمة التعاون الإسلامي|"
     r"üçüncü ölkələr|third countries|en az gelişmiş ülkeler|"
     r"foreign nationals?|foreign citizens?|international students?|иностранн\w* граждан|"
     r"иностранн\w* студент|xarici vətəndaş|xarici tələbə|əcnəbi|yabancı uyruklu|"
@@ -46,20 +56,33 @@ _GROUPS = re.compile(
     re.IGNORECASE)
 _LEVELS = (
     ("postdoc", r"post-?doc\w*|postdoctoral|doktora sonrası|postdoktorantura|постдок\w*|박사후|"
-                r"博士后|ポスドク"),
+                r"博士后|ポスドク|ما\s+بعد\s+الدكتوراه|pascadoktoral|sau\s+tiến\s+sĩ|"
+                r"staż\s+podoktorski"),
     ("postgraduate", r"post-?graduate\w*|(?<!\w)graduate (?:students?|stud\w+|programmes?|"
-                     r"programs?|degrees?|school)|lisansüstü|послевузовск\w*"),
+                     r"programs?|degrees?|school)|lisansüstü|послевузовск\w*|"
+                     r"دراسات\s+عليا|الدراسات\s+العليا|pascasarjana|pascasiswazah|"
+                     r"sau\s+đại\s+học|pós-graduação|posgrado|postgrado"),
     ("master", r"(?<!\w)master'?s?(?!\w)|(?<!\w)(?-i:MA|MSc|MSC|M\.Sc\.?)(?!\w)|"
-               r"(?<!\w)magistr(?!ate)\w*|yüksek lisans|магистр\w*|mesterképzés|석사|硕士|修士"),
+               r"laurea\s+magistrale|(?<!\w)magistr(?!ate)\w*|yüksek lisans|магистр\w*|"
+               r"mesterképzés|석사|硕士|修士|máster|maestría|mestrado|"
+               r"masterstudieng\w*|masterstudium|ماجستير|الماجستير|"
+               r"thạc\s+sĩ|cao\s+học|studia\s+ii\s+stopnia|maisteri\w*|meistaranám\w*"),
     ("phd", r"(?<!\w)ph\.?\s?d(?:s|\.)?(?!\w)|doctoral|doctorate|doktorantura|doktora(?! sonrası)|"
-            r"аспирант\w*|"
-            r"докторант\w*|doktori|doctorat|박사(?!후)|博士(?!后)"),
+            r"аспирант\w*|докторант\w*|doktori|doctorat|박사(?!후)|博士(?!后)|"
+            r"dottorato(?:\s+di\s+ricerca)?|doctorado|doutoramento|doutorado|"
+            r"promotionsstud\w*|دكتوراه|الدكتوراه|tiến\s+sĩ|nghiên\s+cứu\s+sinh|"
+            r"studia\s+iii\s+stopnia|szkoł\w+\s+doktorsk\w*"),
     ("bachelor", r"(?<!\w)bachelor'?s?(?!\w)|undergraduate|bakalavr\w*|(?<!yüksek )lisans(?!üstü)|"
                  r"бакалавр\w*|специалитет\w*|alapképzés|(?<!\w)(?-i:BA|BSc|BSC|B\.Sc\.?)"
-                 r"(?!\w)|학사|本科|学士"),
+                 r"(?!\w)|학사|本科|学士|laurea\s+triennale|licenciatura|graduação|"
+                 r"bachelorstud\w*|بكالوريوس|البكالوريوس|إجازة\s+جامعية|sarjana\s+muda|"
+                 r"cử\s+nhân|licencjack\w*|studia\s+i\s+stopnia"),
 )
 _GAP = r"Academic|General|overall|total|minimum|min|Test|English|iBT|score|of|level|band"
-_TEST = r"IELTS|TOEFL(?:\s*iBT)?|Duolingo|TOEIC|PTE|TOPIK|HSK|YDS|YÖKDİL|YOKDIL|e-YDS"
+_TEST = (
+    r"IELTS|TOEFL(?:\s*iBT)?|Duolingo|TOEIC|PTE|TOPIK|HSK|YDS|YÖKDİL|YOKDIL|e-YDS|TestDaF|"
+    r"(?-i:DSH|DELF|DALF|TCF|JLPT|CILS|CELI|DELE|TORFL|ТРКИ)|اختبار\s+STEP|(?-i:STEP)\s+score"
+)
 _LANGUAGE_CUE = re.compile(
     r"(?<!\w)(?:english|german|french|russian|turkish|language|level|cefr|ingilis|alman|fransız|"
     r"türk(?!iye)|rus|dil|səviyyə|seviye|английск|немецк|французск|русск|турецк|язык|уровн|niveau|sprach|deutsch)",

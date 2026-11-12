@@ -38,6 +38,7 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
+from functools import partial
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
@@ -429,25 +430,46 @@ def _unavailable(error: Exception, label: str) -> DecisionsUnavailable:
     )
 
 
+#: Under this much time, a Jev call bounded by a deadline gets no retry (`_typesafe_client`).
+_JEV_RETRY_FLOOR_S = 10.0
+
+
 def _typesafe_client(
     state: typesafe_sdk.JSONContent,
     questions: Mapping[str, Question],
     *,
     model: str,
     provider: str,
+    timeout_s: float | None = None,
 ) -> dict[str, Answer]:
     """Jev through DECISIONS_BASE_URL. Both the key and the base URL are passed
     explicitly, so the SDK's own TYPESAFE_API_KEY / TYPESAFE_BASE_URL
     environment fallbacks never choose the route. The SDK retries 408/429/5xx
     itself (2 retries, Retry-After honoured, 30 s per call); what still fails is
-    `failed`."""
+    `failed`.
+
+    `timeout_s`, when given, bounds the whole call, retries included. The SDK's
+    `RetryPolicy.timeout` is tenacity's `stop_before_delay`: it stops STARTING
+    attempts after that long, so an attempt begun just before it runs a full
+    request timeout more -- passing `timeout_s` as both would allow about twice
+    `timeout_s`. So with `_JEV_RETRY_FLOOR_S` or more each half gets half: no
+    attempt starts after `timeout_s / 2` and none lasts longer than that. With
+    less, there is no time to retry: one attempt, `max_retries=0`, `timeout_s`."""
     _require_configured("typesafe")
     _, key = _decisions_key()
+    bound: dict[str, Any] = {}
+    if timeout_s is not None:
+        half = timeout_s / 2
+        bound = ({"timeout": half, "retry": typesafe_sdk.RetryPolicy(timeout=half)}
+                 if timeout_s >= _JEV_RETRY_FLOOR_S else
+                 {"timeout": timeout_s,
+                  "retry": typesafe_sdk.RetryPolicy(max_retries=0, timeout=timeout_s)})
     try:
         with typesafe_sdk.TypeSafeClient(
             api_key=key, base_url=settings.DECISIONS_BASE_URL
         ) as client:
-            response = client.system_one(state=state, questions=_to_sdk(questions), model=model)
+            response = client.system_one(state=state, questions=_to_sdk(questions), model=model,
+                                         **bound)
     except Exception as error:  # noqa: BLE001 - every SDK failure becomes a typed kind
         raise _unavailable(error, "typesafe") from error
     return _from_sdk(response, questions, model=model, provider=provider)
@@ -649,8 +671,14 @@ def ask(
     budget: DecisionBudget | None = None,
     record: bool = True,
     client: Client | None = None,
+    timeout_s: float | None = None,
 ) -> dict[str, Answer]:
     """Answer every question against the state, independently and in parallel.
+
+    `timeout_s` bounds the call for a read someone waits on (D8 inside the
+    single-page funding read). Only Jev's own client takes it: the adapter SDK
+    has no timeout, and an injected client carries its own. None, the default,
+    calls exactly as before.
 
     `decision` is the decision ID (D1-D8, or a grammar slot) -- it selects the
     provider and is what the record and the calibration audit key on. It never
@@ -687,6 +715,8 @@ def ask(
     if budget is not None:
         budget.check(estimate)
     call: Client = client or (_typesafe_client if provider == "typesafe" else _adapter_client)
+    if client is None and provider == "typesafe" and timeout_s is not None:
+        call = partial(_typesafe_client, timeout_s=timeout_s)
     try:
         answers = call(state, questions, model=model, provider=provider)
     except DecisionsUnavailable as error:

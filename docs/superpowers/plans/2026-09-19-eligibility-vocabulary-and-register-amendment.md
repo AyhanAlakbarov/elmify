@@ -17,8 +17,8 @@
 - **`FIELD` no-match is `UNDECIDABLE`, never `FAILED`** — "engineering" does not demonstrably exclude "robotics".
 - **The verbatim sentence rides on every row** (`BenefitRule.rule_text`, `ConditionTriple.quote`); quote verification in the judge already covers it.
 - **Migrations:** the funding chain tip is `0037_snapshot_fetched_via`; the research chain tip is `0003_hostfetchcost`. Verify with `ls apps/funding/migrations | tail -3` before generating — another session may have added one.
-- **Never run `ruff format`** in this repo (it produces invalid Python here). Run `uv run ruff check`, `uv run mypy apps`, and `POSTGRES_DB=tehsil_reader_holder uv run python manage.py makemigrations --check --dry-run` after every task.
-- **Test database:** `POSTGRES_DB=tehsil_reader_holder` on every pytest invocation.
+- **Never run `ruff format`** in this repo (it produces invalid Python here). Run `uv run ruff check`, `uv run mypy apps`, and `POSTGRES_DB=elmify_reader_holder uv run python manage.py makemigrations --check --dry-run` after every task.
+- **Test database:** `POSTGRES_DB=elmify_reader_holder` on every pytest invocation.
 - **Commit with a pathspec**, never `git add -A` — other sessions share this repository.
 
 ## File Structure
@@ -125,7 +125,7 @@ def test_every_region_carries_a_source_url():
 
 ```bash
 cd /home/orkhan/Desktop/reader-holder
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_eligibility.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_eligibility.py -q
 ```
 
 Expected: `ModuleNotFoundError: No module named 'apps.funding.eligibility'`.
@@ -335,7 +335,7 @@ def expand_countries(value: str) -> tuple[str, ...] | None:
 - [ ] **Step 5: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_eligibility.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_eligibility.py -q
 ```
 
 Expected: all pass.
@@ -524,7 +524,7 @@ def test_the_deadline_partition_keys_are_not_eligibility_keys():
 - [ ] **Step 2: Run to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_eligibility.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_eligibility.py -q
 ```
 
 Expected: `ImportError: cannot import name 'decide'`.
@@ -743,7 +743,7 @@ Add `from datetime import date as _date` to the module's imports.
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_eligibility.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_eligibility.py -q
 ```
 
 Expected: all pass.
@@ -849,7 +849,7 @@ Update the `make_applicant_condition` helper in that file to accept and pass thr
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_hard_gates.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_hard_gates.py -q
 ```
 
 Expected: `ValidationError` for the unexpected `key`/`operator`/`value` fields, or `CITIZENSHIP` rejected by `ApplicantConditionType`.
@@ -948,7 +948,7 @@ def unevaluable_condition_reasons(
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_hard_gates.py tests/funding -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_hard_gates.py tests/funding -q
 ```
 
 Expected: all pass, including the 41 that predate this change.
@@ -1018,7 +1018,7 @@ def test_a_partition_condition_is_still_matched_verbatim():
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_validity.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_validity.py -q
 ```
 
 Expected: the first test fails — `NATIONALITY:EASTERN_PARTNERSHIP` compares by string equality today, so the Azerbaijani student falls through to the `ALL` date.
@@ -1070,7 +1070,7 @@ class _StudentView:
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_validity.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_validity.py -q
 ```
 
 Expected: all 30+ pass, including the existing table.
@@ -1149,7 +1149,7 @@ def test_the_key_constant_matches_the_vocabulary() -> None:
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_catalog_models.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_catalog_models.py -q
 ```
 
 Expected: `TypeError: BenefitRule() got unexpected keyword arguments: 'key'`.
@@ -1212,7 +1212,7 @@ It must contain: `AlterField` on `benefit` (nullable), three `AddField` (`key`, 
 - [ ] **Step 5: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding -q
 uv run python manage.py makemigrations --check --dry-run
 ```
 
@@ -1269,7 +1269,7 @@ def test_every_stored_condition_type_has_a_vocabulary_key(db) -> None:
 - [ ] **Step 2: Run it**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_catalog_models.py -q -k vocabulary_key
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_catalog_models.py -q -k vocabulary_key
 ```
 
 Expected: PASS on an empty table — the test is a guard for the migration, not a driver. Write the migration anyway; step 4 proves it runs.
@@ -1319,10 +1319,10 @@ class Migration(migrations.Migration):
 - [ ] **Step 4: Prove it runs, both ways**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run python manage.py migrate funding 0039
-POSTGRES_DB=tehsil_reader_holder uv run python manage.py migrate funding 0038
-POSTGRES_DB=tehsil_reader_holder uv run python manage.py migrate funding
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding -q
+POSTGRES_DB=elmify_reader_holder uv run python manage.py migrate funding 0039
+POSTGRES_DB=elmify_reader_holder uv run python manage.py migrate funding 0038
+POSTGRES_DB=elmify_reader_holder uv run python manage.py migrate funding
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding -q
 ```
 
 Expected: forward, backward and forward again all clean; tests pass.
@@ -1417,7 +1417,7 @@ def test_the_question_names_every_eligibility_key():
 - [ ] **Step 2: Run to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_judge.py -q -k "condition"
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_judge.py -q -k "condition"
 ```
 
 Expected: `ValidationError: Extra inputs are not permitted [conditions]`.
@@ -1486,7 +1486,7 @@ and pass `conditions=tuple(agreed)`, `disputed_conditions=tuple(sorted(disputed_
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research -q
 ```
 
 Expected: all pass.
@@ -1578,7 +1578,7 @@ def test_a_reread_replaces_the_conditions_it_previously_wrote(program, snapshot)
 - [ ] **Step 2: Run to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_reader.py -q -k condition
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_reader.py -q -k condition
 ```
 
 Expected: `BenefitRule.DoesNotExist`.
@@ -1674,7 +1674,7 @@ If the existing `benefit_rule_condition_type_shape_valid` constraint rejects a k
 - [ ] **Step 4: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research tests/funding -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research tests/funding -q
 ```
 
 Expected: all pass.
@@ -1804,7 +1804,7 @@ def test_research_institute_is_a_holder_value():
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_organisation_register.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_organisation_register.py -q
 ```
 
 Expected: `ImportError: cannot import name 'Organisation'`.
@@ -2012,7 +2012,7 @@ def record_organisation(
 ```bash
 ls apps/funding/migrations | tail -3
 uv run python manage.py makemigrations funding --name organisation_register
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding/test_organisation_register.py tests/research -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding/test_organisation_register.py tests/research -q
 uv run ruff check apps/funding/models.py apps/research/organisations.py apps/research/funding_judge.py apps/research/funding_reader.py tests/funding/test_organisation_register.py
 uv run mypy apps
 uv run python manage.py makemigrations --check --dry-run
@@ -2087,7 +2087,7 @@ def test_two_awards_on_one_holders_domains_share_one_organisation(snapshot, fund
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_reader.py -q -k organisation
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_reader.py -q -k organisation
 ```
 
 Expected: `AttributeError: 'FundingOpportunity' object has no attribute 'organisation_id'`.
@@ -2165,8 +2165,8 @@ def unbackfill(apps, schema_editor):
 - [ ] **Step 5: Run everything**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run python manage.py migrate funding
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/funding tests/research -q
+POSTGRES_DB=elmify_reader_holder uv run python manage.py migrate funding
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/funding tests/research -q
 uv run ruff check apps/funding/models.py apps/research/funding_reader.py tests/research/test_funding_reader.py
 uv run mypy apps
 uv run python manage.py makemigrations --check --dry-run
@@ -2231,7 +2231,7 @@ def test_the_harness_fetches_through_the_vendor_ladder_by_default(monkeypatch):
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_yield.py -q -k vendor
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_yield.py -q -k vendor
 ```
 
 Expected: `AttributeError: module has no attribute 'retrieve_official_source'`.
@@ -2261,7 +2261,7 @@ with `handle` choosing `default_fetch()` or `fetch_official_source` accordingly.
 - [ ] **Step 4: Run, lint, commit**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/research/test_funding_yield.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/research/test_funding_yield.py -q
 uv run ruff check apps/research/management/commands/funding_yield.py tests/research/test_funding_yield.py
 uv run mypy apps
 git add apps/research/management/commands/funding_yield.py tests/research/test_funding_yield.py
@@ -2324,7 +2324,7 @@ def test_a_blank_answer_leaves_the_condition_undecidable_not_failed() -> None:
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/accounts/test_consultation_progress.py -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/accounts/test_consultation_progress.py -q
 ```
 
 Expected: `assert 'date_of_birth' in fields` fails.
@@ -2348,7 +2348,7 @@ In `consultation.py`, add two optional questions to `QUESTIONS` following the fi
 - [ ] **Step 4: Run, lint, commit**
 
 ```bash
-POSTGRES_DB=tehsil_reader_holder uv run pytest tests/accounts tests/funding -q
+POSTGRES_DB=elmify_reader_holder uv run pytest tests/accounts tests/funding -q
 uv run ruff check apps/accounts/schemas.py apps/accounts/consultation.py tests/accounts/test_consultation_progress.py
 uv run mypy apps
 git add apps/accounts/schemas.py apps/accounts/consultation.py tests/accounts/test_consultation_progress.py

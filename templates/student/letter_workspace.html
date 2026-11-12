@@ -3,23 +3,25 @@
 {% block title %}{{ application.title }}: documents{% endblock %}
 {% block content %}
 {% with c=candidate latest=row.latest %}
-<nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-applications' %}">My applications</a><span aria-hidden="true">/</span><a href="{% url 'student-option' application.id %}">{{ application.title }}</a><span aria-hidden="true">/</span><span aria-current="page">Documents</span></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-writing' %}">CV &amp; letters</a><span aria-hidden="true">/</span><a href="{% url 'student-option' application.id %}">{{ application.title }}</a><span aria-hidden="true">/</span><span aria-current="page">Side-by-side workspace</span></nav>
 <div class="page-head ws-head">
   <div>
-    <h1>{% if c.country_code %}{{ c.country_code|flag }}{% endif %}{{ application.title }}</h1>
-    <p>{% if c.institution_name %}{{ c.institution_name }}{% endif %}{% if c.country_code %}{% if c.institution_name %}, {% endif %}{{ c.country_code|country_name }}{% endif %}{% if application.deadline %}. Deadline <time datetime="{{ application.deadline|date:'c' }}">{{ application.deadline|date:"j M Y" }}</time>{% endif %}</p>
+    <h1>Side-by-side review: {% if c.country_code %}{{ c.country_code|flag }}{% endif %}{{ application.title }}</h1>
+    <p>Official requirements on the left &middot; Your tailored document on the right{% if c.institution_name %} &middot; {{ c.institution_name }}{% endif %}{% if c.country_code %}{% if c.institution_name %}, {% else %} &middot; {% endif %}{{ c.country_code|country_name }}{% endif %}{% if application.deadline %}. Deadline <time datetime="{{ application.deadline|date:'c' }}">{{ application.deadline|date:"j M Y" }}</time>{% endif %}</p>
   </div>
+  <a class="btn btn-quiet btn-small" href="{% url 'student-option' application.id %}">View application card &rarr;</a>
 </div>
 
 <nav class="doc-tabs" aria-label="Documents for this application">
   {% for key, label in tabs %}
-    <a href="?doc={{ key }}"{% if key == tab %} aria-current="page"{% endif %}>{{ label }}{% if key == "letter" %}{% if latest.status == "APPROVED" %}<span class="dot dot-ok" aria-label="approved"></span>{% elif latest %}<span class="dot dot-warn" aria-label="draft"></span>{% endif %}{% elif key != "letter" %}<span class="soon">Soon</span>{% endif %}</a>
+    <a href="?doc={{ key }}"{% if key == tab %} aria-current="page"{% endif %}>{{ label }}{% if key == "letter" %}{% if latest.status == "APPROVED" %}<span class="dot dot-ok" aria-label="approved"></span>{% elif latest %}<span class="dot dot-warn" aria-label="draft"></span>{% endif %}{% elif key == "references" %}{% if referee_requests %}<span class="count">{{ referee_requests|length }}</span>{% endif %}{% elif key == "essay" %}{% if essay_row.latest.status == "APPROVED" %}<span class="dot dot-ok" aria-label="approved"></span>{% elif essay_row.latest %}<span class="dot dot-warn" aria-label="draft"></span>{% else %}<span class="soon">Soon</span>{% endif %}{% endif %}</a>
   {% endfor %}
 </nav>
 
 <div class="ws-split">
   {# ------------------------------------------------------------ left: what is asked #}
   <aside class="ws-brief" aria-labelledby="brief-heading">
+    <p class="ws-pane-kicker">Left &middot; Official requirements</p>
     {% if tab == "letter" %}
       <h2 id="brief-heading">What this letter needs</h2>
       {% if requirements.letter %}
@@ -30,28 +32,31 @@
       {% else %}
         <p class="muted">We have not read this programme's page yet, so the letter follows the usual rules for {% if c.country_code %}{{ c.country_code|country_name }}{% else %}this country{% endif %}. When the page is read, its rules show here.</p>
       {% endif %}
-      {% if requirements.your_actions %}
+      {% if requirements.letter_actions %}
         <h3>Only you can do these</h3>
-        <ul class="ws-reqs ws-actions">{% for text in requirements.your_actions %}<li>{{ text }}</li>{% endfor %}</ul>
+        <ul class="ws-reqs ws-actions">{% for text in requirements.letter_actions %}<li>{{ text }}</li>{% endfor %}</ul>
       {% endif %}
-      {% if requirements.other or requirements.references %}
+      {% if requirements.other or requirements.references or requirements.other_actions %}
         <details class="ws-more">
           <summary>Everything else this application asks for</summary>
-          <ul class="ws-reqs">{% for text in requirements.other %}<li>{{ text }}</li>{% endfor %}{% for text in requirements.references %}<li>{{ text }}</li>{% endfor %}</ul>
+          <ul class="ws-reqs">{% for text in requirements.other %}<li>{{ text }}</li>{% endfor %}{% for text in requirements.references %}<li>{{ text }}</li>{% endfor %}{% for text in requirements.other_actions %}<li>{{ text }}</li>{% endfor %}</ul>
         </details>
       {% endif %}
 
       <section class="ws-questions" aria-labelledby="questions-heading">
         <div class="ws-q-head"><h3 id="questions-heading">Tell us more for this letter</h3><span class="soon">Coming soon</span></div>
         <p class="muted small">Answers here will go into this letter only. Saving them is not switched on yet, so for now the AI writes from your confirmed details and your <a href="{% url 'student-gap-interview' %}">answered questions</a>.</p>
-        <form class="ws-q-form" aria-describedby="questions-heading">
-          <fieldset disabled>
-            {% for key, question in questions %}
-              <p><label for="q-{{ key }}">{{ question }}</label><textarea id="q-{{ key }}" name="{{ key }}" rows="2"></textarea></p>
-            {% endfor %}
-            <button type="button">Save answers</button>
-          </fieldset>
-        </form>
+        <details class="ws-more">
+          <summary>Preview upcoming letter-specific questions</summary>
+          <form class="ws-q-form" aria-describedby="questions-heading">
+            <fieldset disabled>
+              {% for key, question in questions %}
+                <p><label for="q-{{ key }}">{{ question }}</label><textarea id="q-{{ key }}" name="{{ key }}" rows="2"></textarea></p>
+              {% endfor %}
+              <button type="button">Save answers</button>
+            </fieldset>
+          </form>
+        </details>
       </section>
 
     {% elif tab == "references" %}
@@ -71,20 +76,44 @@
 
     {% else %}
       <h2 id="brief-heading">What the scholarship asks for</h2>
-      {% with docs=c.details.required_documents %}
-        {% if docs %}
-          <p class="ws-source">From the scholarship's own page</p>
-          <ul class="ws-reqs">{% for d in docs %}<li>{{ d|lower|capfirst }}</li>{% endfor %}</ul>
-        {% else %}
-          <p class="muted">We have not read a list of documents for this scholarship yet.</p>
+      {% if scholarship_apps|length > 1 %}
+        <div class="ws-award-switch" role="navigation" aria-label="Linked scholarships">
+          {% for app in scholarship_apps %}
+            <a href="?doc=essay&amp;award={{ app.id }}"{% if app.id == scholarship_app.id %} aria-current="page"{% endif %}>{{ app.title }}</a>
+          {% endfor %}
+        </div>
+      {% elif scholarship_app and not is_award %}
+        <p class="ws-source">{{ scholarship_app.title }}</p>
+      {% endif %}
+      {% if essay_requirements.letter %}
+        <p class="ws-source">From the scholarship's own page</p>
+        <ul class="ws-reqs">{% for text in essay_requirements.letter %}<li>{{ text }}</li>{% endfor %}</ul>
+        {% if essay_requirements.other or essay_requirements.references %}
+          <details class="ws-more">
+            <summary>Everything else this scholarship asks for</summary>
+            <ul class="ws-reqs">{% for text in essay_requirements.other %}<li>{{ text }}</li>{% endfor %}{% for text in essay_requirements.references %}<li>{{ text }}</li>{% endfor %}</ul>
+          </details>
         {% endif %}
-      {% endwith %}
-      {% if c.details.holder %}<p class="muted">Awarded by {{ c.details.holder }}.</p>{% endif %}
+      {% elif essay_requirements.other or essay_requirements.references %}
+        <p class="ws-source">From the scholarship's own page</p>
+        <ul class="ws-reqs">{% for text in essay_requirements.other %}<li>{{ text }}</li>{% endfor %}{% for text in essay_requirements.references %}<li>{{ text }}</li>{% endfor %}</ul>
+      {% else %}
+        {% with docs=c.details.required_documents %}
+          {% if docs %}
+            <p class="ws-source">From the scholarship's own page</p>
+            <ul class="ws-reqs">{% for d in docs %}<li>{{ d|lower|capfirst }}</li>{% endfor %}</ul>
+          {% else %}
+            <p class="muted">We have not read a list of documents for this scholarship yet.</p>
+          {% endif %}
+        {% endwith %}
+      {% endif %}
+      {% if scholarship_holder %}<p class="muted small">Awarded by {{ scholarship_holder }}.</p>{% endif %}
     {% endif %}
   </aside>
 
   {# ------------------------------------------------------------ right: the document #}
   <section class="ws-doc" aria-labelledby="doc-heading">
+    <p class="ws-pane-kicker">Right &middot; Your tailored document</p>
     {% if tab == "letter" %}
       <div class="ws-doc-head">
         <h2 id="doc-heading">Motivation letter{% if latest %}, version {{ latest.version }}{% endif %}</h2>
@@ -104,7 +133,15 @@
       {% elif application.letter_state == "QUEUED" %}
         <div class="ws-empty"><p><strong>The AI is writing your letter.</strong></p><p class="muted">It takes about a minute. Reload this page to see it.</p></div>
       {% elif not row.writable %}
-        <div class="ws-empty"><p><strong>No letter for this one.</strong></p><p class="muted">Letters are written for programmes. For a scholarship, open the Scholarship essay tab.</p></div>
+        <div class="ws-empty">
+          <p><strong>No standalone motivation letter for this scholarship.</strong></p>
+          <p class="muted">Most scholarships evaluate the motivation letter you submit to your target degree programme. Add an eligible programme from your pack to generate a tailored programme letter, upload a draft you already have, or ask your counsellor if this award requires a separate statement.</p>
+          <div class="row-actions">
+            <a class="btn btn-primary btn-small" href="{% url 'student-recommendation' %}">Add a programme from your pack</a>
+            <a class="btn btn-quiet btn-small" href="{% url 'student-documents' %}#upload">Upload an existing letter</a>
+            <a class="text-link" href="{% url 'student-messages' %}">Ask your counsellor</a>
+          </div>
+        </div>
       {% else %}
         <div class="ws-empty"><p><strong>No letter yet.</strong></p><p class="muted">The AI writes it from the details you confirmed and this programme's rules on the left. You read every word before it is used.</p></div>
       {% endif %}
@@ -132,31 +169,89 @@
       {% endif %}
 
     {% elif tab == "references" %}
-      <div class="ws-doc-head"><h2 id="doc-heading">Ask for a recommendation</h2><span class="soon">Coming soon</span></div>
-      <p class="muted">Sending requests is not switched on yet. Nothing on this form is sent or saved.</p>
-      <form class="referee-form">
-        <fieldset disabled>
-          <div class="field-row">
-            <p><label for="ref-name">Referee's name</label><input type="text" id="ref-name" name="name"></p>
-            <p><label for="ref-email">Their email</label><input type="email" id="ref-email" name="email"></p>
-          </div>
-          <div class="field-row">
-            <p><label for="ref-role">Their role</label><select id="ref-role" name="role"><option>Professor or teacher</option><option>Thesis supervisor</option><option>Manager at work</option><option>Other</option></select></p>
-            <p><label for="ref-since">Known you since</label><input type="text" id="ref-since" name="since" placeholder="e.g. 2022"></p>
-          </div>
-          <p><label for="ref-note">What should they mention?</label><textarea id="ref-note" name="note" rows="3" placeholder="The project you did together, a result you are proud of"></textarea></p>
-          <button type="button">Send request</button>
-        </fieldset>
-      </form>
+      <div class="ws-doc-head"><h2 id="doc-heading">Recommendation letters</h2></div>
+      <div class="write-callout">
+        <div class="write-callout-copy">
+          <strong>How recommendation letters are prepared</strong>
+          <p class="muted">Universities require professors or managers to write and submit their own letters. Elmify prepares a tailored <strong>Referee Briefing Package</strong> for each referee — with this programme's rules, deadlines, shared research/coursework facts, and a ready-to-send email draft.</p>
+        </div>
+        <div class="write-callout-actions">
+          <a href="{% url 'student-referees' %}" class="btn btn-primary btn-small">Manage your referees</a>
+          <a href="{% url 'student-referee-plan' %}" class="btn btn-quiet btn-small">Referee plan</a>
+        </div>
+      </div>
+      {% if referee_requests %}
+        <h3>Referees assigned to this application</h3>
+        <ul class="item-list">
+          {% for req in referee_requests %}
+            <li>
+              <div class="ref-row-info">
+                <div class="ref-row-title">
+                  <strong>{{ req.referee.label }}</strong>
+                  <span class="badge {% if req.state == 'AGREED' or req.state == 'SUBMITTED' %}badge-ok{% elif req.state == 'ASKED' %}badge-brand{% else %}badge{% endif %}">{{ req.get_state_display }}</span>
+                </div>
+                {% if req.mode != "NOT_STATED" %}<small class="muted">{{ req.get_mode_display }}</small>{% endif %}
+              </div>
+              <a class="btn btn-quiet btn-small" href="{% url 'student-referee-package' req.referee.id %}">Briefing package<span class="sr-only"> — What to send {{ req.referee.label }}</span> &rarr;</a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <p class="muted small">Direct portal-email dispatch is coming soon. Nothing on the preview form below is sent or saved.</p>
+      <details class="ws-more">
+        <summary>Preview upcoming direct-email request form <span class="soon">Coming soon</span></summary>
+        <form class="referee-form">
+          <fieldset disabled>
+            <div class="field-row">
+              <p><label for="ref-name">Referee's name</label><input type="text" id="ref-name" name="name"></p>
+              <p><label for="ref-email">Their email</label><input type="email" id="ref-email" name="email"></p>
+            </div>
+            <div class="field-row">
+              <p><label for="ref-role">Their role</label><select id="ref-role" name="role"><option>Professor or teacher</option><option>Thesis supervisor</option><option>Manager at work</option><option>Other</option></select></p>
+              <p><label for="ref-since">Known you since</label><input type="text" id="ref-since" name="since" placeholder="e.g. 2022"></p>
+            </div>
+            <p><label for="ref-note">What should they mention?</label><textarea id="ref-note" name="note" rows="3" placeholder="The project you did together, a result you are proud of"></textarea></p>
+            <button type="button">Send request</button>
+          </fieldset>
+        </form>
+      </details>
       <p class="small"><a href="{% url 'student-references' %}">All your recommendation requests</a></p>
 
     {% else %}
-      <div class="ws-doc-head"><h2 id="doc-heading">Scholarship essay</h2><span class="soon">Coming soon</span></div>
-      <div class="ws-empty">
-        <p><strong>The AI will write scholarship essays here.</strong></p>
-        <p class="muted">Like your motivation letters: from your confirmed details, to this scholarship's own questions, and nothing goes anywhere until you approve it. Writing them is not switched on yet.</p>
-        <p><button type="button" disabled>Write my essay</button></p>
-      </div>
+      {% with essay=essay_row.latest %}
+        <div class="ws-doc-head">
+          <h2 id="doc-heading">Scholarship essay{% if scholarship_app and not is_award %} — {{ scholarship_app.title }}{% endif %}{% if essay %}, version {{ essay.version }}{% endif %}</h2>
+          {% if essay.status == "APPROVED" %}<span class="badge badge-ok">Approved</span>
+          {% elif essay %}<span class="badge badge-warn">Draft, not approved</span>
+          {% else %}<span class="soon">Coming soon</span>{% endif %}
+        </div>
+        {% if essay_row.paragraphs %}
+          <article class="paper paper-letter ws-paper" id="essay-text-{{ essay.id }}" aria-label="Your scholarship essay">
+            {% if essay_row.header %}<p class="paper-date">{{ essay_row.header|linebreaksbr }}</p>{% endif %}
+            {% for paragraph in essay_row.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+          </article>
+          <div class="ws-actions-bar">
+            {% if essay.status == "APPROVED" and essay.rendered_filename %}
+              <a class="btn" hx-boost="false" href="{% url 'documents-download' essay.id essay.rendered_filename %}">Download PDF</a>
+            {% endif %}
+            <button type="button" class="btn-quiet" data-copy="essay-text-{{ essay.id }}">Copy text</button> <span role="status" aria-live="polite"></span>
+            {% if scholarship_app and not is_award %}
+              <a class="btn btn-quiet btn-small" href="{% url 'student-option' scholarship_app.id %}">Open scholarship card &rarr;</a>
+            {% endif %}
+          </div>
+        {% else %}
+          <div class="ws-empty">
+            <p><strong>The AI will write scholarship essays here.</strong></p>
+            <p class="muted">Like your motivation letters: from your confirmed details, to this scholarship's own questions, and nothing goes anywhere until you approve it. Writing them is not switched on yet.</p>
+            <div class="row-actions">
+              <button type="button" disabled>Write my essay</button>
+              <a class="btn btn-quiet btn-small" href="{% url 'student-recommendation' %}">Add a programme for a motivation letter</a>
+              <a class="btn btn-quiet btn-small" href="{% url 'student-documents' %}#upload">Upload an existing essay</a>
+              <a class="text-link" href="{% url 'student-messages' %}">Ask your counsellor</a>
+            </div>
+          </div>
+        {% endif %}
+      {% endwith %}
     {% endif %}
   </section>
 </div>

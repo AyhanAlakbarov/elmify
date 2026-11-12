@@ -27,7 +27,6 @@ from apps.documents.document_worker import (
     handle_scan_result,
     mark_read_failed,
 )
-from apps.documents.generation import GenerationRateLimited
 from apps.documents.ingestion import IngestionRateLimited
 
 
@@ -48,22 +47,20 @@ class Command(BaseCommand):
                     message_type=ScanResultEvent,
                     on_last_failure=mark_read_failed,
                 )
-            except (GenerationRateLimited, IngestionRateLimited) as error:
-                # Our own limiter, not a crash. Same reasoning as
+            except IngestionRateLimited as error:
+                # Our own ingestion limiter, not a crash. Same reasoning as
                 # run_europass_worker's deferred branch: an uncaught exception
                 # kills the ECS task, each restart re-polls the same message
                 # and burns the maxReceiveCount budget faster than the window
                 # rolls over.
                 #
-                # The message is not deleted, so SQS redelivers it -- but it
-                # does NOT eventually succeed, and this is deliberate. The
-                # ingestion window is 3600s while the whole retry envelope is
-                # VisibilityTimeout 900 x maxReceiveCount 3 = 2700s, and
-                # rate_limited increments on EVERY call, so each redelivery
-                # pushes the counter further above the limit. The message
-                # exhausts its redeliveries and lands in the dead-letter
-                # queue, where the depth alarm is the intended signal. Raising
-                # maxReceiveCount would only delay that.
+                # The scan message is not deleted, so SQS redelivers it -- and
+                # for ingestion that does not eventually succeed: the window is
+                # 3600s while VisibilityTimeout 900 x maxReceiveCount 3 = 2700s,
+                # so the scan message exhausts its redeliveries and lands in the
+                # dead-letter queue, where the depth alarm is the intended
+                # signal. (CV generation rate limits are handled in
+                # document_worker._generate via cv_jobs.defer instead.)
                 self.stderr.write(f"Scan queue deferred: {error}")
             try:
                 consume_once(
@@ -72,7 +69,7 @@ class Command(BaseCommand):
                     handler=handle_document_work,
                     message_type=DocumentWorkMessage,
                 )
-            except (GenerationRateLimited, IngestionRateLimited) as error:
+            except IngestionRateLimited as error:
                 self.stderr.write(f"Work queue deferred: {error}")
             if options["once"]:
                 return

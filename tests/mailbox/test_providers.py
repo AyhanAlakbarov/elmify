@@ -148,13 +148,16 @@ def test_a_body_is_decoded_with_the_charset_it_declares_and_capped() -> None:
 
 
 def test_an_html_only_message_reads_as_empty_rather_than_as_markup() -> None:
-    """An empty body classifies as nothing, which beats classifying markup."""
+    """An HTML-only message is stripped of markup and inline verification links are kept."""
     import base64
     from email.message import EmailMessage
 
     message = EmailMessage()
     message["From"] = "admissions@tum.de"
-    message.set_content("<p>Welcome</p>", subtype="html")
+    message.set_content(
+        '<style>body{color:red}</style><p>Welcome! <a href="https://apply.tum.de/verify?t=abc123">Activate</a></p>',
+        subtype="html",
+    )
     http = FakeHTTP(
         {
             "https://gmail.googleapis.com/gmail/v1/users/me/messages/m1": {
@@ -164,7 +167,11 @@ def test_an_html_only_message_reads_as_empty_rather_than_as_markup() -> None:
         }
     )
 
-    assert GoogleMailbox(http=http).fetch_body(access_token="at", message_id="m1").text == ""
+    text = GoogleMailbox(http=http).fetch_body(access_token="at", message_id="m1").text
+    assert "<p>" not in text
+    assert "color:red" not in text
+    assert "Welcome!" in text
+    assert "https://apply.tum.de/verify?t=abc123" in text
 
 
 def test_a_delivery_verdict_is_read_off_the_headers() -> None:
@@ -413,6 +420,30 @@ def test_microsoft_body_is_capped() -> None:
         access_token="at", message_id="AAMk1"
     )
     assert len(body.text) <= 20_000
+
+
+def test_microsoft_html_body_strips_styles_and_preserves_verification_links() -> None:
+    html_doc = (
+        "<html><head><style>" + ("body { color: red; } " * 1500) + "</style></head>"
+        "<body><p>Welcome to the portal! Your verification code: 482910</p>"
+        '<p><a href="https://apply.tum.de/verify?token=abc123xyz">Activate account</a></p>'
+        "</body></html>"
+    )
+    http = FakeHTTP(
+        {
+            "https://graph.microsoft.com/v1.0/me/messages/AAMk-html": {
+                "id": "AAMk-html",
+                "body": {"contentType": "html", "content": html_doc},
+            }
+        }
+    )
+
+    body = MicrosoftMailbox(http=http).fetch_body(
+        access_token="at", message_id="AAMk-html"
+    )
+    assert "color: red" not in body.text
+    assert "verification code: 482910" in body.text
+    assert "https://apply.tum.de/verify?token=abc123xyz" in body.text
 
 
 @pytest.mark.parametrize(("name", "expected"), [("GOOGLE", "GOOGLE"), ("MICROSOFT", "MICROSOFT")])

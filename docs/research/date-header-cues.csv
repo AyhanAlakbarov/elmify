@@ -77,3 +77,67 @@ last day,en,deadline
 접수마감,ko,deadline
 마감일,ko,deadline
 신청 발표,ko,results
+فترة التقديم,ar,application_window
+بداية التقديم,ar,application_window
+التقديم,ar,application_window
+آخر موعد للتقديم,ar,deadline
+الموعد النهائي,ar,deadline
+انتهاء التقديم,ar,deadline
+آخر موعد,ar,deadline
+المقابلة الشخصية,ar,selection
+المقابلة,ar,selection
+الفرز والترشيح,ar,selection
+فترة الصرف,ar,funding_period
+إعلان النتائج,ar,results
+النتائج,ar,results
+bewerbungszeitraum,de,application_window
+bewerbungsfrist,de,deadline
+bewerbungsschluss,de,deadline
+auswahlgespräch,de,selection
+förderzeitraum,de,funding_period
+ergebnisse,de,results
+période de candidature,fr,application_window
+date limite de candidature,fr,deadline
+date limite,fr,deadline
+clôture des candidatures,fr,deadline
+entretien,fr,selection
+résultats,fr,results
+apertura bando,it,application_window
+scadenza bando,it,deadline
+scadenza,it,deadline
+colloquio,it,selection
+graduatoria,it,results
+plazo de solicitud,es,application_window
+fecha límite,es,deadline
+cierre de convocatoria,es,deadline
+entrevista,es,selection
+resultados,es,results
+申请时间,zh,application_window
+报名时间,zh,application_window
+截止日期,zh,deadline
+申请截止,zh,deadline
+面试,zh,selection
+评审,zh,selection
+资助期限,zh,funding_period
+录取结果,zh,results
+结果公布,zh,results
+出願期間,ja,application_window
+募集期間,ja,application_window
+応募締切,ja,deadline
+出願締切,ja,deadline
+締切日,ja,deadline
+面接,ja,selection
+選考,ja,selection
+支給期間,ja,funding_period
+結果発表,ja,results
+合格発表,ja,results
+periode pendaftaran,id,application_window
+batas akhir pendaftaran,id,deadline
+penutupan pendaftaran,id,deadline
+seleksi wawancara,id,selection
+pengumuman hasil,id,results
+thời gian nộp hồ sơ,vi,application_window
+hạn chót nộp hồ sơ,vi,deadline
+hạn nộp hồ sơ,vi,deadline
+phỏng vấn,vi,selection
+công bố kết quả,vi,results

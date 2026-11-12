@@ -6,7 +6,8 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
 from django.core.validators import URLValidator
-from django.db.models import QuerySet
+from django.db import transaction
+from django.db.models import F, Q, QuerySet
 from django.http import (
     Http404,
     HttpRequest,
@@ -14,7 +15,9 @@ from django.http import (
     HttpResponseNotAllowed,
 )
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 
+from apps.dashboard.board import overrun_for
 from apps.dashboard.locks import paused_reason
 from apps.dashboard.pack import applied_candidate_ids
 from apps.ratelimit import pack_command_rate_limited, rate_limited
@@ -29,11 +32,18 @@ from apps.tenancy.models import CounselorAssignment, Membership
 from apps.tenancy.services import current_membership
 
 from .grouping import group_under_funding
-from .models import PackCandidate, PackVersion, RecommendationCandidate, RecommendationRun
+from .models import (
+    AuditEvent,
+    PackCandidate,
+    PackVersion,
+    RecommendationCandidate,
+    RecommendationRun,
+)
 from .services import (
     PackCommandError,
     consider_named_program,
     current_pack,
+    latest_empty_pack,
     pool_funding_gap_totals,
     reject_candidate,
     replace_candidate,
@@ -92,19 +102,26 @@ def _pack_context(student: Membership) -> dict[str, object]:
     #: Institutions (not programmes) whose check was still running when this
     #: pack was built -- the run's tenant copy, never the catalogue (spec §7.1).
     pending_count = 0
+    home_country = ""
     if pack is not None:
         pending_count = len(pack.run.pending_bodies)
+        snap = pack.run.profile_version.snapshot or {}
+        home_country = str(snap.get("nationality") or snap.get("country_of_residence") or "")
         pool = list(
             PackCandidate.objects.filter(pack_version=pack)
             .select_related("candidate__evidence")
-            .order_by("candidate__program_name")
+            .order_by(F("candidate__rank").asc(nulls_last=True), "candidate__program_name")
         )
         considered = (
             RecommendationCandidate.objects.filter(run_id=pack.run_id)
             .exclude(id__in=[member.candidate_id for member in pool])
             .exclude(state=RecommendationCandidate.State.REJECTED)
+            .exclude(
+                Q(program_id__isnull=False, eligible=False)
+                | Q(opportunity_id__isnull=False, eligible=False)
+            )
             .select_related("evidence")
-            .order_by("program_name")
+            .order_by(F("rank").asc(nulls_last=True), "program_name")
         )
         if settings.PROVENANCE_GATE_ENFORCED:
             # Verified-only: the student sees recognised bodies, a BLOCKED one
@@ -127,18 +144,25 @@ def _pack_context(student: Membership) -> dict[str, object]:
     # "Cannot be added: ..." beside a BLOCKED one before the student tries --
     # rendered from the tenant copy the worker wrote, never the catalogue. A
     # student never reads "Recognition not confirmed" (verified-catalog §0.18).
+    all_candidates = [*(member.candidate for member in pool), *considered]
     notes = {
         candidate.id: note
-        for candidate in (*(member.candidate for member in pool), *considered)
+        for candidate in all_candidates
         if (note := blocked_note(candidate.provenance_reason_code))
     }
+    countries = sorted({c.country_code for c in all_candidates if c.country_code})
     return {
         "pack": pack,
+        # Shown only when there is no published pack to show instead.
+        "empty_pack": latest_empty_pack(student) if pack is None else None,
         "pool": pool,
         "considered": considered,
-        # Only what replace accepts: a CHECKING candidate is refused (400).
+        "countries": countries,
+        # Only what replace accepts: a CHECKING or ineligible candidate is refused (400).
         "replacements": [
-            c for c in considered if c.state == RecommendationCandidate.State.VISIBLE
+            c
+            for c in considered
+            if c.state == RecommendationCandidate.State.VISIBLE and c.eligible
         ],
         "totals": totals,
         "pending_count": pending_count,
@@ -150,11 +174,13 @@ def _pack_context(student: Membership) -> dict[str, object]:
             [member.candidate for member in pool],
             extra=list(considered),
             extra_label="in Other options",
+            home_country=home_country,
         ),
         "other_groups": group_under_funding(
             list(considered),
             extra=[member.candidate for member in pool],
             extra_label="in your pack",
+            home_country=home_country,
         ),
         "applied": applied_candidate_ids(student),
         "research_pending": research_pending,
@@ -270,8 +296,28 @@ def replace_candidate_view(request: HttpRequest, candidate_id: UUID) -> HttpResp
         return _replace_error(
             "The replacement program was not recognized.", field="replacement_candidate_id"
         )
+    # The same over-budget page as Add (owner 2026-10-14), for the programme
+    # being swapped in. replace_candidate's own refusals still run after it.
+    replacement = RecommendationCandidate.objects.filter(
+        id=replacement_id, run_id=pack.run_id, state=RecommendationCandidate.State.VISIBLE
+    ).first()
+    overrun = overrun_for(student, replacement) if replacement is not None else None
+    if overrun is not None and request.POST.get("confirm") != "1":
+        return render(request, "student/over_budget.html", {
+            "overrun": overrun,
+            "action": reverse("student-replace-candidate", args=[candidate_id]),
+            "hidden": {"replacement_candidate_id": str(replacement_id)},
+            "refused": request.POST.get("seen") == "1",
+        })
     try:
-        replace_candidate(pack, candidate_id, replacement_id, student)
+        # One transaction: the swap never lands without the record of the tick.
+        with transaction.atomic():
+            replace_candidate(pack, candidate_id, replacement_id, student)
+            if overrun is not None:
+                AuditEvent.objects.create(
+                    actor=student, event="candidate.replaced_over_budget",
+                    object_id=replacement_id,
+                )
     except (PackCommandError, ValueError, ValidationError) as error:
         return _replace_error(str(error))
     return _render(request, student)
@@ -307,7 +353,10 @@ def consider_named_program_view(request: HttpRequest) -> HttpResponse:
             f"Program names must be {_PROGRAM_NAME_MAX_LENGTH} characters or fewer.",
             status=400,
         )
-    consider_named_program(pack, program_name, student)
+    try:
+        consider_named_program(pack, program_name, student)
+    except PackCommandError as error:
+        return _named_program_error(str(error), status=400)
     messages.success(
         request, f"We will check {program_name} for you. It is listed under Other options."
     )

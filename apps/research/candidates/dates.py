@@ -9,6 +9,8 @@ given one: the 2026-09-27 run's every "wrong day" was "February 2027" clipped to
 from __future__ import annotations
 
 import calendar
+import datetime
+import math
 import re
 from functools import cache
 
@@ -20,10 +22,74 @@ _ORDINAL = r"(?:st|nd|rd|th|er|-?(?:ci|cı|cu|cü|si|sı|su|sü|inci|ıncı|nci|
 #: Joiners that make a range on their own; "and"-words make one only after a lead
 #: ("between October and January"), otherwise they list ("1 April and 1 October 2026").
 _FREE_JOIN = re.compile(
-    r"^\s*(?:[–—~～-]|to|until|till|through|по|до|-?(?:dək|dek|qədər|kadar)|bis|au|부터)\s*$",
+    r"^\s*(?:[–—~～-]|to|until|till|through|по|до|-?(?:dək|dek|qədər|kadar)|bis|au|부터|إلى|الى|حتى|から)\s*$",
     re.IGNORECASE)
-_LEAD_JOIN = re.compile(r"^\s*(?:and|и|ve|və|et|ile|ilə|및)\s*$", re.IGNORECASE)
-_RANGE_LEAD = re.compile(r"(?:from|between|с|от|entre|du|vom|von|zwischen)\s*$", re.IGNORECASE)
+_LEAD_JOIN = re.compile(r"^\s*(?:and|и|ve|və|et|ile|ilə|및|و)\s*$", re.IGNORECASE)
+_RANGE_LEAD = re.compile(
+    r"(?:from|between|с|от|entre|du|vom|von|zwischen|من|بين)\s*$", re.IGNORECASE
+)
+
+#: Islamic Hijri month names (Arabic and English transliterations) -> Hijri month number (1..12).
+_HIJRI_MONTH_MAP: dict[str, int] = {
+    "محرم": 1,
+    "شهر محرم": 1,
+    "muharram": 1,
+    "صفر": 2,
+    "safar": 2,
+    "ربيع الأول": 3,
+    "ربيع الاول": 3,
+    "rabi' al-awwal": 3,
+    "rabi al-awwal": 3,
+    "ربيع الثاني": 4,
+    "ربيع الآخر": 4,
+    "ربيع الاخر": 4,
+    "rabi' al-thani": 4,
+    "rabi al-thani": 4,
+    "rabi al-akhir": 4,
+    "جمادى الأولى": 5,
+    "جمادى الاولى": 5,
+    "jumada al-ula": 5,
+    "jumada al-awwal": 5,
+    "جمادى الآخرة": 6,
+    "جمادى الاخرة": 6,
+    "جمادى الثانية": 6,
+    "jumada al-akhirah": 6,
+    "jumada al-thani": 6,
+    "رجب": 7,
+    "rajab": 7,
+    "شعبان": 8,
+    "sha'ban": 8,
+    "shaban": 8,
+    "رمضان": 9,
+    "شهر رمضان": 9,
+    "ramadan": 9,
+    "ramadhan": 9,
+    "شوال": 10,
+    "shawwal": 10,
+    "ذو القعدة": 11,
+    "ذي القعدة": 11,
+    "dhu al-qi'dah": 11,
+    "dhu al-qidah": 11,
+    "dhul qadah": 11,
+    "ذو الحجة": 12,
+    "ذي الحجة": 12,
+    "dhu al-hijjah": 12,
+    "dhul hijjah": 12,
+}
+
+_HIJRI_MONTH_PATTERN = "|".join(
+    re.escape(k) for k in sorted(_HIJRI_MONTH_MAP, key=len, reverse=True)
+)
+_HIJRI_ERA_SUFFIX = r"(?:\s*(?:هـ|هجرية|هجري|AH|A\.H\.))?"
+
+
+def hijri_to_gregorian(hy: int, hm: int, hd: int) -> datetime.date | None:
+    """Convert an Islamic Hijri date `(hy, hm, hd)` in `1400..1500 AH` to a Gregorian `date`
+    using the standard tabular/civil Islamic calendar (epoch JDN 1948440)."""
+    if not (1400 <= hy <= 1500 and 1 <= hm <= 12 and 1 <= hd <= 30):
+        return None
+    jd = hd + math.ceil(29.5 * (hm - 1)) + (hy - 1) * 354 + (3 + 11 * hy) // 30 + 1948439
+    return datetime.date.fromordinal(jd - 1721425)
 #: An ablative ending on the first date joins it to the next: "1 fevraldan 31 iyuladək",
 #: "15 Ocak'tan 15 Şubat'a kadar", "13 iyuldan 22 iyul".
 _ABLATIVE = re.compile(r"(?:['’]?(?:n?d|t)[aeə]n)$", re.IGNORECASE)
@@ -70,6 +136,13 @@ def _month_number(token: str) -> int | None:
 def _patterns() -> tuple[re.Pattern[str], ...]:
     m, wide, bare = _month(), _wide_month(), _bare_month()
     return tuple(re.compile(p, re.IGNORECASE) for p in (
+        # Islamic Hijri numeric & named-month dates (1430..1469 AH -> Gregorian)
+        rf"(?<!\d)(?P<hy>14[3-6]\d)[/-](?P<hmo>\d{{1,2}})[/-](?P<hd>\d{{1,2}}){_HIJRI_ERA_SUFFIX}(?!\d)",
+        rf"(?<!\d)(?P<hd>\d{{1,2}})[/-](?P<hmo>\d{{1,2}})[/-](?P<hy>14[3-6]\d){_HIJRI_ERA_SUFFIX}(?!\d)",
+        rf"(?:(?<!\d)(?P<hd>\d{{1,2}}){_ORDINAL}\.?\s+)?(?P<hmn>{_HIJRI_MONTH_PATTERN})\.?,?\s+"
+        rf"(?P<hy>14[3-6]\d){_HIJRI_ERA_SUFFIX}(?!\d)",
+        # Japanese Imperial Era (Reiwa 令和N年M月D日 -> Gregorian 2018 + N)
+        r"令和\s?(?P<reiwa>元|\d{1,2})\s?年\s?(?P<mo>\d{1,2})\s?月(?:\s?(?P<d>\d{1,2})\s?日)?",
         r"(?<!\d)(?P<y>\d{4})-(?P<mo>\d{2})-(?P<d>\d{2})(?!\d)",
         rf"(?<!\d)(?P<d1>\d{{1,2}})\s*[–-]\s*(?P<d>\d{{1,2}})\.?\s+(?P<mn>{m})\.?"
         rf"(?:,?\s+(?P<y>\d{{4}}))?",
@@ -117,16 +190,39 @@ def _ambiguous(match: re.Match[str], year: int | None) -> Date | None:
 
 def _single(match: re.Match[str]) -> Date | None:
     g = match.groupdict()
-    year = int(g["y"]) if g.get("y") else None
-    if year is not None and year < 100:
-        year += 2000
+    text, start, end = match.group(0), match.start(), match.end()
+    if g.get("hy"):
+        hy = int(g["hy"])
+        hm = (
+            int(g["hmo"])
+            if g.get("hmo")
+            else _HIJRI_MONTH_MAP.get(" ".join(g["hmn"].split()).casefold())
+        )
+        hd = int(g["hd"]) if g.get("hd") else None
+        if hm is None or not (1 <= hm <= 12):
+            return None
+        if hd is not None:
+            greg = hijri_to_gregorian(hy, hm, hd)
+            if greg is None:
+                return None
+            return Date(text, start, end, greg.year, greg.month, greg.day)
+        greg_mid = hijri_to_gregorian(hy, hm, 15)
+        if greg_mid is None:
+            return None
+        return Date(text, start, end, greg_mid.year, greg_mid.month, None)
+    if g.get("reiwa"):
+        reiwa_num = 1 if g["reiwa"] == "元" else int(g["reiwa"])
+        year: int | None = 2018 + reiwa_num
+    else:
+        year = int(g["y"]) if g.get("y") else None
+        if year is not None and year < 100:
+            year += 2000
     if g.get("sep"):
         return _ambiguous(match, year)
     month = int(g["mo"]) if g.get("mo") else (_month_number(g["mn"]) if g.get("mn") else None)
     day = int(g["d"]) if g.get("d") else None
     if month is None or not 1 <= month <= 12 or (day is not None and not 1 <= day <= 31):
         return None
-    text, start, end = match.group(0), match.start(), match.end()
     if day is not None and not _real_day(year, month, day):
         return None  # "31 April 2027": no such day; a month-only pattern may still read the month
     if g.get("mn2"):  # "fevral-aprel": one candidate, two months, no day

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -7,7 +8,9 @@ from decimal import Decimal
 from apps.accounts.schemas import StudentProfileSnapshot
 from apps.funding.conditions import benefit_applies
 from apps.funding.evaluation import BenefitFact, CandidateFacts
-from apps.funding.fx import RateTable, convert, round_money
+from apps.funding.fx import RateTable, UnconvertibleCurrency, convert, round_money
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_to_program_total(amount: Decimal, period: str, duration_months: int) -> Decimal:
@@ -51,12 +54,27 @@ class AffordabilityResult:
     #: table that produced it.
     rates_source: str
     rates_retrieved_on: date
+    #: What the student said they can pay themselves (per year, over the
+    #: programme's length), capped at the gap. Not funding: `gap` stays the
+    #: funding gap the student is shown.
+    self_funded: Decimal = Decimal("0.00")
+
+    @property
+    def shortfall(self) -> Decimal:
+        """What is left to find after funding and the student's own money."""
+        return self.gap - self.self_funded
 
 
 def _bucket_for(
-    benefit: BenefitFact, candidate: CandidateFacts, profile: StudentProfileSnapshot
+    benefit: BenefitFact,
+    candidate: CandidateFacts,
+    profile: StudentProfileSnapshot,
+    *,
+    today: date | None = None,
 ) -> str:
-    if not benefit.is_current or not benefit_applies(benefit, candidate, profile):
+    if not benefit.is_current or not benefit_applies(
+        benefit, candidate, profile, today=today
+    ):
         return "EXCLUDED"
     if benefit.accessibility == "EMERGENCY":
         return "EXCLUDED"
@@ -68,7 +86,11 @@ def _bucket_for(
 
 
 def calculate_affordability(
-    profile: StudentProfileSnapshot, candidate: CandidateFacts, rates: RateTable
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    rates: RateTable,
+    *,
+    today: date | None = None,
 ) -> AffordabilityResult:
     application_fee = Decimal("0.00")
     application_fee_currency: str | None = None
@@ -100,9 +122,17 @@ def calculate_affordability(
     conditional_savings = Decimal("0.00")
     benefit_items: list[BenefitItem] = []
     for benefit in candidate.benefits:
-        bucket = _bucket_for(benefit, candidate, profile)
+        bucket = _bucket_for(benefit, candidate, profile, today=today)
         if benefit.amount is None or benefit.currency is None:
             total = Decimal("0.00")
+        elif bucket == "EXCLUDED":
+            try:
+                total = _normalize_to_program_total(
+                    benefit.amount, benefit.period, candidate.duration_months
+                )
+                total = convert(total, benefit.currency, rates.base, rates)
+            except UnconvertibleCurrency:
+                total = Decimal("0.00")
         else:
             total = _normalize_to_program_total(
                 benefit.amount, benefit.period, candidate.duration_months
@@ -121,6 +151,18 @@ def calculate_affordability(
             conditional_savings += countable
 
     gap = max(baseline_cost - covered, Decimal("0.00"))
+    has_no_funding_needed = any(
+        c.kind == "OTHER" and c.value.strip().upper() == "NO_FUNDING_NEEDED"
+        for c in (*profile.non_negotiables, *profile.negotiable_preferences)
+    )
+    unconstrained_self_funded = (
+        profile.funding_dependency == "OPTIONAL" and profile.self_funding_capacity is None
+    ) or (
+        profile.funding_dependency in {"OPTIONAL", "IMPORTANT"} and has_no_funding_needed
+    )
+    self_funded = (
+        gap if unconstrained_self_funded else min(_self_funding(profile, candidate, rates), gap)
+    )
 
     return AffordabilityResult(
         currency=rates.base,
@@ -134,4 +176,26 @@ def calculate_affordability(
         benefit_items=tuple(benefit_items),
         rates_source=rates.source,
         rates_retrieved_on=rates.retrieved_on,
+        self_funded=self_funded,
     )
+
+
+def _self_funding(
+    profile: StudentProfileSnapshot, candidate: CandidateFacts, rates: RateTable
+) -> Decimal:
+    """The yearly capacity (the questionnaire asks "per year") over the
+    programme's length, in the base currency. A capacity in a currency the
+    table lacks counts as nothing, loudly: raising would drop every programme,
+    because the evaluator drops a candidate on UnconvertibleCurrency."""
+    capacity = profile.self_funding_capacity
+    if capacity is None:
+        return Decimal("0.00")
+    total = _normalize_to_program_total(capacity.amount, "ANNUAL", candidate.duration_months)
+    try:
+        return convert(total, capacity.currency, rates.base, rates)
+    except UnconvertibleCurrency:
+        logger.warning(
+            "no %s rate for self-funding currency %s; counting no self-funding",
+            rates.source, capacity.currency,
+        )
+        return Decimal("0.00")

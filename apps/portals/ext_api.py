@@ -31,13 +31,17 @@ import base64
 import binascii
 import email.utils
 import json
+import logging
 from collections.abc import Callable
 from datetime import datetime
 from functools import wraps
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
+import botocore.exceptions  # type: ignore[import-untyped]
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -47,30 +51,46 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from apps.concierge.documents import DocumentUnavailable
 from apps.concierge.models import DocumentVersion
 from apps.documents import storage as document_storage
+from apps.documents.confirmation import FactNotFound
+from apps.documents.fact_writer import use_document_value
 from apps.documents.models import DocumentDraft
-from apps.documents.storage import read_upload, store_submission_image
+from apps.documents.storage import read_prepared, read_upload, store_submission_image
 from apps.funding.models import AuditEvent
+from apps.privacy.views import _client_ip
+from apps.ratelimit import actor_key as _key
 from apps.ratelimit import rate_limited
 from apps.tenancy.db import tenant_transaction
 from apps.tenancy.middleware import deletion_lock_target
 from apps.watch.rules import REGISTRATION_ASK_AFTER
 
+from . import credentials, tags
 from . import pairing as pairing_module
-from . import tags
 from .actions import complete_action, pending_actions
-from .escalation import Trigger, escalate, request_first_portal_review
-from .learn import RateLimited, UnmappedField, learn_from_snapshot
+from .answers import MAX_ANSWERS, Answer, AnswerRefused, learn_from_answers, record_answers
+from .bench import RecordingRefused, is_bench_operator, operator_forbidden_values, store_bench_page
+from .escalation import Trigger, escalate, has_open_escalation, request_first_portal_review
+from .http import SERVED_TYPES, TYPE_BY_EXTENSION, inert_response
+from .learn import RateLimited, UnmappedField, _page_origin, learn_from_snapshot
 from .models import (
     Application,
     ApplicationStep,
     DeviceAction,
     ExtensionPairing,
+    FieldMap,
+    PageRecord,
     PortalAccount,
+    PortalAnswer,
     PortalForm,
+    PreparedDocument,
 )
+from .outcome import record_from_portal
 from .packets import NoFieldMap, PacketRefused, mint_packet
-from .profile import verified_values
-from .snapshot import FormSnapshot, SnapshotPIILeak
+from .prepare import current_prepared, prepared_upload
+from .profile import LEARNABLE_FIELDS, document_offers, narrative_values, verified_values
+from .rules import apply_rules
+from .snapshot import FormSnapshot, SnapshotPIILeak, redact_student_values
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from apps.tenancy.models import Membership
@@ -199,6 +219,13 @@ def pair(request: HttpRequest) -> HttpResponse:
     try:
         pairing, token = pairing_module.redeem_pairing_code(code, installation_id)
     except pairing_module.PairingRefused as refused:
+        if rate_limited(
+            "ext-pair-failed",
+            _key(_client_ip(request)),
+            limit=_PAIR_RATE_LIMIT,
+            window_seconds=_RATE_WINDOW_SECONDS,
+        ):
+            raise _ApiError(429, "rate_limited") from refused
         raise _ApiError(400, refused.reason) from refused
     # After redemption, not before: the limiter keys on the membership and
     # there is no membership to key on until the code resolves to one. A caller
@@ -249,8 +276,8 @@ def packet(request: HttpRequest, pairing: ExtensionPairing, application_id: UUID
     §5.2 asks a consultant to review the first application prepared on each new
     portal; a refused packet prepared nothing. It is here rather than in
     mint_packet because mint_packet has unit tests that would otherwise each
-    create a roadmap item, and because this is the first caller -- the retiring
-    services.py::prepare_application was the other one.
+    create a roadmap item, and because this is its only caller since the
+    server tier's services.py::prepare_application was deleted.
     """
     _limit("ext-packet", pairing, _PACKET_RATE_LIMIT)
     application = _application_for(pairing, application_id)
@@ -295,11 +322,10 @@ def snapshot(request: HttpRequest, pairing: ExtensionPairing, portal_form_id: UU
     have nothing to do with -- the reason this route is not simply "any paired
     extension may learn any form".
 
-    The profile fields it asks for are this student's own verified keys: the
-    map needs to know which questions we can answer, and the vocabulary is the
-    same profile.py vocabulary the packet fills from. The VALUES never leave
-    the server -- they are handed to the guard as forbidden strings, which is
-    the opposite direction.
+    The fields it asks about are `profile.LEARNABLE_FIELDS`, the same for every
+    student, so the map does not depend on who met the form first. This
+    student's VALUES never leave the server -- they are the guard's forbidden
+    strings, the opposite direction.
     """
     application = (
         Application.objects.filter(student=pairing.membership, portal_form_id=portal_form_id)
@@ -315,23 +341,36 @@ def snapshot(request: HttpRequest, pairing: ExtensionPairing, portal_form_id: UU
         raise _ApiError(400, "invalid_snapshot") from error
     with tenant_transaction(application.tenant_id):
         values = verified_values(pairing.membership)
+        narratives = narrative_values(
+            pairing.membership,
+            program_id=application.program_id,
+            application_id=application.id,
+        )
         # The portal address is the one field the map needs that is not a
         # verified fact (tags.py). Learned when the page asks for it -- always
         # offered, even when THIS student has no address (final review T5):
         # the map is the agency's, and the first snapshot must not decide for
         # everyone that it never carries the field. A student with no address
-        # then gets missing_fact from the packet. The addresses themselves are
+        # then gets that box as their own red hint. The addresses themselves are
         # forbidden in the snapshot like any value.
         address, plain = tags.addresses_for(application)
+        earlier = [
+            *PortalAnswer.objects.filter(student=pairing.membership).values_list(
+                "value", flat=True
+            ),
+            *narratives.values(),
+        ]
     addresses = [address, plain] if address else []
+    forbidden = [*values.values(), *addresses]
     try:
         field_map = learn_from_snapshot(
             application.portal_form,
             parsed,
-            profile_fields=sorted(values),
+            profile_fields=list(LEARNABLE_FIELDS),
             optional_fields=("contact.email",),
             tenant_id=application.tenant_id,
-            forbidden_values=[*values.values(), *addresses],
+            forbidden_values=forbidden,
+            redact_values=earlier,
         )
     except SnapshotPIILeak as leak:
         raise _ApiError(400, "invalid_snapshot") from leak
@@ -344,6 +383,11 @@ def snapshot(request: HttpRequest, pairing: ExtensionPairing, portal_form_id: UU
     # is scoped to this tenant and why the extension that CAN see the real page
     # verifies them (plan 3). Without it, a snapshot rewrites the map for a
     # whole agency and the trail cannot say whose browser described the form.
+    # The audit event, the page record and the needs_bench flip commit together.
+    # A tenant relearning a form a bench-verified map serves: the portal changed
+    # under the verified map. Back on the owner's queue, and the verified map
+    # stops outranking this tenant's fresh one meanwhile (FieldMap.current_for).
+    # The form lock serialises this against promote(), which reads the flag.
     with tenant_transaction(application.tenant_id):
         AuditEvent.objects.create(
             tenant_id=application.tenant_id,
@@ -352,8 +396,234 @@ def snapshot(request: HttpRequest, pairing: ExtensionPairing, portal_form_id: UU
             event="portal.field_map_learned",
             object_id=field_map.id,
         )
+        PageRecord.objects.create(
+            portal_form=application.portal_form,
+            field_map=field_map,
+            source=PageRecord.Source.LIVE_LEARN,
+            page_kind=PageRecord.Kind.FORM,
+            # Never HTML on this path: the snapshot only, origin-only URL and free
+            # text redacted of everything the prompt was redacted of (facts, tagged
+            # addresses, the student's earlier answers).
+            snapshot=json.loads(
+                redact_student_values(
+                    _page_origin(parsed), [*forbidden, *earlier]
+                ).model_dump_json()
+            ),
+            learned_by_tenant_id=application.tenant_id,
+        )
+        PortalForm.objects.select_for_update().get(pk=portal_form_id)
+        if FieldMap.objects.filter(
+            portal_form_id=portal_form_id,
+            learned_by_tenant__isnull=True,
+            verified_at__isnull=False,
+            superseded_at__isnull=True,
+        ).exists():
+            PortalForm.objects.filter(pk=portal_form_id).update(needs_bench=True)
     return JsonResponse(
         {"field_map_version": field_map.version, "entries": len(field_map.entries)}, status=201
+    )
+
+
+#: The operator records one page at a time while walking a form; three hundred
+#: an hour is far above that and far below a loop.
+_BENCH_RATE_LIMIT = 300
+
+
+class _BenchPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    page_kind: Literal["FORM", "LOGIN", "SIGNUP", "CONFIRMATION", "OTHER"]
+    password_rules: str = Field(default="", max_length=2000)
+    snapshot: FormSnapshot
+    html: str
+
+
+def _bench_operator(pairing: ExtensionPairing) -> None:
+    """Every bench route that reads or writes. Object-independent, so a 403."""
+    if not is_bench_operator(pairing.membership):
+        raise _ApiError(403, "not_operator")
+
+
+@require_GET
+@_device_endpoint
+def bench_whoami(request: HttpRequest, pairing: ExtensionPairing) -> HttpResponse:
+    """Whether this device may record bench pages. Never why not."""
+    return JsonResponse({"operator": is_bench_operator(pairing.membership)})
+
+
+@require_GET
+@_device_endpoint
+def bench_portal_forms(request: HttpRequest, pairing: ExtensionPairing) -> HttpResponse:
+    """The forms an operator may record a walk for. Platform rows, no tenant data."""
+    _bench_operator(pairing)
+    forms = PortalForm.objects.exclude(form_url="").order_by("portal_host", "form_key")[:500]
+    return JsonResponse(
+        {
+            "forms": [
+                {"id": str(form.id), "portal_host": form.portal_host, "form_url": form.form_url}
+                for form in forms
+            ]
+        }
+    )
+
+
+@require_POST
+@_device_endpoint
+def bench_page(
+    request: HttpRequest, pairing: ExtensionPairing, portal_form_id: UUID
+) -> HttpResponse:
+    """One page of the operator's walk (spec §9). Stored redacted; refused when an
+    input or textarea still holds one of the operator's values, when the copy is
+    not HTML, or when it is too large. No value is ever logged."""
+    _bench_operator(pairing)
+    _limit("ext-bench", pairing, _BENCH_RATE_LIMIT)
+    portal_form = PortalForm.objects.filter(id=portal_form_id).first()
+    if portal_form is None:
+        raise _ApiError(404, "not_found")
+    try:
+        body = _BenchPage.model_validate(_json_body(request))
+    except ValidationError as error:
+        raise _ApiError(400, "invalid_recording") from error
+    with tenant_transaction(pairing.tenant_id):
+        forbidden = operator_forbidden_values(pairing.membership)
+    # The current walk only: a superseded walk's pages are not this walk's steps.
+    step = 1 + PageRecord.objects.filter(
+        portal_form=portal_form,
+        source=PageRecord.Source.BENCH_WALK,
+        superseded_at__isnull=True,
+    ).count()
+    try:
+        record = store_bench_page(
+            portal_form,
+            page_kind=body.page_kind,
+            password_rules=body.password_rules,
+            snapshot=body.snapshot,
+            html=body.html,
+            forbidden_values=forbidden,
+            step=step,
+            actor=pairing.membership,  # the row and its audit event commit together
+        )
+    except RecordingRefused as refused:
+        raise _ApiError(400, "invalid_recording") from refused
+    return JsonResponse({"record_id": str(record.id)}, status=201)
+
+
+#: One review press per page, a handful of pages per form; sixty an hour is far
+#: above that and far below a loop.
+_ANSWERS_RATE_LIMIT = 60
+
+
+class _Answers(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    answers: tuple[Answer, ...] = Field(max_length=MAX_ANSWERS)
+
+
+@require_POST
+@_device_endpoint
+def answers(request: HttpRequest, pairing: ExtensionPairing, application_id: UUID) -> HttpResponse:
+    """What the student typed into boxes we marked (owner, 2026-10-09).
+
+    The one route that carries typed values (spec §11's answers-channel
+    exception). Only boxes the latest PACKET named (any other is skipped and
+    counted, never stored; a password box refuses the batch); stored in this tenant,
+    never in a prompt, and a map learns only which field a box asks for. The
+    audit rows carry no value.
+    """
+    _limit("ext-answers", pairing, _ANSWERS_RATE_LIMIT)
+    application = _application_for(pairing, application_id)
+    try:
+        body = _Answers.model_validate(_json_body(request))
+    except ValidationError as error:
+        raise _ApiError(400, "invalid_answers") from error
+    assert application.portal_form is not None  # _application_for filters on it
+    with tenant_transaction(application.tenant_id):
+        try:
+            saved = record_answers(application, list(body.answers))
+        except AnswerRefused as refused:
+            raise _ApiError(400, "invalid_answers") from refused
+        AuditEvent.objects.create(
+            tenant_id=application.tenant_id,
+            actor=pairing.membership,
+            actor_kind=AuditEvent.ActorKind.HUMAN,
+            event="portal.answers_recorded",
+            object_id=application.id,
+        )
+        learned = learn_from_answers(application.portal_form, application.tenant_id)
+        if learned is not None:
+            # Who changed the agency's map, as the snapshot route records it.
+            AuditEvent.objects.create(
+                tenant_id=application.tenant_id,
+                actor=pairing.membership,
+                actor_kind=AuditEvent.ActorKind.HUMAN,
+                event="portal.field_map_learned",
+                object_id=learned.id,
+            )
+    return JsonResponse(
+        {"recorded": len(saved), "skipped": len(body.answers) - len(saved)}, status=201
+    )
+
+
+#: A tap per doubtful value. Thirty an hour is every offered box of several
+#: applications; more is a loop.
+_FACT_CONFIRM_RATE_LIMIT = 30
+
+
+@require_POST
+@_device_endpoint
+def confirm_offer(
+    request: HttpRequest, pairing: ExtensionPairing, application_id: UUID, fact_id: UUID
+) -> HttpResponse:
+    """The student's one tap on "We read X from your passport — use it?" (spec
+    2026-10-12 §7.3). Confirms that one fact, as the student, and answers with the
+    value to type, formatted for this portal.
+
+    Three guards, all required. The application's latest PACKET step must have
+    offered this fact -- the step is the authoritative record of what we prepared,
+    as it is for uploads (_named_for). It must still be offered now: the same
+    profile.document_offers that minted the packet is asked again, so a passport
+    disowned, replaced, read owner_unknown or expired since then offers nothing.
+    And use_document_value takes only this student's own waiting one-value row --
+    the student filter, not the step, is what keeps another student's fact out.
+    The value is written as a new confirmed row, so it is what portals get next.
+    A second tap finds the row superseded: 404, nothing new to type."""
+    _limit("ext-fact-confirm", pairing, _FACT_CONFIRM_RATE_LIMIT)
+    application = _application_for(pairing, application_id)
+    assert application.portal_form is not None  # _application_for filters on it
+    student = pairing.membership
+    try:
+        with tenant_transaction(application.tenant_id):
+            step = (
+                ApplicationStep.objects.filter(
+                    application=application, kind=ApplicationStep.Kind.PACKET
+                )
+                .order_by("-sequence")
+                .first()
+            )
+            hints = (step.detail or {}).get("hints", []) if step is not None else []
+            field = next(
+                (str(h.get("profile_field") or "") for h in hints
+                 if isinstance(h, dict) and h.get("offer_fact_id") == str(fact_id)),
+                "",
+            )
+            offer = document_offers(student).get(field) if field else None
+            # Spec D5: the student's own entry always wins, so a box answered since
+            # the mint is no longer offered (mint asks the same of verified_values).
+            if (
+                offer is None
+                or offer.fact_id != fact_id
+                or (verified_values(student).get(field) or "").strip()
+            ):
+                raise _ApiError(404, "not_found")
+            use_document_value(student=student, fact_id=fact_id)
+    except (FactNotFound, IntegrityError):
+        # Gone between the check and the write, or a second tap racing the first
+        # (one superseder per row): it won, so there is nothing new to type.
+        raise _ApiError(404, "not_found") from None
+    return JsonResponse(
+        {"profile_field": field,
+         "value": apply_rules(application.portal_form, field, offer.value)},
+        status=201,
     )
 
 
@@ -454,7 +724,11 @@ def events(request: HttpRequest, pairing: ExtensionPairing, application_id: UUID
             Application.objects.filter(pk=application.pk).update(
                 state=Application.State.SUBMITTED
             )
-    elif kind == ApplicationStep.Kind.READ_BACK and detail.get("mismatches"):
+    elif (
+        kind == ApplicationStep.Kind.READ_BACK
+        and detail.get("mismatches")
+        and not has_open_escalation(application, Trigger.PORTAL_ERROR)
+    ):
         escalate(application, Trigger.PORTAL_ERROR, detail=json.dumps(detail["mismatches"])[:500])
     return JsonResponse({"step_id": str(step.id)}, status=201)
 
@@ -553,6 +827,7 @@ def application_status(
     (decision 10), and letting a scraped string set it would hand a third-party
     page control of our own state machine.
     """
+    _limit("ext-status", pairing, _EVENTS_RATE_LIMIT)
     application = _application_for(pairing, application_id)
     try:
         status = _PortalStatus.model_validate(_json_body(request))
@@ -569,6 +844,80 @@ def application_status(
     return JsonResponse({"step_id": str(step.id)}, status=201)
 
 
+_OUTCOME_RATE_LIMIT = 30
+_PORTAL_OUTCOMES = frozenset(Application.Outcome.values)
+
+
+class _PortalOutcome(BaseModel):
+    """A terminal admission and/or scholarship decision observed on the portal's own page."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome: str = Field(default="", max_length=30)
+    funding_outcome: str = Field(default="", max_length=30)
+    portal_state: str = Field(default="", max_length=200)
+
+    @model_validator(mode="after")
+    def _validate_outcomes(self) -> _PortalOutcome:
+        if not self.outcome and not self.funding_outcome:
+            raise ValueError("at least one outcome is required")
+        if self.outcome and self.outcome not in _PORTAL_OUTCOMES:
+            raise ValueError("unknown outcome")
+        if self.funding_outcome and self.funding_outcome not in _PORTAL_OUTCOMES:
+            raise ValueError("unknown funding_outcome")
+        return self
+
+
+@require_POST
+@_device_endpoint
+def portal_outcome(
+    request: HttpRequest, pairing: ExtensionPairing, application_id: UUID
+) -> HttpResponse:
+    """Record a decision observed on the portal's status page via `record_from_portal`."""
+    _limit("ext-outcome", pairing, _OUTCOME_RATE_LIMIT)
+    application = _application_for(pairing, application_id)
+    try:
+        payload = _PortalOutcome.model_validate(_json_body(request))
+    except ValidationError as error:
+        raise _ApiError(400, "invalid_outcome") from error
+    with tenant_transaction(application.tenant_id):
+        recorded = record_from_portal(
+            application,
+            payload.outcome,
+            funding_outcome=payload.funding_outcome,
+        )
+        step = ApplicationStep.objects.create(
+            tenant=application.tenant,
+            application=application,
+            sequence=application.next_step_sequence(),
+            kind=ApplicationStep.Kind.STATUS,
+            detail={
+                "source": "portal_outcome",
+                "outcome": payload.outcome,
+                "funding_outcome": payload.funding_outcome,
+                "portal_state": payload.portal_state,
+                "recorded": recorded,
+            },
+        )
+        application.refresh_from_db(
+            fields=[
+                "outcome",
+                "outcome_source",
+                "funding_outcome",
+                "funding_outcome_source",
+            ]
+        )
+    return JsonResponse(
+        {
+            "recorded": recorded,
+            "outcome": application.outcome,
+            "funding_outcome": application.funding_outcome,
+            "step_id": str(step.id),
+        },
+        status=200,
+    )
+
+
 @require_POST
 @_device_endpoint
 def mailbox_check(request: HttpRequest, pairing: ExtensionPairing) -> HttpResponse:
@@ -577,7 +926,7 @@ def mailbox_check(request: HttpRequest, pairing: ExtensionPairing) -> HttpRespon
     The hourly sweep is too slow for a code the student is waiting for at the
     portal (spec §3). Queued, never synced here (security review M1): a sync
     reads the stored grant, WebTaskRole has no GetSecretValue on
-    tehsil/mailbox/* and must not get it, and the AccessDenied would read as a
+    elmify/mailbox/* and must not get it, and the AccessDenied would read as a
     lost grant and disconnect the student. The worker also runs outside this
     request's transaction. Same per-student brake the in-request sync had.
     Imported here, not at module load: apps.mailbox imports apps.portals.
@@ -704,6 +1053,135 @@ def address_report(
             "ask_after_seconds": int(REGISTRATION_ASK_AFTER.total_seconds()),
         }
     )
+
+
+#: A login page is met once per visit. Thirty an hour is a student coming back
+#: through many logouts; more is a loop, or a page asking on purpose.
+_PORTAL_LOGIN_RATE_LIMIT = 30
+
+
+class _PortalLoginAsk(BaseModel):
+    """Which page the extension is standing on, and its host. `host` is checked
+    against the account's own portal host: the password is for that site only."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    page: Literal["login", "signup"]
+    host: str = Field(max_length=253)
+    max_length: int | None = Field(default=None, ge=1, le=512)
+    came_back: bool = False
+
+
+
+def _resolve_or_create_portal_password(
+    application: Application, account: PortalAccount, ask: _PortalLoginAsk
+) -> tuple[str, bool]:
+    """Read an existing portal password or create one on first sign-up; never logs secrets."""
+    where: dict[str, Any] = {
+        "tenant_id": application.tenant_id,
+        "student_id": application.student_id,
+        "portal_host": account.portal_host,
+    }
+    read_only = (
+        account.password_held_at is not None
+        or (ask.page == "login" and account.registered_at is None)
+        or ask.came_back
+    )
+    try:
+        if read_only:
+            password = credentials.password_for(**where)
+            if password is None and account.password_held_at is not None:
+                with tenant_transaction(application.tenant_id):
+                    PortalAccount.objects.filter(pk=account.pk).update(password_held_at=None)
+            created = False
+        else:
+            if account.registered_at is not None:
+                raise _ApiError(409, "registered_without_us")
+            password = credentials.create_password(
+                **where,
+                username=account.address,
+                max_length=ask.max_length,
+                password_rules=(
+                    application.portal_form.password_rules
+                    if application.portal_form is not None
+                    else ""
+                ),
+            )
+            created = True
+    except credentials.PasswordRulesUnmet as unmet:
+        raise _ApiError(409, "password_rules") from unmet
+    except botocore.exceptions.ClientError as error:
+        logger.warning(
+            "portal password store refused %s for %s",
+            credentials.aws_code(error),
+            account.portal_host,
+        )
+        raise _ApiError(503, "secrets_unavailable") from None
+    if password is None:
+        raise _ApiError(409, "no_portal_password")
+    return password, created
+
+
+@require_POST
+@_device_endpoint
+def portal_login(
+    request: HttpRequest, pairing: ExtensionPairing, application_id: UUID
+) -> HttpResponse:
+    """The account's address and password, for the portal's own login or sign-up
+    page (spec 2026-10-09 §6, D3).
+
+    `signup` makes the password on first use (credentials.create_password is
+    create-once, so a reloaded page gets the same one); `login` only reads one
+    we made. Refused when the student took the account over, when they
+    registered without us (we never made a password, so there is none to type),
+    or when the page is on any other host than the account's.
+
+    Secrets Manager is called outside the tenant transaction: an AWS round trip
+    is not something to hold a row lock across. Never logs the password; the
+    response is no-store so no cache between here and the extension keeps it.
+    """
+    _limit("ext-portal-login", pairing, _PORTAL_LOGIN_RATE_LIMIT)
+    # A browser paired from a session alone has not shown the student is at the
+    # keyboard; the reveal page asks for that proof, so this route does too.
+    if pairing.passwords_allowed_at is None:
+        raise _ApiError(409, "browser_unconfirmed")
+    application = _application_for(pairing, application_id)
+    try:
+        ask = _PortalLoginAsk.model_validate(_json_body(request))
+    except ValidationError as error:
+        raise _ApiError(400, "invalid_request") from error
+    with tenant_transaction(application.tenant_id):
+        account = tags.account_for(application)
+    if account is None or not account.address:
+        raise _ApiError(409, "no_portal_address")
+    from apps.mailbox.filter import ascii_host  # apps.mailbox imports apps.portals
+
+    # Punycode, as location.hostname reports it; "" (will not encode) matches nothing.
+    asked = ascii_host(ask.host.removesuffix(".")).casefold()
+    if not asked or asked != ascii_host(account.portal_host.removesuffix(".")).casefold():
+        raise _ApiError(409, "wrong_host")
+    if account.student_managed_at is not None:
+        raise _ApiError(409, "student_managed")
+    password, created = _resolve_or_create_portal_password(application, account, ask)
+    now = timezone.now()
+    with tenant_transaction(application.tenant_id):
+        marked = PortalAccount.objects.filter(pk=account.pk, password_held_at__isnull=True).update(
+            password_held_at=now
+        )
+        events = ["portal.password_sent"]
+        if created and marked == 1:
+            events.insert(0, "portal.password_created")
+        for event in events:
+            AuditEvent.objects.create(
+                tenant_id=application.tenant_id,
+                actor=pairing.membership,
+                actor_kind=AuditEvent.ActorKind.HUMAN,
+                event=event,
+                object_id=account.id,
+            )
+    response = JsonResponse({"username": account.address, "password": password})
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 #: The dock asks once per registration; a student answering twice is fine, a
@@ -840,9 +1318,6 @@ def registration(
 #: An attachment is a whole file. Thirty an hour is a student attaching every
 #: document of several applications, and stops a loop pulling the bucket.
 _DOCUMENT_RATE_LIMIT = 30
-_EXTENSIONS = {"application/pdf": ".pdf", "image/png": ".png", "image/jpeg": ".jpg"}
-#: A rendered draft's type, from its stored filename's extension.
-_TYPES = {extension: content_type for content_type, extension in _EXTENSIONS.items()}
 
 
 def _named_for(membership: Membership, document_id: UUID, source: str) -> bool:
@@ -873,15 +1348,33 @@ def _named_for(membership: Membership, document_id: UUID, source: str) -> bool:
     return False
 
 
-def _inert(body: bytes, content_type: str, filename: str) -> HttpResponse:
-    response = HttpResponse(body, content_type=content_type)
-    # Every route that serves an upload sends all three (spec §6, "Upload safety"): a file
-    # is saved, never rendered; its type is never guessed; and if anything renders it
-    # anyway, it runs no script and loads nothing.
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    response["X-Content-Type-Options"] = "nosniff"
-    response["Content-Security-Policy"] = "sandbox; default-src 'none'"
-    return response
+def _prepared_upload(
+    membership: Membership, upload: DocumentVersion
+) -> PreparedDocument | None:
+    """The READY prepared version of this upload for the application the live
+    OPEN_UPLOAD_PAGE action names, or None (the original is served as before)."""
+    action = DeviceAction.objects.filter(
+        membership=membership,
+        kind=DeviceAction.Kind.OPEN_UPLOAD_PAGE,
+        completed_at__isnull=True,
+        expires_at__gt=timezone.now(),
+        payload__document_id=str(upload.id),
+        payload__source="upload",
+    ).first()
+    application_id = (action.payload or {}).get("application_id") if action else None
+    if not application_id:
+        return None
+    try:
+        application = Application.objects.filter(id=application_id, student=membership).first()
+    except (DjangoValidationError, ValueError):
+        logger.warning(
+            "invalid application_id on OPEN_UPLOAD_PAGE action %s",
+            action.id if action is not None else None,
+        )
+        return None
+    if application is None:
+        return None
+    return prepared_upload(current_prepared(application), upload.id, upload.kind)
 
 
 @require_GET
@@ -896,10 +1389,16 @@ def document(request: HttpRequest, pairing: ExtensionPairing, document_id: UUID)
     """
     _limit("ext-document", pairing, _DOCUMENT_RATE_LIMIT)
     with tenant_transaction(pairing.tenant_id):
+        from apps.documents.verification import disowned_refs
+
         upload = (
-            DocumentVersion.objects.filter(
+            None
+            if f"document:{document_id}" in disowned_refs(pairing.membership)
+            else DocumentVersion.objects.filter(
                 id=document_id, student=pairing.membership, state="AVAILABLE",
                 scan_result="NO_THREATS_FOUND",
+                # A replaced upload is never sent, whatever earlier action named it (fix M3).
+                retired_at__isnull=True,
             )
             .exclude(promoted_key="")
             .first()
@@ -914,27 +1413,45 @@ def document(request: HttpRequest, pairing: ExtensionPairing, document_id: UUID)
             .exclude(rendered_filename="")
             .first()
         )
+        prepared = _prepared_upload(pairing.membership, upload) if upload is not None else None
         named = (upload is not None and _named_for(pairing.membership, document_id, "upload")) or (
             draft is not None and _named_for(pairing.membership, document_id, "draft")
         )
     if not named:
         raise _ApiError(404, "not_found")
+    if prepared is not None:
+        try:
+            body = read_prepared(prepared.object_key)
+            return inert_response(body, prepared.content_type, prepared.filename)
+        except KeyError:
+            logger.warning("prepared document %s missing from object store", prepared.id)
+            raise _ApiError(404, "not_found") from None
     if upload is not None:
-        if upload.content_type not in _EXTENSIONS:
+        if upload.content_type not in SERVED_TYPES:
             raise _ApiError(404, "not_found")
         try:
             body = read_upload(upload)
-        except (DocumentUnavailable, KeyError):
+        except (DocumentUnavailable, KeyError) as error:
+            logger.warning(
+                "upload document %s unavailable from object store (%s)",
+                upload.id,
+                type(error).__name__,
+            )
             raise _ApiError(404, "not_found") from None
-        filename = f"{upload.kind.lower()}-{upload.id}{_EXTENSIONS[upload.content_type]}"
-        return _inert(body, upload.content_type, filename)
+        filename = f"{upload.kind.lower()}-{upload.id}{SERVED_TYPES[upload.content_type]}"
+        return inert_response(body, upload.content_type, filename)
     assert draft is not None  # named implies one of the two
     suffix = PurePosixPath(draft.rendered_filename).suffix.lower()
-    content_type = _TYPES.get(".jpg" if suffix == ".jpeg" else suffix)
+    content_type = TYPE_BY_EXTENSION.get(".jpg" if suffix == ".jpeg" else suffix)
     if content_type is None:
         raise _ApiError(404, "not_found")
     try:
         body = document_storage.read_draft(draft, draft.rendered_filename)
-    except (document_storage.InvalidFilename, KeyError):
+    except (document_storage.InvalidFilename, KeyError) as error:
+        logger.warning(
+            "draft document %s unavailable from object store (%s)",
+            draft.id,
+            type(error).__name__,
+        )
         raise _ApiError(404, "not_found") from None
-    return _inert(body, content_type, f"{draft.kind.lower()}-{draft.id}{suffix}")
+    return inert_response(body, content_type, f"{draft.kind.lower()}-{draft.id}{suffix}")

@@ -354,10 +354,6 @@ def stack_resources(stack_name: str, cloudformation: object) -> bool:
     return required_resources_present(resources)
 
 
-def validate_stack(stack_name: str) -> bool:
-    return stack_resources(stack_name, boto3.client("cloudformation"))
-
-
 def _task_network_interface(task: dict[str, object]) -> tuple[str, str]:
     for attachment in task.get("attachments", []):
         if attachment.get("type") != "ElasticNetworkInterface":
@@ -571,7 +567,6 @@ def run_validation(
     }
     try:
         cloudformation.describe_stacks(StackName=stack_name)["Stacks"][0]
-        evidence["stack"] = {"name": stack_name}
         if not stack_resources(stack_name, cloudformation):
             raise ValueError("stack is missing required resources")
         outputs = stack_outputs(stack_name, cloudformation)

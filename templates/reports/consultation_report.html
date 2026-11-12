@@ -1,4 +1,5 @@
 <!doctype html>
+{% load dashboard %}
 <html lang="en">
 <head><meta charset="utf-8"><title>Consultation report</title></head>
 <body>
@@ -8,7 +9,11 @@
     <section>
       <h2>{{ member.candidate.program_name }}</h2>
       <p>Funding gap: {% if member.candidate.funding_gap_is_placeholder %}not yet costed{% else %}{{ member.candidate.funding_gap }} {{ member.candidate.currency }}{% endif %}</p>
-      <p>{{ member.candidate.evidence.claim }} (last checked {{ member.candidate.evidence.last_checked_at|date:"j M Y" }})</p>
+      <p>{{ member.candidate.evidence.claim }}</p>
+      {# The pack page's citation (student/_candidate.html); owner, 2026-10-24, reversing the 2026-08-28 omission for the report. Only an https URL becomes a link. #}
+      {% with url=member.candidate.evidence.source_url|https_only %}
+        <p>{% if url %}<a href="{{ url }}">Official source</a> · {{ member.candidate.evidence.source_domain }}{% else %}Official source: {{ member.candidate.evidence.source_domain }}{% endif %} · Last checked {{ member.candidate.evidence.last_checked_at|date:"j M Y" }}</p>
+      {% endwith %}
     </section>
   {% endfor %}
 </body>

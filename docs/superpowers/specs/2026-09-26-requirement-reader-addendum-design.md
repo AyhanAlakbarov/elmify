@@ -92,7 +92,7 @@ stale references §9 lists.
 written on every `DecisionRecord`, as plan 1 already does.
 
 **The owner's action:** create an OpenRouter account and key, and save it as
-`~/.config/tehsil_agent/openrouter.env` (`OPENROUTER_API_KEY=`, mode 600). Nothing in the build
+`~/.config/elmify/openrouter.env` (`OPENROUTER_API_KEY=`, mode 600). Nothing in the build
 waits on it except the live gates.
 
 ## 3. Rules are stored per page and merged in code

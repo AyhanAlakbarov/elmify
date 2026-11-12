@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-fetch-engine-design.md` — this plan is its §17 plan 2 ("Site jobs and refresh"), merged with `docs/superpowers/specs/2026-09-22-typed-decisions-and-multilingual-sources-design.md` §15 plan 3 ("Triage and outcomes inside the fetch engine"). One plan, because D1, D2, D3 and D8 have no caller outside this funnel and the funnel has no stop rule without D3. Read fetch-engine §7 entire, §8, §9, §10, §11, §12, §13, §16, and typed-decisions §4 (D1, D2, D3, D8 — **D7 was removed on 2026-09-23**), §7 and §9 before starting. They are the argument for every task below.
 
-**Base branch:** `claude/fetch-spec-refresh`, rebased onto `origin/master` at 40f8400 on 2026-09-23. Work in a fresh worktree: `git worktree add ../site-jobs claude/fetch-spec-refresh`. Test database: `POSTGRES_DB=tehsil_site_jobs` — never share a test DB between sessions (CLAUDE.md).
+**Base branch:** `claude/fetch-spec-refresh`, rebased onto `origin/master` at 40f8400 on 2026-09-23. Work in a fresh worktree: `git worktree add ../site-jobs claude/fetch-spec-refresh`. Test database: `POSTGRES_DB=elmify_site_jobs` — never share a test DB between sessions (CLAUDE.md).
 
 ## Depends on
 
@@ -56,7 +56,7 @@ Re-verified against `40f8400`; three facts, two of which cost nothing:
 - **Every plan-dependent number is a setting with an env override** (§9.1). The vendor tier rises with investment; upgrading is a config change.
 - **Keys and the webhook secret from the environment only**, never a settings default.
 - **Never run `ruff format`** in this repo — it is a lint-only gate and `ruff format` churns 26 files (CLAUDE.md).
-- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_site_jobs uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
+- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=elmify_site_jobs uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` must stay clean.
 - **RLS is verified against a `NOBYPASSRLS` role or it is not verified.** Use `runtime_connection` (`tests/tenancy/test_database_isolation.py:80`). The test role bypasses RLS and a passing test proves nothing (CLAUDE.md).
 - **Every vendor call in a test goes through an injected transport**, the way `fetch/firecrawl.py`'s `post=` and `fetch/scrapedo.py`'s `get=` already do. No test in this plan makes a network call except the `-m live` gates of Task 13, which are excluded from a default run by `addopts = "-m 'not live'"`.
 - **Migration numbers, and a collision to expect.** `research` is at `0003_organisation_register` on master (2026-09-23, 40f8400 — `0003` was taken by the Organisation register after this plan was written). **Three** plans now queue on that chain: fetch-engine-core Task 2 (`HostProfile`, `FetchAttempt`) at `0004`/`0005`, the decision-layer plan Task 2 (`DecisionRecord`) at `0006`/`0007`, and this plan (`SiteJobRecord`) at `0008`/`0009` on the assumption both land first. **Run `ls apps/research/migrations/` before writing Task 10 and take the next free pair, repointing `dependencies` at the real leaf.** A textually clean merge whose dependency names a node that does not exist is the 2026-09-15 collision CLAUDE.md records; `makemigrations --check` in CI is what catches it.
@@ -201,7 +201,7 @@ def test_the_result_carries_what_was_searched_not_just_a_label():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_sitejob.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_sitejob.py -v`
 Expected: `ModuleNotFoundError: No module named 'apps.research.sitejob'`
 
 - [ ] **Step 3: Write the settings and the vocabulary**
@@ -411,12 +411,12 @@ def document_links(page: object, *, named_files: tuple[str, ...] = ()) -> tuple[
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_sitejob.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_sitejob.py -v`
 Expected: 6 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research -q`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest tests/research -q`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -609,7 +609,7 @@ def test_the_language_choice_offers_other():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_triage.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_triage.py -v`
 Expected: `ModuleNotFoundError: No module named 'apps.research.triage'`
 
 - [ ] **Step 3: Write the screen and wire it into the ladder**
@@ -748,12 +748,12 @@ with `judge: Callable[[str, str], FetchVerdict] | None = triage.judge_fetch` as 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_triage.py tests/research/test_fetch_ladder.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_triage.py tests/research/test_fetch_ladder.py -v`
 Expected: 8 passed in `test_triage.py`, and `test_fetch_ladder.py` unchanged — plan 1's ladder tests pass `judge=None` or script it; none of them may change meaning.
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research -q`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest tests/research -q`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -998,7 +998,7 @@ def test_a_classifier_outage_degrades_to_the_url_term_rank():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_site.py tests/research/test_triage.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_site.py tests/research/test_triage.py -v`
 Expected: `ModuleNotFoundError: No module named 'apps.research.fetch.site'` and `ImportError: cannot import name 'rank_map'`
 
 - [ ] **Step 3: Write the map and the rank**
@@ -1285,12 +1285,12 @@ Add to `triage.py`'s imports: `from urllib.parse import urlsplit`, `from collect
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_site.py tests/research/test_triage.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_site.py tests/research/test_triage.py -v`
 Expected: 6 passed in `test_fetch_site.py`, 13 in `test_triage.py`
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research -q`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest tests/research -q`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -1480,7 +1480,7 @@ def _sent_body(post):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_site.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_site.py -v`
 Expected: `ImportError: cannot import name 'crawl' from 'apps.research.fetch.site'`
 
 - [ ] **Step 3: Write the crawl**
@@ -1650,12 +1650,12 @@ Add `from django.conf import settings` to `site.py`'s imports.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_site.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_site.py -v`
 Expected: 13 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research -q`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest tests/research -q`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -1855,7 +1855,7 @@ def test_an_outage_on_the_injection_screen_does_not_read_the_page():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_triage.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_triage.py -v`
 Expected: `ImportError: cannot import name 'triage_page' from 'apps.research.triage'`
 
 - [ ] **Step 3: Write the screen and the triage**
@@ -2003,12 +2003,12 @@ Add to `triage.py`'s imports: `from dataclasses import dataclass, field`, `from 
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_triage.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_triage.py -v`
 Expected: 21 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research -q`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest tests/research -q`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -2241,7 +2241,7 @@ def test_a_transport_failure_is_a_provider_failure_not_an_empty_site():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_guided_map.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_guided_map.py -v`
 Expected: `ImportError: cannot import name 'tavily_guided_map'`
 
 - [ ] **Step 3: Write the provider function**
@@ -2330,12 +2330,12 @@ Add to `tavily.py`'s imports: `import re`, `from collections.abc import Sequence
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_guided_map.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_guided_map.py -v`
 Expected: 7 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research -q`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest tests/research -q`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -2531,7 +2531,7 @@ def test_the_guided_instruction_is_one_sentence_from_the_same_slots():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_site.py tests/research/test_sitejob.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_site.py tests/research/test_sitejob.py -v`
 Expected: `ImportError: cannot import name 'agent'` and `cannot import name 'navigator_brief'`
 
 - [ ] **Step 3: Write the navigator and its brief**
@@ -2733,12 +2733,12 @@ Add `from collections.abc import Sequence` to `sitejob.py`'s imports.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_site.py tests/research/test_sitejob.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_site.py tests/research/test_sitejob.py -v`
 Expected: 18 passed in `test_fetch_site.py`, 11 in `test_sitejob.py`
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research -q`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest tests/research -q`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -2868,7 +2868,7 @@ Add `"research_sitejobrecord"` to `_SHARED_TABLES` in `tests/tenancy/test_databa
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_site_job_record_rls.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_site_job_record_rls.py -v`
 Expected: `ImportError: cannot import name 'SiteJobRecord' from 'apps.research.models'`
 
 - [ ] **Step 3: Write the model and its migrations**
@@ -2937,7 +2937,7 @@ class SiteJobRecord(models.Model):
 `apps/research/migrations/0008_site_job_record.py` is generated:
 
 ```bash
-POSTGRES_DB=tehsil_site_jobs uv run python manage.py makemigrations research --name site_job_record
+POSTGRES_DB=elmify_site_jobs uv run python manage.py makemigrations research --name site_job_record
 ```
 
 `apps/research/migrations/0009_site_job_record_rls.py` is written by hand, same shape as `funding/0030_program_awarding_institutions_rls`:
@@ -2984,12 +2984,12 @@ class Migration(migrations.Migration):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_site_job_record_rls.py tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_site_job_record_rls.py tests/tenancy/test_database_isolation.py -v`
 Expected: 4 passed in the new file; the isolation suite unchanged with the new table in `_SHARED_TABLES`
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest && POSTGRES_DB=tehsil_site_jobs uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest && POSTGRES_DB=elmify_site_jobs uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -3353,7 +3353,7 @@ Add `from uuid import uuid4`, `from apps.research.fetch import SweepBudget`, `fr
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_sitejob.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_sitejob.py -v`
 Expected: `ImportError: cannot import name 'find_requirement_pages'`
 
 - [ ] **Step 3: Write the funnel**
@@ -3703,12 +3703,12 @@ Imports `sitejob.py` gains: `logging`, `from collections.abc import Callable, Ma
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_sitejob.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_sitejob.py -v`
 Expected: 25 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest && POSTGRES_DB=tehsil_site_jobs uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest && POSTGRES_DB=elmify_site_jobs uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -3975,7 +3975,7 @@ class _Page:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_monitor.py tests/research/test_monitor_commands.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_monitor.py tests/research/test_monitor_commands.py -v`
 Expected: `ModuleNotFoundError: No module named 'apps.research.fetch.monitor'`
 
 - [ ] **Step 3: Write the monitor and its two commands**
@@ -4271,12 +4271,12 @@ def _mark(url: str, status: str) -> None:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_monitor.py tests/research/test_monitor_commands.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_monitor.py tests/research/test_monitor_commands.py -v`
 Expected: 6 passed and 3 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest && POSTGRES_DB=tehsil_site_jobs uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest && POSTGRES_DB=elmify_site_jobs uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -4460,7 +4460,7 @@ def test_the_webhook_secret_carries_no_value_of_its_own(template: Template) -> N
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_firecrawl_webhook.py tests/infra/test_template.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_firecrawl_webhook.py tests/infra/test_template.py -v`
 Expected: 404 on every webhook test (no route), and `KeyError: 'FirecrawlWebhookSecret'`
 
 - [ ] **Step 3: Write the receiver**
@@ -4545,12 +4545,12 @@ In `infra/template.yaml`, add `FirecrawlWebhookSecret` beside `FirecrawlApiKeySe
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_firecrawl_webhook.py tests/infra/test_template.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_firecrawl_webhook.py tests/infra/test_template.py -v`
 Expected: 7 passed in the webhook file; the infra suite passes with two new tests
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest && uv run bandit -c pyproject.toml -r apps config`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest && uv run bandit -c pyproject.toml -r apps config`
 Expected: all clean. Bandit matters here: this is the first new inbound HTTP surface in this plan.
 
 - [ ] **Step 6: Commit**
@@ -4680,7 +4680,7 @@ def test_a_gap_inside_the_tolerance_is_reported_without_alarm(capsys):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_pressure.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_pressure.py -v`
 Expected: `ImportError: cannot import name 'Pressure'`
 
 - [ ] **Step 3: Write the back-pressure and the reconciliation**
@@ -4784,12 +4784,12 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_pressure.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_pressure.py -v`
 Expected: 5 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -5088,11 +5088,11 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run the gates**
 
-Run: `POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_score_funnel.py -v`
+Run: `POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_score_funnel.py -v`
 Expected: 3 passed
 
 Run (deliberately, with keys in the environment — costs roughly 7 Firecrawl credits and $0.03 of Tavily on top of what the file already spends):
-`POSTGRES_DB=tehsil_site_jobs uv run pytest tests/research/test_fetch_live.py -m live -v`
+`POSTGRES_DB=elmify_site_jobs uv run pytest tests/research/test_fetch_live.py -m live -v`
 Expected: the three new tests pass or skip cleanly on an absent key; the existing five are unchanged.
 
 - [ ] **Step 5: Rewrite the record**
@@ -5113,7 +5113,7 @@ In the fetch-engine spec's §7.3a, record the Step 0 measurement (Task 6) with i
 
 - [ ] **Step 6: Run everything**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_site_jobs uv run pytest && uv run bandit -c pyproject.toml -r apps config && uv run pip-audit && POSTGRES_DB=tehsil_site_jobs uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_site_jobs uv run pytest && uv run bandit -c pyproject.toml -r apps config && uv run pip-audit && POSTGRES_DB=elmify_site_jobs uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean
 
 - [ ] **Step 7: Commit**

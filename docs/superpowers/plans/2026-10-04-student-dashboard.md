@@ -18,7 +18,7 @@
 - No new JS framework and no htmx; the only script is `static/dashboard/documents.js`, calling the existing JSON APIs.
 - Templates live in root `templates/` (`base.html`, `403.html`, `400.html`, `registration/login.html`, `student/*`); app templates may extend `base.html`.
 - Ownership split with the consent session (f7): this branch owns `templates/base.html`, `templates/registration/login.html`, `templates/student/*`, `/accounts/login/`, `/accounts/logout/`. Never create `apps/privacy/*`; f7 adds `/accounts/logout/` to its `_ACCEPTANCE_EXEMPT_PREFIXES`.
-- Every test command uses `POSTGRES_DB=tehsil_student_dashboard`.
+- Every test command uses `POSTGRES_DB=elmify_student_dashboard`.
 - Never run `ruff format`. Lint: `uv run ruff check .`
 - Types: `uv run mypy apps config`
 - Django: `uv run python manage.py check` and `uv run python manage.py makemigrations --check --dry-run`
@@ -223,7 +223,7 @@ that builds the real page.
 
 - [ ] **Step 4: Run the suite to see the triage is green while `templates/` is still absent**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/acceptance tests/accounts tests/concierge tests/funding tests/reports tests/tenancy/test_mfa.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/acceptance tests/accounts tests/concierge tests/funding tests/reports tests/tenancy/test_mfa.py`
 Expected: PASS (frontend tests still skipped; skip wins over xfail).
 
 - [ ] **Step 5: Commit the triage**
@@ -383,8 +383,8 @@ def test_a_deletion_locked_student_can_still_log_out(client, agency_a, domain_a,
 
 - [ ] **Step 7: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/accounts/test_login.py`
-Expected: FAIL — `/accounts/login/` is 404 and `/` answers 200 "Tehsil".
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/accounts/test_login.py`
+Expected: FAIL — `/accounts/login/` is 404 and `/` answers 200 "Elmify".
 
 - [ ] **Step 8: Share the login limiter**
 
@@ -486,7 +486,7 @@ def index(request: HttpRequest) -> HttpResponse:
     """A student lands on the board, a counsellor on their list, anyone else on login.
 
     The Outlook callback ends on the mailbox page now, but any other link to the
-    bare host lands somewhere useful instead of on the word "Tehsil".
+    bare host lands somewhere useful instead of on the word "Elmify".
     """
     role = getattr(getattr(request, "membership", None), "role", None)
     if role == Membership.Role.STUDENT:
@@ -522,7 +522,7 @@ _DELETION_EXEMPT_PREFIXES = (
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{% if request.tenant %}{{ request.tenant.name }}{% else %}Tehsil{% endif %}{% endblock %}</title>
+  <title>{% block title %}{% if request.tenant %}{{ request.tenant.name }}{% else %}Elmify{% endif %}{% endblock %}</title>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -607,10 +607,10 @@ _DELETION_EXEMPT_PREFIXES = (
 
 - [ ] **Step 11: Run the login tests and the kept frontend tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/accounts/test_login.py tests/acceptance tests/documents/test_api.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/accounts/test_login.py tests/acceptance tests/documents/test_api.py`
 Expected: PASS (the 5 denied-page tests now run and pass; the vertical slice is xfail).
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q`
 Expected: PASS, with 23 xfailed.
 
 - [ ] **Step 12: Lint, types, checks**
@@ -721,7 +721,7 @@ def test_a_taken_username_is_refused(agency_a, domain_a, typed, user_a) -> None:
 
 - [ ] **Step 2: Run it to see it fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/accounts/test_create_student.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/accounts/test_create_student.py`
 Expected: FAIL — `Unknown command: 'create_student'`.
 
 - [ ] **Step 3: Write the command**
@@ -797,7 +797,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run it to see it pass**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/accounts/test_create_student.py && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/accounts/test_create_student.py && uv run ruff check . && uv run mypy apps config`
 Expected: PASS, no lint or type errors.
 
 - [ ] **Step 5: Commit**
@@ -863,7 +863,7 @@ def test_the_pattern_finds_a_reference() -> None:
 
 - [ ] **Step 2: Run it**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/test_static_references.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/test_static_references.py`
 Expected: PASS (no references yet) — it starts guarding in Task 15. The second test pins that the pattern works, so the first cannot pass vacuously.
 
 - [ ] **Step 3: CI step**
@@ -883,7 +883,7 @@ In `.github/workflows/ci.yml`, job `test`, after `- run: uv run python manage.py
           DATABASE_ROLE: runtime_web
           POSTGRES_WEB_USER: collectstatic
           POSTGRES_WEB_PASSWORD: collectstatic
-          POSTGRES_DB: tehsil
+          POSTGRES_DB: elmify
           POSTGRES_HOST: 127.0.0.1
           RESEARCH_QUEUE_URL: unused
           EUROPASS_QUEUE_URL: unused
@@ -904,7 +904,7 @@ In `Dockerfile`, stage `web`, immediately before `USER app`:
 # the build passes placeholders: collectstatic opens no database, cache or queue.
 RUN DJANGO_SECRET_KEY=collectstatic-only DJANGO_ALLOWED_HOSTS=localhost \
     DATABASE_ROLE=runtime_web POSTGRES_WEB_USER=collectstatic POSTGRES_WEB_PASSWORD=collectstatic \
-    POSTGRES_DB=tehsil POSTGRES_HOST=localhost \
+    POSTGRES_DB=elmify POSTGRES_HOST=localhost \
     RESEARCH_QUEUE_URL=unused EUROPASS_QUEUE_URL=unused PORTAL_QUEUE_URL=unused \
     DOCUMENT_QUEUE_URL=unused DOCUMENT_SCAN_QUEUE_URL=unused MAILBOX_QUEUE_URL=unused \
     CACHE_URL=redis://localhost:6379/0 \
@@ -915,9 +915,9 @@ RUN DJANGO_SECRET_KEY=collectstatic-only DJANGO_ALLOWED_HOSTS=localhost \
 
 Run:
 ```bash
-cd /home/orkhan/Desktop/student-dashboard && DJANGO_SETTINGS_MODULE=config.settings.production DJANGO_SECRET_KEY=collectstatic-only DJANGO_ALLOWED_HOSTS=localhost DATABASE_ROLE=runtime_web POSTGRES_WEB_USER=collectstatic POSTGRES_WEB_PASSWORD=collectstatic POSTGRES_DB=tehsil POSTGRES_HOST=127.0.0.1 RESEARCH_QUEUE_URL=unused EUROPASS_QUEUE_URL=unused PORTAL_QUEUE_URL=unused DOCUMENT_QUEUE_URL=unused DOCUMENT_SCAN_QUEUE_URL=unused MAILBOX_QUEUE_URL=unused CACHE_URL=redis://127.0.0.1:6379/0 uv run python manage.py collectstatic --noinput
+cd /home/orkhan/Desktop/student-dashboard && DJANGO_SETTINGS_MODULE=config.settings.production DJANGO_SECRET_KEY=collectstatic-only DJANGO_ALLOWED_HOSTS=localhost DATABASE_ROLE=runtime_web POSTGRES_WEB_USER=collectstatic POSTGRES_WEB_PASSWORD=collectstatic POSTGRES_DB=elmify POSTGRES_HOST=127.0.0.1 RESEARCH_QUEUE_URL=unused EUROPASS_QUEUE_URL=unused PORTAL_QUEUE_URL=unused DOCUMENT_QUEUE_URL=unused DOCUMENT_SCAN_QUEUE_URL=unused MAILBOX_QUEUE_URL=unused CACHE_URL=redis://127.0.0.1:6379/0 uv run python manage.py collectstatic --noinput
 ```
-Expected: `N static files copied to '.../staticfiles', M post-processed.` (`staticfiles/` is already in `.gitignore`). Then `docker build --target web -t tehsil-web:dashboard .` succeeds.
+Expected: `N static files copied to '.../staticfiles', M post-processed.` (`staticfiles/` is already in `.gitignore`). Then `docker build --target web -t elmify-web:dashboard .` succeeds.
 
 - [ ] **Step 6: Commit**
 
@@ -1185,7 +1185,7 @@ def test_an_upload_may_be_any_document_the_table_lists(
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/portals/test_dashboard_fields.py tests/audit/test_dashboard_redaction.py tests/documents/test_document_worker.py tests/documents/test_api.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/portals/test_dashboard_fields.py tests/audit/test_dashboard_redaction.py tests/documents/test_document_worker.py tests/documents/test_api.py`
 Expected: FAIL — `TypeError: Application() got unexpected keyword arguments: 'outcome'` and friends; the passport is ingested; `PASSPORT` is `invalid_kind`.
 
 - [ ] **Step 3: The models**
@@ -1556,7 +1556,7 @@ Expected: four migrations; the portals one depends on the mailbox and funding on
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/portals tests/audit tests/documents tests/mailbox tests/watch`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/portals tests/audit tests/documents tests/mailbox tests/watch`
 Expected: PASS, including `tests/audit/test_redaction_classification.py` (every new column classified exactly once).
 
 - [ ] **Step 8: Lint and types**
@@ -1627,7 +1627,7 @@ def test_the_worker_copies_what_the_board_shows_onto_each_candidate(slice_driver
 
 - [ ] **Step 2: Run it to see it fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/research/test_candidate_copies.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/research/test_candidate_copies.py`
 Expected: FAIL — `institution_name == ""`.
 
 - [ ] **Step 3: Write the copies**
@@ -1679,7 +1679,7 @@ def _award_copy(award: FundingOpportunity, packed: PackedAward) -> dict[str, obj
 
 - [ ] **Step 4: Run it to see it pass, with the slice and the pack tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/research tests/acceptance tests/funding && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/research tests/acceptance tests/funding && uv run ruff check . && uv run mypy apps config`
 Expected: PASS, no errors.
 
 - [ ] **Step 5: Commit**
@@ -1841,7 +1841,7 @@ def test_unfunded_programmes_close_the_list_and_undated_awards_come_last() -> No
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard/test_https_only.py tests/funding/test_grouping.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard/test_https_only.py tests/funding/test_grouping.py`
 Expected: FAIL — `ModuleNotFoundError: apps.dashboard` / `apps.funding.grouping`.
 
 - [ ] **Step 3: The app and the filter**
@@ -2039,7 +2039,7 @@ def group_under_funding(
 
 - [ ] **Step 5: Run them to see them pass**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard tests/funding/test_grouping.py && uv run ruff check . && uv run mypy apps config && uv run python manage.py check`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard tests/funding/test_grouping.py && uv run ruff check . && uv run mypy apps config && uv run python manage.py check`
 Expected: PASS, no errors.
 
 - [ ] **Step 6: Commit**
@@ -2137,7 +2137,7 @@ def test_counts_and_missing_labels_for_one_application() -> None:
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/documents/test_table.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/documents/test_table.py`
 Expected: FAIL — `ModuleNotFoundError: apps.documents.table`.
 
 - [ ] **Step 3: Write the table**
@@ -2362,7 +2362,7 @@ def table_for(
 
 - [ ] **Step 4: Run them to see them pass**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/documents/test_table.py && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/documents/test_table.py && uv run ruff check . && uv run mypy apps config`
 Expected: PASS, no errors.
 
 - [ ] **Step 5: Commit**
@@ -2413,7 +2413,7 @@ Spec §4, §6, §8, owner decisions of 2026-10-04: student mail may go to TypeSa
 cd /home/orkhan/Desktop/student-dashboard && git fetch origin && git merge origin/master
 ```
 
-Resolve conflicts keeping both sides (expect `apps/tenancy/middleware.py`, Open point 6). Then: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q` → PASS, and `uv run python -c "import apps.research.engine_eval.score"` succeeds.
+Resolve conflicts keeping both sides (expect `apps/tenancy/middleware.py`, Open point 6). Then: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q` → PASS, and `uv run python -c "import apps.research.engine_eval.score"` succeeds.
 
 - [ ] **Step 1: Write the failing reader tests**
 
@@ -2759,7 +2759,7 @@ def test_the_prompt_asks_for_quotes_and_dates_and_the_cap_still_holds() -> None:
 
 - [ ] **Step 3: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/mailbox/test_decision_reader.py tests/mailbox/test_decision_board.py tests/mailbox/test_classify.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/mailbox/test_decision_reader.py tests/mailbox/test_decision_board.py tests/mailbox/test_classify.py`
 Expected: FAIL — `ModuleNotFoundError: apps.mailbox.decision_reader`; `apply_verdict()` has no `reading`.
 
 - [ ] **Step 4: The questions and the bars**
@@ -3424,7 +3424,7 @@ and after the `if verdict.label == "RECEIVED" and ...` block inside `if applicat
 
 - [ ] **Step 9: Run the unit tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/mailbox`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/mailbox`
 Expected: PASS (`tests/mailbox/test_sync.py`'s fake provider has no application on most signals; where one is set, `read_decision` runs with no key configured, `ask` raises `not_configured`, and the reading is `UNAVAILABLE` — the abstention path).
 
 - [ ] **Step 10: The corpus, the gold kind and the eval command**
@@ -3752,10 +3752,10 @@ class Command(BaseCommand):
 
 - [ ] **Step 11: Run everything**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/mailbox tests/portals tests/research tests/audit`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/mailbox tests/portals tests/research tests/audit`
 Expected: PASS (the live test is deselected).
 
-Run once with a key (`OPENROUTER_API_KEY` set): `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q -m live tests/mailbox/test_decision_eval.py -s`
+Run once with a key (`OPENROUTER_API_KEY` set): `POSTGRES_DB=elmify_student_dashboard uv run pytest -q -m live tests/mailbox/test_decision_eval.py -s`
 Expected: a report printed. Bars stay at the default until the owner has labelled the gold rows and a `score` run without `--trust-corpus` is pasted into `decision_bars.py`.
 
 - [ ] **Step 12: Lint, types, migrations**
@@ -4196,7 +4196,7 @@ def test_capture_requirements_runs_in_the_worker(agency_a, membership_a, monkeyp
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/portals/test_applications.py tests/documents/test_document_worker.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/portals/test_applications.py tests/documents/test_document_worker.py`
 Expected: FAIL — `ImportError: apps.portals.applications`; `/student/applications/...` is 404 for every request.
 
 - [ ] **Step 3: The service**
@@ -4721,7 +4721,7 @@ Append to `apps/portals/urls.py`'s `urlpatterns`:
 
 - [ ] **Step 6: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/portals tests/documents tests/mailbox`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/portals tests/documents tests/mailbox`
 Expected: PASS (including `tests/portals/test_boundary.py`: no `SUBMITTED` in `applications.py`).
 
 - [ ] **Step 7: Lint and types**
@@ -5023,7 +5023,7 @@ def test_an_offer_for_another_programme_waits_on_its_card(agency_a, membership_a
 
 - [ ] **Step 3: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard/test_board.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard/test_board.py`
 Expected: FAIL — `ModuleNotFoundError: apps.dashboard.board`.
 
 - [ ] **Step 4: Routes**
@@ -5495,7 +5495,7 @@ def board_for(
 
 - [ ] **Step 6: Run them to see them pass**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard && uv run ruff check . && uv run mypy apps config`
 Expected: PASS, no errors. (`apps/dashboard/board.py` may name `SUBMITTED`; the boundary test covers `apps/portals` only.)
 
 - [ ] **Step 7: Commit**
@@ -5697,7 +5697,7 @@ def test_a_label_card_says_open_message_and_names_its_application(signal_on_appl
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard/test_needs.py tests/mailbox/test_decision_board.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard/test_needs.py tests/mailbox/test_decision_board.py`
 Expected: FAIL — `ModuleNotFoundError: apps.dashboard.needs`; the label card has no `application`.
 
 - [ ] **Step 3: The notification writers set the button**
@@ -5883,7 +5883,7 @@ If mypy accepts `key=lambda i: i.deadline` after narrowing with a typed helper, 
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard tests/mailbox tests/watch && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard tests/mailbox tests/watch && uv run ruff check . && uv run mypy apps config`
 Expected: PASS, no errors.
 
 - [ ] **Step 6: Commit**
@@ -6052,7 +6052,7 @@ In `tests/concierge/test_roadmap.py` delete the two `@pytest.mark.xfail(strict=T
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard/test_home.py tests/dashboard/test_locks.py tests/concierge/test_roadmap.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard/test_home.py tests/dashboard/test_locks.py tests/concierge/test_roadmap.py`
 Expected: FAIL — the stub `tests/templates/student/dashboard.html` renders nothing ("Needs you now" not in body); the lock test passes already (the middleware locks every path) and the acceptance test is skipped.
 
 - [ ] **Step 3: The view**
@@ -6227,7 +6227,7 @@ cd /home/orkhan/Desktop/student-dashboard && git rm tests/templates/student/dash
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard tests/concierge tests/audit`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard tests/concierge tests/audit`
 Expected: PASS — including the two un-xfailed roadmap tests (student nav, message rate limit with the typed text kept).
 
 - [ ] **Step 6: Lint, types, checks**
@@ -6393,7 +6393,7 @@ In `tests/reports/test_consultation_report.py::test_report_content_has_required_
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/funding tests/acceptance tests/reports`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/funding tests/acceptance tests/reports`
 Expected: FAIL — `KeyError: 'groups'`; the stub templates render nothing.
 
 - [ ] **Step 3: The context**
@@ -6612,7 +6612,7 @@ Per the P1-7.1 amendment of 2026-08-28, the explanation is evidence-backed. Amen
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/funding tests/acceptance tests/reports tests/dashboard`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/funding tests/acceptance tests/reports tests/dashboard`
 Expected: PASS — the vertical slice, seven student-control tests and two report tests now run without `xfail`.
 
 - [ ] **Step 6: Lint, types, checks**
@@ -7339,7 +7339,7 @@ def test_erasure_reaches_a_promoted_upload(agency_a):
 Run: `cd /home/orkhan/Desktop/student-dashboard && uv run --project ocr pytest ocr -q`
 Expected: FAIL — `read_pages` has no `inspect`.
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/documents tests/portals/test_ext_document.py tests/infra/test_template.py tests/audit/test_deletion_purges_documents.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/documents tests/portals/test_ext_document.py tests/infra/test_template.py tests/audit/test_deletion_purges_documents.py`
 Expected: FAIL — `apps.documents.ocr` has no `inspect_upload`; `DocumentVersion` has no `promoted_key`; `Cell` has no `CHECKING`; `/ext/documents/...` is 404 for every request; `upload_key` does not exist; the conftest stub cannot patch a missing `_check_and_promote`. The infra test passes already (it pins today's shape).
 
 - [ ] **Step 4: The check, inside the isolated function**
@@ -7765,7 +7765,7 @@ def document(request: HttpRequest, pairing: ExtensionPairing, document_id: UUID)
 Run: `cd /home/orkhan/Desktop/student-dashboard && uv run --project ocr pytest ocr -q`
 Expected: PASS.
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/documents tests/portals tests/infra tests/audit`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/documents tests/portals tests/infra tests/audit`
 Expected: PASS, including `tests/audit/test_redaction_classification.py`, the existing worker and transcript tests (the conftest stub promotes for them), and `TestTheRealCheck` wherever `ocr/.venv` exists — it must not be skipped on the implementer's machine: run `uv sync --project ocr --frozen` first if it is.
 
 - [ ] **Step 9: Lint, types, checks**
@@ -7993,7 +7993,7 @@ Append `"/student/documents/"` to `STUDENT_PAGES` in `tests/dashboard/test_locks
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/documents/test_documents_page.py tests/dashboard/test_locks.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/documents/test_documents_page.py tests/dashboard/test_locks.py`
 Expected: FAIL — 404 on `/student/documents/`.
 
 - [ ] **Step 3: The views**
@@ -8357,7 +8357,7 @@ def document_request(request: HttpRequest, signal_id: UUID) -> HttpResponse:
 
 - [ ] **Step 5: Run the tests (the static-reference test now guards the script)**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/documents tests/dashboard tests/test_static_references.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/documents tests/dashboard tests/test_static_references.py`
 Expected: PASS.
 
 - [ ] **Step 6: Lint, types, checks, collectstatic**
@@ -8496,7 +8496,7 @@ Append `"/student/messages/"` to `STUDENT_PAGES` in `tests/dashboard/test_locks.
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/concierge/test_messages_page.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/concierge/test_messages_page.py`
 Expected: FAIL — 404 on `/student/messages/`.
 
 - [ ] **Step 3: The view**
@@ -8622,7 +8622,7 @@ make `_message_error` return `_messages_page(request, student, status=status, er
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/concierge tests/dashboard && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/concierge tests/dashboard && uv run ruff check . && uv run mypy apps config`
 Expected: PASS (the kept message-limit test still re-renders home: it sends no `return_to`).
 
 - [ ] **Step 6: Commit**
@@ -8829,7 +8829,7 @@ Append `"/student/settings/"`, `"/student/settings/mailbox/"`, `"/student/settin
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/concierge/test_settings_page.py tests/mailbox/test_mailbox_page.py tests/portals/test_extension_page.py tests/audit/test_account_page.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/concierge/test_settings_page.py tests/mailbox/test_mailbox_page.py tests/portals/test_extension_page.py tests/audit/test_account_page.py`
 Expected: FAIL — 404 on every settings path; the callback still redirects to `/`.
 
 - [ ] **Step 3: Settings index**
@@ -9056,7 +9056,7 @@ def extension_disconnect(request: HttpRequest, pairing_id: UUID) -> HttpResponse
   <h2>How to pair</h2>
   <ol>
     <li>Use Chrome, Edge, Brave, Opera, Vivaldi or Arc on a computer.</li>
-    <li>Install the Tehsil extension from the Chrome Web Store.</li>
+    <li>Install the Elmify extension from the Chrome Web Store.</li>
     <li>Open this dashboard while logged in. The extension connects to your account by itself.</li>
   </ol>
   <p>Logging out keeps your browsers connected. Disconnect one here when you stop using it.</p>
@@ -9130,7 +9130,7 @@ cd /home/orkhan/Desktop/student-dashboard && git rm tests/templates/audit/deleti
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/concierge tests/mailbox tests/portals tests/audit tests/dashboard`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/concierge tests/mailbox tests/portals tests/audit tests/dashboard`
 Expected: PASS (every existing mailbox view test keeps its JSON answers: none sends `Accept: text/html`).
 
 - [ ] **Step 8: Lint, types, checks**
@@ -9182,7 +9182,7 @@ Append `"/student/profile/"` and `"/student/gap-interview/"` to `STUDENT_PAGES` 
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/accounts tests/documents/test_gap_interview_view.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/accounts tests/documents/test_gap_interview_view.py`
 Expected: FAIL — the stub wizard templates render nothing; the gap page has no skip link.
 
 - [ ] **Step 3: The wizard templates**
@@ -9294,7 +9294,7 @@ cd /home/orkhan/Desktop/student-dashboard && git rm tests/templates/student/cons
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/accounts tests/documents tests/dashboard`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/accounts tests/documents tests/dashboard`
 Expected: PASS — the four wizard tests run without `xfail`; the gap-interview count test still passes.
 
 - [ ] **Step 6: Lint, types**
@@ -9419,7 +9419,7 @@ def test_the_kit_is_behind_the_deletion_lock(client, agency_a, domain_a, user_a,
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/portals/test_kit_page.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/portals/test_kit_page.py`
 Expected: FAIL — the stub renders nothing.
 
 - [ ] **Step 3: The view's context**
@@ -9520,7 +9520,7 @@ cd /home/orkhan/Desktop/student-dashboard && git rm tests/templates/portals/kit.
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/portals && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/portals && uv run ruff check . && uv run mypy apps config`
 Expected: PASS (`tests/portals/test_kit_view.py` still reads `response.context["kit"]`).
 
 - [ ] **Step 6: Commit**
@@ -9785,7 +9785,7 @@ Delete every `xfail` marker naming Task 20.
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard/test_counselor_board.py tests/concierge/test_roadmap.py tests/funding tests/tenancy/test_mfa.py`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard/test_counselor_board.py tests/concierge/test_roadmap.py tests/funding tests/tenancy/test_mfa.py`
 Expected: FAIL — 404 on `/counselor/students/...` (no route) where 200 is expected; the counsellor stubs render nothing.
 
 - [ ] **Step 3: The views**
@@ -10328,12 +10328,12 @@ cd /home/orkhan/Desktop/student-dashboard && git rm tests/templates/counselor/da
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q tests/dashboard tests/concierge tests/funding tests/tenancy tests/acceptance`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q tests/dashboard tests/concierge tests/funding tests/tenancy tests/acceptance`
 Expected: PASS, with no `xfail` left anywhere: `grep -rn "xfail(strict=True, reason=" tests` prints nothing.
 
 - [ ] **Step 6: The whole gate**
 
-Run: `POSTGRES_DB=tehsil_student_dashboard uv run pytest -q && uv run ruff check . && uv run mypy apps config && uv run python manage.py check && uv run python manage.py makemigrations --check --dry-run && uv run bandit -c pyproject.toml -r apps config`
+Run: `POSTGRES_DB=elmify_student_dashboard uv run pytest -q && uv run ruff check . && uv run mypy apps config && uv run python manage.py check && uv run python manage.py makemigrations --check --dry-run && uv run bandit -c pyproject.toml -r apps config`
 Expected: all pass.
 
 - [ ] **Step 7: Commit**
@@ -10376,7 +10376,7 @@ minutes; it spends a handful of model calls.
 
 - The app running with `MAILBOX_PROVIDERS=MICROSOFT`, the Microsoft OAuth client
   configured (`docs/runbooks/deploy.md`), `OPENAI_API_KEY` set
-  (`source ~/.config/tehsil_agent/openai.env`), and an agency with a verified
+  (`source ~/.config/elmify/openai.env`), and an agency with a verified
   `TenantDomain` you can reach in a browser.
 - A personal Outlook.com inbox created for this check.
 - A second mailbox on a domain whose DMARC passes at Outlook (your own domain),

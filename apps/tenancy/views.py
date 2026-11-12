@@ -21,15 +21,6 @@ _MFA_VERIFY_RATE_LIMIT = 10
 _MFA_VERIFY_RATE_WINDOW_SECONDS = 60
 
 
-def _mfa_verify_rate_limited(user_id: int) -> bool:
-    return rate_limited(
-        "mfa-verify",
-        user_id,
-        limit=_MFA_VERIFY_RATE_LIMIT,
-        window_seconds=_MFA_VERIFY_RATE_WINDOW_SECONDS,
-    )
-
-
 @login_required
 def mfa_setup(request: HttpRequest) -> HttpResponse:
     """Enroll a device if the user has none, and always accept a token to
@@ -48,7 +39,12 @@ def mfa_setup(request: HttpRequest) -> HttpResponse:
     error = None
     status = 200
     if request.method == "POST":
-        if _mfa_verify_rate_limited(request.user.pk):
+        if rate_limited(
+            "mfa-verify",
+            request.user.pk,
+            limit=_MFA_VERIFY_RATE_LIMIT,
+            window_seconds=_MFA_VERIFY_RATE_WINDOW_SECONDS,
+        ):
             # Inline re-render, same 429 contract — a bare text body would
             # replace the whole page under hx-boost (design-lint-baseline
             # defect 5 family). The token is deliberately NOT verified on a

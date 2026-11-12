@@ -25,6 +25,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from ..egress import fetch_json_api
@@ -52,8 +53,11 @@ BRAVE_REQUEST_USD = 0.005
 class BraveProvider:
     api_key: str = field(repr=False)
     name: str = "brave"
-    get: Callable[..., dict[str, object]] = field(default=fetch_json_api)
-    #: A public HTTPS URL for tehsil-funders.goggle. Empty until the file is
+    #: Waits out a throttle: Brave's Search plan allows 50 queries/s, shared by parallel taps.
+    get: Callable[..., dict[str, object]] = field(
+        default=partial(fetch_json_api, retry_throttled=True)
+    )
+    #: A public HTTPS URL for elmify-funders.goggle. Empty until the file is
     #: hosted, and the parameter is then omitted: the Goggle is a precision
     #: win (aggregators 33% -> 14% in the probe), never a recall one, so the
     #: sweep is correct without it and merely noisier.
@@ -105,10 +109,17 @@ def brave_site_search(
     key = api_key if api_key is not None else settings.BRAVE_API_KEY
     if not key:
         raise ProviderUnavailable("BRAVE_API_KEY is not set")
+    clean_query = query.strip()
+    if clean_query.lower().startswith(f"site:{domain.lower()}"):
+        clean_query = clean_query[len(f"site:{domain}") :].strip()
     try:
         data = get(
             BRAVE_SEARCH_URL,
-            params={"q": f"site:{domain} {query}", "count": count, "result_filter": "web"},
+            params={
+                "q": f"site:{domain} {clean_query}".strip(),
+                "count": count,
+                "result_filter": "web",
+            },
             headers={"Accept": "application/json", "X-Subscription-Token": key},
         )
     except Exception as error:  # transport, HTTP status, JSON -- one outcome here

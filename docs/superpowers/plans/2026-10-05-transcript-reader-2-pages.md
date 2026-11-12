@@ -35,7 +35,7 @@
 - **Commands:**
   - Lint: `uv run ruff check .` (never `ruff format`).
   - Types: `uv run mypy apps config`.
-  - Tests: `POSTGRES_DB=tehsil_transcript uv run pytest -q`.
+  - Tests: `POSTGRES_DB=elmify_transcript uv run pytest -q`.
   - Migrations: `uv run python manage.py makemigrations --check --dry-run`.
   - Never hand-edit an applied migration.
 - **Worktree:** work in `/home/orkhan/Desktop/transcript-redesign` (branch `claude/transcript-reader-2-pages`). Use `git -C` for git. The shell's working directory resets between calls.
@@ -191,7 +191,7 @@ def test_composite_tenant_foreign_keys_exist(table, expected):
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/concierge/test_cycles.py tests/migrations/test_concierge_tenant_guards.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/concierge/test_cycles.py tests/migrations/test_concierge_tenant_guards.py -q`
 Expected: FAIL with `ImportError: cannot import name 'paid_cycle'` (or `StudentCycle`).
 
 - [ ] **Step 3: The model**
@@ -358,7 +358,7 @@ In `apps/audit/redaction.py` KEEP, add the entry below. Nothing in it describes 
 
 - [ ] **Step 7: Run the tests and the erasure classification**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/concierge/test_cycles.py tests/migrations/test_concierge_tenant_guards.py tests/audit -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/concierge/test_cycles.py tests/migrations/test_concierge_tenant_guards.py tests/audit -q`
 Expected: PASS.
 
 - [ ] **Step 8: The runbook line**
@@ -449,7 +449,7 @@ def test_confirm_without_a_paid_cycle_starts_no_search(...same fixtures as the p
 
 - [ ] **Step 3: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_api.py tests/accounts -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_api.py tests/accounts -q`
 Expected: the two new gate tests FAIL (201 or 302 instead of 402).
 
 - [ ] **Step 4: The gates**
@@ -481,7 +481,7 @@ Import `paid_cycle` from `apps.concierge.cycles` in both files.
 
 Run the full suite. Every test that now fails with 402 gets the `paid_cycle_a` fixture (or an equivalent paid cycle for its agency). Nothing else changes in it. List the touched tests in the report.
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest -q`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -591,7 +591,7 @@ Add one case to `tests/privacy/test_erasure.py`, modelled on the case there that
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript_pages_models.py tests/migrations/test_documents_tenant_guards.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript_pages_models.py tests/migrations/test_documents_tenant_guards.py -q`
 Expected: FAIL with `ImportError: cannot import name 'TranscriptPage'`.
 
 - [ ] **Step 3: The models**
@@ -753,7 +753,7 @@ If the erasure test shows a PROTECT foreign key blocking deletion, follow how `T
 
 - [ ] **Step 6: Run the tests**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript_pages_models.py tests/migrations tests/audit tests/privacy -q && uv run python manage.py makemigrations --check --dry-run`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript_pages_models.py tests/migrations tests/audit tests/privacy -q && uv run python manage.py makemigrations --check --dry-run`
 Expected: PASS and "No changes detected".
 
 - [ ] **Step 7: Commit**
@@ -862,7 +862,7 @@ In `tests/documents/test_transcript_worker.py`, the upload-status assertions tha
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_api.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_api.py -q`
 Expected: the new tests FAIL (no `TranscriptUpload` is created; `/api/documents/transcript` gives 404).
 
 - [ ] **Step 3: Implement**
@@ -966,7 +966,7 @@ def transcript(request: HttpRequest, student: Membership) -> HttpResponse:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest -q`
 Expected: PASS. An existing test that posts a TRANSCRIPT upload without `role` now gets `400 invalid_role`; give it `"role": "ORIGINAL"` and list it in the report.
 
 - [ ] **Step 5: Commit**
@@ -1024,7 +1024,7 @@ Fill in the `layout` construction from the module's existing helpers. Delete or 
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_ocr.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_ocr.py -q`
 Expected: FAIL with `AttributeError: module 'apps.documents.ocr' has no attribute 'inventory'`.
 
 - [ ] **Step 3: Implement**
@@ -1118,7 +1118,7 @@ def read_pages(
 
 - [ ] **Step 4: Run the tests**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_ocr.py tests/documents/test_transcript.py -q && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_ocr.py tests/documents/test_transcript.py -q && uv run mypy apps config`
 Expected: PASS. Existing `read_pages` tests still pass, except the blank page: it used to be refused `unreadable` and is now skipped. If no other page has a table, that ends in `not_a_transcript`. Update that one test's expectation and say so in the report.
 
 - [ ] **Step 5: Commit**
@@ -1150,7 +1150,7 @@ In `tests/documents/test_transcript.py`:
 - Rewrite the `_read` helper so it calls `read_from_pages(pages, names, client=client or _jev())` directly. It no longer patches `read_pages` or builds a document.
 - Keep the tests of the gates, the file checks and the rate limit on `read_transcript` for now. Task 8 moves the file checks' tests and deletes the rest.
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript.py -q`
 Expected: FAIL with `ImportError: cannot import name 'read_from_pages'`.
 
 - [ ] **Step 2: Split the function**
@@ -1182,7 +1182,7 @@ The comments in `...` mean move the existing lines unchanged; nothing in them is
 
 - [ ] **Step 3: Run the tests**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS.
 
 - [ ] **Step 4: Commit**
@@ -1508,7 +1508,7 @@ def test_english_is_told_from_azerbaijani_turkish_and_russian():
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript_pages.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript_pages.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.transcript_pages'`.
 
 - [ ] **Step 3: The setting**
@@ -1798,7 +1798,7 @@ def _write(tenant_id: UUID, upload: TranscriptUpload, reads: tuple[PageRead, ...
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript_pages.py -q && uv run ruff check . && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript_pages.py -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -1951,7 +1951,7 @@ Delete every remaining worker test of the old `read_transcript` seam.
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript_pages.py tests/documents/test_transcript_worker.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript_pages.py tests/documents/test_transcript_worker.py -q`
 Expected: FAIL with `ImportError: cannot import name 'assemble'`.
 
 - [ ] **Step 3: Assembly**
@@ -2092,7 +2092,7 @@ In `apps/documents/document_worker.py`:
 
 - [ ] **Step 5: Run the tests**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents tests/accounts -q && uv run ruff check . && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents tests/accounts -q && uv run ruff check . && uv run mypy apps config`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -2211,7 +2211,7 @@ Use the module's own template fixture and its existing loader's names.
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_resume_transcript_readings.py tests/infra/test_template.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_resume_transcript_readings.py tests/infra/test_template.py -q`
 Expected: FAIL (unknown command; no `TranscriptResumeRule`).
 
 - [ ] **Step 3: Implement**
@@ -2306,7 +2306,7 @@ Comment it like `ReminderLadderRule`: shipped enabled, because a sweep nothing i
 
 - [ ] **Step 4: Run the tests and lint the template**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_resume_transcript_readings.py tests/infra -q && uv run cfn-lint infra/template.yaml`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_resume_transcript_readings.py tests/infra -q && uv run cfn-lint infra/template.yaml`
 Expected: PASS, cfn-lint clean.
 
 - [ ] **Step 5: The runbook line**
@@ -2317,7 +2317,7 @@ Append to `docs/runbooks/deploy.md`:
 
 - [ ] **Step 6: The full gate**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && unset VIRTUAL_ENV; uv run ruff check . && uv run mypy apps config && POSTGRES_DB=tehsil_transcript uv run pytest -q && uv run python manage.py makemigrations --check --dry-run && uv run bandit -c pyproject.toml -r apps config`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && unset VIRTUAL_ENV; uv run ruff check . && uv run mypy apps config && POSTGRES_DB=elmify_transcript uv run pytest -q && uv run python manage.py makemigrations --check --dry-run && uv run bandit -c pyproject.toml -r apps config`
 Expected: every command clean.
 
 - [ ] **Step 7: Commit**

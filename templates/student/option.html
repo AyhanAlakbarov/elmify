@@ -104,7 +104,7 @@
         <div class="status-actions">
           {% if card.button %}
             {% if card.button.method == "post" %}<form method="post" action="{{ card.button.url }}">{% csrf_token %}<button type="submit">{{ card.button.label }}</button></form>
-            {% else %}<a class="btn" href="{{ card.button.url }}">{{ card.button.label }}</a>{% endif %}
+            {% else %}<a class="btn" href="{{ card.button.url }}"{% if card.button.url|slice:":4" == "http" %} target="_blank" rel="noopener"{% endif %}>{{ card.button.label }}</a>{% endif %}
           {% endif %}
           {% if card.kit_url %}<a class="btn btn-quiet" href="{{ card.kit_url }}">Application kit</a>{% endif %}
           <a class="btn btn-quiet" href="{% url 'student-letter-workspace' card.application_id %}">Letters and essays</a>
@@ -127,14 +127,17 @@
                 <option value="">No decision yet</option>
                 {% for value, label in outcome_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
               </select></p>
-              <button type="submit">Save decision</button>
+              <div class="card-details-actions">
+                <button type="submit" class="btn-small">Save decision</button>
+                <button type="button" class="btn-quiet btn-small" data-close-details>Cancel</button>
+              </div>
             </form>
           </details>
         {% endif %}
         {% if card.remove_url and card.column.key == "to_start" %}
           <details class="card-remove">
             <summary>Remove from my list</summary>
-            <form method="post" action="{{ card.remove_url }}">{% csrf_token %}<p>Take this off your list?</p><button type="submit" class="btn-danger">Remove</button></form>
+            <form method="post" action="{{ card.remove_url }}">{% csrf_token %}<p>Take this off your list?</p><div class="card-details-actions"><button type="submit" class="btn-danger btn-small">Remove</button><button type="button" class="btn-quiet btn-small" data-close-details>Cancel</button></div></form>
           </details>
         {% endif %}
         {% with url=c.evidence.source_url|https_only %}

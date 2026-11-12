@@ -31,7 +31,7 @@ _INTAKE = date(2027, 9, 1)
 def test_one_wallet_per_student_and_intake(student) -> None:
     a = open_wallet(student, _INTAKE)
     b = open_wallet(student, _INTAKE)
-    assert a.id == b.id and a.budget_usd == Decimal("50")
+    assert a.id == b.id and a.budget_usd == Decimal("100")
     assert SearchWallet.objects.count() == 1
 
 
@@ -53,10 +53,23 @@ def test_a_wallet_older_than_a_year_does_not_count_against_the_cap(student) -> N
     assert third.id not in {first.id, second.id}
 
 
+def test_direct_b2c_student_on_platform_agency_gets_capped_35_usd_single_wallet(
+    agency_a, student
+) -> None:
+    from apps.research.models import PlatformAgency
+
+    PlatformAgency.objects.create(agency=agency_a)
+    first = open_wallet(student, _INTAKE)
+    second = open_wallet(student, date(2028, 2, 1))
+    assert first.budget_usd == Decimal("35")
+    assert second.id == first.id
+    assert SearchWallet.objects.count() == 1
+
+
 def test_a_tap_may_spend_at_most_half_of_what_remains(student) -> None:
     wallet = open_wallet(student, _INTAKE)
-    assert tap_allowance(wallet) == Decimal("25")
-    wallet.spent_usd = Decimal("40")
+    assert tap_allowance(wallet) == Decimal("50")
+    wallet.spent_usd = Decimal("90")
     assert tap_allowance(wallet) == Decimal("5")
 
 
@@ -113,7 +126,7 @@ def test_a_billed_charge_past_the_wallet_caps_the_column_and_logs_the_overshoot(
     student, tap_for, caplog
 ) -> None:
     wallet = open_wallet(student, _INTAKE)
-    SearchWallet.objects.filter(id=wallet.id).update(spent_usd=Decimal("49.99"))
+    SearchWallet.objects.filter(id=wallet.id).update(spent_usd=Decimal("99.99"))
     tap = tap_for(wallet, allowance=Decimal("5"))
     with caplog.at_level(logging.WARNING), pytest.raises(WalletExhausted) as over:
         charge(tap, kind="READ", provider="reader", usd=Decimal("0.35"))
@@ -210,3 +223,22 @@ def test_an_unknown_provider_is_preflighted_at_a_conservative_price(student, tap
     tap = tap_for(open_wallet(student, _INTAKE), allowance=Decimal("0.05"))
     with pytest.raises(WalletExhausted):
         preflight(tap, "some-new-vendor")
+
+
+def test_a_first_search_never_spends_the_follow_up_reserve_checked_live(
+    student, tap_for
+) -> None:
+    """Its allowance is fixed at request; the reserve is checked against the wallet now."""
+    from apps.research.wallet import spendable
+
+    wallet = open_wallet(student, _INTAKE)
+    first = tap_for(wallet, allowance=Decimal("90"))
+    first.kind = SearchTap.Kind.FIRST
+    SearchWallet.objects.filter(id=wallet.id).update(spent_usd=Decimal("85"))
+    wallet.refresh_from_db()
+    assert spendable(first, wallet) == Decimal("5")
+    with pytest.raises(WalletExhausted) as refused:
+        charge(first, kind="SEARCH", provider="exa", usd=Decimal("6"), already_billed=False)
+    assert refused.value.ending == SearchTap.Ending.WALLET_SPENT
+    follow_up = tap_for(wallet, allowance=Decimal("10"))
+    assert spendable(follow_up, wallet) == Decimal("10")  # a follow-up may use the reserve

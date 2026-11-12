@@ -17,8 +17,16 @@ extended as a base-template child, just matched.
   .gloss { font-style: italic; }
   /* One indent for every list on the page: bullets, publications,
      awards and languages sat at three different depths otherwise. */
-  ul { margin: 2pt 0 0; padding-left: 14pt; }
+  /* The marker is drawn as inline text (li::before), not as a list marker.
+     WeasyPrint writes list markers to the content stream after the page's
+     text, so pypdf -- our own upload reader and page-fill check -- extracted
+     every "•" as a line at the bottom of the page (R-043, measured
+     2026-10-12). font-kerning: none stops pypdf splitting "PyTorch" into
+     "PyT orch" at a kerned pair. */
+  body { font-kerning: none; }
+  ul { margin: 2pt 0 0; padding-left: 14pt; list-style: none; }
   li { margin-bottom: 1pt; }
+  li::before { content: "•\00a0"; margin-left: -9pt; display: inline-block; width: 9pt; }
   p.skills { margin: 2pt 0 0; }
   table.personal { border-collapse: collapse; margin-top: 6pt; }
   table.personal td { padding: 2pt 8pt 2pt 0; vertical-align: top; }
@@ -37,7 +45,7 @@ extended as a base-template child, just matched.
   <h2>Work Experience</h2>
   {% for entry in experience %}
   <div class="entry">
-    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
     {% if entry.city or entry.country %}<div>{% include "documents/_cv_place.html" with entry=entry only %}</div>{% endif %}
     {% include "documents/_cv_bullets.html" with entry=entry only %}
   </div>
@@ -46,17 +54,25 @@ extended as a base-template child, just matched.
   <h2>Education and Training</h2>
   {% for entry in education %}
   <div class="entry">
-    <div class="entry-header"><strong>{{ entry.degree_as_awarded }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    <div class="entry-header"><strong>{{ entry.degree_as_awarded }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
     {% if entry.degree_english and entry.degree_english != entry.degree_as_awarded %}<div class="gloss">{{ entry.degree_english }}</div>{% endif %}
     <div>{{ entry.institution_original }}{% if entry.institution_english and entry.institution_english != entry.institution_original %} ({{ entry.institution_english }}){% endif %}, {{ entry.city }}, {{ entry.country|country_name }}</div>
     {% if entry.grade_native or entry.ects_credits %}<div>{% if entry.grade_native %}Grade: {{ entry.grade_native }}{% if entry.grade_scale %} ({{ entry.grade_scale }}){% endif %}{% if entry.grade_conversion %} ≈ {{ entry.grade_conversion }}{% endif %}{% endif %}{% if entry.grade_native and entry.ects_credits %} · {% endif %}{% if entry.ects_credits %}{{ entry.ects_credits }} ECTS{% endif %}</div>{% endif %}
   </div>
   {% endfor %}
+  {% if content.certifications %}
+  {# Spec §7.1: SISGP has no certifications section; training is its nearest (plan decision 22). #}
+  <ul>
+  {% for item in content.certifications %}
+    <li>{{ item.title }}{% if item.issuer %}, {{ item.issuer }}{% endif %}{% if item.date %} — {{ item.date|month_year }}{% endif %}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
 
   <h2>Network/Civil Society Engagement</h2>
   {% for entry in engagement %}
   <div class="entry">
-    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
     {% if entry.city or entry.country %}<div>{% include "documents/_cv_place.html" with entry=entry only %}</div>{% endif %}
     {% include "documents/_cv_bullets.html" with entry=entry only %}
   </div>

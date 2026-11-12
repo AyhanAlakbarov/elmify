@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% load cv_countries dashboard %}
+{% block title %}{{ lane.title }}{% endblock %}
+{% block content %}
+<nav class="crumbs" aria-label="Breadcrumb">
+  <a href="{% if counselor_view %}{% url 'counselor-student-board' student.id %}{% else %}{% url 'student-applications' %}{% endif %}">Back to your applications</a>
+  <span aria-hidden="true">/</span>
+  <span aria-current="page">{{ lane.title }}</span>
+</nav>
+
+<div class="page-head">
+  <div>
+    <h1>{% if lane.lead.country %}{{ lane.lead.country|flag }}{% endif %}{{ lane.title }}</h1>
+    <p>
+      <span class="badge badge-brand">{{ lane.status }}</span>
+      {% if lane.lead.chance_line %} · {{ lane.lead.chance_line }}{% endif %}
+      {% if lane.programmes %} · For: {{ lane.programmes|join:", " }}{% endif %}
+    </p>
+    {% for line in lane.also_funded %}<p class="muted small">{{ line }}</p>{% endfor %}
+  </div>
+</div>
+{% if read_only %}<p class="note note-warn" role="status">{{ read_only }}</p>{% endif %}
+
+<div class="option-layout">
+  <div class="option-body">
+    {% if page %}
+      <section class="panel fit-panel" aria-labelledby="fit-heading">
+        <div class="panel-head">
+          <h2 id="fit-heading">Why you fit</h2>
+          {% if page.risk_tier or page.rank %}
+            <div class="fit-badges">
+              {% if page.risk_tier %}<span class="badge badge-tier tier-{{ page.risk_tier|lower }}">{{ page.risk_tier }} match</span>{% endif %}
+              {% if page.rank %}<span class="badge">Shortlist #{{ page.rank }}</span>{% endif %}
+            </div>
+          {% endif %}
+        </div>
+        {% if page.fits %}
+          <ul class="fit-list">{% for line in page.fits %}<li>{{ line }}</li>{% endfor %}</ul>
+        {% elif page.requirements %}
+          <p>We checked every condition the official page states. The list below shows where you stand on each.</p>
+        {% else %}
+          <p>{% if page.is_award %}The scholarship’s official page states no conditions for applicants{% else %}The programme’s official page states no conditions beyond its own admission rules{% endif %}, so nothing on it rules you out. Elmify found it by your field of study{% if not page.is_award %} and checked its costs against your budget{% endif %}.</p>
+        {% endif %}
+        {% if profile_alignment %}
+          <dl class="fit-profile-grid" aria-label="Your profile alignment">
+            {% for item in profile_alignment %}
+              <div><dt>{{ item.label }}</dt><dd>{{ item.value }}</dd></div>
+            {% endfor %}
+          </dl>
+        {% endif %}
+        {% if page.funding_condition %}
+          <p class="fit-tradeoff">{{ page.funding_condition }}</p>
+        {% endif %}
+        {% if page.risk_notes %}
+          <ul class="fit-notes">{% for note in page.risk_notes %}<li>{{ note }}</li>{% endfor %}</ul>
+        {% endif %}
+      </section>
+
+      {% if page.facts %}
+      <section class="panel" aria-labelledby="facts-heading">
+        <h2 id="facts-heading">At a glance</h2>
+        <dl class="fact-grid">
+          {% for line in page.facts %}<div><dt>{{ line.label }}</dt><dd>{{ line.value }}</dd></div>{% endfor %}
+        </dl>
+      </section>
+      {% endif %}
+    {% endif %}
+
+    {% with lead=lane.lead %}
+      <section class="panel" aria-labelledby="requirements">
+        <div class="panel-head">
+          <h2 id="requirements">Requirements &amp; deadlines</h2>
+          {% if lead.deadline_text %}<span class="badge" id="deadlines">Deadline: {{ lead.deadline_text }}</span>{% elif lead.deadline_wording %}<span class="badge" id="deadlines">{{ lead.deadline_wording }}</span>{% else %}<span id="deadlines" class="sr-only">Deadlines</span>{% endif %}
+        </div>
+        {% for line in lead.pre_checks %}<p class="note note-warn">{{ line }}</p>{% endfor %}
+        {% if lead.closed %}<p class="note note-error">Closed for this intake</p>{% endif %}
+        {% if checklist %}
+          <ul class="kit-checklist">
+            {% for item in checklist %}
+              <li class="kit-check kit-check-{{ item.tone }}">
+                <div class="kit-check-main">
+                  <span class="kit-check-text">{{ item.text }}</span>
+                  {% if item.category %}<span class="kit-check-cat">{{ item.category }}</span>{% endif %}
+                </div>
+                {% if item.status or item.url %}
+                  <div class="kit-check-meta">
+                    {% if item.status %}<span class="kit-status kit-status-{{ item.tone }}">{{ item.status }}</span>{% endif %}
+                    {% if item.url and not read_only %}<a class="kit-link" href="{{ item.url }}">{{ item.action_label }}</a>{% endif %}
+                  </div>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        {% elif lead.requirements %}
+          <ul class="item-list">{% for item in lead.requirements %}<li>{{ item }}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if page %}
+          {% if page.requirements %}
+            <ul class="req-list">
+              {% for req in page.requirements %}
+                <li class="req req-{{ req.tone }}">
+                  <div class="req-top"><h3>{{ req.label }}</h3><span class="req-verdict">{{ req.verdict }}</span></div>
+                  {% if req.quote %}<blockquote>{{ req.quote }}</blockquote>{% endif %}
+                  {% if req.reason %}<p class="req-reason">{{ req.reason }}</p>{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% elif not lead.requirements and not page.has_details %}
+            <p class="quiet-line">Detailed requirements appear the next time your list is refreshed.</p>
+          {% endif %}
+          {% if page.referee_rules %}
+            <div class="sub-section referee-rules-box">
+              <h3>Reference letter rules</h3>
+              <dl class="kv">
+                {% for line in page.referee_rules %}<div><dt>{{ line.label }}</dt><dd>{{ line.value }}</dd></div>{% endfor %}
+              </dl>
+            </div>
+          {% endif %}
+        {% endif %}
+      </section>
+
+      <section class="panel" aria-labelledby="money">
+        <h2 id="money">Money &amp; funding</h2>
+        {% if page and page.covers or page and page.costs or page and page.budget or page and page.bonds %}
+          <div class="money-grid" id="option-money-heading">
+            {% if page.covers %}
+            <div>
+              <h3>{% if page.is_award %}What it pays{% else %}Funding attached{% endif %}</h3>
+              <dl class="money-list">{% for line in page.covers %}<div><dt>{{ line.label }}</dt><dd>{{ line.value }}</dd></div>{% endfor %}</dl>
+            </div>
+            {% endif %}
+            {% if page.costs or page.budget %}
+            <div>
+              <h3>What it costs</h3>
+              {% if page.costs %}
+                <dl class="money-list">{% for line in page.costs %}<div><dt>{{ line.label }}</dt><dd>{{ line.value }}</dd></div>{% endfor %}</dl>
+              {% endif %}
+              {% if page.budget %}<p class="budget-line">Your budget: <strong>{{ page.budget }}</strong></p>{% endif %}
+            </div>
+            {% endif %}
+          </div>
+          {% for bond in page.bonds %}<p class="bond-note"><strong>After you graduate:</strong> {{ bond }}</p>{% endfor %}
+        {% endif %}
+
+        {% if lead.fee_state == "PAID" %}<p class="budget-line">Application fee paid</p>
+        {% elif lead.fee %}<p class="budget-line">Application fee: {{ lead.fee_text }} — you pay this at submission</p>
+        {% elif lead.fee_state == "UNKNOWN" and not lead.is_award %}<p class="muted small">Fee not known yet</p>{% endif %}
+        {% if lead.risk_line %}<p class="muted small">{{ lead.risk_line }}</p>{% endif %}
+        {% if rate_note %}<p class="muted small">{{ rate_note }}</p>{% endif %}
+        {% if lead.gap %}<p class="budget-line">Remaining gap: <strong>{{ lead.gap }}</strong></p>{% endif %}
+
+        <div id="funding">
+          {% include "student/_award_lines.html" %}
+          {% for line in lead.funding %}
+            <div class="sub-section">
+              <h3>{{ line.name }}</h3>
+              <dl class="kv">
+                {% if line.covers %}<div><dt>Covers</dt><dd>{{ line.covers }}</dd></div>{% endif %}
+                {% if line.amounts %}<div><dt>Amount</dt><dd>{{ line.amounts }}</dd></div>{% endif %}
+                {% if line.duration %}<div><dt>Pays for</dt><dd>{{ line.duration }}</dd></div>{% endif %}
+                {% if line.deadline %}<div><dt>Deadline</dt><dd>{{ line.deadline }}</dd></div>{% endif %}
+              </dl>
+              {% with url=line.source_url|https_only %}{% if url %}<p class="source"><a href="{{ url }}" target="_blank" rel="noopener">Official source</a> · {{ line.source_domain }}{% if line.last_checked %} · last checked {{ line.last_checked|date:"j M Y" }}{% endif %}</p>{% elif line.source_domain %}<p class="source">Official source: {{ line.source_domain }}{% if line.last_checked %} · last checked {{ line.last_checked|date:"j M Y" }}{% endif %}</p>{% endif %}{% endwith %}
+            </div>
+          {% empty %}
+            {% if not lane.award_lines and not lead.is_award %}<p class="quiet-line">No scholarship found for this programme yet.</p>{% endif %}
+          {% endfor %}
+        </div>
+
+        {% with url=lead.source_url|https_only %}
+          {% if url %}
+            <p class="source"><a href="{{ url }}" target="_blank" rel="noopener">Official source</a> · {{ lead.source_domain }}{% if lead.last_checked %} · last checked {{ lead.last_checked|date:"j M Y" }}{% endif %}</p>
+          {% elif lead.source_domain %}
+            <p class="source">Official source: {{ lead.source_domain }}{% if lead.last_checked %} · last checked {{ lead.last_checked|date:"j M Y" }}{% endif %}</p>
+          {% endif %}
+        {% endwith %}
+      </section>
+    {% endwith %}
+
+    {% if notice %}{% include "student/_notice.html" %}{% endif %}
+  </div>
+
+  <aside class="option-side">
+    {% if card %}
+      <section class="panel status-panel" aria-labelledby="status-heading">
+        <h2 id="status-heading">Readiness</h2>
+        {% if card.documents.1 %}
+          <p class="status-count">Documents {{ card.documents.0 }} of {{ card.documents.1 }} ready</p>
+          <progress value="{{ card.documents.0 }}" max="{{ card.documents.1 }}">{{ card.documents.0 }} of {{ card.documents.1 }}</progress>
+        {% endif %}
+        {% if card.answers.1 %}
+          <p class="status-count status-count-sub">Portal fields {{ card.answers.0 }} of {{ card.answers.1 }} mapped from your profile</p>
+          <progress value="{{ card.answers.0 }}" max="{{ card.answers.1 }}">{{ card.answers.0 }} of {{ card.answers.1 }}</progress>
+        {% endif %}
+        {% if missing %}
+          <h3 class="sub-head">Still missing</h3>
+          <ul class="option-missing">{% for item in missing %}<li><a href="{{ item.url }}">{{ item.label }}</a></li>{% endfor %}</ul>
+        {% endif %}
+        <div class="status-actions">
+          {% if not counselor_view %}<a class="btn btn-quiet" href="{% url 'student-letter-workspace' card.application_id %}">Letters and essays</a>{% endif %}
+          {% if card.kit_url %}<a class="btn btn-quiet" href="{{ card.kit_url }}">Application kit</a>{% endif %}
+          {% if not counselor_view %}<a class="btn btn-quiet" href="/student/referees/">Referees</a>{% endif %}
+        </div>
+      </section>
+    {% endif %}
+
+    <section class="panel" aria-labelledby="cards">
+      <h2 id="cards">Application card</h2>
+      {% for card in lane.cards %}{% include "student/_card.html" with compact_readiness=True %}{% endfor %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

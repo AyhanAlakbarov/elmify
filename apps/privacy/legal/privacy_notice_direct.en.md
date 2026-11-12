@@ -2,9 +2,9 @@
 
 ## Who we are
 
-Tehsil runs a service that helps students find, prepare and submit applications to universities and funders abroad. Tehsil is the owner (controller) of your personal data.
+Elmify runs a service that helps students find, prepare and submit applications to universities and funders abroad. Elmify is the owner (controller) of your personal data.
 
-Contact: privacy@tehsil.example
+Contact: privacy@elmify.example
 
 Company name and address: to be completed before launch
 
@@ -14,6 +14,7 @@ Company name and address: to be completed before launch
 - Contact details: your e-mail address, phone number and country.
 - Education history, transcripts and grades.
 - Your CV, your motivation letters and the facts they are built from.
+- Public information from your GitHub account and the repositories you contributed to, when you give us your GitHub username or your CV links it.
 - Programme and funding choices.
 - Application status and outcomes.
 - Messages you choose to connect through the mailbox feature.
@@ -25,7 +26,7 @@ Company name and address: to be completed before launch
 - To send your application data to the universities and funders you choose.
 - To improve recommendations, produce aggregate statistics and test our models, using anonymised data only.
 - To check that our AI features work properly on real documents, such as your CV and letters, while your account is active. Your documents and letters are never included in the anonymised data we keep after your personal data is deleted, and we do not train or test models on them after that.
-- To send you service e-mails and product and marketing e-mails, each with a note on how to stop them. You can stop them at any time by e-mailing privacy@tehsil.example. We may keep sending them after the service ends, until your personal data is deleted.
+- To send you service e-mails and product and marketing e-mails, each with a note on how to stop them. You can stop them at any time by e-mailing privacy@elmify.example. We may keep sending them after the service ends, until your personal data is deleted.
 
 ## Sensitive information
 
@@ -47,7 +48,7 @@ We keep personal data for as long as your account is active plus 12 months, then
 
 ## Your rights
 
-You may ask for access to your data, correction, deletion, to stop us processing it, and you may object to processing without giving reasons. You may withdraw your consent at any time. Write to us by e-mail to privacy@tehsil.example; we reply within 7 working days. We answer requests sent from the e-mail address of your account; if you write from another address we will ask you to write from your own. If we need more time we tell you and take up to 7 more working days. If we refuse, we tell you why within 5 working days.
+You may ask for access to your data, correction, deletion, to stop us processing it, and you may object to processing without giving reasons. You may withdraw your consent at any time. Write to us by e-mail to privacy@elmify.example; we reply within 7 working days. We answer requests sent from the e-mail address of your account; if you write from another address we will ask you to write from your own. If we need more time we tell you and take up to 7 more working days. If we refuse, we tell you why within 5 working days.
 
 When you withdraw your consent or object to processing, we stop processing your data at once. This pauses your account until you ask us to resume.
 

@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- **Worktree:** `/home/orkhan/Desktop/tehsil_agent/.worktrees/letter-research-fit`, branch `claude/letter-research-fit`, off master. Run every command from there. Test DB: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest ...` (per-worktree DB name; the shared one wedges).
-- **Validation commands (run before every commit):** `uv run ruff check apps tests` (lint only — never `ruff format`, it churns 26 unrelated files), `uv run mypy apps/documents apps/research`, `uv run bandit -c pyproject.toml -r apps config`, `POSTGRES_DB=tehsil_letter_research_fit uv run pytest -q tests/documents tests/research tests/audit tests/tenancy`. CI also runs `uv run python manage.py makemigrations --check --dry-run`.
+- **Worktree:** `/home/orkhan/Desktop/elmify/.worktrees/letter-research-fit`, branch `claude/letter-research-fit`, off master. Run every command from there. Test DB: `POSTGRES_DB=elmify_letter_research_fit uv run pytest ...` (per-worktree DB name; the shared one wedges).
+- **Validation commands (run before every commit):** `uv run ruff check apps tests` (lint only — never `ruff format`, it churns 26 unrelated files), `uv run mypy apps/documents apps/research`, `uv run bandit -c pyproject.toml -r apps config`, `POSTGRES_DB=elmify_letter_research_fit uv run pytest -q tests/documents tests/research tests/audit tests/tenancy`. CI also runs `uv run python manage.py makemigrations --check --dry-run`.
 - **No student data reaches a search provider (D2).** Every query string is a topic phrase passed through `guard_phrase`; a test asserts the student's name, institutions and thesis title never appear in any emitted query.
 - **Untrusted page text is labelled DATA** in every prompt, never instructions (CLAUDE.md LLM/AI security baseline). Every model output is a Pydantic schema with `ConfigDict(extra="forbid", frozen=True)`. Every model call caps `max_output_tokens` (OpenAI) / `max_tokens` (Anthropic) and passes `store=False` / `privacy_safe_identifier`.
 - **Never log prompts or page text with student content.** Log identifiers, counts, costs.
@@ -117,7 +117,7 @@ def test_an_unknown_kind_is_still_refused(agency_a, membership_a):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_models.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_models.py -v`
 Expected: FAIL — `AttributeError: RESEARCH_FIT` and `TypeError: ... unexpected keyword 'provenance'`.
 
 - [ ] **Step 3: Add the kind and the field**
@@ -161,18 +161,18 @@ In `Meta.constraints`, add `"RESEARCH_FIT",` to the `kind__in` tuple (after `"PE
 
 - [ ] **Step 5: Generate the migration**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run python manage.py makemigrations documents -n research_fit_provenance`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run python manage.py makemigrations documents -n research_fit_provenance`
 Expected: `apps/documents/migrations/0019_research_fit_provenance.py` with `dependencies = [("documents", "0018_revision_advice_shown")]` and three operations: `RemoveConstraint(narrativeinput_kind_valid)`, `AddField(narrativeinput.provenance, JSONField(blank=True, null=True))`, `AddConstraint(narrativeinput_kind_valid` with the six literals`)`. Read the file and confirm exactly those.
 
 - [ ] **Step 6: Run the tests and the erasure classification suite**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_models.py tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py -q`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_models.py tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py -q`
 Expected: PASS. (`test_every_reachable_field_is_classified_exactly_once` fails until Step 4; `test_every_tenant_scoped_model_has_rls_enabled_and_forced` needs no change — the table already carries RLS.)
 
 - [ ] **Step 7: Lint, type-check, migration check, commit**
 
 ```bash
-uv run ruff check apps tests && uv run mypy apps/documents && POSTGRES_DB=tehsil_letter_research_fit uv run python manage.py makemigrations --check --dry-run
+uv run ruff check apps tests && uv run mypy apps/documents && POSTGRES_DB=elmify_letter_research_fit uv run python manage.py makemigrations --check --dry-run
 git add apps/documents/models.py apps/documents/migrations/0019_research_fit_provenance.py apps/audit/redaction.py tests/documents/research_fit/
 git commit -m "feat(documents): NarrativeInput.provenance and the RESEARCH_FIT kind
 
@@ -289,7 +289,7 @@ def test_uncertain_sourced_does_not_block_a_non_immigration_letter():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/test_letter_verification.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/test_letter_verification.py -v`
 Expected: `_sourced(..., input_id=...)` raises `ValidationError: SOURCED claim must not set input_id`; the no-producer test fails on `SUPPORTED != UNCERTAIN`.
 
 - [ ] **Step 3: Let a `SOURCED` claim carry `input_id`**
@@ -380,7 +380,7 @@ Replace the `SOURCED` branch of `_classify` (line 36–37):
 
 - [ ] **Step 6: Run the verification tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/test_letter_verification.py tests/documents/test_letter_schemas.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/test_letter_verification.py tests/documents/test_letter_schemas.py -v`
 Expected: PASS. If a schema test asserts that `SOURCED` with `input_id` raises, update it to assert the reverse (the rule changed by design).
 
 - [ ] **Step 7: Repair the end-to-end test in this task, not a later one**
@@ -415,7 +415,7 @@ Insert before the `generate_letter(...)` call, inside the existing tenant scope:
 
 Change that test's `WHY_PROGRAMME` unit text to `"I chose the thesis track because the Chair of Robotics works on legged locomotion."`, its `SOURCED` claim to `text="the Chair of Robotics works on legged locomotion"`, `span_start=0`, `span_end=len(unit_text)`, `source_url="https://tum.de/robotics"`, `input_id=research.id`, and pass `inputs={research.id: research}` to both `generate_letter(...)` and `mark_letter_ready(...)`. The existing `APPROVED` assertion then holds unchanged.
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/test_letter_end_to_end.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/test_letter_end_to_end.py -v`
 Expected: PASS, still ending `APPROVED`.
 
 - [ ] **Step 8: The two flags — failing tests**
@@ -458,7 +458,7 @@ def test_mark_letter_ready_records_source_stale_from_the_recheck(agency_a, djang
 
 - [ ] **Step 9: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/test_letter_approval.py -v -k "source_"`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/test_letter_approval.py -v -k "source_"`
 Expected: FAIL — unexpected keyword arguments.
 
 - [ ] **Step 10: Add the flags and the hook**
@@ -513,7 +513,7 @@ Extend `mark_letter_ready`'s signature with `recheck: Callable[[dict[UUID, Narra
 
 - [ ] **Step 11: Run the approval and letter suites**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents -q`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents -q`
 Expected: PASS. The end-to-end test was repaired in Step 7; nothing else in `tests/documents` builds a `SOURCED` claim (verified by `grep -rn "ClaimKind.SOURCED" tests/`). If that grep finds another, fix it here — a task leaves the suite green.
 
 - [ ] **Step 12: Lint, type-check, commit**
@@ -576,7 +576,7 @@ def test_is_shell_is_two_sided():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/research/test_reader.py -k "page_lines or is_shell" -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/research/test_reader.py -k "page_lines or is_shell" -v`
 Expected: FAIL — `ImportError`.
 
 - [ ] **Step 3: Add `page_lines` and `is_shell` to the reader**
@@ -617,7 +617,7 @@ Then in `read_program_page` (around line 514) replace `if len(page_text) < _MIN_
 
 - [ ] **Step 4: Run the reader suite**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/research/test_reader.py -q`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/research/test_reader.py -q`
 Expected: PASS (the existing unreadable-floor tests still pass through `is_shell`).
 
 - [ ] **Step 5: Failing tests for the splitter**
@@ -670,7 +670,7 @@ def test_a_very_short_fragment_is_dropped():
 
 - [ ] **Step 6: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_split.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_split.py -v`
 Expected: FAIL — `ModuleNotFoundError`.
 
 - [ ] **Step 7: Implement the splitter**
@@ -749,7 +749,7 @@ def page_sentences(lines: Sequence[str]) -> tuple[str, ...]:
 
 - [ ] **Step 8: Run the splitter tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_split.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_split.py -v`
 Expected: PASS. If `test_german_and_turkish_abbreviations_survive` fails on the `-Ing.` token, `_ends_with_abbreviation` sees `dr.-ing` because `bare = last.rstrip(".").lower()` on `"Dr.-Ing."` gives `"dr.-ing"` — confirm it is in the set.
 
 - [ ] **Step 9: Lint, type-check, commit**
@@ -907,7 +907,7 @@ def test_site_language_comes_from_the_programme_country(code, expected, program_
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_anchors.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_anchors.py -v`
 Expected: FAIL — `ModuleNotFoundError`. (`test_site_language_...` needs the DB fixture; mark the module `pytestmark = pytest.mark.django_db` if `program_factory` requires it.)
 
 - [ ] **Step 3: Implement**
@@ -1092,7 +1092,7 @@ def translate_phrase(phrase: str, *, language: str, parser: ResponsesAPI, studen
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_anchors.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_anchors.py -v`
 Expected: PASS. If `test_guard_strips_...` differs by a stray word, adjust the expected string to the guard's actual deterministic output **only if** no banned term, capitalised phrase or year survives — the invariant is the assertion that matters.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -1198,7 +1198,7 @@ def test_tavily_uses_basic_depth_and_include_domains_and_bills_one_credit():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/research/test_providers.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/research/test_providers.py -v`
 Expected: FAIL — `ModuleNotFoundError`.
 
 - [ ] **Step 3: Settings**
@@ -1369,7 +1369,7 @@ def tavily_site_search(
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/research/test_providers.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/research/test_providers.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Lint, type-check, commit**
@@ -1479,7 +1479,7 @@ def test_the_second_fetch_of_the_same_url_in_a_tenant_hits_the_cache():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_pages.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_pages.py -v`
 Expected: FAIL — `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement**
@@ -1557,7 +1557,7 @@ def fetch_page(
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_pages.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_pages.py -v`
 Expected: PASS. (`test_a_shell_is_unreadable_not_empty` relies on `is_shell`: 2000 script tags ≈ 34 KB of body and no prose.)
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -1671,7 +1671,7 @@ def test_indices_outside_the_listing_are_dropped():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_classify.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_classify.py -v`
 Expected: FAIL — `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement**
@@ -1793,7 +1793,7 @@ class FrontierClassifier:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_classify.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_classify.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -1900,7 +1900,7 @@ def test_no_claude_means_two_openai_readings():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_judge.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_judge.py -v`
 Expected: FAIL — `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement**
@@ -2037,7 +2037,7 @@ def is_strong(alignment: Alignment) -> bool:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_judge.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_judge.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -2397,7 +2397,7 @@ def test_research_fit_inputs_are_tenant_scoped_and_program_scoped(agency_a, agen
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_service.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_service.py -v`
 Expected: FAIL — `ModuleNotFoundError`. (`institution_factory` takes `official_website` per `tests/conftest.py:232-251`; confirm its kwargs and adjust the first test if the fixture names differ.)
 
 - [ ] **Step 3: Implement**
@@ -2678,7 +2678,7 @@ def propose_research_fit(
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_service.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_service.py -v`
 Expected: PASS. Two things to check if not: `provenance__program_id` JSON key lookups need the value stored as a string (they are); `institution_factory` may require `tenant_scope` — wrap the first test's body like the others if it errors on tenant context.
 
 - [ ] **Step 5: Lint, type-check, bandit, commit**
@@ -2748,7 +2748,7 @@ def test_without_research_inputs_the_block_is_absent(agency_a, django_user_model
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/test_letters.py -k research -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/test_letters.py -k research -v`
 Expected: FAIL — the block string is absent from the prompt.
 
 - [ ] **Step 3: Implement**
@@ -2817,7 +2817,7 @@ there already (it asserts flag events). If the local name differs, use the file'
 
 - [ ] **Step 5: Run the letter suites**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/test_letters.py tests/documents/test_letter_end_to_end.py tests/documents/test_letter_gates.py -q`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/test_letters.py tests/documents/test_letter_end_to_end.py tests/documents/test_letter_gates.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Lint, type-check, commit**
@@ -2903,7 +2903,7 @@ def test_recheck_ignores_non_research_inputs(agency_a, membership_a):
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_service.py -k recheck -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_service.py -k recheck -v`
 Expected: FAIL — `ImportError`.
 
 - [ ] **Step 3: Implement the re-check**
@@ -2958,7 +2958,7 @@ def test_the_default_recheck_is_the_research_fit_one():
 
 - [ ] **Step 5: Run the suites**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents -q`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents -q`
 Expected: PASS.
 
 - [ ] **Step 6: Lint, type-check, commit**
@@ -3074,7 +3074,7 @@ def test_entity_by_pattern(sentence, expected):
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_jev.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_jev.py -v`
 Expected: FAIL — `ModuleNotFoundError`.
 
 - [ ] **Step 3: Implement the adapter**
@@ -3192,7 +3192,7 @@ class JevClassifier:
 
 - [ ] **Step 4: Run the adapter tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_jev.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_jev.py -v`
 Expected: PASS. If a pattern case fails, tighten that regex; the test rows are the contract.
 
 - [ ] **Step 5: The labelled set**
@@ -3295,7 +3295,7 @@ def test_jev_agrees_with_the_frontier_on_the_labelled_set():
 
 - [ ] **Step 7: Run the gate once, record the number**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit TYPESAFE_API_KEY=… OPENAI_API_KEY=… uv run pytest tests/documents/research_fit/test_live.py::test_jev_agrees_with_the_frontier_on_the_labelled_set -m live -s`
+Run: `POSTGRES_DB=elmify_letter_research_fit TYPESAFE_API_KEY=… OPENAI_API_KEY=… uv run pytest tests/documents/research_fit/test_live.py::test_jev_agrees_with_the_frontier_on_the_labelled_set -m live -s`
 Expected: prints `jev/frontier agreement N/24`. **Whatever the number, record it** in the spec's D6 (append a "Measured YYYY-MM-DD" line with agreement, wrong-direction list, and per-language split) — a pass adopts Jev for the classifier slot in Task 9's default (`classifier = JevClassifier() if settings.TYPESAFE_API_KEY else FrontierClassifier(...)`); a fail leaves the frontier default and the adapter unused. Do not adopt on a single run: three runs, all passing.
 
 - [ ] **Step 8: Lint, type-check, commit**
@@ -3380,7 +3380,7 @@ def test_the_ladder_on_real_programme_domains(agency_a, membership_a, institutio
 
 - [ ] **Step 2: Run it once**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit EXA_API_KEY=… OPENAI_API_KEY=… ANTHROPIC_API_KEY=… uv run pytest tests/documents/research_fit/test_live.py::test_the_ladder_on_real_programme_domains -m live -s`
+Run: `POSTGRES_DB=elmify_letter_research_fit EXA_API_KEY=… OPENAI_API_KEY=… ANTHROPIC_API_KEY=… uv run pytest tests/documents/research_fit/test_live.py::test_the_ladder_on_real_programme_domains -m live -s`
 Expected: 40 lines and a tally. Cost ≈ 40 × (2 searches + ≤3 fetches + classify + judge) ≈ $2–4. **Record the tally and the cost in the spec** under §8 as "Measured YYYY-MM-DD": which rung carries the matches, how many `unreadable`, how many `no_match`. If rung 4 carries most matches, note that the ladder is mostly the theme; if `unreadable` dominates on a country, that is the browser-tier question CLAUDE.md already records.
 
 - [ ] **Step 3: Commit**
@@ -3462,7 +3462,7 @@ def test_dry_run_changes_nothing(agency_a, membership_a):
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_takedown.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_takedown.py -v`
 Expected: FAIL — `CommandError: Unknown command`.
 
 - [ ] **Step 3: Implement**
@@ -3527,7 +3527,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_letter_research_fit uv run pytest tests/documents/research_fit/test_takedown.py -v`
+Run: `POSTGRES_DB=elmify_letter_research_fit uv run pytest tests/documents/research_fit/test_takedown.py -v`
 Expected: PASS. If `provenance__entity__icontains` is refused on a JSON key, use `provenance__entity__icontains` → `provenance__entity__contains` is exact-case; keep `icontains` (Postgres supports it on key transforms via `::text`); if the ORM rejects it, filter in Python on `str(row.provenance.get("entity", "")).casefold()` after selecting `kind=RESEARCH_FIT`.
 
 - [ ] **Step 5: Lint, type-check, commit**

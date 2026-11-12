@@ -99,3 +99,11 @@ def test_a_response_with_no_cost_charges_zero_and_still_counts_the_call() -> Non
     list(ExaProvider(api_key="k", post=_Recorder({"results": []})).search(_request(), meter=meter))
     assert meter.spent_usd == {"exa": 0.0}
     assert meter.calls == {"exa": 1}
+
+
+def test_the_discovery_shapes_wait_out_a_throttle() -> None:
+    from apps.research.providers.brave import BraveProvider
+    from apps.research.providers.exa import ExaProvider
+
+    assert ExaProvider(api_key="k").post.keywords == {"retry_throttled": True}
+    assert BraveProvider(api_key="k").get.keywords == {"retry_throttled": True}

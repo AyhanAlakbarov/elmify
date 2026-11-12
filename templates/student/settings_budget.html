@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Application budget{% endblock %}
+{% block content %}
+<nav class="crumbs" aria-label="Breadcrumb"><a href="/student/settings/">Settings</a><span aria-hidden="true">/</span><span>Application budget</span></nav>
+<div class="page-head"><div><h1>Change my application budget</h1><p>Adjust your annual budget for application fees and optional stretch allowance.</p></div></div>
+<section class="panel">
+{% if not profile %}
+  <p>Finish your consultation first: <a href="/student/profile/">Profile</a>.</p>
+{% else %}
+  {% if board.budget %}
+    <p>{{ board.budget.text }}</p>
+    {% if board.budget.stretch_text %}<p>{{ board.budget.stretch_text }}</p>{% endif %}
+  {% endif %}
+  {% if board.rate_note %}<p>{{ board.rate_note }}</p>{% endif %}
+  {% if error %}<p role="alert" id="budget-error">{{ error }}</p>{% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <p>
+      <label for="budget-amount">Budget for application fees</label>
+      <input id="budget-amount" name="amount" inputmode="decimal" required value="{{ values.amount }}"{% if error %} aria-describedby="budget-error"{% endif %}>
+    </p>
+    <p>
+      <label for="budget-currency">Currency (3 letters, like AZN)</label>
+      <input id="budget-currency" name="currency" maxlength="3" required value="{{ values.currency }}">
+    </p>
+    <p>
+      <label for="budget-stretch">Extra you'd allow for an exceptional opportunity (same currency; leave empty for none)</label>
+      <input id="budget-stretch" name="stretch" inputmode="decimal" value="{{ values.stretch }}">
+    </p>
+    <p>
+      <label for="budget-stretch-currency">Currency of the extra (3 letters)</label>
+      <input id="budget-stretch-currency" name="stretch_currency" maxlength="3" value="{{ values.stretch_currency }}">
+    </p>
+    {% if unpaid %}
+      <fieldset>
+        <legend>Choose which unpaid applications to drop</legend>
+        <p>Only needed when the new budget is below what you've committed to. Nothing is dropped unless you tick it.</p>
+        {% for card in unpaid %}
+          <p>
+            <input type="checkbox" id="drop-{{ card.application_id }}" name="drop" value="{{ card.application_id }}">
+            <label for="drop-{{ card.application_id }}">{{ card.title }} — fee {{ card.fee_text }}</label>
+          </p>
+        {% endfor %}
+      </fieldset>
+    {% endif %}
+    <button type="submit">Save</button>
+  </form>
+{% endif %}
+</section>
+<p><a href="/student/settings/">Back to settings</a></p>
+{% endblock %}

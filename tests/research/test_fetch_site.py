@@ -331,3 +331,27 @@ def test_the_schema_forbids_extra_properties():
     keeps the answer small, which is what Firecrawl bills on."""
     assert AGENT_SCHEMA["additionalProperties"] is False
     assert AGENT_SCHEMA["properties"]["pages"]["items"]["additionalProperties"] is False
+
+
+def test_a_failed_fallback_map_still_reports_the_credit_the_filtered_call_cost():
+    """The filtered /map answered (and billed) before the unfiltered one failed: a failed stage
+    must not lose spend already made."""
+    post = _post([_ok([]), (400, b"{}", {})])
+
+    with pytest.raises(FirecrawlSiteError) as raised:
+        map_site("https://uni.example.org/", api_key="k", search=("documents",), post=post)
+
+    assert raised.value.credits == 1
+
+
+def test_a_navigator_lead_never_logs_the_vendors_reading(caplog):
+    """No vendor's reading of a page is kept, logged or sent: the `why` is Firecrawl's words."""
+    payload = {"success": True, "data": {"pages": [
+        {"url": "https://uni.example.org/apply/", "kind": "faq", "why": "MARKER-why-text"}]}}
+    post = _post([(200, json.dumps(payload).encode(), {})])
+    caplog.set_level("DEBUG")
+
+    result = agent(api_key="k", urls=("https://uni.example.org/",), prompt="find it", post=post)
+
+    assert result.leads == (("https://uni.example.org/apply/", "faq"),)
+    assert not any("MARKER" in record.getMessage() for record in caplog.records)

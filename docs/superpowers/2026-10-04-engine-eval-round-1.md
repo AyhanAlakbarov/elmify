@@ -1,7 +1,7 @@
 # Engine evaluation, round 1 — 2026-10-04
 
 Plan 1, Task 14 (`docs/superpowers/plans/2026-10-03-engine-eval-harness.md`), run as
-`manage.py engine_eval --run 2026-10-r1` against a database of its own (`tehsil_eval_r1`). Run files
+`manage.py engine_eval --run 2026-10-r1` against a database of its own (`elmify_eval_r1`). Run files
 live in `.superpowers/engine-eval/2026-10-r1/` (gitignored). The owner's gold check is **not done
 yet**; everything below is scored against the model-built key, which tunes and never certifies.
 
@@ -140,7 +140,7 @@ score half. **Not checkable on `/platform/gold/` locally yet**: the operator gat
 `/mfa/setup/` has no template (`TemplateDoesNotExist: tenancy/mfa_setup.html`) until the presentation
 layer exists.
 
-## Round 2 plan — agreed 2026-10-05 with session tehsil-agent-75 (awaiting the owner's approval and cap)
+## Round 2 plan — agreed 2026-10-05 with session elmify-75 (awaiting the owner's approval and cap)
 
 That session measured second readers on 100 card facts Jev was unsure of, against a key of DeepSeek
 V4.1 Flash + GPT-5.6 Luna with Sol on disputes (no Anthropic model; it flatters the DeepSeek family):
@@ -163,7 +163,7 @@ the second reader never read as unsettled; check OpenRouter account credit befor
 ### Superseded the same day by the owner's hand check
 
 The owner checked 40 card facts Jev was unsure of (az 14, ru 12, ko 8, fr/en/tr 6) with Sonnet's
-answers: Sonnet right 14, wrong 25, can't tell 1. Where Sonnet agreed with tehsil-agent-75's model key
+answers: Sonnet right 14, wrong 25, can't tell 1. Where Sonnet agreed with elmify-75's model key
 (12 facts), the owner marked 5 wrong. **On the hard band a model key is wrong far more often than its
 audit suggests** (that key's Sol audit: 2.5%; this round's Opus audit: 1.7%), so every precision above
 is a ceiling relative to a key that is itself unreliable near Jev's bar, not a measured error rate.
@@ -179,15 +179,15 @@ The owner's notes put most errors in the question definitions, not model strengt
   institution's students may apply; "Française / EU" means French or EU applicants (round 1 has no
   institution rule, so `nationality_rule` judgements on such lines are suspect).
 
-**Revised conclusion (agreed with tehsil-agent-75, owner has no API budget now):** fix those question
+**Revised conclusion (agreed with elmify-75, owner has no API budget now):** fix those question
 definitions first, since they bind Jev and every reader; then certify on owner gold sampled from the
 unsure band before choosing any second reader. No paid step until then. The 114 facts queued from this
 round are agreements, so they measure the precision of what a card would show, not which reader
-resolves the hard band. Owner data: `~/agent-workspace/tehsil-jev-harness/check2_items.json`,
+resolves the hard band. Owner data: `~/agent-workspace/elmify-jev-harness/check2_items.json`,
 `verdicts2/`, `verdicts/`.
 
-**Question definitions v2** (tehsil-agent-75, validated on 36 owner-gold facts at ~$0: Jev 13/36 →
-27/36): `~/agent-workspace/tehsil-jev-harness/question-definitions-v2.md`. They are card-fact
+**Question definitions v2** (elmify-75, validated on 36 owner-gold facts at ~$0: Jev 13/36 →
+27/36): `~/agent-workspace/elmify-jev-harness/question-definitions-v2.md`. They are card-fact
 questions asked per amount or per place — `covers_<item>`, `period` split into frequency and duration,
 `bound` with `range` and `approximately`, `eligible` per place including institution names — not this
 harness's eight line questions, which score none of them (`amount_role` is read, never keyed). Porting

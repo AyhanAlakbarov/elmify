@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, NamedTuple
 
+from apps.research.reader import normalize as _fold
+
 #: A label word right before a figure ("Year 1", "Room 101", "Step 2"): the figure numbers
 #: something and is never the low end of a range. A closed list, because "Stipend 800–1,200 EUR"
 #: and "Applications 1–15 March" are ranges. Shared by amounts and dates.
@@ -176,10 +178,6 @@ class Candidates:
         nothing: the lines a reader said carry such a value and code could not show one."""
         seen = {found.line for found in self._groups()[kind].values()}
         return sorted({n for n in flagged if n not in seen})
-
-
-def _fold(text: str) -> str:
-    return " ".join(text.casefold().split())
 
 
 def _keyed[T](prefix: str, finder: Callable[[str], Sequence[T]],

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Run tests as `POSTGRES_DB=tehsil_ei uv run pytest -q`. The shared `test_tehsil` database wedges across parallel sessions and the symptom looks like an unrelated regression.
+- Run tests as `POSTGRES_DB=elmify_ei uv run pytest -q`. The shared `test_elmify` database wedges across parallel sessions and the symptom looks like an unrelated regression.
 - `uv run ruff check apps config tests` and `uv run mypy apps config` must pass **before every commit**, and every commit must be independently landable. Where two tasks cannot satisfy that separately, commit them together — plan 1 hit this and the note is in its Task 2.
 - Do **not** run `ruff format`; this repo is lint-only and formatting churns unrelated files. `ruff check --fix` is fine.
 - No new third-party dependency.
@@ -67,7 +67,7 @@ Reuse whatever `program` / `snapshot` fixtures `tests/funding/conftest.py` alrea
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/funding/ -k competency -v`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/funding/ -k competency -v`
 Expected: FAIL with `ImportError` / `NameError` on `ProgramCompetency`.
 
 - [ ] **Step 3: Add the model**
@@ -124,7 +124,7 @@ class ProgramCompetency(models.Model):
 
 - [ ] **Step 4: Generate the migration**
 
-Run: `POSTGRES_DB=tehsil_ei uv run python manage.py makemigrations funding -n program_competency`
+Run: `POSTGRES_DB=elmify_ei uv run python manage.py makemigrations funding -n program_competency`
 Expected: creates `apps/funding/migrations/0020_program_competency.py`. Read it before committing — confirm it only creates the one table and alters nothing else.
 
 - [ ] **Step 5: Register it as shared catalog**
@@ -134,7 +134,7 @@ In `tests/tenancy/test_database_isolation.py`, add `"funding_programcompetency"`
 - [ ] **Step 6: Run and verify**
 
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest tests/funding/ tests/tenancy/ tests/migrations/ -q
+POSTGRES_DB=elmify_ei uv run pytest tests/funding/ tests/tenancy/ tests/migrations/ -q
 uv run ruff check apps config tests
 uv run mypy apps config
 ```
@@ -212,7 +212,7 @@ def test_a_refusal_degrades_to_none_rather_than_raising():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/research/test_extraction.py -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/research/test_extraction.py -q`
 Expected: FAIL with `ImportError: cannot import name 'WantedCompetency'`.
 
 - [ ] **Step 3: Add the schema**
@@ -310,7 +310,7 @@ def extract_program_profile(
 - [ ] **Step 5: Run to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest tests/research/ -q
+POSTGRES_DB=elmify_ei uv run pytest tests/research/ -q
 uv run ruff check apps config tests
 uv run mypy apps config
 ```
@@ -409,7 +409,7 @@ def test_a_page_that_says_nothing_clears_nothing(program, snapshot):
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ei uv run pytest tests/research/test_profile.py -q`
+Run: `POSTGRES_DB=elmify_ei uv run pytest tests/research/test_profile.py -q`
 Expected: FAIL with `ModuleNotFoundError: apps.research.profile`.
 
 - [ ] **Step 3: Write the module**
@@ -468,7 +468,7 @@ The `{w.term: w for w in ...}` de-duplication is not decoration: the model has a
 - [ ] **Step 4: Run to verify they pass**
 
 ```bash
-POSTGRES_DB=tehsil_ei uv run pytest -q
+POSTGRES_DB=elmify_ei uv run pytest -q
 uv run ruff check apps config tests
 uv run mypy apps config
 ```

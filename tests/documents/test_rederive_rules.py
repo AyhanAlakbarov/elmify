@@ -316,3 +316,22 @@ def test_a_stored_reference_sentence_yields_its_referee_record(program_factory, 
     assert [(r["field"], r["value"]) for r in program.referee_requirements] == [("count", "TWO")]
     assert program.referee_requirements[0]["rule_text"] == (
         "Two letters of recommendation are required.")
+
+
+def test_a_re_read_sentence_replaces_its_file_rule_and_others_survive(program_factory, grammar):
+    grammar({"document": "other", "operation": "file",
+             "value": ("DIPLOMA", "max_bytes", 2_000_000)})
+    reread = "Diplomas as one PDF, max 2 MB."
+    other = {"document": "CV", "field": "format", "value": "PDF", "conditional": False,
+             "condition": "", "rule_text": "CV as PDF.", "source_url": "u"}
+    old = {**other, "document": "DIPLOMA", "field": "max_bytes", "value": 1,
+           "rule_text": reread}
+    program = program_factory(file_rules=[other, old])
+    _statement(program, reread)
+
+    call_command("rederive_rules", stdout=StringIO())
+
+    program.refresh_from_db()
+    assert program.file_rules[0] == other
+    assert [(r["document"], r["value"]) for r in program.file_rules[1:]] == [
+        ("DIPLOMA", 2_000_000)]
