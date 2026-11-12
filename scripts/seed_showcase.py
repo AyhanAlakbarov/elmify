@@ -1090,7 +1090,11 @@ def _messages(student, counselor, agency, student_m) -> None:
         )
         client.post(url, {"body": body}, HTTP_HOST=HOST)
     print("Messages added")
-    _seed_referees(agency, student_m)
+    from apps.tenancy.context import tenant_scope
+    from apps.tenancy.db import tenant_transaction
+
+    with tenant_scope(agency.id), tenant_transaction(agency.id):
+        _seed_referees(agency, student_m)
 
 
 def _seed_referees(agency, student_m) -> None:
