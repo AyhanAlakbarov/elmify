@@ -14,10 +14,10 @@ def test_unverified_host_fails_closed(client, unverified_domain) -> None:
 
 
 @pytest.mark.django_db
-def test_verified_host_allows_anonymous_page(client, domain_a) -> None:
+def test_verified_host_allows_anonymous_page(client, domain_a, settings) -> None:
     response = client.get("/", HTTP_HOST=domain_a.host)
     assert response.status_code == 302
-    assert response["Location"] == "/accounts/login/"
+    assert response["Location"] == settings.MARKETING_SITE_URL
 
 
 @pytest.mark.django_db

@@ -66,6 +66,7 @@
       {% endwith %}
       <div class="sidebar-foot">
         <p class="whoami"><span class="avatar" aria-hidden="true">{{ user.get_full_name|default:user.get_username|first|upper }}</span><span>{{ user.get_full_name|default:user.get_username }}<small>{% if viewer_role == "PLATFORM_ADMIN" %}Platform admin{% else %}{{ viewer_role|lower|capfirst }}{% endif %}</small></span></p>
+        <a class="btn btn-quiet" href="{{ marketing_site_url }}">About Elmify</a>
         <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit" class="btn btn-quiet">Log out</button></form>
       </div>
     </aside>
@@ -104,6 +105,7 @@
       <a class="brand" href="/" aria-label="Elmify home">
         <img src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="94" height="29">
       </a>
+      <a class="btn btn-quiet" href="{{ marketing_site_url }}">About Elmify</a>
       {% if user.is_authenticated %}
         <form method="post" action="/accounts/logout/">{% csrf_token %}<button type="submit" class="btn btn-quiet">Log out</button></form>
       {% endif %}

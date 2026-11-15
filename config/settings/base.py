@@ -56,7 +56,13 @@ MIDDLEWARE = [
 ROOT_URLCONF = "config.urls"
 LOGIN_URL = "accounts-login"
 LOGIN_REDIRECT_URL = "/"
-LOGOUT_REDIRECT_URL = "accounts-login"
+#: The marketing website (the Next.js site in web/). A visitor with no login who opens the
+#: app's home address, and anyone who logs out, is sent here. Locally the site runs on 3001
+#: (3000 is often taken); in production set MARKETING_SITE_URL, for example https://elmify.com.
+MARKETING_SITE_URL = os.getenv(
+    "MARKETING_SITE_URL", "http://localhost:3001" if DEBUG else "https://elmify.com"
+).rstrip("/")
+LOGOUT_REDIRECT_URL = MARKETING_SITE_URL
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -70,6 +76,7 @@ TEMPLATES = [
                 "apps.tenancy.context_processors.brand_colors",
                 "apps.tenancy.context_processors.viewer_role",
                 "apps.tenancy.context_processors.app_shell",
+                "apps.tenancy.context_processors.marketing_site",
             ]
         },
     }

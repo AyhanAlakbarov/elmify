@@ -96,11 +96,11 @@ def test_audit_dossier_export_proves_approvals_and_actions(agency_a, membership_
 
 @pytest.mark.django_db
 def test_external_style_domain_resolves_branding_and_unknown_host_is_rejected(
-    client, agency_a, domain_a
+    client, agency_a, domain_a, settings
 ) -> None:
     verified = client.get("/", HTTP_HOST=domain_a.host)
     assert verified.status_code == 302
-    assert verified["Location"] == "/accounts/login/"
+    assert verified["Location"] == settings.MARKETING_SITE_URL
 
     unknown = client.get("/", HTTP_HOST="unknown.example.test")
     assert unknown.status_code == 400

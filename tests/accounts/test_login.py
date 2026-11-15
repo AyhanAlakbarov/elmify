@@ -107,8 +107,8 @@ def test_a_successful_login_never_redirects_off_site(client, domain_a, student) 
     assert response["Location"] == "/"
 
 
-def test_an_anonymous_visitor_at_the_root_goes_to_login(client, domain_a) -> None:
-    assert client.get("/", HTTP_HOST=domain_a.host)["Location"] == "/accounts/login/"
+def test_an_anonymous_visitor_at_the_root_goes_to_the_website(client, domain_a, settings) -> None:
+    assert client.get("/", HTTP_HOST=domain_a.host)["Location"] == settings.MARKETING_SITE_URL
 
 
 def test_a_counselor_at_the_root_goes_to_their_list(rf, agency_a) -> None:
@@ -147,7 +147,7 @@ def test_logout_refuses_get(client, domain_a, student) -> None:
 
 
 def test_logout_ends_the_session_and_keeps_the_extension_paired(
-    client, agency_a, domain_a, student
+    client, agency_a, domain_a, student, settings
 ) -> None:
     with tenant_scope(agency_a.id):
         membership = Membership.objects.get(user=student)
@@ -157,7 +157,7 @@ def test_logout_ends_the_session_and_keeps_the_extension_paired(
     response = client.post(LOGOUT, HTTP_HOST=domain_a.host)
 
     assert response.status_code == 302
-    assert response["Location"] == "/accounts/login/"
+    assert response["Location"] == settings.MARKETING_SITE_URL
     assert "_auth_user_id" not in client.session
     pairing.refresh_from_db()
     # Owner, 2026-10-04: logout keeps the extension paired; Settings disconnects.
@@ -165,7 +165,9 @@ def test_logout_ends_the_session_and_keeps_the_extension_paired(
     assert pairing.token_hash != ""
 
 
-def test_a_deletion_locked_student_can_still_log_out(client, agency_a, domain_a, student) -> None:
+def test_a_deletion_locked_student_can_still_log_out(
+    client, agency_a, domain_a, student, settings
+) -> None:
     with tenant_scope(agency_a.id):
         membership = Membership.objects.get(user=student)
         DeletionRequest.objects.create(
@@ -173,7 +175,7 @@ def test_a_deletion_locked_student_can_still_log_out(client, agency_a, domain_a,
         )
     client.force_login(student)
     response = client.post(LOGOUT, HTTP_HOST=domain_a.host)
-    assert response["Location"] == "/accounts/login/"
+    assert response["Location"] == settings.MARKETING_SITE_URL
 
 
 def test_session_and_csrf_cookie_hardening_settings(settings) -> None:
@@ -186,7 +188,7 @@ def test_session_and_csrf_cookie_hardening_settings(settings) -> None:
 
 
 def test_password_change_updates_password_rotates_session_and_revokes_device_tokens(
-    client, agency_a, domain_a, student
+    client, agency_a, domain_a, student, settings
 ) -> None:
     from django.test import Client
 
@@ -233,3 +235,19 @@ def test_password_change_updates_password_rotates_session_and_revokes_device_tok
         assert pairing.token_hash == ""
         assert pairing_module.authenticate_device(token) is None
 
+
+
+def test_a_visitor_who_is_not_signed_in_is_sent_to_the_website(client, domain_a, settings) -> None:
+    settings.MARKETING_SITE_URL = "https://elmify.example"
+    response = client.get("/", HTTP_HOST=domain_a.host)
+    assert response.status_code == 302
+    assert response["Location"] == "https://elmify.example"
+
+
+def test_logging_out_lands_on_the_website(client, domain_a, student, settings) -> None:
+    settings.LOGOUT_REDIRECT_URL = "https://elmify.example"
+    creds = {"username": "amina", "password": "correct-horse-battery"}
+    client.post(LOGIN, creds, HTTP_HOST=domain_a.host)
+    response = client.post(LOGOUT, HTTP_HOST=domain_a.host)
+    assert response.status_code == 302
+    assert response["Location"] == "https://elmify.example"
