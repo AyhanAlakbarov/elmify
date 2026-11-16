@@ -199,4 +199,5 @@ def chance_pct(line: object) -> int | None:
 @register.filter
 def steps_done(steps: object) -> int:
     """How many of the overview's (key, state) milestones are done."""
-    return sum(1 for _key, state in (steps or ()) if state == "done")  # type: ignore[attr-defined]
+    pairs = steps if isinstance(steps, (list, tuple)) else ()
+    return len([1 for _key, state in pairs if state == "done"])
