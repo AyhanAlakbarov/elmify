@@ -52,13 +52,6 @@ Alongside the flagship national and treaty scholarships listed below, Elmify sea
 | [Chevening Scholarships](https://www.chevening.org/scholarships/) | `chevening.org` | 1-year taught master's degree at any UK university | 100% UK tuition + £1,378–£1,690/month stipend + return economy flights from Baku + visa cost | Azerbaijani citizenship, >= 2,800 hours (2 years) work experience, 3 eligible UK master's course choices, 2-year home-country return rule |
 | [NL Scholarship](https://www.studyinnl.org/finances/nl-scholarship) | `studyinnl.org` | Full-time research or applied master's in the Netherlands | €5,000 first-year grant (combinable with faculty partial tuition waivers) | Non-EEA nationality, no prior Dutch degree, programme-specific academic excellence threshold |
 
-## 4. Workspace for Study-Abroad Agencies in Azerbaijan & Worldwide
-
-Study-abroad agencies in Baku and across the region can run Elmify under their own brand and custom web domain:
-- **Custom Domain & Trilingual Student Portal:** Students sign up and log in on the agency's own web address in Azerbaijani, English, or Russian.
-- **Multi-Counsellor Assignment:** Agency owners assign students to counsellors and see which applications are waiting on student uploads versus counsellor reviews.
-- **Integrated Messaging & Document Review:** Counsellors comment on CVs, motivation letters, and scholarship essays directly beside each student's application board.
-
 ## 5. Key Links
 
 - [Elmify Homepage (English)](https://elmify.com/)
@@ -66,6 +59,5 @@ Study-abroad agencies in Baku and across the region can run Elmify under their o
 - [Главная страница Elmify (Русский язык)](https://elmify.com/ru)
 - [Sign Up Free](https://app.elmify.com/signup/)
 - [Student & Counsellor Login](https://app.elmify.com/accounts/login/)
-- [Book an Agency Demo](https://app.elmify.com/demo/)
 - [Terms of Service](https://app.elmify.com/legal/terms/)
 - [Privacy Notice](https://app.elmify.com/legal/privacy_notice_direct/)

@@ -170,6 +170,54 @@ p {
   to { transform: scaleX(1); }
 }
 
+/* Hero example: a soft brand glow behind the match card. */
+.hero-bg {
+  background:
+    radial-gradient(60rem 30rem at 85% 20%, var(--brand-soft), transparent 60%),
+    var(--background);
+}
+
+/* Matches slide in one after another, then their chance rings fill. */
+.match-in {
+  animation: match-in 500ms cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+@keyframes match-in {
+  from { opacity: 0; transform: translateX(16px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.ring-fill {
+  stroke-dashoffset: var(--ring-to);
+  animation: ring-fill 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes ring-fill {
+  from { stroke-dashoffset: var(--ring-from); }
+  to { stroke-dashoffset: var(--ring-to); }
+}
+
+/* Three dots carry the profile down to its matches, on a loop. */
+.flow-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: var(--brand);
+  animation: flow 1.6s ease-in-out infinite;
+}
+.flow-dots span:nth-child(2) { animation-delay: 0.2s; }
+.flow-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes flow {
+  0%, 100% { opacity: 0.2; transform: translateY(-2px); }
+  50% { opacity: 1; transform: translateY(2px); }
+}
+
+/* Steps rise in as the section scrolls into view. */
+@supports (animation-timeline: view()) {
+  .step-in {
+    animation: hero-in linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 60%;
+  }
+}
+
 /* FAQ: the open answer fades in. */
 details.faq[open] > div { animation: hero-in 240ms ease-out both; }
 details.faq summary::-webkit-details-marker { display: none; }
@@ -184,6 +232,10 @@ details.faq[open] summary .plus { transform: rotate(45deg); }
   .hero-stop,
   .shot-in,
   .pipeline-line,
+  .match-in,
+  .ring-fill,
+  .flow-dots span,
+  .step-in,
   details.faq[open] > div {
     animation: none !important;
   }

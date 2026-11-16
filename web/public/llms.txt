@@ -15,7 +15,6 @@
 - [How the AI Works](https://elmify.com/#how): Three-step verification workflow from official university pages to document preparation.
 - [Scholarship Coverage Table](https://elmify.com/#about): Comparison of Dövlət Proqramı, HTP / Stipendium Hungaricum, Erasmus Mundus, DAAD, Swedish Institute, Chevening, and NL Scholarship rules.
 - [Product Walkthrough](https://elmify.com/#product): Real screens from the student dashboard, application board, document workspace, and counsellor messaging.
-- [For Study-Abroad Agencies](https://elmify.com/#agencies): White-label multi-counsellor workspace on an agency's own domain.
 - [Frequently Asked Questions](https://elmify.com/#faq): Answers on Azerbaijan launch, pricing, degree scope (Master's live, Bachelor's coming soon, PhD excluded), source verification, and data privacy.
 
 ## Scholarship & Funder References
@@ -33,12 +32,10 @@
 - [Бесплатная регистрация (RU)](https://app.elmify.com/signup/?lang=ru): Создайте бесплатный аккаунт студента на русском языке.
 - [Log In](https://app.elmify.com/accounts/login/): Sign in to an existing student or counsellor workspace.
 - [Book a Student & Parent Walkthrough](https://app.elmify.com/demo/?audience=student): Schedule a 1-on-1 walkthrough of funded master's matching, hidden funding layers, and the browser extension co-pilot.
-- [Book an Agency Demo](https://app.elmify.com/demo/?audience=agency): Schedule a walkthrough of the 30-day white-label agency pilot for study-abroad agencies in Azerbaijan and abroad.
 
 ## Optional
 - [Full LLM Documentation](https://elmify.com/llms-full.txt): Complete technical specification of Elmify's Azerbaijan-first scholarship rules, eligibility pipeline, and zero-fabrication document generation.
 - [Structured AI Summary](https://elmify.com/ai/summary.json): Machine-readable entity and product summary (`geo-checklist.dev` standard).
 - [Structured AI FAQ](https://elmify.com/ai/faq.json): Machine-readable frequently asked questions (`geo-checklist.dev` standard).
 - [Structured AI Service Capabilities](https://elmify.com/ai/service.json): Machine-readable service capabilities (`geo-checklist.dev` standard).
-- [Terms of Service](https://app.elmify.com/legal/terms/): Student and agency terms of service.
 - [Privacy Notice](https://app.elmify.com/legal/privacy_notice_direct/): Data protection and privacy notice.

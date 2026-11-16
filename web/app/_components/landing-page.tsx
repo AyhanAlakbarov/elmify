@@ -9,7 +9,7 @@ import {
 } from "./i18n";
 import { Nav } from "./nav";
 import { Hero } from "./hero";
-import { Agencies, Closing, Faq, Footer, HowItWorks, Product } from "./sections";
+import { Closing, Extension, Faq, Footer, HowItWorks, Product, Stats } from "./sections";
 
 const sameAsUrls = (process.env.NEXT_PUBLIC_SAME_AS_URLS ?? "")
   .split(",")
@@ -114,7 +114,7 @@ export function buildLocaleJsonLd(locale: Locale) {
           "@type": "ContactPoint",
           contactType: "customer support",
           email: "hello@elmify.com",
-          url: appLinks.demo,
+          url: appLinks.studentDemo,
           areaServed: "AZ",
           availableLanguage: ["en", "az", "ru"],
         },
@@ -264,9 +264,10 @@ export function LandingPage({ locale }: { locale: Locale }) {
       <Nav locale={locale} />
       <main id="main">
         <Hero locale={locale} />
+        <Stats locale={locale} />
         <HowItWorks locale={locale} />
+        <Extension locale={locale} />
         <Product locale={locale} />
-        <Agencies locale={locale} />
         <Faq locale={locale} />
         <Closing locale={locale} />
       </main>

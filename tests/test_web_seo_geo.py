@@ -184,16 +184,9 @@ def test_web_trilingual_copy_schema_and_prompt_injection_cleanliness() -> None:
     assert "Bachelor's degree support will be done soon" in i18n_ts
     assert "bakalavr proqramları üzrə dəstək isə tezliklə əlavə olunacaq" in i18n_ts
     assert "поддержка бакалавриата будет добавлена совсем скоро" in i18n_ts
-    for hidden_marker in (
-        "Automatic-on-admission & faculty tuition waivers",
-        "Regional & household-income right-to-study grants",
-        "Multi-country bloc & development-bank scholarships",
-        "Non-English private, civic & charitable foundations",
-        "RA/TA",
-        "extensionPreview",
-        "studentDemo",
-        "agencyDemo",
-    ):
+    # The tier tables, hidden-funding layers and agency section left the landing
+    # page on 2026-11-16 (owner: too much text, no agency work soon).
+    for hidden_marker in ("extensionPreview", "studentDemo"):
         assert hidden_marker in i18n_ts, f"{hidden_marker} must be present in i18n.ts"
 
     for rel_path in (

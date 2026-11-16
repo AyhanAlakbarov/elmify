@@ -8,7 +8,6 @@ export function Nav({ locale = "en" }: { locale?: Locale }) {
   const links = [
     { href: "#how", label: copy.how },
     { href: "#product", label: copy.product },
-    { href: "#agencies", label: copy.agencies },
     { href: "#faq", label: copy.faq },
   ];
   const app = localizedAppLinks(locale);

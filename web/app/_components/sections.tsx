@@ -1,10 +1,12 @@
 import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 import { Button } from "./button";
+import { CountUp } from "./count-up";
 import { Wordmark } from "./logo";
 import {
   COPY,
   LOCALES,
+  SCHOLARSHIPS,
   type Locale,
   localePath,
   localeUrl,
@@ -16,122 +18,113 @@ import messages from "../../public/screens/messages.png";
 import programmes from "../../public/screens/programmes.png";
 
 /* ------------------------------------------------------------------ */
-/* How the AI works: a real sequence, so it is drawn as one connected line. */
+/* Big numbers: counted once as they scroll in. */
+export function Stats({ locale = "en" }: { locale?: Locale }) {
+  const copy = COPY[locale];
+  return (
+    <section aria-label="Elmify in numbers" className="border-b border-border bg-foreground py-14 text-background">
+      <div className="mx-auto max-w-6xl px-5">
+        <dl className="grid grid-cols-2 gap-y-10 md:grid-cols-4">
+          {copy.stats.map((s) => (
+            <div key={s.label} className="flex flex-col-reverse gap-1">
+              <dt className="text-body02 text-white/70">{s.label}</dt>
+              <dd className="text-[clamp(2.25rem,4.5vw,3.5rem)] font-bold leading-none tracking-tight">
+                <CountUp value={s.value} suffix={s.suffix} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-12 border-t border-white/15 pt-6">
+          <p className="text-caption01 text-white/60">{copy.scholarshipsLabel}</p>
+          <ul className="marquee mt-3 flex flex-wrap gap-2">
+            {SCHOLARSHIPS.map((s) => (
+              <li key={s.name}>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex rounded-full border border-white/20 px-3.5 py-1.5 text-body02 font-medium text-white/90 transition-colors hover:border-white hover:text-white"
+                >
+                  {s.name}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* How it works: a real sequence, so it is numbered and drawn as one line. */
+const STEP_ICONS = [
+  // a person
+  "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0",
+  // a target
+  "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-4a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0-4a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z",
+  // a document
+  "M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6",
+  // a pointer clicking
+  "M9 3v10l3-3 2 5 2-1-2-5h4zM4 8h2M5 4l1.5 1.5M8 1v2",
+];
+
 export function HowItWorks({ locale = "en" }: { locale?: Locale }) {
   const copy = COPY[locale].how;
-  const ext = copy.extensionPreview;
-
   return (
     <section id="how" className="scroll-mt-20 py-24 md:py-28">
       <div className="mx-auto max-w-6xl px-5">
-        <h2 className="max-w-2xl text-heading01 font-bold">{copy.h2}</h2>
-        <p className="mt-4 max-w-2xl text-body01 text-foreground-secondary">{copy.intro}</p>
-
-        <ol className="relative mt-16 grid gap-10 md:grid-cols-4 md:gap-8">
+        <h2 className="text-heading01 font-bold">{copy.h2}</h2>
+        <ol className="relative mt-14 grid gap-10 md:grid-cols-4 md:gap-8">
           <span
             aria-hidden
-            className="pipeline-line absolute left-0 right-0 top-[15px] hidden h-px bg-brand md:block"
+            className="pipeline-line absolute left-7 right-7 top-7 hidden h-0.5 bg-brand md:block"
           />
           {copy.stages.map((s, i) => (
-            <li key={s.title} className="relative">
-              <span className="relative grid size-8 place-items-center rounded-full bg-brand text-caption01 font-semibold text-on-brand ring-8 ring-background">
-                {i + 1}
+            <li key={s.title} className="step-in relative" style={{ animationDelay: `${i * 120}ms` }}>
+              <span className="relative grid size-14 place-items-center rounded-2xl bg-brand text-on-brand ring-8 ring-background">
+                <svg viewBox="0 0 24 24" className="size-7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d={STEP_ICONS[i]} />
+                </svg>
+                <span className="absolute -right-2 -top-2 grid size-6 place-items-center rounded-full bg-foreground text-caption01 font-bold text-background">
+                  {i + 1}
+                </span>
               </span>
-              <h3 className="mt-6 text-heading03 font-semibold">{s.title}</h3>
-              <p className="mt-2 text-body02 text-foreground-secondary">{s.body}</p>
+              <h3 className="mt-6 text-heading02 font-semibold">{s.title}</h3>
+              <p className="mt-1.5 text-body01 text-foreground-secondary">{s.body}</p>
             </li>
           ))}
         </ol>
+      </div>
+    </section>
+  );
+}
 
-        <div id="about" className="mt-16 scroll-mt-24 rounded-3xl border border-border bg-surface p-6 md:p-8">
-          <div className="flex flex-col gap-2 md:flex-row md:items-baseline md:justify-between">
-            <h3 className="text-heading02 font-semibold">{copy.tableHeading}</h3>
-            <p className="text-caption01 text-foreground-subtle">
-              <cite className="not-italic">{copy.tableSub}</cite>
-            </p>
-          </div>
-          <p className="mt-2 max-w-3xl text-body02 text-foreground-secondary">{copy.tableIntro}</p>
-          <div className="mt-6 overflow-x-auto">
-            <table className="w-full min-w-[42rem] border-collapse text-left text-body02">
-              <thead>
-                <tr className="border-b border-border text-caption01 font-semibold text-foreground-secondary">
-                  <th scope="col" className="py-3 pr-4">
-                    {copy.tableHeaders[0]}
-                  </th>
-                  <th scope="col" className="py-3 px-4">
-                    {copy.tableHeaders[1]}
-                  </th>
-                  <th scope="col" className="py-3 px-4">
-                    {copy.tableHeaders[2]}
-                  </th>
-                  <th scope="col" className="py-3 pl-4">
-                    {copy.tableHeaders[3]}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {copy.rows.map((row) => (
-                  <tr key={row.funder} className="align-top">
-                    <th scope="row" className="py-3.5 pr-4 font-semibold text-foreground">
-                      <a
-                        href={row.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline decoration-border underline-offset-4 transition-colors hover:text-brand-text"
-                      >
-                        {row.funder}
-                      </a>
-                    </th>
-                    <td className="py-3.5 px-4 text-foreground-secondary">{row.scope}</td>
-                    <td className="py-3.5 px-4 text-foreground-secondary">{row.funding}</td>
-                    <td className="py-3.5 pl-4 text-foreground-secondary">{row.rules}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-10 border-t border-border pt-8">
-            <div className="flex flex-col gap-2 md:flex-row md:items-baseline md:justify-between">
-              <h3 className="text-heading02 font-semibold">{copy.hiddenHeading}</h3>
-              <p className="text-caption01 text-foreground-subtle">{copy.hiddenSub}</p>
-            </div>
-            <p className="mt-2 max-w-3xl text-body02 text-foreground-secondary">{copy.hiddenIntro}</p>
-            <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {copy.hiddenLayers.map((layer) => (
-                <article
-                  key={layer.title}
-                  className="flex flex-col justify-between rounded-2xl border border-border bg-background-secondary p-5"
-                >
-                  <div>
-                    <span className="inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-0.5 text-caption01 font-semibold text-brand-text">
-                      {layer.badge}
-                    </span>
-                    <h4 className="mt-3 text-heading03 font-semibold text-foreground">{layer.title}</h4>
-                    <p className="mt-2 text-body02 text-foreground-secondary">{layer.examples}</p>
-                  </div>
-                  <p className="mt-4 border-t border-border pt-3 text-caption01 text-foreground-subtle">
-                    {layer.howFound}
-                  </p>
-                </article>
+/* ------------------------------------------------------------------ */
+/* The browser extension, shown working rather than described. */
+export function Extension({ locale = "en" }: { locale?: Locale }) {
+  const copy = COPY[locale].extensionPreview;
+  return (
+    <section className="bg-brand-soft py-24 md:py-28">
+      <div className="mx-auto max-w-6xl px-5">
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.6fr)] lg:items-center">
+          <div>
+            <h2 className="text-heading01 font-bold">{copy.h2}</h2>
+            <p className="mt-4 text-body01 text-foreground-secondary">{copy.body}</p>
+            <ul className="mt-8 grid gap-3">
+              {copy.points.map((p) => (
+                <li key={p} className="flex items-center gap-3 text-body01 font-medium">
+                  <span className="grid size-6 shrink-0 place-items-center rounded-full bg-brand text-on-brand" aria-hidden>
+                    <svg viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />
+                    </svg>
+                  </span>
+                  {p}
+                </li>
               ))}
-            </div>
+            </ul>
           </div>
-        </div>
-
-        <div className="mt-10 rounded-3xl border border-border bg-brand-soft p-6 md:p-8">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="inline-flex items-center rounded-full border border-border bg-surface px-3 py-1 text-caption01 font-semibold text-brand-text">
-              {ext.badge}
-            </span>
-            <span className="text-caption01 font-semibold text-brand-text">
-              {ext.sidePanelStatus}
-            </span>
-          </div>
-          <h3 className="mt-3 text-heading02 font-semibold text-foreground">{ext.heading}</h3>
-          <p className="mt-2 max-w-3xl text-body02 text-foreground-secondary">{ext.sub}</p>
-
-          <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-slate-900 shadow-lg">
+          <div className="overflow-hidden rounded-2xl border border-border bg-slate-900 shadow-[0_30px_70px_-30px_rgba(15,23,42,0.45)]">
             <video
               key="tumonline-portal-demo"
               className="block h-auto w-full"
@@ -140,35 +133,13 @@ export function HowItWorks({ locale = "en" }: { locale?: Locale }) {
               muted
               playsInline
               poster="/screens/extension-poster.png?v=tumonline"
-              aria-label={ext.heading}
+              aria-label={copy.h2}
             >
               <source src="/screens/extension-demo.webm?v=tumonline" type="video/webm" />
               <source src="/screens/extension-demo.mp4?v=tumonline" type="video/mp4" />
             </video>
           </div>
-
-          <ul className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {ext.sidePanelItems.map((item) => (
-              <li
-                key={item}
-                className="flex items-start gap-2.5 rounded-xl border border-border bg-surface p-3.5 text-caption01 text-foreground-secondary shadow-2xs"
-              >
-                <span
-                  aria-hidden
-                  className="mt-1 inline-block size-2 shrink-0 rounded-full bg-brand"
-                />
-                <span>{item}</span>
-              </li>
-            ))}
-          </ul>
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-surface px-4 py-3 text-caption01 font-semibold text-foreground">
-            <span>{ext.sidePanelNote}</span>
-            <span className="text-brand-text">{ext.submitGuard}</span>
-          </div>
         </div>
-
-        <p className="mt-10 border-t border-border pt-6 text-body01 font-medium">{copy.closingNote}</p>
       </div>
     </section>
   );
@@ -216,7 +187,6 @@ export function Product({ locale = "en" }: { locale?: Locale }) {
     <section id="product" className="scroll-mt-20 bg-background-secondary py-24 md:py-28">
       <div className="mx-auto max-w-6xl px-5">
         <h2 className="max-w-2xl text-heading01 font-bold">{copy.h2}</h2>
-        <p className="mt-4 max-w-xl text-body01 text-foreground-secondary">{copy.intro}</p>
 
         <div className="mt-14 grid gap-4 md:grid-cols-3 md:gap-5">
           {copy.cells.map((c, idx) => {
@@ -231,8 +201,7 @@ export function Product({ locale = "en" }: { locale?: Locale }) {
                 ].join(" ")}
               >
                 <div className="p-6 pb-5 md:p-7 md:pb-5">
-                  <h3 className="text-heading03 font-semibold">{c.title}</h3>
-                  <p className="mt-1.5 max-w-md text-body02 text-foreground-secondary">{c.body}</p>
+                  <h3 className="text-heading02 font-semibold">{c.title}</h3>
                 </div>
                 <div
                   className={[
@@ -249,43 +218,13 @@ export function Product({ locale = "en" }: { locale?: Locale }) {
                     ].join(" ")}
                     sizes="(min-width: 768px) 1200px, 100vw"
                     unoptimized
-                    loading="lazy"
+                    loading="eager"
                   />
                 </div>
               </article>
             );
           })}
         </div>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-export function Agencies({ locale = "en" }: { locale?: Locale }) {
-  const copy = COPY[locale].agencies;
-  const app = localizedAppLinks(locale);
-
-  return (
-    <section id="agencies" className="scroll-mt-20 py-24 md:py-28">
-      <div className="mx-auto grid max-w-6xl gap-12 px-5 md:grid-cols-[1fr_1fr] md:gap-16">
-        <div>
-          <h2 className="text-heading01 font-bold">{copy.h2}</h2>
-          <p className="mt-4 max-w-md text-body01 text-foreground-secondary">{copy.body}</p>
-          <div className="mt-8">
-            <Button href={app.agencyDemo} size="lg">
-              {copy.cta}
-            </Button>
-          </div>
-        </div>
-        <dl className="divide-y divide-border self-center border-y border-border">
-          {copy.points.map(([t, b]) => (
-            <div key={t} className="grid gap-1 py-5 sm:grid-cols-[9rem_1fr] sm:gap-6">
-              <dt className="text-heading03 font-semibold">{t}</dt>
-              <dd className="text-body01 text-foreground-secondary">{b}</dd>
-            </div>
-          ))}
-        </dl>
       </div>
     </section>
   );
@@ -302,7 +241,6 @@ export function Faq({ locale = "en" }: { locale?: Locale }) {
       <div className="mx-auto grid max-w-6xl gap-10 px-5 md:grid-cols-[1fr_1.6fr] md:gap-16">
         <div>
           <h2 className="text-heading01 font-bold">{copy.h2}</h2>
-          <p className="mt-4 max-w-xs text-body01 text-foreground-secondary">{copy.intro}</p>
         </div>
         <div className="divide-y divide-border border-y border-border">
           {copy.items.map(([q, a]) => (
@@ -339,9 +277,6 @@ export function Closing({ locale = "en" }: { locale?: Locale }) {
           <Button href={app.signup} size="lg">
             {copy.ctaPrimary}
           </Button>
-          <Button href={app.studentDemo} variant="secondary" size="lg">
-            {copy.ctaStudentDemo}
-          </Button>
           <Button href={app.login} variant="secondary" size="lg">
             {copy.ctaSecondary}
           </Button>
@@ -357,10 +292,8 @@ export function Footer({ locale = "en" }: { locale?: Locale }) {
   const app = localizedAppLinks(locale);
   const links = [
     [copy.links.how, "#how"],
-    [copy.links.about, "#about"],
-    [copy.links.agencies, "#agencies"],
+    [copy.links.faq, "#faq"],
     [copy.links.studentDemo, app.studentDemo],
-    [copy.links.demo, app.agencyDemo],
     [copy.links.login, app.login],
     [copy.links.terms, app.terms],
     [copy.links.privacy, app.privacy],

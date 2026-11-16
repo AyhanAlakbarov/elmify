@@ -10,7 +10,6 @@ export const appLinks = {
   login: `${APP_URL}/accounts/login/`,
   demo: `${APP_URL}/demo/`,
   studentDemo: `${APP_URL}/demo/?audience=student`,
-  agencyDemo: `${APP_URL}/demo/?audience=agency`,
   terms: `${APP_URL}/legal/terms/`,
   privacy: `${APP_URL}/legal/privacy_notice_direct/`,
 };
