@@ -22,6 +22,7 @@
     <p>{{ form.full_name.label_tag }} {{ form.full_name }} {{ form.full_name.errors }}</p>
     <p>{{ form.email.label_tag }} {{ form.email }} {{ form.email.errors }}</p>
     <p>{{ form.password.label_tag }} {{ form.password }} <small class="muted">{{ form.password.help_text }}</small> {{ form.password.errors }}</p>
+    <p>{{ form.password_again.label_tag }} {{ form.password_again }} {{ form.password_again.errors }}</p>
     <p class="consent">
       <label><input type="checkbox" name="consent" {% if form.consent.value and not stale %}checked{% endif %}>
       I agree to the <a href="{% url 'privacy-legal' 'terms' %}?lang={{ form.language.value|default:'en' }}">Terms of Service</a>
@@ -30,7 +31,8 @@
       including its transfer to the countries it lists.</label>
       {{ form.consent.errors }}
     </p>
-    <button type="submit">Create account</button>
+    <button type="submit">Send me a code</button>
+    <p class="muted small">We email you a 6-digit code to check the address is yours.</p>
   </form>
-  <p class="muted auth-alt">Already have an account? <a href="/accounts/login/">Log in</a> · Want a walkthrough first? <a href="/demo/?audience=student">Student walkthrough</a> · <a href="/demo/?audience=agency">Agency demo</a></p>
+  <p class="muted auth-alt">Already have an account? <a href="/accounts/login/">Log in</a> · Want a walkthrough first? <a href="/demo/?audience=student">Student walkthrough</a></p>
 {% endblock %}

@@ -1,5 +1,7 @@
 """Early access: a self-signup gets this year's cycle so the search can start."""
 
+import re
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -26,18 +28,30 @@ def published(db):
 
 def _signup(client, domain):
     docs = acceptance.documents_to_accept(domain.agency_id, "en")
-    return client.post(
+    response = client.post(
         reverse("privacy-signup"),
         {
             "full_name": "Leyla Mammadova",
             "email": "leyla@example.com",
             "password": "correct-horse-battery-staple",
+            "password_again": "correct-horse-battery-staple",
             "language": "en",
             "consent": "on",
             "documents": [str(doc.id) for doc in docs],
         },
         HTTP_HOST=domain.host,
     )
+    return _enter_mailed_code(client, domain.host, response)
+
+
+def _enter_mailed_code(client, host, response):
+    """Sign-up mails a code first; type the last one mailed back, as the student would."""
+    from django.core import mail
+
+    if response.status_code != 302 or response["Location"] != reverse("privacy-signup-verify"):
+        return response
+    code = re.search(r"\b(\d{6})\b", mail.outbox[-1].subject).group(1)
+    return client.post(reverse("privacy-signup-verify"), {"code": code}, HTTP_HOST=host)
 
 
 @pytest.mark.django_db

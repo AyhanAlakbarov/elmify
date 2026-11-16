@@ -63,6 +63,25 @@ MARKETING_SITE_URL = os.getenv(
     "MARKETING_SITE_URL", "http://localhost:3001" if DEBUG else "https://elmify.com"
 ).rstrip("/")
 LOGOUT_REDIRECT_URL = MARKETING_SITE_URL
+
+#: Sign-up mails a 6-digit code and creates the account only once it is typed
+#: back (apps/privacy/email_code.py). On a developer machine the mail is printed
+#: in the runserver window; production needs EMAIL_HOST (SMTP, e.g. Amazon SES's
+#: SMTP endpoint) and SIGNUP_EMAIL_FROM set, or no code can be sent.
+SIGNUP_EMAIL_CODE = os.getenv("SIGNUP_EMAIL_CODE", "1") == "1"
+EMAIL_BACKEND = os.getenv(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend"
+    if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = os.getenv("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "1") == "1"
+EMAIL_TIMEOUT = 15
+DEFAULT_FROM_EMAIL = os.getenv("SIGNUP_EMAIL_FROM", "Elmify <no-reply@elmify.com>")
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",

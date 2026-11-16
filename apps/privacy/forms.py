@@ -18,6 +18,7 @@ class SignupForm(forms.Form):
     password = forms.CharField(
         widget=forms.PasswordInput, min_length=12, help_text="At least 12 characters."
     )
+    password_again = forms.CharField(widget=forms.PasswordInput, label="Repeat password")
     language = forms.ChoiceField(choices=[(code, code) for code in LANGUAGES], initial="en")
     consent = forms.BooleanField(required=True, label=CONSENT_TEXT)
 
@@ -40,3 +41,26 @@ class SignupForm(forms.Form):
         password = str(self.cleaned_data["password"])
         validate_password(password)
         return password
+
+    def clean(self) -> dict[str, object]:
+        cleaned = super().clean() or {}
+        first, again = cleaned.get("password"), cleaned.get("password_again")
+        if first and again is not None and first != again:
+            self.add_error("password_again", "The two passwords are not the same.")
+        return cleaned
+
+
+class SignupCodeForm(forms.Form):
+    code = forms.CharField(
+        max_length=12,
+        label="6-digit code",
+        widget=forms.TextInput(
+            attrs={
+                "inputmode": "numeric",
+                "autocomplete": "one-time-code",
+                "pattern": "[0-9 ]*",
+                "autofocus": "autofocus",
+                "class": "code-input",
+            }
+        ),
+    )

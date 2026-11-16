@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Check your email — Elmify{% endblock %}
+{% block content %}
+  <h1>Check your email</h1>
+  <p class="muted">We sent a 6-digit code to <strong>{{ email }}</strong>. It works for 10 minutes.</p>
+  {% if notice %}<p class="note note-ok" role="status">{{ notice }}</p>{% endif %}
+  <form method="post">
+    {% csrf_token %}
+    <p>{{ form.code.label_tag }} {{ form.code }} {{ form.code.errors }}</p>
+    <button type="submit">Create my account</button>
+  </form>
+  <form method="post" class="auth-alt">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="resend">
+    <p class="muted">No email? Check spam, or <button type="submit" class="linkish">send a new code</button>. Wrong address? <a href="{% url 'privacy-signup' %}">Start again</a>.</p>
+  </form>
+{% endblock %}

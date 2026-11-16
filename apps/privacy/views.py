@@ -4,16 +4,20 @@ Plain, unstyled HTML on purpose (requirements P1-9 amendment): the team designs
 the presentation later; these pages exist so the behaviour can be tested end to end.
 """
 
+from typing import Any
+
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.hashers import make_password
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
 from apps.concierge.cycles import grant_early_access_cycle
-from apps.privacy import acceptance, documents
-from apps.privacy.forms import CONSENT_TEXT, SignupForm
+from apps.privacy import acceptance, documents, email_code
+from apps.privacy.forms import CONSENT_TEXT, SignupCodeForm, SignupForm
 from apps.privacy.models import Acceptance, LegalDocument
 from apps.ratelimit import actor_key as _key
 from apps.ratelimit import rate_limited
@@ -26,6 +30,7 @@ LANGUAGE_NAMES = (("en", "English"), ("az", "Azərbaycanca"), ("ru", "Русск
 STALE_MESSAGE = "These documents changed while the page was open. Read the current versions below."
 TOO_MANY = "Too many sign-up attempts. Try again later."
 _HOUR = 3600
+SEND_FAILED = "We could not send the email just now. Try again in a few minutes."
 
 
 def _client_ip(request: HttpRequest) -> str:
@@ -74,21 +79,97 @@ def signup(request: HttpRequest) -> HttpResponse:
             context["stale"] = True
             return render(request, "privacy/signup.html", context, status=400)
         data = form.cleaned_data
-        first, _, last = data["full_name"].strip().partition(" ")
-        user = get_user_model().objects.create_user(
-            username=data["email"],
-            email=data["email"],
-            password=data["password"],
-            first_name=first,
-            last_name=last,
-        )
-        student = Membership.objects.create(user=user, role=Membership.Role.STUDENT)
-        acceptance.record(student, docs, surface="signup", language=data["language"])
-        if settings.EARLY_ACCESS_FREE_CYCLE:
-            grant_early_access_cycle(student)
-        login(request, user)
-        return redirect("/student/")
+        details = {
+            "full_name": data["full_name"],
+            "email": data["email"],
+            "password_hash": make_password(data["password"]),
+            "language": data["language"],
+            "documents": sorted(str(doc.id) for doc in docs),
+        }
+        if not settings.SIGNUP_EMAIL_CODE:
+            return _create_account(request, details, docs)
+        code = email_code.start(request.session, details)
+        try:
+            email_code.mail_code(details["email"], code)
+        except OSError:
+            email_code.clear(request.session)
+            form.add_error(None, SEND_FAILED)
+            return render(request, "privacy/signup.html", context, status=503)
+        return redirect("privacy-signup-verify")
     return render(request, "privacy/signup.html", context)
+
+
+def _create_account(
+    request: HttpRequest, details: dict[str, Any], docs: list[LegalDocument]
+) -> HttpResponse:
+    first, _, last = details["full_name"].strip().partition(" ")
+    user = get_user_model()(
+        username=details["email"],
+        email=details["email"],
+        first_name=first,
+        last_name=last,
+        password=details["password_hash"],
+    )
+    user.save()
+    student = Membership.objects.create(user=user, role=Membership.Role.STUDENT)
+    acceptance.record(student, docs, surface="signup", language=details["language"])
+    if settings.EARLY_ACCESS_FREE_CYCLE:
+        grant_early_access_cycle(student)
+    login(request, user)
+    return redirect("/student/")
+
+
+@require_http_methods(["GET", "POST"])
+def signup_verify(request: HttpRequest) -> HttpResponse:
+    """Step two of sign-up: the code mailed by `signup`. The account exists only
+    after the right code, so a mistyped address never becomes a login."""
+    pending = email_code.pending(request.session)
+    if pending is None:
+        return redirect("privacy-signup")
+    form = SignupCodeForm(request.POST or None)
+    context: dict[str, object] = {"form": form, "email": pending["email"]}
+    if request.method == "POST" and request.POST.get("action") == "resend":
+        code = email_code.resend(request.session)
+        if code is None:
+            context["notice"] = "Wait a minute before asking for another code."
+        else:
+            try:
+                email_code.mail_code(pending["email"], code)
+            except OSError:
+                context["notice"] = SEND_FAILED
+            else:
+                context["notice"] = "We sent a new code."
+        return render(request, "privacy/signup_verify.html", context)
+    if request.method == "POST" and form.is_valid():
+        if rate_limited("signup-code", _key(_client_ip(request)), limit=30, window_seconds=_HOUR):
+            return HttpResponse(TOO_MANY, status=429)
+        outcome = email_code.check(request.session, form.cleaned_data["code"])
+        if outcome == "ok":
+            tenant_id = current_tenant_id()
+            docs = acceptance.documents_to_accept(tenant_id, pending["language"])
+            taken = get_user_model().objects.filter(username__iexact=pending["email"]).exists()
+            if taken or sorted(str(doc.id) for doc in docs) != pending["documents"]:
+                # The address was taken, or the documents changed, while the code
+                # was in the mail: start again rather than accept what was not shown.
+                email_code.clear(request.session)
+                messages.error(
+                    request, "Something changed while you were away. Please sign up again."
+                )
+                return redirect("privacy-signup")
+            email_code.clear(request.session)
+            return _create_account(request, pending, docs)
+        if outcome in {"expired", "locked"}:
+            email_code.clear(request.session)
+            messages.error(
+                request,
+                "That code has expired. Sign up again to get a new one."
+                if outcome == "expired"
+                else "Too many wrong codes. Sign up again to get a new one.",
+            )
+            return redirect("privacy-signup")
+        form.add_error("code", "That code is not right. Check the email and try again.")
+        return render(request, "privacy/signup_verify.html", context, status=400)
+    return render(request, "privacy/signup_verify.html", context)
 
 
 def legal_document(request: HttpRequest, kind: str) -> HttpResponse:

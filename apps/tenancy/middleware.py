@@ -199,8 +199,12 @@ def content_security_policy(
             # virtual-hosted endpoint, in every region.
             f"connect-src 'self' https://{settings.EVIDENCE_BUCKET_NAME}.s3.amazonaws.com",
             # The mailbox Connect forms GET our own route, which redirects to
-            # the provider; browsers hold that redirect to form-action too.
-            f"form-action 'self' {origin(GOOGLE_AUTH_URL)} {origin(MICROSOFT_AUTH_URL)}",
+            # the provider; browsers hold that redirect to form-action too. The
+            # Log out form redirects to the marketing site, so it is listed too:
+            # without it the browser silently blocks the logout redirect.
+            "form-action 'self' "
+            f"{origin(GOOGLE_AUTH_URL)} {origin(MICROSOFT_AUTH_URL)} "
+            f"{origin(settings.MARKETING_SITE_URL)}",
             "frame-ancestors 'none'",
             "base-uri 'none'",
             "object-src 'none'",
