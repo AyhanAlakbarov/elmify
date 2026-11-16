@@ -562,3 +562,44 @@ def test_a_question_sent_back_by_the_review_says_why(client, domain_a, user_a, m
     assert response.status_code == 400
     body = response.content.decode()
     assert "did not list as one you could study in" in body
+
+
+@pytest.mark.django_db
+def test_a_scholarship_that_matters_needs_an_amount_before_moving_on(
+    client, domain_a, user_a, membership_a
+):
+    """"A scholarship matters, but I can pay part" needs the part. Blank used to be
+    accepted here and refused at the end, which sent the student back to this
+    question in a loop (owner report, 2026-11-16: "I can not continue after it")."""
+    from tests.acceptance.helpers import answer_post
+
+    client.force_login(user_a)
+    for key, value in (
+        ("nationality", "AZ"),
+        ("country_of_residence", "AZ"),
+        ("date_of_birth", "2002-05-01"),
+        ("target_field", "Chemistry"),
+        ("other_target_fields", ""),
+        ("allowed_countries", "DE"),
+        ("excluded_countries", ""),
+        ("intended_intake", "2027-09-01"),
+        ("funding_dependency", "IMPORTANT"),
+    ):
+        client.post("/student/profile/", answer_post(key, value), HTTP_HOST=domain_a.host)
+
+    page = client.get("/student/profile/", HTTP_HOST=domain_a.host).content.decode()
+    assert 'name="key" value="self_funding_capacity"' in page
+    assert "I can cover the full cost" not in page
+
+    blank = client.post(
+        "/student/profile/", answer_post("self_funding_capacity", ""), HTTP_HOST=domain_a.host
+    )
+    assert blank.status_code == 400
+    assert "we need to know how much you can add yourself" in blank.content.decode()
+
+    ok = client.post(
+        "/student/profile/",
+        answer_post("self_funding_capacity", {"amount": "5000", "currency": "EUR"}),
+        HTTP_HOST=domain_a.host,
+    )
+    assert 'name="key" value="application_budget"' in ok.content.decode()

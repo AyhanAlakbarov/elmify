@@ -159,6 +159,20 @@ def _language_context_note_for(draft: ConsultationDraft, key: str) -> str:
     return ""
 
 
+NEEDS_AN_AMOUNT = (
+    "Type an amount or pick one. You said a scholarship matters, so we need to know how "
+    "much you can add yourself. If you can pay the full cost, go back and choose "
+    "\u201cYes, I can pay my own way\u201d."
+)
+
+
+def _money_presets(draft: ConsultationDraft, key: str) -> tuple[tuple[str, str], ...]:
+    presets = MONEY_PRESETS.get(key, ())
+    if key == "self_funding_capacity" and draft.answer("funding_dependency") == "IMPORTANT":
+        return tuple(p for p in presets if p[0] != "NONE")
+    return presets
+
+
 def _language_cards(draft: ConsultationDraft, seed: object) -> list[dict[str, str]]:
     """One card per language the student can study in, prefilled from what they saved."""
     saved = {
@@ -215,18 +229,13 @@ def _render_question(
 
     priority_options: tuple[tuple[str, str], ...] = ()
     if question.key == "additional_notes":
-        priority_options = (
-            tuple(
-                (
-                    phrase,
-                    "Switch to self-funded only (ignore scholarships and funding options)"
-                    if "self-funded" in phrase
-                    else label,
-                )
-                for phrase, label in PRIORITY_TICK_OPTIONS
-            )
-            if draft.answer("funding_dependency") == "MANDATORY"
-            else PRIORITY_TICK_OPTIONS
+        # Only what no earlier question asks (2026-11-16): money is question 9's,
+        # work experience the work question's. Their phrases still parse from
+        # notes typed or saved before; they are just not offered twice.
+        priority_options = tuple(
+            (phrase, label)
+            for phrase, label in PRIORITY_TICK_OPTIONS
+            if "self-funded" not in phrase and "work experience" not in phrase
         )
 
     context = {
@@ -269,7 +278,7 @@ def _render_question(
         ),
         "interest_suggestions": _interest_suggestions_for(draft, question.key),
         "date_presets": date_presets_for_question(question.key),
-        "money_presets": MONEY_PRESETS.get(question.key, ()),
+        "money_presets": _money_presets(draft, question.key),
         "priority_tick_options": priority_options,
         "duration_tick_options": (
             DURATION_TICK_OPTIONS if question.key == "additional_notes" else ()
@@ -490,6 +499,16 @@ def profile(request: HttpRequest) -> HttpResponse:
     form = ConsultationQuestionForm(
         key=question.key, field=question.field_factory(), data=request.POST
     )
+    if (
+        form.is_valid()
+        and question.key == "self_funding_capacity"
+        and form.cleaned_data["value"] is None
+        and draft.answer("funding_dependency") == "IMPORTANT"
+    ):
+        # "Full cost" is an answer only for someone who can go without a
+        # scholarship. Accepting it here used to loop: the final check refused
+        # it and sent the student back to this same question.
+        form.add_error("value", NEEDS_AN_AMOUNT)
     if not form.is_valid():
         return _render_question(request, draft, form=form, status=400)
     # The degree form posts all three rows; a client posting one degree edits the first.

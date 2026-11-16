@@ -52,6 +52,8 @@
         <input type="hidden" name="value" value="{{ form.value.value|default_if_none:'' }}">
       {% elif language_cards or question.key == "language_evidence" %}
         <p class="q-label" id="q-label">Do you have a certificate for each language you can study in?</p>
+      {% elif question.key == "additional_notes" %}
+        <p class="q-label" id="q-label">{{ question.label }}</p>
       {% else %}
       <p class="q-field{% if question.key in money_keys %} q-money{% endif %}">
         <label for="{{ form.value.id_for_label }}" class="q-label">{{ question.label }}</label>
@@ -143,26 +145,28 @@
         </fieldset>
       {% endif %}
       {% if duration_tick_options %}
-        <fieldset>
-          <legend>Program duration preference</legend>
+        <fieldset class="chip-set">
+          <legend>How long a master’s?</legend>
           {% for phrase, label in duration_tick_options %}
             {% if phrase and phrase in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ phrase }}">{% endif %}
-            <label class="consultation-block-label">
-              <input type="radio" name="duration_tick" value="{{ phrase }}"{% if phrase in selected_ticks %} checked{% endif %}> {{ label }}
-            </label>
+            <label class="status-chip"><input type="radio" name="duration_tick" value="{{ phrase }}"{% if phrase in selected_ticks %} checked{% endif %}><span>{{ label }}</span></label>
           {% endfor %}
         </fieldset>
       {% endif %}
       {% if priority_tick_options %}
-        <fieldset>
-          <legend>Quick-tick your priorities (optional)</legend>
+        <fieldset class="chip-set">
+          <legend>Tick any that are true</legend>
           {% for phrase, label in priority_tick_options %}
             {% if phrase in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ phrase }}">{% endif %}
-            <label class="consultation-block-label">
-              <input type="checkbox" name="priority_ticks" value="{{ phrase }}"{% if phrase in selected_ticks %} checked{% endif %}> {{ label }}
-            </label>
+            <label class="status-chip"><input type="checkbox" name="priority_ticks" value="{{ phrase }}"{% if phrase in selected_ticks %} checked{% endif %}><span>{{ label }}</span></label>
           {% endfor %}
         </fieldset>
+      {% endif %}
+      {% if question.key == "additional_notes" %}
+        <p class="q-field">
+          <label for="{{ form.value.id_for_label }}">Anything else we should know?</label>
+          {{ form.value }}
+        </p>
       {% endif %}
       {% if question.key == "nationality" or question.key == "country_of_residence" or question.key == "academic_history" %}
         <datalist id="country-datalist">

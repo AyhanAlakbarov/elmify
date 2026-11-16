@@ -73,10 +73,7 @@ QUESTION_LABELS = {
     "excluded_countries": "Any countries to rule out? Pick none to keep them all",
     "intended_intake": "When do you want to start?",
     "funding_dependency": "Can you go without a scholarship?",
-    "self_funding_capacity": (
-        "How much can you cover yourself per year for tuition and living? "
-        "Leave blank if you can cover the full cost"
-    ),
+    "self_funding_capacity": "How much can you cover yourself per year for tuition and living?",
     "application_budget": "How much can you spend on application fees?",
     "budget_stretch": (
         "If an exceptional opportunity appears, how much more could you spend on "
@@ -97,9 +94,7 @@ QUESTION_LABELS = {
     "publications": "Any publications?",
     "projects": "Any projects you are proud of? Study, personal or team projects",
     "additional_notes": (
-        "Anything else we should know? "
-        "(e.g., years of work or research experience, 1-year or 2-year preference, "
-        "top universities only, or no funding needed)"
+        "Last one: anything else? Everything here is optional"
     ),
 }
 

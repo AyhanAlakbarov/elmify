@@ -195,51 +195,45 @@ POPULAR_FIELDS: tuple[str, ...] = (
     "Physics",
 )
 DURATION_TICK_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("", "Any duration (1 or 2 years)"),
+    ("", "Any length"),
     (
         "Strictly 1-year master's only.",
-        "1-year master's only (strict 12-month duration)",
+        "1 year only",
     ),
     (
         "Prefer a 1-year master's unless there is funding, research, or internship.",
-        "Prefer 1-year master's, but open to 2-year for funding or research",
+        "1 year, or 2 if there is funding or research",
     ),
     (
         "Prefer a 2-year master's program.",
-        "Prefer 2-year master's (120 ECTS)",
+        "2 years",
     ),
 )
 PRIORITY_TICK_OPTIONS: tuple[tuple[str, str], ...] = (
     (
         "Only top universities and prestigious scholarships.",
-        (
-            "Only selective flagship universities, specialized research institutes, "
-            "or Erasmus Mundus programs"
-        ),
+        "Only top universities and Erasmus Mundus",
     ),
     (
         "Applying for a post-admission government scholarship (admission required first).",
-        (
-            "Applying for a post-admission government or external scholarship "
-            "(get university admission first, then scholarship)"
-        ),
+        "I will apply for a scholarship after I am admitted",
     ),
     (
         "I don't care about any funding options (fully self-funded).",
-        "I don't care about scholarships or funding options (self-funded only)",
+        "I will pay myself, ignore scholarships",
     ),
     (
         "No return-service bond.",
-        "Avoid scholarships with a mandatory return-home bond",
+        "No scholarship that makes me return home",
     ),
     (
         "Fresh graduate, no work experience yet.",
-        "Fresh graduate / no full-time work experience yet",
+        "No full-time work experience yet",
     ),
 )
 MONEY_PRESETS: dict[str, tuple[tuple[str, str], ...]] = {
     "self_funding_capacity": (
-        ("NONE", "Full cost / No annual limit"),
+        ("NONE", "I can cover the full cost"),
         ("5000", "5,000 / yr"),
         ("10000", "10,000 / yr"),
         ("20000", "20,000 / yr"),
@@ -796,11 +790,7 @@ def question_field(key: str) -> forms.Field:
             widget=forms.Textarea(
                 attrs={
                     "rows": 3,
-                    "autofocus": "autofocus",
-                    "placeholder": (
-                        "Optional: tick any priorities below, or write anything else "
-                        "(e.g. 2 years of work experience, specific universities)"
-                    ),
+                    "placeholder": "e.g. a university you are set on, or a city you prefer",
                 }
             ),
         )
