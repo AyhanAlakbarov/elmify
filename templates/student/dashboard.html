@@ -92,6 +92,12 @@
       {% if o.applications %}
         <a class="side-link" href="/student/applications/">See all {{ o.applications }} application{{ o.applications|pluralize }}</a>
       {% endif %}
+      {% if booking_url %}
+        <a class="book-call" href="{{ booking_url }}" target="_blank" rel="noopener noreferrer">
+          <span class="book-ico" aria-hidden="true"></span>
+          <span><strong>Talk to us for 20 minutes</strong><small>Pick a time. You get a Google Meet link in your calendar.</small></span>
+        </a>
+      {% endif %}
     </section>
   </div>
   {% else %}

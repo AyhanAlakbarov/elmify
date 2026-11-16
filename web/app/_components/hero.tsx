@@ -1,4 +1,5 @@
 import { Button } from "./button";
+import { BOOKING_URL } from "./app-links";
 import { COPY, type HeroMatch, type Locale, localizedAppLinks } from "./i18n";
 
 /** A ring that fills to the match's chance once, on load. */
@@ -57,8 +58,31 @@ function MatchRow({ m, i, chanceLabel }: { m: HeroMatch; i: number; chanceLabel:
   );
 }
 
+/** A calendar mark and two lines: what you book, and that it is a Meet call. */
+export function BookingLink({ href, cta, note }: { href: string; cta: string; note: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="hero-line group mt-6 inline-flex items-center gap-3 rounded-2xl py-1 pr-2 [animation-delay:450ms]"
+    >
+      <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-brand-soft text-brand" aria-hidden>
+        <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 3v4M16 3v4M9 15l2 2 4-4" />
+        </svg>
+      </span>
+      <span className="leading-tight">
+        <span className="block text-body01 font-semibold text-foreground underline-offset-4 group-hover:underline">{cta}</span>
+        <span className="block text-caption01 text-foreground-subtle">{note}</span>
+      </span>
+    </a>
+  );
+}
+
 export function Hero({ locale = "en" }: { locale?: Locale }) {
   const copy = COPY[locale].hero;
+  const booking = COPY[locale].booking;
   const app = localizedAppLinks(locale);
 
   return (
@@ -80,6 +104,7 @@ export function Hero({ locale = "en" }: { locale?: Locale }) {
               {copy.ctaSecondary}
             </Button>
           </div>
+          {BOOKING_URL ? <BookingLink href={BOOKING_URL} cta={booking.cta} note={booking.note} /> : null}
         </div>
 
         <figure className="relative mx-auto w-full max-w-md" aria-label={copy.shotAlt}>

@@ -1629,3 +1629,11 @@ main p.mfa-notice[role="alert"] { background: var(--brand-tint); color: var(--br
 
 .chip-set { border: 0; padding: 0; margin: 0 0 18px; display: flex; flex-wrap: wrap; gap: 8px; }
 .chip-set > legend { width: 100%; margin-bottom: 8px; font-size: 15px; font-weight: 650; color: var(--ink); }
+
+/* Book a call: Google Calendar appointment schedule with Meet (2026-11-16) */
+.book-call { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; margin-top: 18px; padding: 14px; border-radius: var(--radius-l); background: var(--brand-tint); color: var(--ink); text-decoration: none; transition: transform .2s var(--ease), box-shadow .2s; }
+.book-call:hover { transform: translateY(-2px); box-shadow: var(--lift); color: var(--ink); }
+.book-call strong { display: block; font-size: 14.5px; }
+.book-call small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
+.book-ico { width: 40px; height: 40px; border-radius: 12px; background: var(--brand); position: relative; }
+.book-ico::after { content: ""; position: absolute; inset: 10px; background: #fff; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 3v4M16 3v4M9 15l2 2 4-4'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 3v4M16 3v4M9 15l2 2 4-4'/%3E%3C/svg%3E") center / contain no-repeat; }

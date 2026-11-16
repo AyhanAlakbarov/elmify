@@ -13,3 +13,8 @@ export const appLinks = {
   terms: `${APP_URL}/legal/terms/`,
   privacy: `${APP_URL}/legal/privacy_notice_direct/`,
 };
+
+// A Google Calendar appointment schedule (20-minute slots with Google Meet):
+// the student picks a time and Google sends both sides the invite and Meet
+// link. Empty hides every "Book a call" button.
+export const BOOKING_URL = (process.env.NEXT_PUBLIC_BOOKING_URL ?? "").trim();

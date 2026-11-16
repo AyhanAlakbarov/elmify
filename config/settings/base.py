@@ -3,6 +3,8 @@ import os
 from decimal import Decimal
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 from .database import database_config
 
 BASE_DIR = Path(__file__).resolve().parents[2]
@@ -63,6 +65,12 @@ MARKETING_SITE_URL = os.getenv(
     "MARKETING_SITE_URL", "http://localhost:3001" if DEBUG else "https://elmify.com"
 ).rstrip("/")
 LOGOUT_REDIRECT_URL = MARKETING_SITE_URL
+#: A Google Calendar appointment schedule (20-minute slots with Google Meet). The
+#: student picks a time; Google puts the call and its Meet link in both calendars.
+#: Empty hides every "Book a call" link. Must be https.
+BOOKING_URL = os.getenv("BOOKING_URL", "").strip()
+if BOOKING_URL and not BOOKING_URL.startswith("https://"):
+    raise ImproperlyConfigured("BOOKING_URL must be an https:// address")
 
 #: Sign-up mails a 6-digit code and creates the account only once it is typed
 #: back (apps/privacy/email_code.py). On a developer machine the mail is printed

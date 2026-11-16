@@ -1,6 +1,7 @@
 import Image, { type StaticImageData } from "next/image";
 import Link from "next/link";
 import { Button } from "./button";
+import { BOOKING_URL } from "./app-links";
 import { CountUp } from "./count-up";
 import { Wordmark } from "./logo";
 import {
@@ -22,20 +23,20 @@ import programmes from "../../public/screens/programmes.png";
 export function Stats({ locale = "en" }: { locale?: Locale }) {
   const copy = COPY[locale];
   return (
-    <section aria-label="Elmify in numbers" className="border-b border-border bg-foreground py-14 text-background">
+    <section aria-label="Elmify in numbers" className="border-b border-border bg-brand-soft py-14">
       <div className="mx-auto max-w-6xl px-5">
         <dl className="grid grid-cols-2 gap-y-10 md:grid-cols-4">
           {copy.stats.map((s) => (
             <div key={s.label} className="flex flex-col-reverse gap-1">
-              <dt className="text-body02 text-white/70">{s.label}</dt>
-              <dd className="text-[clamp(2.25rem,4.5vw,3.5rem)] font-bold leading-none tracking-tight">
+              <dt className="text-body02 text-foreground-secondary">{s.label}</dt>
+              <dd className="text-[clamp(2.25rem,4.5vw,3.5rem)] font-bold leading-none tracking-tight text-brand-text">
                 <CountUp value={s.value} suffix={s.suffix} />
               </dd>
             </div>
           ))}
         </dl>
-        <div className="mt-12 border-t border-white/15 pt-6">
-          <p className="text-caption01 text-white/60">{copy.scholarshipsLabel}</p>
+        <div className="mt-12 border-t border-brand/15 pt-6">
+          <p className="text-caption01 text-foreground-secondary">{copy.scholarshipsLabel}</p>
           <ul className="marquee mt-3 flex flex-wrap gap-2">
             {SCHOLARSHIPS.map((s) => (
               <li key={s.name}>
@@ -43,7 +44,7 @@ export function Stats({ locale = "en" }: { locale?: Locale }) {
                   href={s.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex rounded-full border border-white/20 px-3.5 py-1.5 text-body02 font-medium text-white/90 transition-colors hover:border-white hover:text-white"
+                  className="inline-flex rounded-full border border-border bg-surface px-3.5 py-1.5 text-body02 font-medium text-foreground transition-colors hover:border-brand hover:text-brand-text"
                 >
                   {s.name}
                 </a>
@@ -280,6 +281,11 @@ export function Closing({ locale = "en" }: { locale?: Locale }) {
           <Button href={app.login} variant="secondary" size="lg">
             {copy.ctaSecondary}
           </Button>
+          {BOOKING_URL ? (
+            <Button href={BOOKING_URL} variant="secondary" size="lg" external>
+              {COPY[locale].booking.cta}
+            </Button>
+          ) : null}
         </div>
       </div>
     </section>

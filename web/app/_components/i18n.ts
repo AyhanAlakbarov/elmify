@@ -74,6 +74,7 @@ export interface LocaleCopy {
   };
   stats: ReadonlyArray<{ value: number; suffix: string; label: string }>;
   scholarshipsLabel: string;
+  booking: { cta: string; note: string };
   how: {
     h2: string;
     stages: ReadonlyArray<{ title: string; body: string }>;
@@ -172,6 +173,7 @@ export const COPY: Record<Locale, LocaleCopy> = {
       { value: 0, suffix: "", label: "portal passwords stored" },
     ],
     scholarshipsLabel: "Scholarships we check, from their official pages",
+    booking: { cta: "Book a free 20-min call", note: "On Google Meet, at a time that suits you" },
     how: {
       h2: "How it works",
       stages: [
@@ -311,6 +313,7 @@ export const COPY: Record<Locale, LocaleCopy> = {
       { value: 0, suffix: "", label: "portal şifrəsi saxlanılmır" },
     ],
     scholarshipsLabel: "Yoxladığımız təqaüdlər — rəsmi səhifələrindən",
+    booking: { cta: "Pulsuz 20 dəqiqəlik görüş təyin et", note: "Google Meet-də, sənə uyğun vaxtda" },
     how: {
       h2: "Necə işləyir",
       stages: [
@@ -450,6 +453,7 @@ export const COPY: Record<Locale, LocaleCopy> = {
       { value: 0, suffix: "", label: "паролей от порталов хранится" },
     ],
     scholarshipsLabel: "Стипендии, которые мы проверяем, — по их официальным страницам",
+    booking: { cta: "Записаться на бесплатный звонок, 20 мин", note: "В Google Meet, в удобное вам время" },
     how: {
       h2: "Как это работает",
       stages: [

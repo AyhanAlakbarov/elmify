@@ -251,3 +251,15 @@ def test_logging_out_lands_on_the_website(client, domain_a, student, settings) -
     response = client.post(LOGOUT, HTTP_HOST=domain_a.host)
     assert response.status_code == 302
     assert response["Location"] == "https://elmify.example"
+
+
+def test_the_book_a_call_link_shows_only_when_a_booking_page_is_set(
+    client, domain_a, student, settings
+) -> None:
+    client.force_login(student)
+    settings.BOOKING_URL = ""
+    page = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+    assert "Book a 20-min call" not in page
+    settings.BOOKING_URL = "https://calendar.app.google/example"
+    body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+    assert 'href="https://calendar.app.google/example" target="_blank"' in body
