@@ -84,6 +84,14 @@ NEVER = (
     "country_of_residence",
     # Free text: the one field that could carry anything.
     "additional_notes",
+    # Added to the profile 2026-11-16 and not wired to search: names of
+    # employers, co-authors and projects identify a person. Other subjects wait
+    # for a deliberate decision to widen the field words.
+    "other_target_fields",
+    "work_history",
+    "volunteering",
+    "publications",
+    "projects",
 )
 
 SLOTS = frozenset(

@@ -133,9 +133,33 @@ def test_a_half_filled_language_row_says_what_is_missing():
         "language_evidence", value_0="English", **{f"value_{i}": "" for i in range(1, 12)}
     )
     assert message == (
-        "For each language, fill in the level, how you can prove it and the date you will "
-        "have that proof, or leave the whole row empty."
+        "English: add the test and your score and how you can prove it and the date."
     )
+
+
+def test_language_cards_post_one_row_per_language():
+    assert _post(
+        "language_evidence",
+        lang_0_language="English", lang_0_status="HAVE", lang_0_test="IELTS Academic",
+        lang_0_score="7.0", lang_0_date="2026-05-10",
+        lang_1_language="German", lang_1_status="PLAN", lang_1_test="TestDaF",
+        lang_1_score="", lang_1_date="2027-02-01",
+        lang_2_language="Turkish", lang_2_status="NONE",
+    ) == [
+        {"language": "English", "level": "IELTS Academic 7.0", "evidence_type": "TEST",
+         "available_by": "2026-05-10"},
+        {"language": "German", "level": "TestDaF (planned)", "evidence_type": "TEST",
+         "available_by": "2027-02-01"},
+    ]
+
+
+def test_a_certificate_without_its_score_names_the_language():
+    message = _errors(
+        "language_evidence",
+        lang_0_language="English", lang_0_status="HAVE", lang_0_test="IELTS Academic",
+        lang_0_score="", lang_0_date="2026-05-10",
+    )
+    assert message == "English: add the test and your score."
 
 
 def test_a_language_row_without_its_date_says_the_date_is_needed():
@@ -268,21 +292,26 @@ def test_quick_ticks_and_presets_reduce_friction_across_questions():
     )
     assert payload_psw["mobility_priorities"] == ["POST_STUDY_WORK"]
 
+    # The preset fills the language and proof type; the score is the student's own.
     assert _post(
         "language_evidence",
         language_quick_preset="IELTS",
         value_0="",
-        value_1="",
+        value_1="IELTS 6.5",
         value_2="",
         value_3="2026-06-01",
     ) == [
         {
             "language": "English",
-            "level": "IELTS 7.0",
+            "level": "IELTS 6.5",
             "evidence_type": "TEST",
             "available_by": "2026-06-01",
         }
     ]
+    # It never invents one (it used to save "IELTS 7.0" for anyone who tapped it).
+    assert "English: add the test and your score" in _errors(
+        "language_evidence", language_quick_preset="IELTS", value_3="2026-06-01"
+    )
 
     # 12. Post-admission government scholarship tick & note extraction
     gov_notes = _post(
@@ -324,3 +353,54 @@ def test_quick_ticks_and_presets_reduce_friction_across_questions():
 
 
 
+
+
+def test_work_history_rows_become_roles_and_blank_rows_are_skipped():
+    assert _post(
+        "work_history",
+        value_0="INTERNSHIP", value_1="Lab intern", value_2="SOCAR", value_3="2024-06",
+        value_4="2024-09",
+    ) == [
+        {"kind": "INTERNSHIP", "title": "Lab intern", "organisation": "SOCAR",
+         "start_date": "2024-06-01", "end_date": "2024-09-01"},
+    ]
+    assert _post("work_history") == []
+
+
+def test_a_half_filled_role_names_the_row_and_the_part():
+    assert _errors("work_history", value_0="WORK", value_1="Tutor") == (
+        "Role 1: add the organisation, or clear the row."
+    )
+
+
+def test_volunteering_is_stored_as_volunteer_roles():
+    rows = _post("volunteering", value_1="Mentor", value_2="ASAN", value_3="2023-01")
+    assert rows[0]["kind"] == "VOLUNTEER" and rows[0]["end_date"] is None
+
+
+def test_a_publication_keeps_its_level():
+    rows = _post(
+        "publications",
+        value_0="Catalysis on Cu", value_1="Mammadova A., Aliyev R.", value_2="J. Catal.",
+        value_3="2025", value_4="Q1",
+    )
+    assert rows == [{"title": "Catalysis on Cu", "authors": "Mammadova A., Aliyev R.",
+                     "venue": "J. Catal.", "year": 2025, "level": "Q1"}]
+
+
+def test_two_degrees_are_two_records():
+    first = ["BSU", "AZ", "BSc", "Chemistry", "90", "100", "2024-06-30", ""]
+    second = ["ADA", "AZ", "BA", "Economics", "85", "100", "2024-06-30", ""]
+    data = {f"value_{i}": v for i, v in enumerate(first + second)}
+    records = _post("academic_history", **data)
+    assert [r["institution"] for r in records] == ["BSU", "ADA"]
+
+
+def test_every_country_is_grouped_by_continent():
+    from apps.accounts.countries import all_countries, countries_by_continent
+
+    grouped = {code for _c, countries in countries_by_continent() for code, _n in countries}
+    assert grouped == {code for code, _n in all_countries()}
+    continent = {code: c for c, countries in countries_by_continent() for code, _n in countries}
+    assert continent["AZ"] == "Asia" and continent["DE"] == "Europe"
+    assert continent["CL"] == "Americas" and continent["ES"] == "Europe"

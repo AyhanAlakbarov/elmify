@@ -104,7 +104,8 @@ def test_unambiguous_single_field_skips_disambiguation_question() -> None:
     )
     nxt = next_profile_question(draft)
     assert nxt is not None
-    assert nxt.key == "allowed_countries"
+    # Other subjects come next (2026-11-16), then the countries.
+    assert nxt.key == "other_target_fields"
     assert consultation_progress(draft)[0] == 4
 
 

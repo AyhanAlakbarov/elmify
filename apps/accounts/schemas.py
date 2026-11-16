@@ -107,6 +107,45 @@ class ExperienceRecord(BaseModel):
     months: int = Field(ge=0, le=600)
 
 
+class ActivityRecord(BaseModel):
+    """A job, internship, research post or volunteer role the student typed in the
+    profile (2026-11-16). `experience` above stays the matcher's input: it is derived
+    from the paid rows of `work_history` when the student answered that question."""
+
+    model_config = _PROFILE_CONFIG
+
+    kind: Literal["WORK", "INTERNSHIP", "RESEARCH", "VOLUNTEER"]
+    title: str = Field(min_length=1, max_length=200)
+    organisation: str = Field(min_length=1, max_length=300)
+    start_date: date
+    #: None while the role is ongoing.
+    end_date: date | None = None
+
+
+PublicationLevel = Literal[
+    "Q1", "Q2", "Q3", "Q4", "INDEXED", "NOT_INDEXED", "CONFERENCE", "PREPRINT", "OTHER"
+]
+
+
+class PublicationRecord(BaseModel):
+    model_config = _PROFILE_CONFIG
+
+    title: str = Field(min_length=1, max_length=300)
+    #: Every author as the byline prints them, in order, the student included.
+    authors: str = Field(min_length=1, max_length=500)
+    venue: str = Field(min_length=1, max_length=300)
+    year: int = Field(ge=1950, le=2100)
+    level: PublicationLevel
+
+
+class ProjectRecord(BaseModel):
+    model_config = _PROFILE_CONFIG
+
+    title: str = Field(min_length=1, max_length=200)
+    summary: str = Field(min_length=1, max_length=500)
+    year: int | None = Field(default=None, ge=1950, le=2100)
+
+
 class ProfileConstraint(BaseModel):
     model_config = _PROFILE_CONFIG
 
@@ -170,6 +209,14 @@ class StudentProfileSnapshot(BaseModel):
     #: gate abstains on None and fails a positive bar on an empty tuple.
     experience: tuple[ExperienceRecord, ...] | None = Field(default=None, max_length=50)
     research_interests: tuple[NonBlankText200, ...] = Field(default=(), max_length=20)
+    #: Further subjects beyond `target_field` (2026-11-16). Matching still reads only
+    #: `target_field`; these are kept for the student's profile and for wiring later.
+    other_target_fields: tuple[NonBlankText200, ...] = Field(default=(), max_length=4)
+    #: None means never asked, as for `experience`; an empty tuple is "none".
+    work_history: tuple[ActivityRecord, ...] | None = Field(default=None, max_length=20)
+    volunteering: tuple[ActivityRecord, ...] | None = Field(default=None, max_length=20)
+    publications: tuple[PublicationRecord, ...] | None = Field(default=None, max_length=30)
+    projects: tuple[ProjectRecord, ...] | None = Field(default=None, max_length=20)
     #: The after-the-master's question (spec 3.2 question 7). WORK_ABROAD weights
     #: post-study work rights; RETURN_HOME makes return-bonded awards acceptable;
     #: PHD weights research tracks.

@@ -3,6 +3,7 @@ import logging
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from datetime import date
 from typing import cast
 from uuid import UUID
 
@@ -57,18 +58,19 @@ class ProfileQuestion:
 #: (design-lint-baseline defect 2). Every key in QUESTIONS must have an entry —
 #: a missing one raises KeyError at import, not silently mid-wizard.
 QUESTION_LABELS = {
-    "nationality": "Your nationality (country name or 2-letter code)",
-    "country_of_residence": "Where do you live now? (country name or 2-letter code)",
+    "nationality": "What is your nationality?",
+    "country_of_residence": "Where do you live now?",
     "date_of_birth": "Your date of birth",
-    "academic_history": "Where do you study & your degree so far",
+    "academic_history": "Where do you study? Add every degree you have or are doing",
     "expected_completion": "When do you expect to graduate?",
-    "target_field": "What do you want to study, and anything specific within it?",
+    "target_field": "What do you want to study?",
+    "other_target_fields": "Any other subjects you would also study? Optional, comma-separated",
     "research_interests": (
         "Which direction or sub-fields fit what you want to study? "
         "Comma-separated, or leave blank to include all"
     ),
-    "allowed_countries": "Which countries would you consider? Leave empty for anywhere",
-    "excluded_countries": "Any countries to rule out?",
+    "allowed_countries": "Which countries would you consider? Pick none for anywhere",
+    "excluded_countries": "Any countries to rule out? Pick none to keep them all",
     "intended_intake": "When do you want to start?",
     "funding_dependency": "Can you go without a scholarship?",
     "self_funding_capacity": (
@@ -90,6 +92,10 @@ QUESTION_LABELS = {
         "or plan to take and by when? (A prior degree only waives a test where the target "
         "programme explicitly accepts Medium of Instruction waivers upon graduation)"
     ),
+    "work_history": "Have you worked? Add jobs, internships and research posts",
+    "volunteering": "Any volunteering or social activities?",
+    "publications": "Any publications?",
+    "projects": "Any projects you are proud of? Study, personal or team projects",
     "additional_notes": (
         "Anything else we should know? "
         "(e.g., years of work or research experience, 1-year or 2-year preference, "
@@ -137,6 +143,7 @@ QUESTIONS = (
         "research_interests",
         lambda draft: needs_field_disambiguation(draft.answer("target_field")),
     ),
+    _question("other_target_fields", _always),
     _question("allowed_countries", _always),
     _question("excluded_countries", _always),
     _question("intended_intake", _always),
@@ -152,6 +159,10 @@ QUESTIONS = (
     _question(
         "language_evidence", lambda draft: bool(draft.answer("acceptable_teaching_languages"))
     ),
+    _question("work_history", _always),
+    _question("volunteering", _always),
+    _question("publications", _always),
+    _question("projects", _always),
     _question("academic_history", _always),
     _question("expected_completion", lambda draft: _undated(draft.answers)),
     _question("additional_notes", _always),
@@ -180,7 +191,9 @@ class ConsultationDraft:
     def answer(self, key: str) -> object | None:
         return self.answers.get(key)
 
-    def with_answer(self, key: str, value: object) -> ConsultationDraft:
+    def with_answer(self, key: str, value: object, *, whole: bool = False) -> ConsultationDraft:
+        """`whole`: the answer is the complete list (the degree form shows every
+        row). Otherwise one posted degree replaces only the first, as before."""
         answers = {**self.answers, key: value}
         if key == "funding_dependency" and value == "MANDATORY":
             answers.pop("self_funding_capacity", None)
@@ -203,23 +216,30 @@ class ConsultationDraft:
         if key == "academic_history":
             prev_hist = self.answers.get("academic_history")
             if (
-                isinstance(value, list)
+                not whole
+                and isinstance(value, list)
                 and len(value) == 1
-                and isinstance(value[0], dict)
                 and isinstance(prev_hist, list)
-                and prev_hist
-                and isinstance(prev_hist[0], dict)
+                and len(prev_hist) > 1
             ):
-                merged_first = dict(value[0])
-                prev_inst = str(prev_hist[0].get("institution") or "").strip().casefold()
-                new_inst = str(merged_first.get("institution") or "").strip().casefold()
-                if (
-                    not merged_first.get("courses")
-                    and prev_hist[0].get("courses")
-                    and prev_inst == new_inst
-                ):
-                    merged_first["courses"] = prev_hist[0]["courses"]
-                answers["academic_history"] = [merged_first, *prev_hist[1:]]
+                value = [value[0], *prev_hist[1:]]
+            if isinstance(value, list) and isinstance(prev_hist, list):
+                # A typed degree carries no courses; keep a transcript's courses on
+                # the degree at the same institution.
+                held = {
+                    str(rec.get("institution") or "").strip().casefold(): rec.get("courses")
+                    for rec in prev_hist
+                    if isinstance(rec, dict) and rec.get("courses")
+                }
+                kept = [
+                    {**rec, "courses": held[inst]}
+                    if isinstance(rec, dict)
+                    and not rec.get("courses")
+                    and (inst := str(rec.get("institution") or "").strip().casefold()) in held
+                    else rec
+                    for rec in value
+                ]
+                answers["academic_history"] = kept
             if not _undated(answers):
                 answers.pop("expected_completion", None)
             # The highlights were about the reading's record, which the student
@@ -654,6 +674,25 @@ def _apply_duration_preference_from_notes(text: str, payload: dict[str, object])
     payload["longer_program_justifications"] = justifications or ["FUNDING", "RESEARCH"]
 
 
+def _experience_from_roles(roles: list[object]) -> list[dict[str, object]]:
+    """The matcher's `experience` rows from the typed work history: one row per
+    role, its months counted from the start month to the end month (or today)."""
+    today = date.today()
+    out: list[dict[str, object]] = []
+    for role in roles:
+        if not isinstance(role, dict) or role.get("kind") == "VOLUNTEER":
+            continue
+        try:
+            start = date.fromisoformat(str(role["start_date"]))
+            end = date.fromisoformat(str(role["end_date"])) if role.get("end_date") else today
+        except (KeyError, ValueError):
+            continue
+        months = max(0, min(600, (end.year - start.year) * 12 + end.month - start.month))
+        summary = f"{role.get('title')} at {role.get('organisation')}"[:1000]
+        out.append({"kind": role.get("kind"), "summary": summary, "months": months})
+    return out
+
+
 def _profile_payload(
     draft: ConsultationDraft,
     *,
@@ -697,6 +736,12 @@ def _profile_payload(
             {**history[0], "expected_completion": graduation},
             *history[1:],
         ]
+    # Typed roles are the matcher's experience. "None" leaves the notes, the CV's
+    # facts and the previous profile to say, as before the question existed.
+    if "experience" not in payload and payload.get("work_history"):
+        payload["experience"] = _experience_from_roles(
+            cast(list[object], payload["work_history"])
+        )
     if "experience" not in payload:
         parsed_exp = _experience_from_notes(payload.get("additional_notes"))
         if parsed_exp is not None:

@@ -18,10 +18,12 @@ from .question_widgets import (
     country_choices,
     money_widget,
 )
+from .row_fields import RowPart, RowsField, month_to_date, year_or_none
 from .schemas import StudentProfileSnapshot
 
 _COMMA_SEPARATED = {
     "acceptable_teaching_languages",
+    "other_target_fields",
     "allowed_countries",
     "excluded_countries",
     "research_interests",
@@ -121,6 +123,7 @@ def normalize_country_code(raw: object) -> str:
     return _country_name_lookup().get(upper, upper)
 _OPTIONAL_VALUES = {
     "language_evidence",
+    "other_target_fields",
     "allowed_countries",
     "excluded_countries",
     "additional_notes",
@@ -354,13 +357,27 @@ _EVIDENCE_TYPES = [
     ),
     ("OTHER", "Other proof"),
 ]
-#: ponytail: three rows; a student with evidence for more than three languages is rare, so add a
-#: row when one appears rather than build an "add another" flow now.
-_LANGUAGE_ROWS = 3
+#: One row per language the student said they could study in (2026-11-16: five,
+#: the template shows only the languages from the previous question).
+_LANGUAGE_ROWS = 5
 _LANGUAGE_PARTS = ("language", "level", "evidence_type", "available_by")
 _LANGUAGE_ROW_INCOMPLETE = (
     "For each language, fill in the level, how you can prove it and the date you will "
     "have that proof, or leave the whole row empty."
+)
+#: The certificates a student picks from on the language question.
+LANGUAGE_TESTS = (
+    "IELTS Academic", "TOEFL iBT", "Duolingo English Test", "PTE Academic",
+    "Cambridge English", "TestDaF", "Goethe-Zertifikat",
+    "DELF / DALF", "DELE", "TOEIC", "Other test",
+)
+#: What the student says about each language, and how it is stored.
+LANGUAGE_STATUSES = (
+    ("HAVE", "I have a certificate"),
+    ("PLAN", "I will take a test"),
+    ("MOI", "My degree was taught in it"),
+    ("NATIVE", "It is my native language"),
+    ("NONE", "Nothing yet"),
 )
 
 
@@ -379,9 +396,11 @@ class _RecordWidget(forms.MultiWidget):
         widgets: list[forms.Widget],
         parts: tuple[str, ...],
         labels: tuple[str, ...] = (),
+        row_titles: tuple[str, ...] = (),
     ) -> None:
         self.parts = parts
         self.labels = labels
+        self.row_titles = row_titles
         super().__init__(widgets)
 
     def decompress(self, value: object) -> list[object]:
@@ -433,6 +452,21 @@ class _RecordWidget(forms.MultiWidget):
                 )
             else:
                 cells.append(format_html('<div class="q-part">{}</div>', sub_html))
+        if self.row_titles:
+            width = len(self.parts)
+            rows = [
+                format_html(
+                    '<fieldset class="q-row-card" data-repeat-row><legend>{}</legend>'
+                    '<div class="q-grid">{}</div></fieldset>',
+                    title,
+                    mark_safe("".join(cells[i * width : (i + 1) * width])),  # nosec B703 B308 - built from format_html
+                )
+                for i, title in enumerate(self.row_titles)
+            ]
+            return format_html(
+                '<div class="q-rows" data-repeat data-noun="degree">{}</div>',
+                mark_safe("".join(rows)),  # nosec B703 B308 - built from format_html
+            )
         return format_html(
             '<div class="q-structured q-grid">{}</div>',
             mark_safe("".join(cells)),  # nosec B703 B308 - built from format_html
@@ -449,52 +483,77 @@ _DEGREE_REQUIRED_LABELS = (
 )
 
 
+#: Up to three degrees: a dual diploma, or a Bachelor's and a finished Master's,
+#: is one row each (2026-11-16). The first row is the latest degree.
+_DEGREE_ROWS = 3
+_DEGREE_ROW_TITLES = ("Your latest degree", "Another degree", "Another degree")
+
+
 class AcademicRecordField(forms.MultiValueField):
-    """The latest degree, typed when no transcript reading is ready (onboarding friction
+    """The student's degrees, typed when no transcript reading is ready (onboarding friction
     design 2026-10-15, variant 1). Courses are never typed: they come only from a reading.
-    SHOULD BE DONE BY AYKHAN: a label per input, and the layout."""
+    The first row is required; the others are for a second degree or a dual diploma."""
 
     def __init__(self) -> None:
-        fields = (
-            forms.CharField(max_length=200, required=False),
-            forms.CharField(max_length=100, required=False),
-            forms.CharField(max_length=100, required=False),
-            forms.CharField(max_length=200, required=False),
-            forms.CharField(max_length=50, required=False),
-            forms.CharField(max_length=100, required=False),
-            forms.DateField(required=False),
-            forms.DateField(required=False),
-        )
-        widgets: list[forms.Widget] = [
-            forms.TextInput(attrs={"placeholder": text, "aria-label": text})
-            for text in _DEGREE_PLACEHOLDERS[:6]
-        ]
-        widgets[1].attrs["list"] = "country-datalist"
-        widgets[2].attrs["list"] = "qualification-datalist"
-        widgets[3].attrs["list"] = "field-datalist"
-        widgets[5].attrs["list"] = "grading-scale-datalist"
-        widgets += [
-            _date_input(_DEGREE_PLACEHOLDERS[6]),
-            _date_input(_DEGREE_PLACEHOLDERS[7]),
-        ]
+        fields: list[forms.Field] = []
+        widgets: list[forms.Widget] = []
+        for _row in range(_DEGREE_ROWS):
+            fields += [
+                forms.CharField(max_length=200, required=False),
+                forms.CharField(max_length=100, required=False),
+                forms.CharField(max_length=100, required=False),
+                forms.CharField(max_length=200, required=False),
+                forms.CharField(max_length=50, required=False),
+                forms.CharField(max_length=100, required=False),
+                forms.DateField(required=False),
+                forms.DateField(required=False),
+            ]
+            row_widgets: list[forms.Widget] = [
+                forms.TextInput(attrs={"placeholder": text, "aria-label": text})
+                for text in _DEGREE_PLACEHOLDERS[:6]
+            ]
+            row_widgets[1].attrs["list"] = "country-datalist"
+            row_widgets[2].attrs["list"] = "qualification-datalist"
+            row_widgets[3].attrs["list"] = "field-datalist"
+            row_widgets[5].attrs["list"] = "grading-scale-datalist"
+            row_widgets += [
+                _date_input(_DEGREE_PLACEHOLDERS[6]),
+                _date_input(_DEGREE_PLACEHOLDERS[7]),
+            ]
+            widgets += row_widgets
         super().__init__(
-            fields=fields,
-            widget=_RecordWidget(widgets, _DEGREE_PARTS, labels=_DEGREE_PLACEHOLDERS),
+            fields=tuple(fields),
+            widget=_RecordWidget(
+                widgets,
+                _DEGREE_PARTS,
+                labels=_DEGREE_PLACEHOLDERS * _DEGREE_ROWS,
+                row_titles=_DEGREE_ROW_TITLES,
+            ),
             require_all_fields=False,
         )
 
     def compress(self, data_list: list[object]) -> list[dict[str, object]] | None:
         if not data_list:
             return None
-        record = dict(zip(_DEGREE_PARTS, data_list, strict=True))
-        for part_key, part_label in _DEGREE_REQUIRED_LABELS:
-            if not str(record.get(part_key) or "").strip():
-                raise forms.ValidationError(f"{part_label}: fill this in.")
-        record["country_code"] = normalize_country_code(record["country_code"])
-        for key in ("completed_on", "expected_completion"):
-            when = record[key]
-            record[key] = when.isoformat() if isinstance(when, date) else None
-        return [{**record, "courses": []}]
+        width = len(_DEGREE_PARTS)
+        records: list[dict[str, object]] = []
+        for row in range(_DEGREE_ROWS):
+            cells = list(data_list[row * width : (row + 1) * width])
+            if len(cells) < width:
+                break
+            record = dict(zip(_DEGREE_PARTS, cells, strict=True))
+            if row > 0 and not any(str(v or "").strip() for v in record.values()):
+                continue
+            prefix = "" if row == 0 else f"{_DEGREE_ROW_TITLES[row]} ({row + 1}) — "
+            for part_key, part_label in _DEGREE_REQUIRED_LABELS:
+                if not str(record.get(part_key) or "").strip():
+                    raise forms.ValidationError(f"{prefix}{part_label}: fill this in.")
+            record["country_code"] = normalize_country_code(record["country_code"])
+            for key in ("completed_on", "expected_completion"):
+                when = record[key]
+                record[key] = when.isoformat() if isinstance(when, date) else None
+            records.append({**record, "courses": []})
+        return records
 
 
 class LanguageEvidenceField(forms.MultiValueField):
@@ -564,7 +623,19 @@ class LanguageEvidenceField(forms.MultiValueField):
             ):
                 row["available_by"] = date.today()
             if not all(row.values()):
-                raise forms.ValidationError(_LANGUAGE_ROW_INCOMPLETE)
+                language = str(row.get("language") or "").strip()
+                if not language:
+                    raise forms.ValidationError(_LANGUAGE_ROW_INCOMPLETE)
+                missing = [
+                    label
+                    for part, label in (
+                        ("level", "the test and your score"),
+                        ("evidence_type", "how you can prove it"),
+                        ("available_by", "the date"),
+                    )
+                    if not row.get(part)
+                ]
+                raise forms.ValidationError(f"{language}: add {' and '.join(missing)}.")
             row["available_by"] = cast(date, row["available_by"]).isoformat()
             rows.append(row)
         return rows
@@ -574,15 +645,11 @@ class CountryChoiceField(forms.ChoiceField):
     def __init__(self, **kwargs: Any) -> None:
         kwargs.setdefault("choices", country_choices())
         kwargs.setdefault("error_messages", {"required": "Choose a country."})
+        # A real <select> of every country, so it works without JavaScript; app.js
+        # turns it into a type-to-filter list (data-country-search).
         kwargs.setdefault(
             "widget",
-            forms.TextInput(
-                attrs={
-                    "list": "country-datalist",
-                    "autofocus": "autofocus",
-                    "placeholder": "e.g. Azerbaijan, Germany, UK, AZ",
-                }
-            ),
+            forms.Select(attrs={"autofocus": "autofocus", "data-country-search": ""}),
         )
         super().__init__(**kwargs)
 
@@ -591,7 +658,105 @@ class CountryChoiceField(forms.ChoiceField):
         return normalize_country_code(val) if val else ""
 
 
+_ROLE_KINDS = (
+    ("WORK", "Job"),
+    ("INTERNSHIP", "Internship"),
+    ("RESEARCH", "Research post"),
+)
+PUBLICATION_LEVELS = (
+    ("Q1", "Journal, Q1"),
+    ("Q2", "Journal, Q2"),
+    ("Q3", "Journal, Q3"),
+    ("Q4", "Journal, Q4"),
+    ("INDEXED", "Journal, indexed (Scopus / Web of Science), quartile unknown"),
+    ("NOT_INDEXED", "Journal, not indexed"),
+    ("CONFERENCE", "Conference paper"),
+    ("PREPRINT", "Preprint"),
+    ("OTHER", "Other"),
+)
+
+
+def _role(raw: dict[str, str]) -> dict[str, object]:
+    start = month_to_date(raw["start"])
+    end = month_to_date(raw["end"])
+    if start and end and end < start:
+        raise ValueError("the end date is before the start date.")
+    return {
+        "kind": raw["kind"],
+        "title": raw["title"],
+        "organisation": raw["organisation"],
+        "start_date": start,
+        "end_date": end,
+    }
+
+
+def _publication(raw: dict[str, str]) -> dict[str, object]:
+    return {
+        "title": raw["title"],
+        "authors": raw["authors"],
+        "venue": raw["venue"],
+        "year": year_or_none(raw["year"]),
+        "level": raw["level"],
+    }
+
+
+def _project(raw: dict[str, str]) -> dict[str, object]:
+    return {"title": raw["title"], "summary": raw["summary"], "year": year_or_none(raw["year"])}
+
+
+def _role_parts(kinds: tuple[tuple[str, str], ...] | None) -> tuple[RowPart, ...]:
+    kind = (
+        RowPart("kind", "Type", "select", choices=kinds)
+        if kinds
+        else RowPart("kind", "", "hidden", fixed="VOLUNTEER")
+    )
+    return (
+        kind,
+        RowPart("title", "Role", placeholder="e.g. Lab assistant"),
+        RowPart("organisation", "Organisation", placeholder="e.g. Baku State University"),
+        RowPart("start", "From", "month"),
+        RowPart("end", "To", "month", required=False),
+    )
+
+
+def _rows_field(key: str) -> RowsField:
+    if key == "work_history":
+        return RowsField(_role_parts(_ROLE_KINDS), rows=6, noun="Role", build=_role)
+    if key == "volunteering":
+        return RowsField(_role_parts(None), rows=5, noun="Activity", build=_role)
+    if key == "publications":
+        return RowsField(
+            (
+                RowPart("title", "Title"),
+                RowPart(
+                    "authors", "Authors, as printed", placeholder="e.g. Mammadova A., Aliyev R."
+                ),
+                RowPart("venue", "Journal or conference"),
+                RowPart("year", "Year", "year"),
+                RowPart("level", "Level", "select", choices=PUBLICATION_LEVELS),
+            ),
+            rows=6,
+            noun="Publication",
+            build=_publication,
+        )
+    return RowsField(
+        (
+            RowPart("title", "Project"),
+            RowPart("summary", "What you did, in a sentence or two", "textarea"),
+            RowPart("year", "Year", "year", required=False),
+        ),
+        rows=5,
+        noun="Project",
+        build=_project,
+    )
+
+
+ROW_QUESTIONS = frozenset({"work_history", "volunteering", "publications", "projects"})
+
+
 def question_field(key: str) -> forms.Field:
+    if key in ROW_QUESTIONS:
+        return _rows_field(key)
     if key in _COMMA_SEPARATED:
         placeholders = {
             "allowed_countries": (
@@ -601,15 +766,18 @@ def question_field(key: str) -> forms.Field:
                 "Leave empty for none, or tick/type countries to rule out"
             ),
             "acceptable_teaching_languages": "e.g. English, German",
+            "other_target_fields": "e.g. Data Science, Materials Science",
             "research_interests": (
                 "Tick sub-fields below, type comma-separated interests, or leave blank for all"
             ),
         }
+        attrs = {"placeholder": placeholders.get(key, ""), "autofocus": "autofocus"}
+        if key == "other_target_fields":
+            attrs["list"] = "field-datalist"
         return forms.CharField(
             required=key not in _OPTIONAL_VALUES,
-            widget=forms.TextInput(
-                attrs={"placeholder": placeholders.get(key, ""), "autofocus": "autofocus"}
-            ),
+            max_length=1000,
+            widget=forms.TextInput(attrs=attrs),
         )
     if key in _MONEY_VALUES:
         return MoneyField(required=key not in _OPTIONAL_VALUES)
@@ -794,9 +962,12 @@ def _merge_quick_inputs(key: str, data: Mapping[str, Any] | None) -> dict[str, A
                 except ValueError:
                     parsed_acad = None
             if isinstance(parsed_acad, list) and parsed_acad and isinstance(parsed_acad[0], dict):
-                rec0 = parsed_acad[0]
-                for idx, part in enumerate(_DEGREE_PARTS):
-                    merged[f"value_{idx}"] = str(rec0.get(part) or "")
+                width = len(_DEGREE_PARTS)
+                for row, rec in enumerate(parsed_acad[:_DEGREE_ROWS]):
+                    if not isinstance(rec, dict):
+                        continue
+                    for idx, part in enumerate(_DEGREE_PARTS):
+                        merged[f"value_{row * width + idx}"] = str(rec.get(part) or "")
         if any(f"value_{part}" in data for part in _DEGREE_PARTS):
             for idx, part in enumerate(_DEGREE_PARTS):
                 if f"value_{idx}" not in data:
@@ -830,18 +1001,14 @@ def _merge_quick_inputs(key: str, data: Mapping[str, Any] | None) -> dict[str, A
             for idx in range(_LANGUAGE_ROWS * 4):
                 merged[f"value_{idx}"] = ""
         elif preset in {"IELTS", "TOEFL", "DUOLINGO", "TESTDAF"}:
-            defaults = {
-                "IELTS": ("English", "IELTS 7.0", "TEST"),
-                "TOEFL": ("English", "TOEFL 100", "TEST"),
-                "DUOLINGO": ("English", "Duolingo 125", "TEST"),
-                "TESTDAF": ("German", "TestDaF TDN 4", "TEST"),
-            }[preset]
+            # Fills the language and the proof type only. It used to fill a score
+            # too ("IELTS 7.0"), saving a result the student never stated.
+            language = "German" if preset == "TESTDAF" else "English"
             if not str(merged.get("value_0") or "").strip():
-                merged["value_0"] = defaults[0]
-            if not str(merged.get("value_1") or "").strip():
-                merged["value_1"] = defaults[1]
+                merged["value_0"] = language
             if not str(merged.get("value_2") or "").strip():
-                merged["value_2"] = defaults[2]
+                merged["value_2"] = "TEST"
+        _merge_language_cards(data, merged)
     elif key == "additional_notes":
         ticks = _checked_list(data, "priority_ticks")
         dur_tick = str(data.get("duration_tick") or "").strip()
@@ -861,6 +1028,32 @@ def _merge_quick_inputs(key: str, data: Mapping[str, Any] | None) -> dict[str, A
                     parts.append(phrase)
             merged["value"] = " ".join(parts)[:1000]
     return merged
+
+
+def _merge_language_cards(data: Mapping[str, Any], merged: dict[str, Any]) -> None:
+    """The language question's cards (`lang_<i>_language|status|test|score|date`) as the
+    field's four cells per row: language, level, evidence type, date."""
+    if not any(str(k).startswith("lang_") for k in data):
+        return
+    for row in range(_LANGUAGE_ROWS):
+        language = str(data.get(f"lang_{row}_language") or "").strip()
+        status = str(data.get(f"lang_{row}_status") or "").strip().upper()
+        test = str(data.get(f"lang_{row}_test") or "").strip()
+        score = str(data.get(f"lang_{row}_score") or "").strip()
+        when = str(data.get(f"lang_{row}_date") or "").strip()
+        cells = ["", "", "", ""]
+        if language and status == "HAVE":
+            level = f"{test} {score}".strip() if test and score else ""
+            cells = [language, level, "TEST", when]
+        elif language and status == "PLAN":
+            level = (f"{test} {score}" if score else f"{test} (planned)") if test else ""
+            cells = [language, level, "TEST", when]
+        elif language and status == "MOI":
+            cells = [language, "C1", "DEGREE", when]
+        elif language and status == "NATIVE":
+            cells = [language, "Native", "OTHER", when or date.today().isoformat()]
+        for j, cell in enumerate(cells):
+            merged[f"value_{row * 4 + j}"] = cell
 
 
 class ConsultationQuestionForm(forms.Form):

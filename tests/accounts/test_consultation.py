@@ -226,9 +226,12 @@ def test_the_review_step_reads_structured_answers_as_text(
     client.force_login(user_a)
     body = complete_consultation(client, host=domain_a.host).content.decode()
     assert "Check your answers" in body
-    assert "DE; FR" in body
-    assert "amount: 150.00, currency: EUR" in body
-    assert "institution: Baku State University" in body
+    # Grouped by topic and read as words (2026-11-16): names, not codes.
+    assert "Germany, France" in body
+    assert "150 EUR" in body
+    assert "BSc Chemistry, Baku State University (Azerbaijan)" in body
+    for topic in ("Personal", "Education", "Study plans", "Languages", "Money"):
+        assert f">{topic}</h3>" in body
     assert "[" not in body.split("Check your answers", 1)[1].split("</dl>", 1)[0]
     assert "{" not in body.split("Check your answers", 1)[1].split("</dl>", 1)[0]
 
@@ -308,7 +311,7 @@ def test_back_and_review_change_actions_allow_editing_answers(
         {"action": "back"},
         HTTP_HOST=domain_a.host,
     ).content.decode()
-    assert "Your nationality" in back_resp
+    assert "What is your nationality?" in back_resp
     assert 'value="AZ"' in back_resp
 
     review_body = complete_consultation(client, host=domain_a.host).content.decode()
@@ -356,7 +359,7 @@ def test_returning_student_with_finalized_profile_lands_on_review_to_edit_single
         HTTP_HOST=domain_a.host,
     ).content.decode()
     assert "Check your answers" in edited
-    assert "DE; FR; NL" in edited
+    assert "Germany, France, Netherlands" in edited
 
     resp = confirm_consultation(client, host=domain_a.host)
     assert resp.status_code == 302
@@ -384,6 +387,7 @@ def test_money_step_defaults_currency_from_residence_or_prior_money_answer(
         ("country_of_residence", "AZ"),
         ("date_of_birth", "2002-05-01"),
         ("target_field", "Chemistry"),
+        ("other_target_fields", ""),
         ("allowed_countries", "DE"),
         ("excluded_countries", ""),
         ("intended_intake", "2027-09-01"),
@@ -509,6 +513,7 @@ def test_a_question_sent_back_by_the_review_says_why(client, domain_a, user_a, m
         ("country_of_residence", "AZ"),
         ("date_of_birth", "2002-05-01"),
         ("target_field", "Chemistry"),
+        ("other_target_fields", ""),
         ("allowed_countries", "DE"),
         ("excluded_countries", ""),
         ("intended_intake", "2027-09-01"),
@@ -528,6 +533,10 @@ def test_a_question_sent_back_by_the_review_says_why(client, domain_a, user_a, m
                 }
             ],
         ),
+        ("work_history", []),
+        ("volunteering", []),
+        ("publications", []),
+        ("projects", []),
         (
             "academic_history",
             [

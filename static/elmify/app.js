@@ -348,3 +348,187 @@ function countUp(root) {
 }
 document.addEventListener("DOMContentLoaded", function () { countUp(document); });
 document.addEventListener("htmx:load", function (event) { countUp(event.target); });
+
+/* ---------- profile questions (2026-11-16) ----------
+ * Each enhancer upgrades plain HTML that already works without script. */
+function initProfileQuestions(root) {
+  var scope = root && root.querySelectorAll ? root : document;
+
+  /* One country: the <select> becomes a box you type into. Every country is
+   * listed; typing keeps names that start with the letters first, then the rest
+   * that contain them. The select stays in the form and holds the answer. */
+  scope.querySelectorAll("select[data-country-search]").forEach(function (select) {
+    if (select.dataset.enhanced) return;
+    select.dataset.enhanced = "1";
+    var options = Array.prototype.slice.call(select.options).filter(function (o) { return o.value; });
+    var wrap = document.createElement("div");
+    wrap.className = "combo";
+    var input = document.createElement("input");
+    input.type = "text";
+    input.className = "combo-input";
+    input.id = select.id + "_search";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("autocomplete", "off");
+    input.placeholder = "Start typing a country…";
+    var list = document.createElement("ul");
+    list.className = "combo-list";
+    list.id = select.id + "_list";
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+    input.setAttribute("aria-controls", list.id);
+    var label = document.querySelector('label[for="' + select.id + '"]');
+    if (label) label.setAttribute("for", input.id);
+    var chosen = select.options[select.selectedIndex];
+    if (chosen && chosen.value) input.value = chosen.text;
+    select.hidden = true;
+    select.removeAttribute("autofocus");
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(input);
+    wrap.appendChild(list);
+    wrap.appendChild(select);
+    var active = -1;
+    function render() {
+      var q = input.value.trim().toLowerCase();
+      var starts = [], contains = [];
+      options.forEach(function (o) {
+        var name = o.text.toLowerCase();
+        if (!q || name.indexOf(q) === 0) starts.push(o);
+        else if (name.indexOf(q) > 0) contains.push(o);
+      });
+      var shown = starts.concat(contains);
+      list.innerHTML = "";
+      shown.forEach(function (o, i) {
+        var li = document.createElement("li");
+        li.setAttribute("role", "option");
+        li.id = list.id + "_" + o.value;
+        li.textContent = o.text;
+        li.dataset.value = o.value;
+        li.addEventListener("mousedown", function (e) { e.preventDefault(); pick(o); });
+        list.appendChild(li);
+      });
+      if (!shown.length) {
+        var none = document.createElement("li");
+        none.className = "combo-empty";
+        none.textContent = "No country matches";
+        list.appendChild(none);
+      }
+      active = shown.length ? 0 : -1;
+      mark();
+      list.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+    }
+    function mark() {
+      Array.prototype.forEach.call(list.children, function (li, i) {
+        li.setAttribute("aria-selected", i === active ? "true" : "false");
+        if (i === active) { input.setAttribute("aria-activedescendant", li.id); li.scrollIntoView({ block: "nearest" }); }
+      });
+    }
+    function pick(o) {
+      select.value = o.value;
+      input.value = o.text;
+      close();
+    }
+    function close() { list.hidden = true; input.setAttribute("aria-expanded", "false"); }
+    input.addEventListener("click", render);
+    input.addEventListener("input", function () { select.value = ""; render(); });
+    input.addEventListener("blur", function () {
+      close();
+      var exact = options.filter(function (o) { return o.text.toLowerCase() === input.value.trim().toLowerCase(); })[0];
+      if (exact) pick(exact);
+    });
+    input.addEventListener("keydown", function (e) {
+      var items = list.querySelectorAll('li[role="option"]');
+      if (e.key === "ArrowDown") { e.preventDefault(); if (list.hidden) render(); active = Math.min(items.length - 1, active + 1); mark(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); active = Math.max(0, active - 1); mark(); }
+      else if (e.key === "Enter" && !list.hidden && items[active]) {
+        e.preventDefault();
+        pick(options.filter(function (o) { return o.value === items[active].dataset.value; })[0]);
+      } else if (e.key === "Escape") { close(); }
+    });
+    if (document.activeElement === document.body || !document.activeElement) input.focus();
+  });
+
+  /* Many countries: a search box filters the continent groups. */
+  scope.querySelectorAll("[data-country-picker]").forEach(function (picker) {
+    if (picker.dataset.enhanced) return;
+    picker.dataset.enhanced = "1";
+    var filter = picker.querySelector("[data-country-filter]");
+    var count = picker.querySelector("[data-country-count]");
+    filter.hidden = false;
+    function tally() {
+      var n = picker.querySelectorAll('input[name="country_ticks"]:checked').length;
+      count.textContent = n ? n + " selected" : "";
+    }
+    filter.addEventListener("input", function () {
+      var q = filter.value.trim().toLowerCase();
+      picker.querySelectorAll("[data-continent]").forEach(function (group) {
+        var any = false;
+        group.querySelectorAll(".country-chip").forEach(function (chip) {
+          var hit = !q || chip.dataset.name.indexOf(q) !== -1;
+          chip.hidden = !hit;
+          any = any || hit;
+        });
+        group.hidden = !any;
+      });
+    });
+    filter.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      var first = picker.querySelector(".country-chip:not([hidden]) input");
+      if (first) { first.checked = !first.checked; tally(); filter.select(); }
+    });
+    picker.addEventListener("change", tally);
+    tally();
+  });
+
+  /* Repeating rows: filled rows plus one empty, and "Add another". */
+  scope.querySelectorAll("[data-repeat]").forEach(function (group) {
+    if (group.dataset.enhanced) return;
+    group.dataset.enhanced = "1";
+    var rows = Array.prototype.slice.call(group.querySelectorAll("[data-repeat-row]"));
+    function filled(row) {
+      return Array.prototype.some.call(row.querySelectorAll("input:not([type=hidden]), select, textarea"), function (el) {
+        return el.value && el.value.trim() !== "";
+      });
+    }
+    var last = 0;
+    rows.forEach(function (row, i) { if (filled(row)) last = i + 1; });
+    var showUpTo = Math.max(1, last);
+    rows.forEach(function (row, i) { row.hidden = i >= showUpTo; });
+    if (rows.length > showUpTo) {
+      var add = document.createElement("button");
+      add.type = "button";
+      add.className = "btn btn-quiet q-add";
+      add.textContent = "+ Add another " + (group.dataset.noun || "").toLowerCase();
+      add.addEventListener("click", function () {
+        var next = rows.filter(function (r) { return r.hidden; })[0];
+        if (next) {
+          next.hidden = false;
+          var field = next.querySelector("input:not([type=hidden]), select, textarea");
+          if (field) field.focus();
+        }
+        if (!rows.some(function (r) { return r.hidden; })) add.remove();
+      });
+      group.appendChild(add);
+    }
+  });
+
+  /* Language cards: show the test, score and date only when they apply. */
+  scope.querySelectorAll("[data-lang-card]").forEach(function (card) {
+    if (card.dataset.enhanced) return;
+    card.dataset.enhanced = "1";
+    function sync() {
+      var picked = card.querySelector('input[type="radio"]:checked');
+      var status = picked ? picked.value : "NONE";
+      card.querySelectorAll("[data-when]").forEach(function (el) {
+        el.hidden = el.dataset.when.split(" ").indexOf(status) === -1;
+      });
+    }
+    card.addEventListener("change", sync);
+    sync();
+  });
+}
+document.addEventListener("DOMContentLoaded", function () { initProfileQuestions(document); });
+document.addEventListener("htmx:load", function (event) { initProfileQuestions(event.target); });

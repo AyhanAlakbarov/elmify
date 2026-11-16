@@ -40,6 +40,7 @@ def complete_consultation(client: Client, *, host: str):
         ("country_of_residence", "AZ"),
         ("date_of_birth", "2002-05-01"),
         ("target_field", "Chemistry"),
+        ("other_target_fields", ""),
         ("allowed_countries", "DE,FR"),
         ("excluded_countries", "US"),
         ("intended_intake", "2027-09-01"),
@@ -49,6 +50,10 @@ def complete_consultation(client: Client, *, host: str):
         ("career_intent", "PHD"),
         ("acceptable_teaching_languages", "English"),
         ("language_evidence", []),
+        ("work_history", []),
+        ("volunteering", []),
+        ("publications", []),
+        ("projects", []),
         (
             "academic_history",
             [

@@ -1,5 +1,6 @@
 import logging
 from dataclasses import replace
+from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID
@@ -50,11 +51,13 @@ from .consultation import (
     validate_draft,
     write_draft,
 )
+from .countries import countries_by_continent
 from .field_taxonomy import resolve_field_taxonomy
 from .forms import (
     DURATION_TICK_OPTIONS,
+    LANGUAGE_STATUSES,
+    LANGUAGE_TESTS,
     MONEY_PRESETS,
-    POPULAR_DESTINATIONS,
     POPULAR_FIELDS,
     POPULAR_TEACHING_LANGUAGES,
     PRIORITY_TICK_OPTIONS,
@@ -64,6 +67,7 @@ from .forms import (
 )
 from .models import StudentProfileVersion
 from .profile_versions import ProfileVersionRejected, create_profile_version
+from .review import review_sections, topic_of
 from .schemas import Money, StudentProfileSnapshot
 
 logger = logging.getLogger(__name__)
@@ -155,6 +159,42 @@ def _language_context_note_for(draft: ConsultationDraft, key: str) -> str:
     return ""
 
 
+def _language_cards(draft: ConsultationDraft, seed: object) -> list[dict[str, str]]:
+    """One card per language the student can study in, prefilled from what they saved."""
+    saved = {
+        str(row.get("language", "")).casefold(): row
+        for row in (seed if isinstance(seed, list) else [])
+        if isinstance(row, dict)
+    }
+    raw = draft.answer("acceptable_teaching_languages")
+    languages = [str(lang) for lang in raw] if isinstance(raw, list) else []
+    cards = []
+    for index, language in enumerate(languages[:5]):
+        row = saved.get(language.casefold(), {})
+        level = str(row.get("level") or "")
+        kind = row.get("evidence_type")
+        test = next((t for t in LANGUAGE_TESTS if level.startswith(t)), "")
+        score = level[len(test) :].strip() if test else ""
+        planned = score == "(planned)"
+        when = str(row.get("available_by") or "")
+        status = (
+            ("PLAN" if planned or when > date.today().isoformat() else "HAVE")
+            if kind == "TEST"
+            else "MOI" if kind == "DEGREE" else "NATIVE" if level == "Native" else "NONE"
+        )
+        cards.append(
+            {
+                "index": str(index),
+                "language": language,
+                "status": status if row else "",
+                "test": test,
+                "score": "" if planned else score,
+                "date": when if kind == "TEST" else "",
+            }
+        )
+    return cards
+
+
 def _render_question(
     request: HttpRequest,
     draft: ConsultationDraft,
@@ -204,11 +244,19 @@ def _render_question(
             draft.correction_key is not None or previous_question_key(draft) is not None
         ),
         "error": error,
-        "popular_destinations": (
-            POPULAR_DESTINATIONS
+        "country_groups": (
+            countries_by_continent()
             if question.key in {"allowed_countries", "excluded_countries"}
             else ()
         ),
+        "language_cards": (
+            _language_cards(draft, seed) if question.key == "language_evidence" else ()
+        ),
+        "language_tests": LANGUAGE_TESTS,
+        "money_keys": ("application_budget", "self_funding_capacity", "budget_stretch"),
+        "row_keys": ("work_history", "volunteering", "publications", "projects"),
+        "question_topic": topic_of(question.key),
+        "language_statuses": LANGUAGE_STATUSES,
         "popular_languages": (
             POPULAR_TEACHING_LANGUAGES
             if question.key == "acceptable_teaching_languages"
@@ -216,7 +264,7 @@ def _render_question(
         ),
         "popular_fields": (
             POPULAR_FIELDS
-            if question.key in {"target_field", "academic_history"}
+            if question.key in {"target_field", "academic_history", "other_target_fields"}
             else ()
         ),
         "interest_suggestions": _interest_suggestions_for(draft, question.key),
@@ -274,6 +322,7 @@ def _render_review(
         "has_existing_profile": StudentProfileVersion.objects.filter(student=membership).exists(),
         "full_name": full_name,
         "current_study": _current_study_summary(draft),
+        "sections": review_sections(draft.answers),
     }
     template = (
         "student/_consultation_step.html" if _is_htmx(request) else "student/consultation.html"
@@ -443,7 +492,9 @@ def profile(request: HttpRequest) -> HttpResponse:
     )
     if not form.is_valid():
         return _render_question(request, draft, form=form, status=400)
-    draft = draft.with_answer(question.key, form.cleaned_data["value"])
+    # The degree form posts all three rows; a client posting one degree edits the first.
+    whole = question.key == "academic_history" and "value_8" in request.POST
+    draft = draft.with_answer(question.key, form.cleaned_data["value"], whole=whole)
     write_draft(draft)
     return _render_current_state(request, draft)
 

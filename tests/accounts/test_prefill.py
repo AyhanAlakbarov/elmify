@@ -238,6 +238,11 @@ _ANSWERS = {
     "career_intent": "PHD",
     "acceptable_teaching_languages": ["English"],
     "language_evidence": [],
+    "other_target_fields": [],
+    "work_history": [],
+    "volunteering": [],
+    "publications": [],
+    "projects": [],
     "additional_notes": "",
 }
 

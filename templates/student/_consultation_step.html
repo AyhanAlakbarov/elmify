@@ -11,11 +11,27 @@
         <button type="submit">Use my transcript</button>
       </form>
     {% endif %}
-    <dl class="review-list">
-      {% if full_name %}<dt>Full name</dt><dd><span>{{ full_name }}</span> <a href="/student/settings/account/" class="btn btn-quiet">Change</a></dd>{% endif %}
-      {% if current_study %}<dt>Where do you study</dt><dd><span>{{ current_study }}</span> <form method="post" action="{% url 'student-profile' %}" class="consultation-inline-form">{% csrf_token %}<input type="hidden" name="action" value="correct"><input type="hidden" name="key" value="academic_history"><button type="submit" class="btn-quiet">Change</button></form></dd>{% endif %}
-      {% for key, value in draft.answers.items %}<dt>{{ labels|lookup:key|default:key }}</dt><dd><span>{{ value|answer }}</span> <form method="post" action="{% url 'student-profile' %}" class="consultation-inline-form">{% csrf_token %}<input type="hidden" name="action" value="correct"><input type="hidden" name="key" value="{{ key }}"><button type="submit" class="btn-quiet">Change</button></form></dd>{% endfor %}
-    </dl>
+    <div class="review-sections">
+      {% if full_name %}
+      <section class="review-card" aria-labelledby="rv-name">
+        <h3 id="rv-name">Account</h3>
+        <dl class="review-list">
+          <dt>Full name</dt><dd><span>{{ full_name }}</span> <a href="/student/settings/account/" class="btn btn-quiet">Change</a></dd>
+        </dl>
+      </section>
+      {% endif %}
+      {% for section in sections %}
+      <section class="review-card review-{{ section.slug }}" aria-labelledby="rv-{{ section.slug }}">
+        <h3 id="rv-{{ section.slug }}">{{ section.title }}</h3>
+        <dl class="review-list">
+          {% for row in section.rows %}
+            <dt>{{ row.label }}</dt>
+            <dd><span>{% for line in row.lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</span> <form method="post" action="{% url 'student-profile' %}" class="consultation-inline-form">{% csrf_token %}<input type="hidden" name="action" value="correct"><input type="hidden" name="key" value="{{ row.key }}"><button type="submit" class="btn-quiet">Change</button></form></dd>
+          {% endfor %}
+        </dl>
+      </section>
+      {% endfor %}
+    </div>
     <form method="post" action="{% url 'student-profile' %}">
       {% csrf_token %}
       <input type="hidden" name="action" value="confirm">
@@ -23,7 +39,7 @@
     </form>
   {% else %}
     <div class="consultation-progress-wrap">
-      <h2 id="consultation-heading">Question {{ progress_answered|add:1 }} of {{ progress_total }}</h2>
+      <h2 id="consultation-heading">{% if question_topic %}<span class="q-topic">{{ question_topic }}</span>{% endif %}Question {{ progress_answered|add:1 }} of {{ progress_total }}</h2>
       <progress class="consultation-progress" value="{{ progress_answered|add:1 }}" max="{{ progress_total }}">{{ progress_answered|add:1 }} of {{ progress_total }}</progress>
     </div>
     {% if error %}<p role="alert">{{ error }}</p>{% endif %}
@@ -31,21 +47,60 @@
     <form method="post" action="{% url 'student-profile' %}">
       {% csrf_token %}
       <input type="hidden" name="key" value="{{ question.key }}">
-      <p>
-        <label for="{{ form.value.id_for_label }}">{{ question.label }}</label><br>
+      {% if country_groups %}
+        <p class="q-label" id="q-label">{{ question.label }}</p>
+        <input type="hidden" name="value" value="{{ form.value.value|default_if_none:'' }}">
+      {% elif language_cards or question.key == "language_evidence" %}
+        <p class="q-label" id="q-label">Do you have a certificate for each language you can study in?</p>
+      {% else %}
+      <p class="q-field{% if question.key in money_keys %} q-money{% endif %}">
+        <label for="{{ form.value.id_for_label }}" class="q-label">{{ question.label }}</label>
         {{ form.value }}
-        {% if form.value.help_text %}<br><small class="muted">{{ form.value.help_text }}</small>{% endif %}
+        {% if form.value.help_text %}<small class="muted">{{ form.value.help_text }}</small>{% endif %}
       </p>
-      {% if popular_destinations %}
-        <fieldset>
-          <legend>Quick-select countries (or leave empty for {% if question.key == "allowed_countries" %}anywhere{% else %}none{% endif %})</legend>
-          {% for code, name in popular_destinations %}
-            {% if code in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ code }}">{% endif %}
-            <label class="consultation-preset-label">
-              <input type="checkbox" name="country_ticks" value="{{ code }}"{% if code in selected_ticks %} checked{% endif %}> {{ code|flag }}{{ name }} ({{ code }})
-            </label>
+      {% endif %}
+      {% if country_groups %}
+        <div class="country-picker" data-country-picker>
+          <label for="country-filter" class="sr-only">Find a country</label>
+          <input type="search" id="country-filter" class="country-filter" placeholder="Type to find a country…" autocomplete="off" data-country-filter hidden>
+          <p class="country-count muted" data-country-count aria-live="polite"></p>
+          {% for continent, countries in country_groups %}
+            <fieldset class="continent" data-continent>
+              <legend>{{ continent }}</legend>
+              <div class="country-chips">
+              {% for code, name in countries %}
+                {% if code in selected_ticks %}<input type="hidden" name="initial_ticks" value="{{ code }}">{% endif %}
+                <label class="country-chip" data-name="{{ name|lower }}"><input type="checkbox" name="country_ticks" value="{{ code }}"{% if code in selected_ticks %} checked{% endif %}><span>{{ name }}</span></label>
+              {% endfor %}
+              </div>
+            </fieldset>
           {% endfor %}
-        </fieldset>
+        </div>
+      {% endif %}
+      {% if question.key == "language_evidence" %}
+        {% if not language_cards %}<p class="muted">Pick the languages you can study in first.</p>{% endif %}
+        <div class="lang-cards">
+        {% for card in language_cards %}
+          <fieldset class="lang-card" data-lang-card>
+            <legend>{{ card.language }}</legend>
+            <input type="hidden" name="lang_{{ card.index }}_language" value="{{ card.language }}">
+            <div class="lang-status" role="radiogroup" aria-label="{{ card.language }}">
+              {% for code, label in language_statuses %}
+                <label class="status-chip"><input type="radio" name="lang_{{ card.index }}_status" value="{{ code }}"{% if card.status == code or not card.status and code == "NONE" %} checked{% endif %}><span>{{ label }}</span></label>
+              {% endfor %}
+            </div>
+            <div class="lang-detail" data-lang-detail>
+              <p class="q-part" data-when="HAVE PLAN"><label for="lang_{{ card.index }}_test">Test</label>
+                <select id="lang_{{ card.index }}_test" name="lang_{{ card.index }}_test"><option value="">Choose…</option>{% for t in language_tests %}<option value="{{ t }}"{% if t == card.test %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></p>
+              <p class="q-part" data-when="HAVE PLAN"><label for="lang_{{ card.index }}_score"><span data-when="HAVE">Your score</span><span data-when="PLAN">Score you aim for <small class="muted">optional</small></span></label>
+                <input type="text" id="lang_{{ card.index }}_score" name="lang_{{ card.index }}_score" value="{{ card.score }}" placeholder="e.g. 7.0, 100, C1"></p>
+              <p class="q-part" data-when="HAVE PLAN"><label for="lang_{{ card.index }}_date"><span data-when="HAVE">Date you took it</span><span data-when="PLAN">When you will take it</span></label>
+                <input type="date" id="lang_{{ card.index }}_date" name="lang_{{ card.index }}_date" value="{{ card.date }}"></p>
+            </div>
+          </fieldset>
+        {% endfor %}
+        </div>
+        {% if language_context_note %}<p class="note" role="note">{{ language_context_note }}</p>{% endif %}
       {% endif %}
       {% if popular_languages %}
         <fieldset>
@@ -69,29 +124,6 @@
           {% endfor %}
         </fieldset>
       {% endif %}
-      {% if question.key == "language_evidence" %}
-        {% if language_context_note %}
-          <p role="note"><strong>Prior degree language note:</strong> {{ language_context_note }}</p>
-        {% endif %}
-        <fieldset>
-          <legend>Quick fill (optional)</legend>
-          <label class="consultation-preset-label">
-            <input type="radio" name="language_quick_preset" value="IELTS"> IELTS Academic
-          </label>
-          <label class="consultation-preset-label">
-            <input type="radio" name="language_quick_preset" value="TOEFL"> TOEFL iBT
-          </label>
-          <label class="consultation-preset-label">
-            <input type="radio" name="language_quick_preset" value="DUOLINGO"> Duolingo
-          </label>
-          <label class="consultation-preset-label">
-            <input type="radio" name="language_quick_preset" value="TESTDAF"> TestDaF (German)
-          </label>
-          <label class="consultation-preset-label">
-            <input type="radio" name="language_quick_preset" value="NONE"> No official language certificate yet — skip for now
-          </label>
-        </fieldset>
-      {% endif %}
       {% if date_presets %}
         <fieldset>
           <legend>Quick-select term</legend>
@@ -103,12 +135,10 @@
         </fieldset>
       {% endif %}
       {% if money_presets %}
-        <fieldset>
-          <legend>Quick-select amount</legend>
+        <fieldset class="money-chips">
+          <legend>Or pick an amount</legend>
           {% for preset_val, preset_label in money_presets %}
-            <label class="consultation-preset-label">
-              <input type="radio" name="amount_preset" value="{{ preset_val }}"> {{ preset_label }}
-            </label>
+            <label class="money-chip"><input type="radio" name="amount_preset" value="{{ preset_val }}"><span>{{ preset_label }}</span></label>
           {% endfor %}
         </fieldset>
       {% endif %}
@@ -193,13 +223,13 @@
           <option value="1.0-5.0"></option>
         </datalist>
       {% endif %}
-      <button type="submit">Next</button>
+      <div class="q-actions"><button type="submit">{% if question.key in row_keys %}Save and continue{% else %}Next{% endif %}</button>{% if question.key in row_keys %}<span class="muted">Nothing to add? Leave it empty and continue.</span>{% endif %}</div>
     </form>
     {% if can_go_back %}
       <form method="post" action="{% url 'student-profile' %}">
         {% csrf_token %}
         <input type="hidden" name="action" value="back">
-        <button type="submit">Back</button>
+        <button type="submit" class="btn-quiet">Back</button>
       </form>
     {% endif %}
   {% endif %}
