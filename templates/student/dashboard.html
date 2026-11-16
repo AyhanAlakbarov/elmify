@@ -3,71 +3,71 @@
 {% block title %}Home{% endblock %}
 {% block content %}
   {% with o=overview %}
-  <div class="page-head">
+  {% if o %}{% with done=o.steps|steps_done %}
+  <div class="home-hero">
     <div>
       <h1>Hello{% if user.first_name %}, {{ user.first_name }}{% endif %}</h1>
-      {% if o %}
-        <p>{% if o.all_steps_done %}Every milestone is done. Record decisions as they arrive.{% else %}Here is where you are, and what to do next.{% endif %}</p>
-      {% endif %}
+      <p class="muted">{% if o.all_steps_done %}Every step is done. Record decisions as they arrive.{% else %}Here is where you are.{% endif %}</p>
+    </div>
+    <div class="ring ring-lg" role="img" aria-label="{{ done }} of 5 steps done">
+      <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="ring-track" cx="22" cy="22" r="19"/><circle class="ring-bar" cx="22" cy="22" r="19" pathLength="100" stroke-dasharray="{{ done|percent_of:5 }} 100"/></svg>
+      <span><strong data-count="{{ done|percent_of:5 }}">{{ done|percent_of:5 }}</strong>%</span>
     </div>
   </div>
+  {% endwith %}
 
-  {% if o %}
-  <ol class="timeline" aria-label="Your progress">
+  <ol class="journey" aria-label="Your progress">
     {% for key, state in o.steps %}
       <li class="is-{{ state }}"{% if state == "current" %} aria-current="step"{% endif %}>
-        <span class="tl-node" aria-hidden="true"></span>
-        {% if key == "profile" %}
-          <a class="tl-link" href="/student/profile/">
-            <strong>Profile</strong>
-            <span>{% if state == "done" %}Complete{% else %}14 short questions{% endif %}</span>
-          </a>
-        {% elif key == "matches" %}
-          <a class="tl-link" href="/student/recommendation/">
-            <strong>AI matches</strong>
-            <span>{% if state == "done" %}{{ o.pack_programmes }} programme{{ o.pack_programmes|pluralize }}{% elif o.profile_done %}Being prepared{% else %}After your profile{% endif %}</span>
-          </a>
-        {% elif key == "choose" %}
-          <a class="tl-link" href="/student/applications/">
-            <strong>Programmes chosen</strong>
-            <span>{% if state == "done" %}{{ o.applications }} chosen{% else %}Pick from your matches{% endif %}</span>
-          </a>
-        {% elif key == "documents" %}
-          <a class="tl-link" href="/student/documents/">
-            <strong>Documents ready</strong>
-            <span>{% if o.documents_total %}{{ o.documents_done }} of {{ o.documents_total }} ready{% else %}What each one asks for{% endif %}</span>
-          </a>
-        {% else %}
-          <a class="tl-link" href="/student/applications/?view=stage">
-            <strong>Applications sent</strong>
-            <span>{% if o.submitted %}{{ o.submitted }} sent{% else %}Use each application&rsquo;s kit{% endif %}</span>
-          </a>
-        {% endif %}
+        <a href="{% if key == 'profile' %}/student/profile/{% elif key == 'matches' %}/student/recommendation/{% elif key == 'choose' %}/student/applications/{% elif key == 'documents' %}/student/documents/{% else %}/student/applications/?view=stage{% endif %}">
+          <span class="journey-icon ico {% if key == 'profile' %}ico-person{% elif key == 'matches' %}ico-compass{% elif key == 'choose' %}ico-board{% elif key == 'documents' %}ico-doc{% else %}ico-upload{% endif %}" aria-hidden="true"></span>
+          <strong>{% if key == "profile" %}Profile{% elif key == "matches" %}Matches{% elif key == "choose" %}Chosen{% elif key == "documents" %}Documents{% else %}Sent{% endif %}</strong>
+        </a>
         <span class="sr-only">({% if state == "done" %}done{% elif state == "current" %}you are here{% else %}not started{% endif %})</span>
       </li>
     {% endfor %}
   </ol>
 
+  <ul class="kpis" aria-label="Your numbers">
+    <li class="kpi">
+      <a href="/student/recommendation/"><span class="kpi-ico ico ico-compass" aria-hidden="true"></span>
+        <strong data-count="{{ o.pack_programmes }}">{{ o.pack_programmes }}</strong><span>matches</span></a>
+    </li>
+    <li class="kpi">
+      <a href="/student/applications/"><span class="kpi-ico ico ico-board" aria-hidden="true"></span>
+        <strong data-count="{{ o.applications }}">{{ o.applications }}</strong><span>chosen</span></a>
+    </li>
+    <li class="kpi">
+      <a href="/student/documents/"><span class="kpi-ico ico ico-doc" aria-hidden="true"></span>
+        <strong><span data-count="{{ o.documents_done }}">{{ o.documents_done }}</span><small>/{{ o.documents_total }}</small></strong><span>documents ready</span>
+        <svg class="meter" viewBox="0 0 100 6" preserveAspectRatio="none" aria-hidden="true"><rect class="meter-track" width="100" height="6" rx="3"/><rect class="meter-bar" width="{{ o.documents_done|percent_of:o.documents_total }}" height="6" rx="3"/></svg></a>
+    </li>
+    <li class="kpi">
+      <a href="/student/applications/?view=stage"><span class="kpi-ico ico ico-upload" aria-hidden="true"></span>
+        <strong data-count="{{ o.submitted }}">{{ o.submitted }}</strong><span>sent</span></a>
+    </li>
+  </ul>
+
   <div class="home-grid">
     <section class="action-center" aria-labelledby="next-heading">
-      <h2 id="next-heading">Next actions</h2>
-
+      <h2 id="next-heading" class="sr-only">Next actions</h2>
       {% for key, state in o.steps %}{% if state == "current" %}
-        <div class="next-step">
+        <div class="next-step next-hero">
+          <span class="next-ico ico {% if key == 'profile' %}ico-person{% elif key == 'matches' %}ico-compass{% elif key == 'choose' %}ico-board{% elif key == 'documents' %}ico-doc{% else %}ico-upload{% endif %}" aria-hidden="true"></span>
           {% if key == "profile" %}
-            <div><h3>Finish your profile</h3><p>Fourteen short questions about your studies, languages and plans. About ten minutes.</p></div>
+            <div><h3>Finish your profile</h3><p>About ten minutes.</p></div>
             <a class="btn" href="/student/profile/">Continue profile</a>
           {% elif key == "matches" %}
-            <div><h3>Your matches are being prepared</h3><p>Our AI is reading official programme and scholarship pages for you. This usually takes a few minutes.</p></div>
+            <div><h3>Your matches are on their way</h3><p>Usually a few minutes.</p></div>
             <a class="btn btn-quiet" href="/student/recommendation/">See progress</a>
           {% elif key == "choose" %}
-            <div><h3>Review your {{ o.pack_programmes }} match{{ o.pack_programmes|pluralize:"es" }}</h3><p>Add the programmes you want to apply to. Each shows the scholarship that can pay for it.</p></div>
+            <div><h3>Pick from {{ o.pack_programmes }} match{{ o.pack_programmes|pluralize:"es" }}</h3><p>Each shows the scholarship that pays.</p></div>
             <a class="btn" href="/student/recommendation/">Review matches</a>
           {% elif key == "documents" %}
-            <div><h3>Prepare your documents</h3><p>{% if o.documents_total %}{{ o.documents_done }} of {{ o.documents_total }} ready. {% endif %}Upload your CV and what each application asks for.</p></div>
+            <div><h3>Prepare your documents</h3><p>{% if o.documents_total %}{{ o.documents_done }} of {{ o.documents_total }} ready{% else %}See what each one needs{% endif %}</p></div>
             <a class="btn" href="/student/documents/">Open documents</a>
           {% else %}
-            <div><h3>Apply to your programmes</h3><p>Each application has a kit with every answer the portal will ask for.</p></div>
+            <div><h3>Apply to your programmes</h3><p>Each has a kit with every answer.</p></div>
             <a class="btn" href="/student/applications/">My applications</a>
           {% endif %}
         </div>
@@ -78,11 +78,11 @@
     <section class="side-panel" aria-labelledby="deadlines-heading">
       <h2 id="deadlines-heading">Upcoming deadlines</h2>
       {% if o.deadlines %}
-        <ul class="deadlines">
+        <ul class="countdowns">
           {% for card in o.deadlines %}
             <li>
-              <a href="/student/applications/#card-{{ card.application_id }}">{% if card.country %}{{ card.country|flag }}{% endif %}{{ card.title }}{% if card.institution %}<small>{{ card.institution }}</small>{% endif %}</a>
-              <span class="when{% if card.days_left <= o.soon_days %} soon{% endif %}"><time datetime="{{ card.deadline_local|date:'c' }}">{{ card.deadline_local|date:"j M" }}</time><small>{% if card.days_left == 0 %}today{% else %}in {{ card.days_left }} day{{ card.days_left|pluralize }}{% endif %}</small></span>
+              <span class="days{% if card.days_left <= o.soon_days %} soon{% endif %}"><strong>{{ card.days_left }}</strong><small>day{{ card.days_left|pluralize }}</small></span>
+              <a href="/student/applications/#card-{{ card.application_id }}">{% if card.country %}{{ card.country|flag }}{% endif %}{{ card.title }}<small><time datetime="{{ card.deadline_local|date:'c' }}">{{ card.deadline_local|date:"j M" }}</time>{% if card.institution %} · {{ card.institution }}{% endif %}</small></a>
             </li>
           {% endfor %}
         </ul>
@@ -112,7 +112,37 @@
       </ul>
     </section>
   {% endif %}
-  {% include "student/_board.html" %}
+
+  {% if board.cards %}
+  <section class="glance" aria-labelledby="glance-heading">
+    <h2 id="glance-heading">At a glance</h2>
+    <ul class="glance-grid">
+      {% for card in board.cards %}{% with chance=card.chance_line|chance_pct %}
+        <li class="glance-card col-{{ card.column.key }}">
+          <a href="/student/applications/#card-{{ card.application_id }}">
+            {% if chance is not None %}
+              <span class="ring" role="img" aria-label="About {{ chance }}% chance">
+                <svg viewBox="0 0 44 44" aria-hidden="true"><circle class="ring-track" cx="22" cy="22" r="19"/><circle class="ring-bar" cx="22" cy="22" r="19" pathLength="100" stroke-dasharray="{{ chance }} 100"/></svg>
+                <span>{{ chance }}%</span>
+              </span>
+            {% endif %}
+            <span class="glance-body">
+              <strong>{% if card.country %}{{ card.country|flag }}{% endif %}{{ card.title }}</strong>
+              <span class="pill">{{ card.column.value }}</span>
+              {% if card.documents.1 %}<svg class="meter" viewBox="0 0 100 6" preserveAspectRatio="none" role="img" aria-label="{{ card.documents.0 }} of {{ card.documents.1 }} documents ready"><rect class="meter-track" width="100" height="6" rx="3"/><rect class="meter-bar" width="{{ card.documents.0|percent_of:card.documents.1 }}" height="6" rx="3"/></svg>{% endif %}
+            </span>
+          </a>
+        </li>
+      {% endwith %}{% endfor %}
+    </ul>
+  </section>
+  <details class="home-board"{% if error or request.GET.board %} open{% endif %}>
+    <summary>Show every application in detail</summary>
+    {% include "student/_board.html" %}
+  </details>
+  {% else %}
+    {% include "student/_board.html" %}
+  {% endif %}
   {% if error and error_form == "message" %}
   <section class="panel" aria-labelledby="message-heading">
     <h2 id="message-heading">Write to your counsellor</h2>

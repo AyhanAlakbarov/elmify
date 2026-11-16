@@ -174,3 +174,29 @@ def programme_in_university(title: object, institution: object) -> str:
     if raw_inst and raw_inst.casefold() not in heading.casefold():
         heading = f"{heading} in {raw_inst}"
     return heading
+
+
+@register.filter
+def percent_of(done: object, total: object) -> int:
+    """`done` as a whole percentage of `total`, 0 when there is no total."""
+    try:
+        whole = float(str(total))
+        return max(0, min(100, round(float(str(done)) * 100 / whole))) if whole else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+_CHANCE = re.compile(r"(\d{1,3})\s*%")
+
+
+@register.filter
+def chance_pct(line: object) -> int | None:
+    """The first percentage in a card's chance line ("~65% chance"), or None."""
+    match = _CHANCE.search(str(line or ""))
+    return min(100, int(match.group(1))) if match else None
+
+
+@register.filter
+def steps_done(steps: object) -> int:
+    """How many of the overview's (key, state) milestones are done."""
+    return sum(1 for _key, state in (steps or ()) if state == "done")  # type: ignore[attr-defined]

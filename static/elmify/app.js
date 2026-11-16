@@ -327,3 +327,24 @@ document.addEventListener("keydown", function (event) {
     });
   }
 });
+
+/* Home numbers count up once when the page shows them (2026-11-16). The server
+ * renders the final value, so reduced motion and no-JS readers see it at once. */
+function countUp(root) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  root.querySelectorAll("[data-count]").forEach(function (el) {
+    var target = parseInt(el.getAttribute("data-count"), 10);
+    if (!target || el.dataset.counted) return;
+    el.dataset.counted = "1";
+    var start = performance.now();
+    function tick(now) {
+      var t = Math.min(1, (now - start) / 900);
+      el.textContent = String(Math.round(target * (1 - Math.pow(1 - t, 3))));
+      if (t < 1) requestAnimationFrame(tick);
+    }
+    el.textContent = "0";
+    requestAnimationFrame(tick);
+  });
+}
+document.addEventListener("DOMContentLoaded", function () { countUp(document); });
+document.addEventListener("htmx:load", function (event) { countUp(event.target); });
