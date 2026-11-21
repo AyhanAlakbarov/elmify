@@ -8,7 +8,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("concierge", "0017_thesis_or_report_kind"),
-        ("tenancy", "0011_membership_quiet_hours"),
+        ("tenancy", "0002_rls"),
     ]
 
     operations = [
