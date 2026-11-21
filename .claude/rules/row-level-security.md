@@ -183,6 +183,13 @@ There are exactly two sanctioned ways, and a third that looks reasonable and is 
    owner sees on their console, plus a `StaffFileView` log line listed across agencies by
    `manage.py staff_file_views` and counted by the `StaffFileViews` metric, no alarm:
    `apps/audit/staff_access.py`).
+   **Owner decision, 2026-11-21 (extends the above):** Elmify staff also *read* a student's profile
+   answers, university list and chat in the staff desk (`apps/staffdesk`, `/staff/`), read-only, again
+   without a `SupportGrant`, because every page that shows one student writes an `AuditEvent`
+   (`staff.student_viewed`, `staff.thread_opened`, `staff.message_sent`) first. Staff may *answer* a
+   student's chat; they still never edit answers. Paused and inactive students are hidden
+   (`staff_may_view`). This holds because all Elmify students sit in one agency; with several agencies
+   it needs a per-agency grant again.
    Counsellors stay view-only. Everything else (editing, acting for a student, other personal data)
    still takes a `SupportGrant` (`apps/tenancy/models.py`, `require_active_support_grant`,
    `docs/runbooks/support-access.md`): time-boxed, reason-carrying, alarmed on every use.

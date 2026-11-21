@@ -21,7 +21,7 @@ def index(request: HttpRequest) -> HttpResponse:
     if role == Membership.Role.OWNER:
         return redirect("concierge-owner-dashboard")
     if role == Membership.Role.PLATFORM_ADMIN:
-        return redirect("resolution-queue")
+        return redirect("staff-overview")
     if getattr(request, "user", None) is not None and request.user.is_authenticated:
         return redirect("accounts-login")
     # Nobody signed in: the first thing a new visitor sees is the website, not a login box.
@@ -42,6 +42,7 @@ urlpatterns = [
     path("", include("apps.mailbox.urls")),
     path("", include("apps.privacy.urls")),
     path("", include("apps.leads.urls")),
+    path("", include("apps.staffdesk.urls")),
     path("", include("apps.research.urls")),
     path("admin/", admin.site.urls),
 ]

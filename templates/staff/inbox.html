@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Inbox{% endblock %}
+{% block content %}
+  <div class="page-head"><div><h1>Inbox</h1><p>Every conversation. Unread first.</p></div></div>
+  <section class="panel" aria-labelledby="threads-heading">
+    <h2 id="threads-heading" class="sr-only">Conversations</h2>
+    <ul class="item-list staff-threads">
+      {% for r in rows %}
+        <li class="{% if r.unread %}unread{% endif %}">
+          <a href="{% url 'staff-thread' r.student.id %}"><strong>{{ r.name }}</strong></a>
+          {% if r.unread %}<span class="pill pill-brand">{{ r.unread }} new</span>{% elif not r.from_student %}<span class="pill pill-muted">You replied</span>{% endif %}
+          <span class="muted">{{ r.last.created_at|date:"j M H:i" }}</span><br>
+          <span>{% if not r.from_student %}You: {% endif %}{{ r.last.body|truncatechars:140 }}</span>
+        </li>
+      {% empty %}
+        <li class="empty">No student has written yet.</li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endblock %}

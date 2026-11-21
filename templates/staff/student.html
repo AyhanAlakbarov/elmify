@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block content %}
+  <div class="page-head">
+    <div><h1>{{ name }}</h1><p>{{ student.user.email|default:"No email" }} · joined {{ student.user.date_joined|date:"j M Y" }}{% if counselor %} · counsellor {{ counselor.display_name }}{% endif %}</p></div>
+    <div class="actions">
+      <a class="button" href="{% url 'staff-thread' student.id %}">Chat{% if message_count %} ({{ message_count }}){% endif %}</a>
+      <a class="button button-secondary" href="{% url 'counselor-student-board' student.id %}">Files</a>
+    </div>
+  </div>
+  <p class="muted">Read only. Opening this page is recorded.</p>
+
+  <section class="panel" aria-labelledby="profile-heading">
+    <h2 id="profile-heading">Profile</h2>
+    {% if has_profile %}
+      <div class="review-sections staff-profile">
+        {% for section in sections %}
+          <section class="review-card" aria-labelledby="s-{{ section.slug }}">
+            <h3 id="s-{{ section.slug }}">{{ section.title }}</h3>
+            <dl class="review-list">
+              {% for row in section.rows %}
+                <dt>{{ row.label }}</dt>
+                <dd><span>{% for line in row.lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</span></dd>
+              {% endfor %}
+            </dl>
+          </section>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">This student has not finished the profile questions yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="unis-heading">
+    <div class="panel-head"><h2 id="unis-heading">Universities</h2><span class="pill">{{ applications|length }}</span></div>
+    <table>
+      <thead><tr><th scope="col">Programme</th><th scope="col">Where we are</th><th scope="col">Decision</th><th scope="col">Deadline</th></tr></thead>
+      <tbody>
+        {% for a in applications %}
+          <tr>
+            <th scope="row">{{ a.title }}</th>
+            <td>{{ a.get_state_display }}</td>
+            <td>{% if a.outcome %}{{ a.get_outcome_display }}{% else %}—{% endif %}</td>
+            <td>{% if a.deadline %}{{ a.deadline|date:"j M Y" }}{% else %}—{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="4" class="empty">No universities on this student's list yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

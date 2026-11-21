@@ -58,6 +58,9 @@
       {% elif viewer_role == "PLATFORM_ADMIN" %}
         <nav aria-label="Main" class="nav">
           <ul>
+            <li><a href="/staff/"{% if p == "/staff/" %} aria-current="page"{% endif %}><span class="ico ico-home" aria-hidden="true"></span>Overview</a></li>
+            <li><a href="/staff/students/"{% if "/staff/students/" in p %} aria-current="page"{% endif %}><span class="ico ico-people" aria-hidden="true"></span>Students</a></li>
+            <li><a href="/staff/inbox/"{% if "/staff/inbox/" in p %} aria-current="page"{% endif %}><span class="ico ico-chat" aria-hidden="true"></span>Inbox{% if staff_unread %} <span class="pill pill-brand">{{ staff_unread }}</span>{% endif %}</a></li>
             <li><a href="/platform/resolution/"{% if "/platform/resolution/" in p %} aria-current="page"{% endif %}><span class="ico ico-board" aria-hidden="true"></span>Resolution queue</a></li>
             <li><a href="/platform/gold/"{% if "/platform/gold/" in p %} aria-current="page"{% endif %}><span class="ico ico-doc" aria-hidden="true"></span>Gold labels</a></li>
           </ul>

@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "apps.dashboard",
     "apps.privacy",
     "apps.leads",
+    "apps.staffdesk",
 ]
 
 MIDDLEWARE = [
@@ -102,6 +103,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "apps.tenancy.context_processors.brand_colors",
                 "apps.tenancy.context_processors.viewer_role",
+                "apps.staffdesk.context_processors.staff_unread",
                 "apps.tenancy.context_processors.app_shell",
                 "apps.tenancy.context_processors.marketing_site",
             ]

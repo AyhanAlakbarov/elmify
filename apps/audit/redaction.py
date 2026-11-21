@@ -304,7 +304,7 @@ KEEP: dict[str, tuple[str, ...]] = {
         "refund_amount",
         "created_at",
     ),
-    "concierge.ConversationMessage": ("created_at",),
+    "concierge.ConversationMessage": ("created_at", "read_by_staff_at"),
     # KEEP by constraint, not by inspection: nothing writes Receipt today.
     # GDPR Art. 17(3)(b) withdraws the right to erasure where retention is a
     # legal obligation; German accounting receipts run 8 years under §147 AO.

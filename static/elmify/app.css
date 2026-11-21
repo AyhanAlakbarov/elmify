@@ -1637,3 +1637,17 @@ main p.mfa-notice[role="alert"] { background: var(--brand-tint); color: var(--br
 .book-call small { display: block; color: var(--muted); font-size: 12.5px; line-height: 1.4; }
 .book-ico { width: 40px; height: 40px; border-radius: 12px; background: var(--brand); position: relative; }
 .book-ico::after { content: ""; position: absolute; inset: 10px; background: #fff; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 3v4M16 3v4M9 15l2 2 4-4'/%3E%3C/svg%3E") center / contain no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 3v4M16 3v4M9 15l2 2 4-4'/%3E%3C/svg%3E") center / contain no-repeat; }
+
+/* Staff desk (/staff/) */
+.staff-stats { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.staff-stats li { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: grid; gap: 2px; }
+.staff-stats .num { font-size: 32px; font-weight: 700; line-height: 1.1; color: var(--ink); font-variant-numeric: tabular-nums; }
+.staff-stats li > span:last-child { font-size: 13.5px; color: var(--muted); }
+.staff-stats li.hot { border-color: var(--brand); background: var(--brand-tint); }
+.staff-stats li.hot .num { color: var(--brand-ink); }
+.staff-search { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.staff-search input { flex: 1 1 240px; }
+.staff-threads li.unread { border-left: 3px solid var(--brand); padding-left: 12px; }
+.staff-profile .review-card dl.review-list { border-top: 0; margin: 0; grid-template-columns: minmax(150px, 220px) minmax(0, 1fr); }
+.staff-profile .review-card dl.review-list > dt:last-of-type, .staff-profile .review-card dl.review-list > dd:last-of-type { border-bottom: 0; }
+@media (max-width: 640px) { .staff-profile .review-card dl.review-list { grid-template-columns: 1fr; } }

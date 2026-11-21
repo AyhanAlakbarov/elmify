@@ -388,12 +388,22 @@ def send_student_message(request: HttpRequest) -> HttpResponse:
         window_seconds=_MESSAGE_RATE_WINDOW_SECONDS,
     ):
         return _message_error("Too many messages. Try again shortly.", status=429)
-    assignment = get_object_or_404(CounselorAssignment, student=student, active=True)
+    # No counsellor yet: the message goes to the Elmify team's inbox (apps/staffdesk).
+    assignment = CounselorAssignment.objects.filter(student=student, active=True).first()
     try:
         body = clean_message_body(raw)
     except MessageBodyError as error:
         return _message_error(str(error), status=error.status)
-    send_message(student=student, counselor=assignment.counselor, sender=student, body=body)
+    sent = send_message(
+        student=student,
+        counselor=assignment.counselor if assignment is not None else None,
+        sender=student,
+        body=body,
+    )
+    if assignment is None:
+        from apps.staffdesk.notify import alert_staff_of_message
+
+        alert_staff_of_message(request, sent)
     return redirect("student-messages" if back_to_messages else "concierge-student-dashboard")
 
 

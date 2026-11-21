@@ -193,10 +193,17 @@ class Notification(TenantScopedModel):
 class ConversationMessage(TenantScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
-    counselor = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    #: The assigned counsellor, or None when the student wrote to the Elmify team
+    #: (nobody assigned): the staff inbox (apps/staffdesk) answers those.
+    counselor = models.ForeignKey(
+        Membership, on_delete=models.PROTECT, related_name="+", null=True, blank=True
+    )
     sender = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+    #: When Elmify staff first opened a student's message. Null on a student message
+    #: means unread in the staff inbox; staff's own messages never set it.
+    read_by_staff_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [

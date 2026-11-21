@@ -41,10 +41,19 @@ def acknowledge_notification(notification: Notification) -> Notification:
 
 
 def send_message(
-    *, student: Membership, counselor: Membership, sender: Membership, body: str
+    *, student: Membership, counselor: Membership | None, sender: Membership, body: str
 ) -> ConversationMessage:
-    if sender.id not in (student.id, counselor.id):
-        raise ValueError("sender must be the student or the assigned counselor")
+    """One message in a student's thread.
+
+    `counselor` is None when nobody is assigned and the student is writing to (or being
+    answered by) the Elmify team. The sender is the student, the assigned counsellor, or
+    an Elmify staff member (PLATFORM_ADMIN) answering from the staff inbox.
+    """
+    allowed = {student.id}
+    if counselor is not None:
+        allowed.add(counselor.id)
+    if sender.id not in allowed and sender.role != Membership.Role.PLATFORM_ADMIN:
+        raise ValueError("sender must be the student, the assigned counselor or Elmify staff")
     return ConversationMessage.objects.create(
         tenant=sender.tenant,
         student=student,

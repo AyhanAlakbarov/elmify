@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Staff desk{% endblock %}
+{% block content %}
+  <div class="page-head"><div><h1>Staff desk</h1><p>Everyone who signed up, and what they wrote to us.</p></div></div>
+  <ul class="staff-stats">
+    <li><span class="num">{{ total }}</span><span>Students</span></li>
+    <li><span class="num">{{ new_week }}</span><span>New this week</span></li>
+    <li><span class="num">{{ with_profile }}</span><span>Finished the profile</span></li>
+    <li><span class="num">{{ applications }}</span><span>Universities on lists</span></li>
+    <li class="{% if unread %}hot{% endif %}"><span class="num">{{ unread }}</span><span>Unread messages</span></li>
+  </ul>
+  <section class="panel" aria-labelledby="unread-heading">
+    <div class="panel-head"><h2 id="unread-heading">Waiting for an answer</h2><a href="{% url 'staff-inbox' %}">Open inbox</a></div>
+    <ul class="item-list">
+      {% for m in latest %}
+        <li><a href="{% url 'staff-thread' m.student_id %}"><strong>{{ m.student.user.get_full_name|default:m.student.user.get_username }}</strong></a> <span class="muted">{{ m.created_at|date:"j M H:i" }}</span><br>{{ m.body|truncatechars:140 }}</li>
+      {% empty %}
+        <li class="empty">Nothing waiting. Every message is read.</li>
+      {% endfor %}
+    </ul>
+  </section>
+  <section class="panel" aria-labelledby="recent-heading">
+    <div class="panel-head"><h2 id="recent-heading">Newest students</h2><a href="{% url 'staff-students' %}">All students</a></div>
+    <ul class="item-list">
+      {% for s in recent %}
+        <li><a href="{% url 'staff-student' s.id %}">{{ s.user.get_full_name|default:s.user.get_username }}</a> <span class="muted">joined {{ s.user.date_joined|date:"j M Y" }}</span></li>
+      {% empty %}
+        <li class="empty">No students yet.</li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endblock %}
