@@ -12,9 +12,9 @@
 
 ## Global Constraints
 
-- **Work in a dedicated worktree**: `/home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census` on branch `claude/inbound-government-census`. The shell's working directory resets to the main repo between Bash calls, so **every git command uses `git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census`**, and every other command starts with `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census &&`.
-- Tests: `POSTGRES_DB=tehsil_inbound uv run pytest ...`. Never a bare `pytest`.
-- Every commit leaves `uv run ruff check .` and `POSTGRES_DB=tehsil_inbound uv run pytest tests/research/test_inbound_census.py -q` green. **Never `ruff format`.**
+- **Work in a dedicated worktree**: `/home/orkhan/Desktop/elmify/.worktrees/inbound-census` on branch `claude/inbound-government-census`. The shell's working directory resets to the main repo between Bash calls, so **every git command uses `git -C /home/orkhan/Desktop/elmify/.worktrees/inbound-census`**, and every other command starts with `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census &&`.
+- Tests: `POSTGRES_DB=elmify_inbound uv run pytest ...`. Never a bare `pytest`.
+- Every commit leaves `uv run ruff check .` and `POSTGRES_DB=elmify_inbound uv run pytest tests/research/test_inbound_census.py -q` green. **Never `ruff format`.**
 - Commit with `uv run git -C <worktree> commit` (pre-commit hooks need the uv environment). Stage named paths only; never `git add -A`.
 - Every commit message ends with:
   ```
@@ -36,7 +36,7 @@ Locate with `mcp__gptr-mcp__quick_search` (`query` only). Open official pages wi
 2. If the text comes back under ~200 characters (blocked, or a JavaScript shell), `mcp__scrapling__fetch` with `extraction_type: "text"` — a real browser.
 3. If still empty, `mcp__scrapling__stealthy_fetch` with `solve_cloudflare: true`. Owner decision 2026-09-13 (`CLAUDE.md`): a public official page behind a Cloudflare interstitial or Turnstile may be read this way; log it. Not for aggregators, whose data cannot support a claim anyway. If the page still returns nothing, the row can be at most `OFFICIAL_SNIPPET` and the search log records the block.
 
-Use `css_selector` to keep the response small (e.g. `main`, `article`, `.content`), and `main_content_only` on. Save the returned text to `/tmp/claude-1000/-home-orkhan-Desktop-tehsil-agent/469516b4-7d85-40ac-a0f8-3cf42af46343/scratchpad/inbound/<name>.txt` and `grep -n -i -E` it for the operative sentences.
+Use `css_selector` to keep the response small (e.g. `main`, `article`, `.content`), and `main_content_only` on. Save the returned text to `/tmp/claude-1000/-home-orkhan-Desktop-elmify/469516b4-7d85-40ac-a0f8-3cf42af46343/scratchpad/inbound/<name>.txt` and `grep -n -i -E` it for the operative sentences.
 
 For a PDF (quota tables, call documents): download it (`curl -sL -m 60 "<url>" -o <name>.pdf`), then convert with `mcp__opendataloader-pdf__convert_pdf` — it keeps headings and tables as structure, which is what a quota table needs. Fall back to `pdftotext -layout <name>.pdf <name>.txt` only if the converter fails. A PDF that yields under ~200 characters is image-only: record it as unreadable, never as empty.
 
@@ -65,10 +65,10 @@ Log every request as one search-log row with `tool` = `scrapling_get` / `scrapli
 - [ ] **Step 1: Create the worktree and bring the spec onto it**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent worktree add /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census -b claude/inbound-government-census master
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census cherry-pick 421b5d2
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census log --oneline -2
-cp /home/orkhan/Desktop/tehsil_agent/docs/superpowers/plans/2026-09-13-inbound-government-census.md /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census/docs/superpowers/plans/
+git -C /home/orkhan/Desktop/elmify worktree add /home/orkhan/Desktop/elmify/.worktrees/inbound-census -b claude/inbound-government-census master
+git -C /home/orkhan/Desktop/elmify/.worktrees/inbound-census cherry-pick 421b5d2
+git -C /home/orkhan/Desktop/elmify/.worktrees/inbound-census log --oneline -2
+cp /home/orkhan/Desktop/elmify/docs/superpowers/plans/2026-09-13-inbound-government-census.md /home/orkhan/Desktop/elmify/.worktrees/inbound-census/docs/superpowers/plans/
 ```
 Expected: the top commit is `docs: inbound government funding search — census of every country, …`.
 
@@ -343,7 +343,7 @@ def test_the_committed_census_is_valid():
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && POSTGRES_DB=tehsil_inbound uv run pytest tests/research/test_inbound_census.py -q`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && POSTGRES_DB=elmify_inbound uv run pytest tests/research/test_inbound_census.py -q`
 Expected: collection error `ImportError: cannot import name 'inbound_census' from 'scripts'`.
 
 - [ ] **Step 4: Write the script**
@@ -775,7 +775,7 @@ if __name__ == "__main__":
 - [ ] **Step 5: Create the four header-only CSVs**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && uv run python -c "
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && uv run python -c "
 import csv
 from scripts import inbound_census as ic
 for name, header in ic.HEADERS.items():
@@ -786,7 +786,7 @@ for name, header in ic.HEADERS.items():
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && POSTGRES_DB=tehsil_inbound uv run pytest tests/research/test_inbound_census.py -q && uv run python -m scripts.inbound_census validate && uv run ruff check scripts/inbound_census.py tests/research/test_inbound_census.py`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && POSTGRES_DB=elmify_inbound uv run pytest tests/research/test_inbound_census.py -q && uv run python -m scripts.inbound_census validate && uv run ruff check scripts/inbound_census.py tests/research/test_inbound_census.py`
 Expected: `32 passed`, `0 error(s)`, `All checks passed!`
 
 - [ ] **Step 7: Align the spec with three decisions made while building the schema**
@@ -800,7 +800,7 @@ In `docs/superpowers/specs/2026-09-13-inbound-government-search-design.md`:
 - [ ] **Step 8: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && git add scripts/inbound_census.py tests/research/test_inbound_census.py docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv docs/superpowers/specs/2026-09-13-inbound-government-search-design.md docs/superpowers/plans/2026-09-13-inbound-government-census.md && uv run git commit -m "research: inbound census schema — NO means every source checked, a lead never makes anyone eligible
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && git add scripts/inbound_census.py tests/research/test_inbound_census.py docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv docs/superpowers/specs/2026-09-13-inbound-government-search-design.md docs/superpowers/plans/2026-09-13-inbound-government-census.md && uv run git commit -m "research: inbound census schema — NO means every source checked, a lead never makes anyone eligible
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -909,13 +909,13 @@ and `PROMPT-inbound-deep-batch.md`. Kept for the record of what the 2026-09-13 r
 
 - [ ] **Step 3: Check the template cannot leak census content**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && grep -n -i -E "tuition grant|dupaix|nikkei|master mind|bayhost|pbeee|heydar|allama|qffd|overseas korean|belt and road|[0-9]{2,} (places|scholarships|grants)" docs/superpowers/research/PROMPT-inbound-deep-batch.md`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && grep -n -i -E "tuition grant|dupaix|nikkei|master mind|bayhost|pbeee|heydar|allama|qffd|overseas korean|belt and road|[0-9]{2,} (places|scholarships|grants)" docs/superpowers/research/PROMPT-inbound-deep-batch.md`
 Expected: no output (exit 1).
 
 - [ ] **Step 4: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && git add docs/superpowers/research/PROMPT-inbound-deep-batch.md docs/superpowers/research/PROMPT-government-inbound-sweep.md && uv run git commit -m "research: a blind stage-2 prompt per regional batch; the 58-country prompt is retired
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && git add docs/superpowers/research/PROMPT-inbound-deep-batch.md docs/superpowers/research/PROMPT-government-inbound-sweep.md && uv run git commit -m "research: a blind stage-2 prompt per regional batch; the 58-country prompt is retired
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -936,7 +936,7 @@ Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
 - [ ] **Step 1: Bring the 2026-09-13 inbound research into the worktree**
 
 ```bash
-cp /home/orkhan/Desktop/tehsil_agent/docs/superpowers/research/2026-09-13-government-inbound-{review-1,review-2,verification,synthesis}.md /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census/docs/superpowers/research/
+cp /home/orkhan/Desktop/elmify/docs/superpowers/research/2026-09-13-government-inbound-{review-1,review-2,verification,synthesis}.md /home/orkhan/Desktop/elmify/.worktrees/inbound-census/docs/superpowers/research/
 ```
 
 - [ ] **Step 2: Harvest corpus leads**
@@ -975,13 +975,13 @@ For each mirror below: run the `quick_search` query, open the official list page
 
 - [ ] **Step 4: Validate and look at the report**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate && uv run python -m scripts.inbound_census report`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate && uv run python -m scripts.inbound_census report`
 Expected: `0 error(s)`; every known answer `PENDING`; `Readers per track` counts only mirror-found tracks (corpus rows have no reader).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && git add docs/superpowers/research/2026-09-13-government-inbound-review-1.md docs/superpowers/research/2026-09-13-government-inbound-review-2.md docs/superpowers/research/2026-09-13-government-inbound-verification.md docs/superpowers/research/2026-09-13-government-inbound-synthesis.md docs/research/inbound-opportunities.csv docs/research/inbound-search-log.csv && uv run git commit -m "research: step 0 — corpus and mirror leads for the inbound census
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && git add docs/superpowers/research/2026-09-13-government-inbound-review-1.md docs/superpowers/research/2026-09-13-government-inbound-review-2.md docs/superpowers/research/2026-09-13-government-inbound-verification.md docs/superpowers/research/2026-09-13-government-inbound-synthesis.md docs/research/inbound-opportunities.csv docs/research/inbound-search-log.csv && uv run git commit -m "research: step 0 — corpus and mirror leads for the inbound census
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1014,7 +1014,7 @@ For **each scheme found**: add or update its opportunity row (append the step to
 Finally write the census row: `verdict` `YES` (at least one track with `full_masters=yes` graded above `LEAD`), `NO` (per spec §3.1; stated `NO` basis starts `STATED:`), else `UNKNOWN`; `sources_checked` lists the steps actually completed; `basis` quotes the find or the absence.
 
 - [ ] **Step 1: Run the checklist for SG, LU, RU, JP, DK**
-- [ ] **Step 2: Validate** — `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate` → `0 error(s)`
+- [ ] **Step 2: Validate** — `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate` → `0 error(s)`
 - [ ] **Step 3: Run the checklist for BE, DE, CA, LT, SK** (BE, DE, CA are regional: run S6)
 - [ ] **Step 4: Validate** (same command) → `0 error(s)`
 - [ ] **Step 5: Run the checklist for AZ, PK, KZ, AT, CZ** (AT is regional: run S6)
@@ -1022,13 +1022,13 @@ Finally write the census row: `verdict` `YES` (at least one track with `full_mas
 - [ ] **Step 7: Run the checklist for QA, HU, KR, IT, HK** (IT is regional: run S6)
 - [ ] **Step 8: Validate and report**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate && uv run python -m scripts.inbound_census report`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate && uv run python -m scripts.inbound_census report`
 Expected: `0 error(s)`; `B0: 20/20`; a `Known answers:` block with 20 statuses. Copy that block into the commit message body.
 
 - [ ] **Step 9: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && git add docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv && uv run git commit -m "research: census B0 — the 20 known-answer countries
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && git add docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv && uv run git commit -m "research: census B0 — the 20 known-answer countries
 
 <paste the Known answers block here>
 
@@ -1062,13 +1062,13 @@ Edit spec §4.2 exactly as approved. Re-run **only the changed step** for all 20
 
 - [ ] **Step 4: Re-check**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate && uv run python -m scripts.inbound_census report`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate && uv run python -m scripts.inbound_census report`
 Expected: `0 error(s)`; every known answer `PASS`, or each remaining miss explained in the note and accepted by the owner.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && git add docs/superpowers/research/2026-09-13-inbound-census-calibration.md docs/superpowers/specs/2026-09-13-inbound-government-search-design.md docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv && uv run git commit -m "research: checklist calibrated on the 20 known answers
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && git add docs/superpowers/research/2026-09-13-inbound-census-calibration.md docs/superpowers/specs/2026-09-13-inbound-government-search-design.md docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv && uv run git commit -m "research: checklist calibrated on the 20 known answers
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1087,10 +1087,10 @@ Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
 
 Each batch below is: run the per-country checklist from Task 4 for every listed country (regional countries marked ‡ get S6), validate after every five countries, then report and commit. **After B1 and B2, run the step tally review in Step 3** before continuing.
 
-Validate command: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate` → `0 error(s)`.
+Validate command: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate` → `0 error(s)`.
 Commit command per batch (replace `<Bn>`):
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && git add docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv && uv run git commit -m "research: census <Bn>
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && git add docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv && uv run git commit -m "research: census <Bn>
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1152,10 +1152,10 @@ For every single-reader track, every new track, and every field on which readers
 
 - [ ] **Step 7: Validate and commit**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate` → `0 error(s)`.
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate` → `0 error(s)`.
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && git add docs/superpowers/research/ docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv && git status --short && uv run git commit -m "research: stage 2 <Bn> <chunk> — two blind runs merged and verified
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && git add docs/superpowers/research/ docs/research/inbound-country-census.csv docs/research/inbound-opportunities.csv docs/research/inbound-eligibility.csv docs/research/inbound-search-log.csv && git status --short && uv run git commit -m "research: stage 2 <Bn> <chunk> — two blind runs merged and verified
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1198,11 +1198,11 @@ In `CLAUDE.md`, in the section `## The rule catalogs — read these before resea
 
 - [ ] **Step 3: Validate, run the full suite, commit**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate && uv run ruff check . && POSTGRES_DB=tehsil_inbound uv run pytest -q`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && uv run python -m scripts.inbound_census validate && uv run ruff check . && POSTGRES_DB=elmify_inbound uv run pytest -q`
 Expected: `0 error(s)`, `All checks passed!`, suite green.
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/inbound-census && git add CLAUDE.md docs/superpowers/research/ && git status --short && uv run git commit -m "research: inbound census complete — synthesis, NO re-check dates, and a pointer so it is read first
+cd /home/orkhan/Desktop/elmify/.worktrees/inbound-census && git add CLAUDE.md docs/superpowers/research/ && git status --short && uv run git commit -m "research: inbound census complete — synthesis, NO re-check dates, and a pointer so it is read first
 
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"

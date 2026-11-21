@@ -49,7 +49,12 @@ def test_a_question_is_rendered_under_the_name_field_name_produces(
     """
     with tenant_scope(domain_a.agency_id):
         degree = _degree_without_a_grade(membership_a)
-        (question,) = [q for q in gap_questions(membership_a) if q.fact_id == degree.id]
+        # "EPFL" is also asked for in full by abbreviated_names (Stage 3 §5.3).
+        (question,) = [
+            q
+            for q in gap_questions(membership_a)
+            if q.fact_id == degree.id and q.kind == Kind.MISSING_GRADE
+        ]
     client.force_login(user_a)
 
     response = client.get(URL, HTTP_HOST=domain_a.host)
@@ -329,6 +334,7 @@ def test_a_gap_question_offers_the_statements(client, domain_a, user_a, membersh
     assert 'list="gap-statements"' in html
     assert f'maxlength="{TIMELINE_STATEMENT_MAX}"' in html
     assert "Personal reasons." in html
+    assert 'value="Military service."' in html
 
 
 def test_the_gap_interview_sits_inside_the_page_chrome(client, domain_a, user_a, membership_a):

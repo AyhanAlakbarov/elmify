@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% load dashboard %}
+{% block title %}Referee plan{% endblock %}
+{% block content %}
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-referees' %}">Your referees</a></nav>
+  <div class="page-head">
+    <div>
+      <h1>Who writes for which application</h1>
+      <p>Match your referees to each programme's letter requirements and portal limits.</p>
+    </div>
+    <form method="post" action="{% url 'student-referee-propose' %}">
+      {% csrf_token %}
+      <button type="submit">Propose a plan</button>
+    </form>
+  </div>
+  {% for line in short %}<p role="alert">{{ line }}</p>{% endfor %}
+  {% if not active and lines %}
+    <div class="write-callout">
+      <div class="write-callout-copy">
+        <strong>Add your referees first</strong>
+        <p class="muted">You haven't added any active referees yet. Add your professors or managers so we can match them to each application's letter requirements and portal limits.</p>
+      </div>
+      <div class="write-callout-actions">
+        <a href="{% url 'student-referees' %}" class="btn btn-primary btn-small">Add your referees &rarr;</a>
+      </div>
+    </div>
+  {% endif %}
+  {% for line in lines %}
+    <section class="panel" aria-labelledby="plan-{{ line.application.id }}">
+      <h2 id="plan-{{ line.application.id }}">{% if line.application.candidate.country_code %}{{ line.application.candidate.country_code|flag }}{% endif %}{{ line.application.title }}</h2>
+      {% if line.has_stated %}
+        <dl class="kv">
+          {% for label, stated in line.fields %}
+            <div>
+              <dt>{{ label }}</dt>
+              <dd>{% if stated %}{{ stated.rule_text }}{% else %}{{ not_stated }}{% endif %}</dd>
+            </div>
+          {% endfor %}
+        </dl>
+      {% else %}
+        <p class="muted">No specific referee rules stated on the captured page — check the official source page before inviting a referee.</p>
+        <details class="ws-more">
+          <summary>View all 5 rule fields</summary>
+          <dl class="kv">
+            {% for label, stated in line.fields %}
+              <div>
+                <dt>{{ label }}</dt>
+                <dd>{% if stated %}{{ stated.rule_text }}{% else %}{{ not_stated }}{% endif %}</dd>
+              </div>
+            {% endfor %}
+          </dl>
+        </details>
+      {% endif %}
+      {% for sentence in line.other_conditions %}<p class="note">Only for some applicants: {{ sentence }}</p>{% endfor %}
+      <ul class="item-list">
+        {% for request, flagged in line.requests %}
+          <li>
+            <span>{{ request.referee.label }} — {{ request.get_state_display|lower }}{% if flagged %} <span class="badge badge-warn">(this programme wants a university address)</span>{% endif %}</span>
+            <div class="row-actions">
+              <a class="btn btn-quiet btn-small" href="{% url 'student-referee-package' request.referee.id %}">What to send</a>
+              <form method="post" action="{% url 'student-referee-request-state' request.id %}" class="inline-form">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="/student/referees/plan/">
+                <label class="sr-only" for="state-{{ request.id }}">Status for {{ request.referee.label }}</label>
+                <select id="state-{{ request.id }}" name="state">
+                  {% if request.state == "PROPOSED" %}<option value="PROPOSED" selected disabled>Proposed</option>{% endif %}
+                  {% for value, label in marks %}<option value="{{ value }}"{% if value == request.state %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+                <button type="submit" class="btn-quiet btn-small">Save status</button>
+              </form>
+              {% if request.state == "PROPOSED" %}
+                <form method="post" action="{% url 'student-referee-request-remove' request.id %}">{% csrf_token %}<button type="submit" class="btn-quiet btn-small">Remove</button></form>
+              {% else %}
+                <form method="post" action="{% url 'student-referee-request-state' request.id %}">{% csrf_token %}<input type="hidden" name="state" value="DECLINED"><input type="hidden" name="next" value="/student/referees/plan/"><button type="submit" class="btn-quiet btn-small">Remove</button></form>
+              {% endif %}
+            </div>
+          </li>
+        {% empty %}
+          <li class="quiet-line">Nobody yet.</li>
+        {% endfor %}
+      </ul>
+      {% if active %}
+        <form method="post" action="{% url 'student-referee-request-add' %}" class="inline-form">
+          {% csrf_token %}
+          <input type="hidden" name="application_id" value="{{ line.application.id }}">
+          <label for="add-{{ line.application.id }}">Add a referee</label>
+          <select id="add-{{ line.application.id }}" name="referee_id">{% for referee in active %}<option value="{{ referee.id }}">{{ referee.label }}</option>{% endfor %}</select>
+          <button type="submit" class="btn-quiet">Add</button>
+        </form>
+      {% endif %}
+    </section>
+  {% empty %}
+    <div class="empty-state">
+      <p>No applications yet, so no letters are needed.</p>
+    </div>
+  {% endfor %}
+{% endblock %}

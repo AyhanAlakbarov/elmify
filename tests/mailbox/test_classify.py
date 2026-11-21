@@ -147,3 +147,17 @@ def test_the_prompt_asks_for_quotes_and_dates_and_the_cap_still_holds() -> None:
     assert "interview_at" in developer
     assert "outcome_scope" not in developer
     assert call["max_output_tokens"] == 600
+
+
+def test_the_prompt_tells_a_receipt_from_a_fee_due_and_a_receipt_of_the_application() -> None:
+    from apps.mailbox.classify import _DEVELOPER
+
+    assert "FEE_PAID" in _DEVELOPER
+    assert MailVerdict(label="FEE_PAID").label == "FEE_PAID"
+
+
+def test_the_prompt_tells_a_submitted_letter_from_a_request_for_one() -> None:
+    from apps.mailbox.classify import _DEVELOPER
+
+    assert "REFEREE_SUBMITTED only when" in _DEVELOPER
+    assert MailVerdict(label="REFEREE_SUBMITTED").label == "REFEREE_SUBMITTED"

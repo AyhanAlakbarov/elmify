@@ -426,3 +426,33 @@ def test_a_country_off_the_old_corridor_list_is_searched_by_name() -> None:
     source = SearchSource(api_key="k")
     query = DiscoveryQuery(field="robotics", country_code="NL", degree_level="MASTER")
     assert "Netherlands" in source.query_text(query)
+
+
+@pytest.mark.django_db
+def test_search_and_catalogue_hop_and_pipeline_reject_bachelor_and_phd_only_paths() -> None:
+    from apps.research.catalogue_hop import _is_phd_only_target
+    from apps.research.pipeline import _names_another_degree
+
+    cache.clear()
+    sent: list[dict[str, object]] = []
+    post = _fake_post(
+        [
+            {"url": "https://i.kyoto-u.ac.jp/bachelor/cs"},
+            {"url": "https://i.kyoto-u.ac.jp/undergraduate/admissions"},
+            {"url": "https://i.kyoto-u.ac.jp/phd/robotics"},
+            {"url": "https://i.kyoto-u.ac.jp/master/robotics"},
+        ],
+        sent,
+    )
+    source = SearchSource(api_key="k", post=post)
+    leads = list(source.find(QUERY))
+    assert [lead.canonical_url for lead in leads] == ["https://i.kyoto-u.ac.jp/master/robotics"]
+
+    assert _is_phd_only_target("https://uni.example.org/bachelor/cs", "Computer Science")
+    assert _is_phd_only_target("https://uni.example.org/programs/cs", "BSc in Computer Science")
+    assert not _is_phd_only_target("https://uni.example.org/programs/cs", "MSc in Computer Science")
+
+    assert _names_another_degree("https://uni.example.org/bachelor/tuition")
+    assert _names_another_degree("https://uni.example.org/bsc/fees")
+    assert not _names_another_degree("https://uni.example.org/master/tuition")
+

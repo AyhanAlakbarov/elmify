@@ -85,7 +85,7 @@
   "schema_version": 1,
   "source_revision": "b86cc207348ef4d229b8063d9f111bff34395ed5",
   "stack": {
-    "name": "tehsil-phase1-validation"
+    "name": "elmify-phase1-validation"
   },
   "sts": {
     "authenticated": true

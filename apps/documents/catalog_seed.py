@@ -23,27 +23,24 @@ from .constraints import _CONSTRAINT_KEYS
 #: canonical_key is FundingOpportunity's unique key, so these strings are the
 #: same ones SEED_RULES scopes against. "" means the funder states no format.
 #
-# Two traps here are not reachable today (nothing wires DocumentDraft.
-# funding_opportunity to a real row yet) but will hard-fail the moment that
-# lands:
-#
+# Note on EUROPASS_API + date_of_issue_required and FUNDER_TEMPLATE dispatch:
 # - "daad-epos": europass_required -> EUROPASS_API, and R-010 seeds
-#   date_of_issue_required=True as BINDING. render.py's _check_date_of_issue
-#   returns "variant produces no PDF to carry a date of issue" for the
-#   EUROPASS_API placeholder, and date_of_issue_required is in
-#   _CONTENT_ONLY_KEYS so it blocks before any network call. The local
-#   preview path also renders the Europass look-alike without passing
-#   date_of_issue. Net: this funder can never get a CV rendered as-is.
-# - "australia-awards" (and "rhodes", "sisgp" below): funder_template ->
-#   FUNDER_TEMPLATE, but render.py's _funder_dispatch() only knows "SISGP"
-#   and "RHODES" by template id, and nothing derives funder_template_id from
-#   a canonical key -- render_draft's funder_template_id param defaults to
-#   None and no caller passes it. Any draft routed here raises
-#   UnsupportedRenderVariant.
+#   date_of_issue_required=True as BINDING. The local preview path
+#   (allow_network=False) passes date_of_issue so cv_europass.html satisfies
+#   R-010; the live europa.eu API (allow_network=True) has no date-of-issue
+#   field, so _blocked_by_content_only_rules stops PII egress when a BINDING
+#   date_of_issue_required is active.
+# - "rhodes", "sisgp", and "australia-awards": render_draft derives
+#   funder_template_id ("RHODES", "SISGP", "AUSTRALIA_AWARDS") from
+#   draft.funding_opportunity.canonical_key via _funder_template_id_for_draft.
+#   "australia-awards" stays "" in SEED_FUNDERS because country programmes
+#   vary between OASIS portal fields and the country-localised DFAT .docx
+#   template (R-065); funder_templates/australia_awards.py supports both PDF
+#   rendering and Word FORMTEXT .docx form-filling (R-083).
 SEED_FUNDERS: tuple[tuple[str, str, str], ...] = (
     ("rhodes", "Rhodes Scholarship", "funder_template"),
     ("sisgp", "Swedish Institute Scholarships for Global Professionals", "funder_template"),
-    ("australia-awards", "Australia Awards", "funder_template"),
+    ("australia-awards", "Australia Awards", ""),
     ("daad-epos", "DAAD EPOS", "europass_required"),
     ("daad-study-scholarships", "DAAD Study Scholarships", ""),
     ("daad-prime", "DAAD PRIME", "europass_preferred"),
@@ -61,6 +58,7 @@ SEED_FUNDERS: tuple[tuple[str, str, str], ...] = (
     ("turkiye-burslari", "Turkiye Burslari", "any"),
     ("stipendium-hungaricum", "Stipendium Hungaricum", "structured_fields_only"),
     ("nawa", "NAWA Banach", "structured_fields_only"),
+    ("nawa-pmfc", "NAWA Poland My First Choice", "structured_fields_only"),
     ("chevening", "Chevening", ""),
     ("fulbright", "Fulbright Foreign Student Program", ""),
     ("eiffel-excellence", "Eiffel Excellence", ""),
@@ -184,6 +182,36 @@ SEED_RULES: tuple[dict[str, Any], ...] = (
             "https://www.rhodeshouse.ox.ac.uk/media2/glifdhld/pdf-cv-template-new.pdf"
         ),
         "verified_for_cycle": "current template",
+        "confidence": "high",
+    },
+    {
+        "rule_id": "R-078",
+        "scope_kind": "FUNDER",
+        "scope_values": ["sisgp"],
+        "key": "max_pages",
+        "value": 3,
+        "enforcement": "BINDING",
+        "rule_text": (
+            "SISGP template constraints: 'The completed CV may not exceed 3 pages. "
+            "Any pages exceeding the maximum will not be considered'"
+        ),
+        "source_url": "https://si.se/app/uploads/2025/11/cv-si-scholarships-2026_2027-updated-.docx",
+        "verified_for_cycle": "2026/2027",
+        "confidence": "high",
+    },
+    {
+        "rule_id": "R-082",
+        "scope_kind": "INSTITUTION",
+        "scope_values": ["gb:university of cambridge"],
+        "key": "max_bytes",
+        "value": 2097152,
+        "enforcement": "BINDING",
+        "rule_text": (
+            "University of Cambridge postgraduate admissions (including Gates "
+            "Cambridge): all supporting documents must be 'under 2MB'"
+        ),
+        "source_url": "https://www.postgraduate.study.cam.ac.uk/apply/how/supporting-documents",
+        "verified_for_cycle": "current site",
         "confidence": "high",
     },
     {
@@ -444,15 +472,13 @@ SEED_RULES: tuple[dict[str, Any], ...] = (
     # in September would be noise. Anything longer is what an admissions
     # officer asks about.
     #
-    # ADVISORY_HIGH_RISK, not BINDING: uni-assist says "SOME universities
-    # require a CV without any omissions", and blocking every German CV over
-    # a summer would be the failure R-031 was downgraded for.
+    # ADVISORY_HIGH_RISK, not BINDING, at COUNTRY DE: uni-assist says "SOME
+    # universities require a CV without any omissions", and blocking every
+    # German CV over a summer would be the failure R-031 was downgraded for.
     #
-    # ETH Zurich's own gapless rule (C-02, ethz.ch, binding, high confidence)
-    # is deliberately absent. It is one university's rule, and scoping it to
-    # COUNTRY CH would apply it to every Swiss programme; the INSTITUTION
-    # scope now exists to hold it, and it can be seeded the moment
-    # Institution.canonical_key for ETH is in the catalog.
+    # ETH Zurich ("ch:eth zurich") and TUM ("de:technical university of munich")
+    # state their own gapless and history/typography rules directly on their
+    # admissions pages (S-047) and are seeded under INSTITUTION scope below.
     {
         "rule_id": "C-002",
         "scope_kind": "COUNTRY",
@@ -473,6 +499,99 @@ SEED_RULES: tuple[dict[str, Any], ...] = (
             "other-documents/"
         ),
         "verified_for_cycle": "current site, 2026",
+        "confidence": "high",
+    },
+    {
+        "rule_id": "S-047",
+        "scope_kind": "INSTITUTION",
+        "scope_values": ["ch:eth zurich", "de:technical university of munich"],
+        "key": "no_unexplained_gaps",
+        "value": GERMAN_GAP_TOLERANCE_MONTHS,
+        "enforcement": "BINDING",
+        "rule_text": (
+            "ETH Zurich: 'Leave no time gaps: also list periods when you did not "
+            "attend school, study or work (e.g. longer periods of travel or time "
+            "off).' TUM style guide: the tabular CV 'must not contain any gaps "
+            "longer than 3 months' after leaving school."
+        ),
+        "source_url": (
+            "https://ethz.ch/applications/teaching/en/applications/eapply/msc/mscsummary.html"
+        ),
+        "verified_for_cycle": "2026",
+        "confidence": "high",
+    },
+    {
+        "rule_id": "S-047",
+        "scope_kind": "INSTITUTION",
+        "scope_values": ["ch:eth zurich"],
+        "key": "cv_scope",
+        "value": "complete",
+        "enforcement": "BINDING",
+        "rule_text": (
+            "ETH Zurich: 'Please upload an up-to-date, chronological curriculum "
+            "vitae in table form, leaving nothing out. Begin with your upper "
+            "secondary school graduation and include all details right up to the "
+            "time of application.'"
+        ),
+        "source_url": (
+            "https://ethz.ch/applications/teaching/en/applications/eapply/msc/mscsummary.html"
+        ),
+        "verified_for_cycle": "2026",
+        "confidence": "high",
+    },
+    {
+        "rule_id": "S-047",
+        "scope_kind": "INSTITUTION",
+        "scope_values": ["ch:eth zurich"],
+        "key": "cv_start",
+        "value": {"start": "upper_secondary"},
+        "enforcement": "ADVISORY_HIGH_RISK",
+        "rule_text": (
+            "ETH Zurich: 'Begin with your upper secondary school graduation and "
+            "include all details right up to the time of application, with exact "
+            "entries regarding your education (schools attended, studies etc.).'"
+        ),
+        "source_url": (
+            "https://ethz.ch/applications/teaching/en/applications/eapply/msc/mscsummary.html"
+        ),
+        "verified_for_cycle": "2026",
+        "confidence": "high",
+    },
+    {
+        "rule_id": "S-047",
+        "scope_kind": "INSTITUTION",
+        "scope_values": ["de:technical university of munich"],
+        "key": "font",
+        "value": "Times New Roman or Arial, 12 point",
+        "enforcement": "ADVISORY_HIGH_RISK",
+        "rule_text": (
+            "TUM application style guide: PDF, A4, 'Times New Roman or Arial', "
+            "'12 point', margins '2 centimeters', line spacing '1.5-fold', "
+            "'chronological and tabular'."
+        ),
+        "source_url": (
+            "https://www.tum.de/en/studies/application/application-info-portal/"
+            "document-requirements/tum-style-guide"
+        ),
+        "verified_for_cycle": "2026",
+        "confidence": "high",
+    },
+    {
+        "rule_id": "S-047",
+        "scope_kind": "INSTITUTION",
+        "scope_values": ["de:technical university of munich"],
+        "key": "date_of_birth_allowed",
+        "value": True,
+        "enforcement": "ADVISORY_STYLE",
+        "rule_text": (
+            "TUM application style guide: personal details on the tabular CV "
+            "include first name, surname and date of birth."
+        ),
+        "source_url": (
+            "https://www.tum.de/en/studies/application/application-info-portal/"
+            "document-requirements/tum-style-guide"
+        ),
+        "verified_for_cycle": "2026",
         "confidence": "high",
     },
     # --- AI-use policy: reported to the approving human, never a gate -------

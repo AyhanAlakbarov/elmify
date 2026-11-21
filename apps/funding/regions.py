@@ -49,7 +49,7 @@ REGIONS: dict[str, Region] = {
     ),
     "ASEAN": Region(
         "Association of Southeast Asian Nations",
-        ("BN", "ID", "KH", "LA", "MM", "MY", "PH", "SG", "TH", "VN"),
+        ("BN", "ID", "KH", "LA", "MM", "MY", "PH", "SG", "TH", "TL", "VN"),
         "https://asean.org/member-states/",
     ),
     "AFRICAN_UNION": Region(
@@ -69,9 +69,25 @@ REGIONS: dict[str, Region] = {
             "AG", "AU", "BB", "BD", "BN", "BS", "BW", "BZ", "CA", "CM", "CY", "DM", "FJ",
             "GA", "GB", "GD", "GH", "GM", "GY", "IN", "JM", "KE", "KI", "KN", "LC", "LK",
             "LS", "MT", "MU", "MV", "MW", "MY", "MZ", "NA", "NG", "NR", "NZ", "PG", "PK",
-            "RW", "SB", "SC", "SG", "SL", "SS", "SZ", "TO", "TT", "TV", "TZ", "UG", "VC",
+            "RW", "SB", "SC", "SG", "SL", "SZ", "TG", "TO", "TT", "TV", "TZ", "UG", "VC",
             "VU", "WS", "ZA", "ZM",
         ),
         "https://thecommonwealth.org/our-member-countries",
+    ),
+    "TURKIC_STATES": Region(
+        "Organization of Turkic States",
+        ("AZ", "KG", "KZ", "TR", "UZ"),
+        "https://www.turkicstates.org/en/member-states",
+    ),
+    "OIC": Region(
+        "Organisation of Islamic Cooperation",
+        (
+            "AE", "AF", "AL", "AZ", "BD", "BF", "BH", "BJ", "BN", "CI", "CM", "DJ", "DZ",
+            "EG", "GA", "GM", "GN", "GW", "GY", "ID", "IQ", "IR", "JO", "KG", "KM", "KW",
+            "KZ", "LB", "LY", "MA", "ML", "MR", "MV", "MY", "MZ", "NE", "NG", "OM", "PK",
+            "PS", "QA", "SA", "SD", "SL", "SN", "SO", "SR", "SY", "TD", "TG", "TJ", "TM",
+            "TN", "TR", "UG", "UZ", "YE",
+        ),
+        "https://www.oic-oci.org/states/?lan=en",
     ),
 }

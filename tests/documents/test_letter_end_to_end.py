@@ -65,6 +65,7 @@ def test_facts_and_narrative_input_to_letter_to_gate_to_flag_to_revise(
             proposed_by=NarrativeInput.ProposedBy.ENGINE,
         )
 
+        prompt = _prompt_stub()
         research = NarrativeInput.objects.create(
             student=student,
             kind=NarrativeInput.Kind.RESEARCH_FIT,
@@ -72,7 +73,7 @@ def test_facts_and_narrative_input_to_letter_to_gate_to_flag_to_revise(
             text="The Chair of Robotics hosts master's theses on legged locomotion.",
             confirmed_at=timezone.now(),
             provenance={
-                "program_id": "p",
+                "program_id": str(prompt.programme_id),
                 "sentence": "The Chair of Robotics hosts master's theses on legged locomotion.",
                 "entity": "Chair of Robotics",
                 "source_url": "https://tum.de/robotics",
@@ -87,7 +88,6 @@ def test_facts_and_narrative_input_to_letter_to_gate_to_flag_to_revise(
             },
         )
 
-        prompt = _prompt_stub()
         unit_text = (
             "I chose the thesis track because the Chair of Robotics works on legged locomotion."
         )

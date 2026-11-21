@@ -370,5 +370,5 @@ def test_a_refused_rotation_write_still_syncs_and_logs_no_secret_name(connection
 
     assert token == "at"
     assert "rotated refresh token" in caplog.text
-    assert "tehsil/mailbox" not in caplog.text
+    assert "elmify/mailbox" not in caplog.text
     assert "rt-2" not in caplog.text

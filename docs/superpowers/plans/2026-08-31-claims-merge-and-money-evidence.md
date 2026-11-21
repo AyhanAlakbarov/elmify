@@ -27,9 +27,9 @@
 - `Institution` and `Program` are shared-catalog tables read by every tenant (`tests/tenancy/test_database_isolation.py::_SHARED_TABLES`).
 - No new LLM-calling surface is introduced; the existing `rate_limited("discovery-extraction", ...)` at `pipeline.py:308` already covers the only model call.
 - **Corpus and harness, preserved outside the repo** (they are third-party page content and stay out of git):
-  - `~/.local/share/tehsil_agent/2026-08-30-eacea-claims.jsonl` — 595 cached extractions
-  - `~/.local/share/tehsil_agent/eacea-cache/` — the fetched page bodies (161 MB)
-  - `~/.local/share/tehsil_agent/eacea_run.py` — the two-pass shadow-run harness; `pass2` replays with no network
+  - `~/.local/share/elmify/2026-08-30-eacea-claims.jsonl` — 595 cached extractions
+  - `~/.local/share/elmify/eacea-cache/` — the fetched page bodies (161 MB)
+  - `~/.local/share/elmify/eacea_run.py` — the two-pass shadow-run harness; `pass2` replays with no network
 - **Do not re-run the full extraction.** It is 595 calls / 2.19 M in / 445 k output tokens, made 2026-08-30.
 
 ### Correction to the spec's expected outcome — read before Task 3
@@ -770,7 +770,7 @@ for M in (FundingOpportunity, Program, Institution, OfficialEvidenceClaim):
 print("catalog cleared; sources and snapshots kept")
 PY
 
-cp ~/.local/share/tehsil_agent/eacea_run.py /tmp/eacea_run.py
+cp ~/.local/share/elmify/eacea_run.py /tmp/eacea_run.py
 # point BASE at the preserved cache, then:
 uv run python /tmp/eacea_run.py pass2
 ```
@@ -1119,11 +1119,11 @@ git commit -m "fix(research): money quotes the sentence it came from, or it is n
 
 - [ ] **Step 1: Build the sample**
 
-From `~/.local/share/tehsil_agent/2026-08-30-eacea-claims.jsonl`, take every URL whose extraction carried a money claim with a non-ISO currency (about 20 pages), the 6 whose label names a duration — including `ccd-stede.eu/fees-and-fundings/erasmus-mundus-scholarship` and `floodriskmaster.org/scholarships`, the two named in §5b — and about 25 pages carrying ordinary EUR claims as a control.
+From `~/.local/share/elmify/2026-08-30-eacea-claims.jsonl`, take every URL whose extraction carried a money claim with a non-ISO currency (about 20 pages), the 6 whose label names a duration — including `ccd-stede.eu/fees-and-fundings/erasmus-mundus-scholarship` and `floodriskmaster.org/scholarships`, the two named in §5b — and about 25 pages carrying ordinary EUR claims as a control.
 
 - [ ] **Step 2: Re-extract just those pages**
 
-Use `~/.local/share/tehsil_agent/eacea_extract.py` against the preserved bodies in `~/.local/share/tehsil_agent/eacea-cache/`, restricted to the sample URLs. **No re-fetching: the bodies are already on disk.**
+Use `~/.local/share/elmify/eacea_extract.py` against the preserved bodies in `~/.local/share/elmify/eacea-cache/`, restricted to the sample URLs. **No re-fetching: the bodies are already on disk.**
 
 - [ ] **Step 3: Measure three things**
 

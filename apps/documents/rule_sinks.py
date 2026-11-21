@@ -23,13 +23,19 @@ from typing import TYPE_CHECKING, cast
 from apps.funding.models import Program
 
 from .catalog_seed import GERMAN_GAP_TOLERANCE_MONTHS
-from .constraints import ConstraintRule, Enforcement, _quote, check_directive_shape
+from .constraints import (
+    ConstraintRule,
+    Enforcement,
+    _quote,
+    check_directive_shape,
+)
 from .grammar import (
     _IMPLAUSIBLE_CAP,
     _IMPLAUSIBLE_MAX,
     FORM_VALUES,
     NAMING_VALUES,
     Rule,
+    coverage_rule_value,
     limit_sink,
     sink_for,
 )
@@ -39,6 +45,7 @@ from .letter_shape import (
     _form_decision,
     _naming_decision,
 )
+from .requirement_list import saved_readings
 
 if TYPE_CHECKING:
     # Annotation only: grammar_questions imports nothing from here, but keeping
@@ -76,8 +83,11 @@ def _bucket(rule: Rule) -> Bucket:
     """
     if rule.operation == "limit":
         side = "floor" if rule.bound == "minimum" else "cap"
+        # A count of entries is per section: 3 publications and 5 posts do not
+        # contradict each other.
+        unit = f"entries:{rule.detail}" if rule.unit == "entries" else rule.unit
         # <!-- reconciled 2026-09-26 -->
-        return (rule.document, rule.operation, rule.unit, side, rule.excl_spaces)
+        return (rule.document, rule.operation, unit, side, rule.excl_spaces)
     return (rule.document, rule.operation, "", "", False)
 
 
@@ -168,10 +178,10 @@ _STYLE_VALUE: dict[str, object] = {
     "date_of_birth_forbidden": False,
     # "No gaps" read at catalog_seed's own DE tolerance (C-002), not a bare
     # zero: a page's "no gaps" used to project stricter than the country seed
-    # for the same key, so resolve_rules' specificity (a same-enforcement
-    # programme rule always wins) let an ordinary summer between two degrees
-    # become a false gap warning on every German programme whose page said
-    # "no gaps" (fix round 1, finding 1). A page stating its OWN tolerance
+    # for the same key, and a page rule is theirs, which beats our country
+    # seed outright (spec §6.4 step 3) -- so an ordinary summer between two
+    # degrees became a false gap warning on every German programme whose page
+    # said "no gaps" (fix round 1, finding 1). A page stating its OWN tolerance
     # ("no gaps longer than 3 months") is still read at this figure, not that
     # one -- which on an ADVISORY check costs a warning, never a missed one.
     # ponytail: the page's own tolerance figure is not read; pick it from
@@ -179,6 +189,12 @@ _STYLE_VALUE: dict[str, object] = {
     "no_gaps": GERMAN_GAP_TOLERANCE_MONTHS,
     # The one token render._check_prohibited_content knows.
     "no_hyperlinks": ["hyperlinks"],
+    # Spec 2026-10-12 §8. `cv_start_last_years` is built from its number
+    # (`_cv_start_years`), so it is deliberately not here.
+    "cv_complete": "complete",
+    "cv_relevant_only": "relevant_only",
+    "cv_start_upper_secondary": {"milestone": "upper_secondary", "years": None},
+    "cv_start_first_degree": {"milestone": "first_degree", "years": None},
 }
 
 #: A megabyte as a byte count for max_bytes. Decimal, not 1,048,576: a cap is
@@ -216,7 +232,8 @@ def _cv_rules(rules: Sequence[Rule]) -> list[Rule]:
 
 def _is_font(rule: Rule) -> bool:
     """font_family and font_size_minimum both write the one `font` key, and
-    resolve_rules keeps the last of a key -- so a page may apply only one."""
+    the requirement list keeps the first font theirs state (its `first` row;
+    every later one is for information) -- so a page may apply only one."""
     return rule.operation == "style" and sink_for("cv", "style", rule.value) == "font"
 
 
@@ -254,6 +271,7 @@ def to_constraint_rules(
     """
     built: list[ConstraintRule] = []
     font_taken = False
+    entries_at: dict[int, int] = {}
     for rule in _cv_rules(rules):
         if rule.operation in ("format", "include", "order", "emphasise",
                               "topic", "student_action", "form", "naming", "other"):
@@ -270,10 +288,29 @@ def to_constraint_rules(
             if font_taken:
                 continue
             font_taken = True
-        if rule.operation == "style":
+        if rule.operation == "style" and rule.value == "cv_start_last_years":
+            years = _cv_start_years(rule.detail)
+            if years is None:
+                continue
+            value: object = {"milestone": None, "years": years}
+        elif rule.operation == "style":
             # A flag style is its polarity; a detail style (font family, point
             # size) is the value the sentence printed, which `detail` carries.
             value = _STYLE_VALUE.get(str(rule.value), rule.detail or rule.value)
+        elif key == "max_entries_per_section" and isinstance(rule.value, int | float):
+            # Every entries figure of one sentence is ONE rule {section: n}; a
+            # section named twice keeps the lower. (Else one id, two rules.)
+            number = math.floor(rule.value)
+            if rule.index in entries_at:
+                held = built[entries_at[rule.index]]
+                merged: dict[str, int] = dict(held.value)  # type: ignore[call-overload]
+                merged[rule.detail] = min(number, merged.get(rule.detail, number))
+                built[entries_at[rule.index]] = held.model_copy(update={"value": merged})
+                continue
+            entries_at[rule.index] = len(built)
+            value = {rule.detail: number}
+        elif rule.operation == "coverage":
+            value = coverage_rule_value(rule.value)
         elif key == "max_bytes" and isinstance(rule.value, int | float):
             # The page's figure, in the key's unit: an exact conversion.
             value = math.floor(rule.value * _BYTES_PER_MEGABYTE)
@@ -289,6 +326,16 @@ def to_constraint_rules(
             scope="PROGRAMME",
         ))
     return tuple(built)
+
+
+def _cv_start_years(detail: str) -> int | None:
+    """The years in "your last 10 years", or None when the picked number is
+    not a whole count from 1 to 60 -- a misread is no rule, never a guess."""
+    try:
+        years = float(detail)
+    except ValueError:
+        return None
+    return int(years) if years.is_integer() and 1 <= years <= 60 else None
 
 
 def page_rule_id(index: int, key: str) -> str:
@@ -343,6 +390,40 @@ def to_referee(rules: Sequence[Rule], *, source_url: str) -> tuple[dict[str, obj
     return tuple(records)
 
 
+def to_file_rules(rules: Sequence[Rule], *, source_url: str) -> tuple[dict[str, object], ...]:
+    """The page's file rules, one record per (document, field) a sentence stated.
+
+    Written to `Program.file_rules`; copied to `Application.kit_file_rules` by
+    capture_requirements; folded per document by `apps.documents.file_rules`. A
+    conditional rule is kept and marked -- it binds no student until their own
+    facts are compared -- and every other note is dropped.
+    """
+    records: list[dict[str, object]] = []
+    for rule in rules:
+        if rule.operation != "file" or rule.note not in ("", "conditional"):
+            continue
+        document, field, value = cast(tuple[str, str, object], rule.value)
+        records.append({
+            "document": document, "field": field, "value": value,
+            "conditional": rule.note == "conditional", "condition": rule.condition,
+            "rule_text": _quote(rule.sentence), "source_url": source_url,
+        })
+    return tuple(records)
+
+
+def _reading(rule: Rule) -> tuple[str, object] | None:
+    """The key and value this CV note would have written at the bar, or None.
+
+    Projected by `to_constraint_rules` itself, on a copy with the note
+    cleared, so a saved reading can never disagree with what the same rule
+    writes once it is applied.
+    """
+    if rule.document != "cv" or rule.value is None:
+        return None
+    projected = to_constraint_rules((replace(rule, note=""),), source_url="")
+    return (projected[0].key, projected[0].value) if projected else None
+
+
 def to_notes(rules: Sequence[Rule], *, source_url: str) -> tuple[ConstraintRule, ...]:
     """Every note, as the `undecided` or `unapplied` rule the student reads.
 
@@ -374,13 +455,16 @@ def to_notes(rules: Sequence[Rule], *, source_url: str) -> tuple[ConstraintRule,
     value fails the read side's shape (finding 4).
 
     One sentence gets one note per kind -- its figures share the quote, so a
-    second would say the same thing twice.
+    second would say the same thing twice. Its readings are pooled instead:
+    an `unsure` or `conflict` note on a CV rule saves every value its rules
+    would have written (`_reading`), so the requirement list can take the
+    stricter reading (spec 2026-10-12 §6.4 step 2).
     """
-    built: list[ConstraintRule] = []
-    seen: set[tuple[int, str]] = set()
+    built: dict[tuple[int, str], ConstraintRule] = {}
+    said: dict[tuple[int, str], tuple[str, list[object]]] = {}
     font_seen = False
     for rule in rules:
-        if rule.operation == "referee":
+        if rule.operation in ("referee", "file"):
             # A record of its own (to_referee), conditional ones included: the
             # route a condition names is the fact the catalogue needs.
             continue
@@ -405,18 +489,36 @@ def to_notes(rules: Sequence[Rule], *, source_url: str) -> tuple[ConstraintRule,
                 and rule.value == "other_template"
             )
             is_cv_student_action = rule.document == "cv" and rule.operation == "student_action"
+            # A start-point whose years are no whole count: to_constraint_rules
+            # writes nothing for it, so its sentence must land here.
+            is_bad_start = (
+                is_cv and rule.operation == "style" and rule.value == "cv_start_last_years"
+                and _cv_start_years(rule.detail) is None
+            )
             if is_other_template:
                 kind = "undecided"
-            elif is_cv_floor or is_cv_student_action or is_extra_font or is_bad_directive:
+            elif (is_cv_floor or is_cv_student_action or is_extra_font or is_bad_directive
+                  or is_bad_start):
                 kind = "unapplied"
             else:
                 continue
         else:
             kind = rule.note
-        if (rule.index, kind) in seen:
+        slot = (rule.index, kind)
+        # Only `unsure` (below the bar) and `conflict` (one side of a
+        # contradiction) still carry a reading's value; a third-party or
+        # conditional note binds nobody (spec 2026-10-12 §6.4 step 1).
+        reading = _reading(rule) if kind in ("unsure", "conflict") else None
+        if reading is not None:
+            key, value = reading
+            pooled = said.setdefault(slot, (key, []))
+            # One key per note: a second key on the same sentence is a
+            # different question, and its own note would be a different kind.
+            if pooled[0] == key and value not in pooled[1]:
+                pooled[1].append(value)
+        if slot in built:
             continue
-        seen.add((rule.index, kind))
-        built.append(ConstraintRule(
+        built[slot] = ConstraintRule(
             rule_id=f"PAGE-{rule.index}-{kind[:9]}",
             key="unapplied" if kind == "unapplied" else "undecided",
             value=f"{rule.document}:{rule.operation}",
@@ -424,8 +526,14 @@ def to_notes(rules: Sequence[Rule], *, source_url: str) -> tuple[ConstraintRule,
             rule_text=_quote(rule.sentence),
             source_url=source_url,
             scope="PROGRAMME",
-        ))
-    return tuple(built)
+        )
+    notes: list[ConstraintRule] = []
+    for slot, note in built.items():
+        # Only readings the merge reads, and never more than it holds: an
+        # eleventh pooled value raised ValidationError here (final review I1).
+        readings = saved_readings(*said[slot]) if slot in said else None
+        notes.append(note.model_copy(update={"readings": readings}) if readings else note)
+    return tuple(notes)
 
 
 def format_decision(rules: Sequence[Rule]) -> tuple[str, str]:
@@ -509,7 +617,7 @@ def letter_field(rule: Rule) -> tuple[str, object] | None:
         # Controller ruling C3: a conditional, third-party or unsure rule is a
         # note and never sets a field.
         return None
-    if rule.operation == "referee":
+    if rule.operation in ("referee", "file"):
         # The sentence already reaches student_actions through its own rule;
         # the referee facts are records on the programme (to_referee).
         return None

@@ -105,7 +105,7 @@ with mount: timeout exit 124, proving the MCP process remained running
 The user runs:
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent && ./setup-codex-mcps.sh && ./verify-codex-mcps.sh
+cd /home/orkhan/Desktop/elmify && ./setup-codex-mcps.sh && ./verify-codex-mcps.sh
 ```
 
 Then a fresh `cco codex` session must make real calls to `github.get_me`, `graphify.graph_stats`, `headroom.headroom_stats`, and `opendataloader_pdf.convert_pdf`. Keep GitHub optional if the corrected call passes.

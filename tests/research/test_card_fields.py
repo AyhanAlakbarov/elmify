@@ -76,6 +76,23 @@ def test_anything_but_one_unambiguous_figure_is_no_number(text):
         ("1,000,000원", {"KRW"}),
         ("50만원", {"KRW"}),
         ("50 만 원", {"KRW"}),
+        ("1,200 Schweizer Franken", {"CHF"}),
+        ("SFr. 1,500", {"CHF"}),
+        ("5,000 د.إ", {"AED"}),
+        ("3,000 ر.س", {"SAR"}),
+        ("4,000 ر.ق", {"QAR"}),
+        ("500 د.ك", {"KWD"}),
+        ("400 د.ب", {"BHD"}),
+        ("1,000 ريال", set()),        # Saudi or Qatari riyal when bare
+        ("500 دينار", set()),         # Kuwaiti or Bahraini dinar when bare
+        ("RM3,000", {"MYR"}),
+        ("B$1,500", {"BND"}),
+        ("Rp15.000.000", {"IDR"}),
+        ("5.000.000₫", {"VND"}),
+        ("2,500 lei", {"RON"}),
+        ("50.000 динара", {"RSD"}),
+        ("S$2,500", {"SGD"}),
+        ("NZ$3,000", {"NZD"}),
     ],
 )
 def test_a_currency_is_what_the_copy_names_and_nothing_ambiguous(text, expected):

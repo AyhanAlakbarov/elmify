@@ -1,0 +1,11 @@
+<details>
+  <summary>Something's wrong</summary>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="reading_id" value="{{ reading.id }}">
+    <input type="hidden" name="action" value="review">
+    <label for="review-reason">What's wrong?</label>
+    <textarea id="review-reason" name="reason" maxlength="500"></textarea>
+    <button type="submit">Send</button>
+  </form>
+</details>

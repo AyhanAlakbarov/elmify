@@ -24,7 +24,7 @@ Every transition leaves an `AuditEvent` under the platform agency.
 
 **Spec:** `docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md` §11. Read that section in full, plus §12 (the "platform-only" row), §16 item 12, and decision-log rows 26, 27 and 33. This plan is §16 item 12. Read the "Row-level security" section of `CLAUDE.md` before Task 2. Tasks 2, 5 and 13 are the three failure modes it describes.
 
-**Base branch:** `origin/master` at `115c752` (2026-09-25). Work in a fresh worktree. Test database: `POSTGRES_DB=tehsil_resolution_queue`. Never share a test DB between sessions.
+**Base branch:** `origin/master` at `115c752` (2026-09-25). Work in a fresh worktree. Test database: `POSTGRES_DB=elmify_resolution_queue`. Never share a test DB between sessions.
 
 ---
 
@@ -181,7 +181,7 @@ An operator is a `Membership` with `role=PLATFORM_ADMIN`, active, MFA-verified, 
   - `ResolutionItem` in a new `_PLATFORM_TABLES`.
   - `MovedPage` (Task 7) in `_SHARED_TABLES`.
 - **Never run `ruff format`.** This repo's gate is lint-only.
-- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_resolution_queue uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` stay clean. `uv run bandit -c pyproject.toml -r apps config` also stays clean; Task 13 adds SQL.
+- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=elmify_resolution_queue uv run pytest`, and `uv run python manage.py makemigrations --check --dry-run` stay clean. `uv run bandit -c pyproject.toml -r apps config` also stays clean; Task 13 adds SQL.
 - **Every number is a setting with an env override:** `RESOLUTION_DAILY_CAP_PER_OPERATOR` (20) and `RESOLUTION_EXPIRY_DAYS` (30).
 - **Templates exist only under `tests/templates/`**, as `deletion_console` does. The production presentation layer is chosen at build time by the orchestrator (`CLAUDE.md` "Frontend and design"; §11 names Aykhan as its author). Markup assertions carry `@pytest.mark.frontend`.
 
@@ -272,7 +272,7 @@ def test_the_command_sets_one_and_refuses_a_second(agency_a, agency_b) -> None:
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_resolution_queue uv run pytest tests/tenancy/test_platform_agency.py -v`
+Run: `POSTGRES_DB=elmify_resolution_queue uv run pytest tests/tenancy/test_platform_agency.py -v`
 Expected: FAIL. The import error is on `platform_agency`, or the `is_platform` field is unknown.
 
 - [ ] **Step 3: Implement**
@@ -342,7 +342,7 @@ Run `uv run python manage.py makemigrations tenancy --name agency_is_platform`. 
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
-Run: `POSTGRES_DB=tehsil_resolution_queue uv run pytest tests/tenancy/test_platform_agency.py -v`
+Run: `POSTGRES_DB=elmify_resolution_queue uv run pytest tests/tenancy/test_platform_agency.py -v`
 Expected: 3 passed.
 
 - [ ] **Step 5: Runbook line**
@@ -605,7 +605,7 @@ def test_platform_tables_have_exactly_the_platform_policies() -> None:
 
 - [ ] **Step 4: Run all three modules and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_resolution_queue uv run pytest tests/research/resolution tests/tenancy/test_database_isolation.py -v -k "resolution or platform"`
+Run: `POSTGRES_DB=elmify_resolution_queue uv run pytest tests/research/resolution tests/tenancy/test_database_isolation.py -v -k "resolution or platform"`
 Expected: FAIL (`ResolutionItem` does not exist).
 
 - [ ] **Step 5: Implement the model**
@@ -774,7 +774,7 @@ Replace the two `<…>` dependency names with the real file names. Do not guess 
 
 - [ ] **Step 7: Run and watch it pass**
 
-Run: `POSTGRES_DB=tehsil_resolution_queue uv run pytest tests/research/resolution tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_resolution_queue uv run pytest tests/research/resolution tests/tenancy/test_database_isolation.py -v`
 Expected: all pass. If `test_an_agency_sees_nothing…` passes but `test_the_platform_reads…` returns zero rows, the predicate is wrong. It is **not** a grant problem, because `_grant_dml` asserted the grant.
 
 - [ ] **Step 8: Commit**
@@ -881,7 +881,7 @@ def test_every_kind_renders_a_closed_question_under_300_characters() -> None:
 
 - [ ] **Step 2: Run and watch it fail**
 
-Run: `POSTGRES_DB=tehsil_resolution_queue uv run pytest tests/research/resolution/test_kinds.py -v`
+Run: `POSTGRES_DB=elmify_resolution_queue uv run pytest tests/research/resolution/test_kinds.py -v`
 Expected: FAIL (module missing).
 
 - [ ] **Step 3: Implement `kinds.py`**
@@ -1161,7 +1161,7 @@ def resolution_for(kind: str, data: dict[str, object], *, evidence: BaseModel) -
 
 - [ ] **Step 4: Run and watch it pass**
 
-Run: `POSTGRES_DB=tehsil_resolution_queue uv run pytest tests/research/resolution/test_kinds.py -v`
+Run: `POSTGRES_DB=elmify_resolution_queue uv run pytest tests/research/resolution/test_kinds.py -v`
 Expected: 7 passed. The URL checks resolve DNS through `validate_public_url`. If they are slow or offline in CI, monkeypatch `apps.research.resolution.kinds.validate_public_url` to a no-op in `tests/research/resolution/conftest.py`, and keep one test that uses the real function on `https://127.0.0.1/` to prove a private address is refused.
 
 - [ ] **Step 5: Commit**
@@ -1241,7 +1241,7 @@ def test_bad_evidence_never_reaches_the_table() -> None:
 
 - [ ] **Step 2: Run and watch it fail**
 
-Run: `POSTGRES_DB=tehsil_resolution_queue uv run pytest tests/research/resolution/test_writers.py -v`
+Run: `POSTGRES_DB=elmify_resolution_queue uv run pytest tests/research/resolution/test_writers.py -v`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement**
@@ -2088,7 +2088,7 @@ class SourceBlocked(RuntimeError):
 
 - [ ] **Step 5: Run the whole research suite, and commit**
 
-Run: `POSTGRES_DB=tehsil_resolution_queue uv run pytest tests/research -q`
+Run: `POSTGRES_DB=elmify_resolution_queue uv run pytest tests/research -q`
 
 ```bash
 git commit -m "feat(resolution): blocked hosts file HOST_UNREACHABLE; catalog-side consultant tasks retire"
@@ -2218,7 +2218,7 @@ BEGIN
 END $$;
 ```
 
-The rest of the script is a copy of `create_erasure_guard.sql`'s load-bearing order, for a new role `tehsil_queue_counter NOLOGIN NOINHERIT BYPASSRLS`:
+The rest of the script is a copy of `create_erasure_guard.sql`'s load-bearing order, for a new role `elmify_queue_counter NOLOGIN NOINHERIT BYPASSRLS`:
 - revoke every membership except the running admin's;
 - `GRANT CREATE ON SCHEMA public` to the new owner;
 - `REVOKE ALL … FROM PUBLIC` **before** `ALTER FUNCTION … OWNER TO`;
@@ -2307,7 +2307,7 @@ This is a measurement, not a test. Nothing asserts it in CI.
 
 ## Decisions this plan needs from the owner
 
-1. **Task 13's role.** A second `BYPASSRLS` role (`tehsil_queue_counter`, recommended), or `tehsil_erasure_guard` owning a second function?
+1. **Task 13's role.** A second `BYPASSRLS` role (`elmify_queue_counter`, recommended), or `elmify_erasure_guard` owning a second function?
    - Recommended: the second role. `CLAUDE.md` describes the guard as "owning exactly one function", and a reviewer reasons from that invariant.
    - The cost is one more admin-script step per environment.
    - Or: defer Task 13 until packs exist at a volume where ordering matters. The queue works without it.

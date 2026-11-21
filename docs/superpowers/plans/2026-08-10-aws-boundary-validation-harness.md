@@ -96,7 +96,7 @@ def test_template_defines_one_off_private_fargate_probe() -> None:
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
 ```
 
 Expected: collection fails because `REQUIRED_OUTPUTS` and `required_outputs_present()` do not exist.
@@ -160,7 +160,7 @@ Add this parameter before `Resources`:
 Parameters:
   ProbeImage:
     Type: String
-    Description: Immutable URI of the tehsil-agent worker image used by the one-off probe
+    Description: Immutable URI of the elmify worker image used by the one-off probe
     AllowedPattern: "^.+@sha256:[0-9a-f]{64}$"
 ```
 
@@ -302,7 +302,7 @@ Append these outputs while retaining `ResearchQueueUrl`:
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
 ```
 
 Expected: all infrastructure contract tests pass without contacting AWS.
@@ -413,7 +413,7 @@ def test_task_probe_records_an_unexpected_reachable_private_target(monkeypatch) 
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
 ```
 
 Expected: collection fails because `validate_https_probe_url()` and `run_task_probe()` do not exist.
@@ -536,7 +536,7 @@ evidence from inside the container.
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
 ```
 
 Expected: all task-probe and infrastructure tests pass without network access.
@@ -734,7 +734,7 @@ def test_evidence_write_is_sorted_and_atomic(tmp_path) -> None:
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py -q
 ```
 
 Expected: failures name the missing parser, polling, controller, and evidence functions.
@@ -938,7 +938,7 @@ uv run python -m scripts.validate_controlled_egress \
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py tests/integration/test_controlled_egress.py -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest tests/research/test_controlled_egress_validation.py tests/integration/test_controlled_egress.py -q
 ```
 
 Expected: local tests pass and the live integration test skips; no AWS client reaches the network.
@@ -1057,7 +1057,7 @@ def test_metric_polling_rejects_negative_values() -> None:
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest tests/research/test_fairness_validation.py -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest tests/research/test_fairness_validation.py -q
 ```
 
 Expected: failures name `FAIR_QUEUE_METRICS`, `metric_queries()`, and `poll_fair_queue_metrics()`.
@@ -1188,7 +1188,7 @@ uv run python -m scripts.validate_sqs_fairness \
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest tests/research/test_fairness_validation.py tests/integration/test_sqs_fair_queue.py -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest tests/research/test_fairness_validation.py tests/integration/test_sqs_fair_queue.py -q
 ```
 
 Expected: local metric tests pass and the live integration test skips; no AWS client reaches the network.
@@ -1218,7 +1218,7 @@ git commit -m "feat: capture SQS fair-queue metric evidence"
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest \
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest \
   tests/research/test_controlled_egress_validation.py \
   tests/research/test_fairness_validation.py \
   --cov=scripts.validate_controlled_egress \
@@ -1235,7 +1235,7 @@ Expected: all focused tests pass and combined line coverage is at least 80%.
 Run:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest -m "not aws" -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest -m "not aws" -q
 ```
 
 Expected: all local tests pass; no AWS-marked test runs.
@@ -1245,7 +1245,7 @@ Expected: all local tests pass; no AWS-marked test runs.
 Run with both live environment variables absent:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest \
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest \
   tests/integration/test_controlled_egress.py \
   tests/integration/test_sqs_fair_queue.py \
   -q
@@ -1258,10 +1258,10 @@ Expected: both tests skip and no AWS request occurs.
 Run each command independently:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run ruff check .
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run mypy apps config
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run python manage.py check
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run python manage.py makemigrations --check --dry-run
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run ruff check .
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run mypy apps config
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run python manage.py check
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run python manage.py makemigrations --check --dry-run
 ```
 
 Expected: every command exits zero with no new warnings.

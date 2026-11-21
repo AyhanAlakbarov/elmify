@@ -2,7 +2,7 @@
 
 A letter the engine flagged (an UNRESOLVED prompt, a gate it could not settle)
 stays a DRAFT with `Application.letter_note == "flagged"`, and the student is
-told "Your counsellor needs to read this letter before it can be approved."
+ told "Your counsellor needs to read this letter before it can be approved."
 Until this page, no counsellor screen showed them (CLAUDE.md: "no counsellor
 approval surface exists yet").
 
@@ -16,6 +16,7 @@ rows only.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from uuid import UUID
 
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
@@ -47,20 +48,23 @@ def waiting_letters(counselor: Membership) -> list[WaitingLetter]:
     applications = list(
         Application.objects.filter(student_id__in=students, letter_note="flagged")
         .exclude(outcome=Application.Outcome.WITHDRAWN)
-        .select_related("candidate", "student")
+        .select_related("candidate", "student__user", "portal_form")
         .order_by("created_at")
     )
+    prog_ids = {a.program_id for a in applications if a.program_id is not None}
+    drafts_by_pair: dict[tuple[UUID, UUID | None], DocumentDraft] = {}
+    if applications and prog_ids:
+        for d in DocumentDraft.objects.filter(
+            student_id__in={a.student_id for a in applications},
+            kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            programme_id__in=prog_ids,
+            status=DocumentDraft.Status.DRAFT,
+        ).order_by("-version"):
+            drafts_by_pair.setdefault((d.student_id, d.programme_id), d)
     rows = []
     for application in applications:
         draft = (
-            DocumentDraft.objects.filter(
-                student_id=application.student_id,
-                kind=DocumentDraft.Kind.MOTIVATION_LETTER,
-                programme_id=application.program_id,
-                status=DocumentDraft.Status.DRAFT,
-            )
-            .order_by("-version")
-            .first()
+            drafts_by_pair.get((application.student_id, application.program_id))
             if application.program_id is not None
             else None
         )

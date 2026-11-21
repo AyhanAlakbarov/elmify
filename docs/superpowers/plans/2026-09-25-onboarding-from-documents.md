@@ -17,9 +17,9 @@
 ## Global Constraints
 
 - Work in the worktree `/home/orkhan/Desktop/tailored-programmes` (branch `claude/tailored-programmes-design`). The shell's cwd resets to the main repo between calls: prefix every command with `cd /home/orkhan/Desktop/tailored-programmes &&` and use `git -C /home/orkhan/Desktop/tailored-programmes`.
-- Test database: `POSTGRES_DB=tehsil_tailored` on every pytest run — never the shared `test_tehsil`.
+- Test database: `POSTGRES_DB=elmify_tailored` on every pytest run — never the shared `test_elmify`.
 - **Never run `ruff format`** — the gate is `ruff check` only.
-- After every task: `uv run ruff check apps config tests scripts ocr`, `uv run mypy apps config`, `uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py`, `POSTGRES_DB=tehsil_tailored uv run pytest -q`, and `uv run python manage.py makemigrations --check --dry-run` all clean; after any change under `ocr/`, also `uv run --project ocr pytest ocr -q`.
+- After every task: `uv run ruff check apps config tests scripts ocr`, `uv run mypy apps config`, `uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py`, `POSTGRES_DB=elmify_tailored uv run pytest -q`, and `uv run python manage.py makemigrations --check --dry-run` all clean; after any change under `ocr/`, also `uv run --project ocr pytest ocr -q`.
 - **No generative model reads a transcript, and nothing on this path calls OpenAI** (spec T19). Every Jev call goes through `apps.research.decisions.ask()` — the decision layer's one client; never a second Jev client, never an HTTP call built here. Every question lives in `apps/documents/transcript_questions.py`, never at a call site. Jev only chooses among candidates code found; code copies the chosen text verbatim and does every count and sum.
 - **What Jev sees is minimised by code first** (owner, 2026-09-26: TypeSafe and OpenRouter now see transcript content). The state holds table cells and candidate lines only, and never a line or row carrying the student's name, a birth date or an ID-like number (Task 2b's `_minimised`, pinned by a test). A per-student `rate_limited()` bucket guards each reading — one OCR run and its Jev requests.
 - **The OCR program parses untrusted files, and never beside the app's secrets in production.** It runs as its own Lambda function: a role that reads only GuardDuty-clean uploads, no secret, no route to the internet. Locally, as a child process, it is handed an environment with no secret. Either way it runs under a timeout, its answer is parsed through a pydantic model with `extra="forbid"`, and a crash or a timeout is `OcrUnavailable`, never an empty transcript.
@@ -85,7 +85,7 @@ def test_an_unknown_unit_is_unknown():
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_credits.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_credits.py -q`
 Expected: FAIL — `ModuleNotFoundError: apps.documents.credits`
 
 - [ ] **Step 3: Implement**
@@ -129,7 +129,7 @@ def to_ects(
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_credits.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_credits.py -q`
 Expected: 5 passed
 
 - [ ] **Step 5: Commit**
@@ -193,7 +193,7 @@ Write `ocr/pyproject.toml` with no dependencies yet:
 
 ```toml
 [project]
-name = "tehsil-ocr"
+name = "elmify-ocr"
 version = "0"
 description = "Transcript OCR, run as a child process of the document worker (apps/documents/ocr.py)"
 # paddlepaddle publishes CPython wheels up to 3.13 and the app runs 3.14, so OCR has its own
@@ -853,7 +853,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 7: Run to verify they pass, and that the app's suite skips them**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && uv run --project ocr pytest ocr -q && POSTGRES_DB=tehsil_tailored uv run pytest ocr -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && uv run --project ocr pytest ocr -q && POSTGRES_DB=elmify_tailored uv run pytest ocr -q`
 Expected: `20 passed`, then `1 skipped` (the app's venv has no `cv2`, so `pytest.importorskip` skips the module).
 
 - [ ] **Step 8: Fetch the models once and read a synthetic line**
@@ -920,7 +920,7 @@ class _Lambda:
 
 
 def _function(monkeypatch, client):
-    monkeypatch.setattr(settings, "OCR_FUNCTION_NAME", "tehsil-transcript-ocr")
+    monkeypatch.setattr(settings, "OCR_FUNCTION_NAME", "elmify-transcript-ocr")
     monkeypatch.setattr(ocr, "_lambda_client", lambda: client)
     monkeypatch.setattr(ocr.subprocess, "run", lambda *a, **k: pytest.fail("ran a child"))
 
@@ -980,7 +980,7 @@ def test_with_a_function_named_the_key_is_sent_never_the_bytes(monkeypatch):
     [read] = read_pages(_DOCUMENT, b"%PDF the whole upload")
     assert read.lines == ("BSc Chemistry",)
     [call] = client.calls
-    assert call["FunctionName"] == "tehsil-transcript-ocr"
+    assert call["FunctionName"] == "elmify-transcript-ocr"
     assert json.loads(call["Payload"]) == {"key": "quarantine/tenant/document"}
 
 
@@ -1036,7 +1036,7 @@ def test_the_real_engine_reads_a_rendered_line(monkeypatch):
 
 - [ ] **Step 10: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_ocr.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_ocr.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.documents.ocr'`
 
 - [ ] **Step 11: Write the seam and its settings**
@@ -1215,7 +1215,7 @@ OCR_MODEL_HOME = os.getenv("OCR_MODEL_HOME", str(Path.home() / ".paddlex"))
 
 - [ ] **Step 12: Run to verify they pass, including the real program**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_ocr.py -q -rs`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_ocr.py -q -rs`
 Expected: `12 passed` on a machine where Step 8 ran (the real read takes ~10–20 s), or `11 passed, 1 skipped` where it did not. The real test is the one that catches the program's stdout being polluted: without `main()`'s descriptor swap, Paddle's `ReduceMeanCheckIfOneDNNSupport` lines land in front of the JSON and the read fails as `OcrUnavailable`.
 
 - [ ] **Step 13: Build the OCR image**
@@ -1227,7 +1227,7 @@ Create `ocr/Dockerfile`:
 # Its own image, never the app's: ~3 GB of PaddlePaddle and model weights that no other service
 # needs, on Python 3.12 because paddlepaddle publishes no 3.14 wheel. Build context is ocr/, so no
 # app code or secret can enter it:
-#   docker build --platform linux/amd64 --provenance=false -t tehsil-ocr ocr/
+#   docker build --platform linux/amd64 --provenance=false -t elmify-ocr ocr/
 #
 # AWS's own Python 3.12 base image: it carries the Lambda runtime client, the runtime interface
 # emulator for local invokes, and boto3 (the handler's S3 read). Pinned by digest, like every base
@@ -1283,13 +1283,13 @@ def test_the_ocr_image_runs_the_python_its_lock_was_resolved_for() -> None:
     assert set(base) == set(pinned), f"ocr/Dockerfile {base} vs ocr/pyproject.toml {pinned}"
 ```
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/test_bootstrap.py -q && docker build --platform linux/amd64 --provenance=false -t tehsil-ocr ocr/`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/test_bootstrap.py -q && docker build --platform linux/amd64 --provenance=false -t elmify-ocr ocr/`
 Expected: `4 passed`; the build succeeds and both `--bake` steps print `baked [...]`, the second with no network. Measured 2026-09-26: the first bake downloads the weights in ~155 s, the offline one takes ~28 s.
 
 Then run it under Lambda's constraints — read-only, an unprivileged user, no network:
 
 ```bash
-docker run --rm --network=none --read-only --tmpfs /tmp --user 993:990 --entrypoint python tehsil-ocr -c "import cv2, numpy as np, read_pages as rp; page = np.full((900, 1400, 3), 255, np.uint8); cv2.putText(page, 'Organic Chemistry I 6 91', (60, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3); _, png = cv2.imencode('.png', page); out = rp.read_document(png.tobytes(), rp.Engines()); assert any('Chemistry' in line for line in out['pages'][0]['lines']), out; print('read', out['pages'][0]['lines'])"
+docker run --rm --network=none --read-only --tmpfs /tmp --user 993:990 --entrypoint python elmify-ocr -c "import cv2, numpy as np, read_pages as rp; page = np.full((900, 1400, 3), 255, np.uint8); cv2.putText(page, 'Organic Chemistry I 6 91', (60, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3); _, png = cv2.imencode('.png', page); out = rp.read_document(png.tobytes(), rp.Engines()); assert any('Chemistry' in line for line in out['pages'][0]['lines']), out; print('read', out['pages'][0]['lines'])"
 ```
 
 Expected: `read ['Organic Chemistry 1 6 91']` or close (the `1` for `I` is the letter swap spec §3.1 lists; the smoke asserts only `Chemistry`). Measured: ~12 s.
@@ -1302,7 +1302,7 @@ cd /tmp && mkdir -p fakes3/evidence/quarantine/t awscfg && cp /home/orkhan/Deskt
   && (cd fakes3 && timeout 300 python3 -m http.server 9000 --bind 127.0.0.1 >/dev/null 2>&1 &) \
   && docker run -d --name ocr-rie --network host --read-only --tmpfs /tmp --user 993:990 -v /tmp/awscfg:/cfg:ro \
      -e AWS_CONFIG_FILE=/cfg/config -e DOCUMENT_BUCKET=evidence -e AWS_ENDPOINT_URL_S3=http://127.0.0.1:9000 \
-     -e AWS_ACCESS_KEY_ID=x -e AWS_SECRET_ACCESS_KEY=x -e AWS_DEFAULT_REGION=us-east-1 tehsil-ocr \
+     -e AWS_ACCESS_KEY_ID=x -e AWS_SECRET_ACCESS_KEY=x -e AWS_DEFAULT_REGION=us-east-1 elmify-ocr \
   && sleep 2 && for i in 1 2; do time curl -s -XPOST localhost:8080/2015-03-31/functions/function/invocations -d '{"key": "quarantine/t/d"}' | head -c 120; echo; done; docker rm -f ocr-rie
 ```
 
@@ -1337,16 +1337,16 @@ Add a job beside `web-image`:
       # writable place, an unprivileged user, and no network -- so a library that
       # writes a cache beside itself, or a model file only root can read, fails
       # here and not on a student's transcript.
-      - run: docker build --platform linux/amd64 --provenance=false -t tehsil-ocr:ci ocr/
+      - run: docker build --platform linux/amd64 --provenance=false -t elmify-ocr:ci ocr/
       - run: |
           docker run --rm --network=none --read-only --tmpfs /tmp --user 993:990 \
-            --entrypoint python tehsil-ocr:ci -c "import cv2, numpy as np, read_pages as rp; page = np.full((900, 1400, 3), 255, np.uint8); cv2.putText(page, 'Organic Chemistry I 6 91', (60, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3); _, png = cv2.imencode('.png', page); out = rp.read_document(png.tobytes(), rp.Engines()); assert any('Chemistry' in line for line in out['pages'][0]['lines']), out; print('read', out['pages'][0]['lines'])"
+            --entrypoint python elmify-ocr:ci -c "import cv2, numpy as np, read_pages as rp; page = np.full((900, 1400, 3), 255, np.uint8); cv2.putText(page, 'Organic Chemistry I 6 91', (60, 200), cv2.FONT_HERSHEY_SIMPLEX, 1.6, (0, 0, 0), 3); _, png = cv2.imencode('.png', page); out = rp.read_document(png.tobytes(), rp.Engines()); assert any('Chemistry' in line for line in out['pages'][0]['lines']), out; print('read', out['pages'][0]['lines'])"
 ```
 
 - [ ] **Step 15: Lint, types, security, commit**
 
 ```bash
-cd /home/orkhan/Desktop/tailored-programmes && uv run ruff check apps config tests scripts ocr && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py && POSTGRES_DB=tehsil_tailored uv run pytest -q
+cd /home/orkhan/Desktop/tailored-programmes && uv run ruff check apps config tests scripts ocr && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py && POSTGRES_DB=elmify_tailored uv run pytest -q
 git -C /home/orkhan/Desktop/tailored-programmes add ocr/pyproject.toml ocr/uv.lock ocr/read_pages.py ocr/test_read_pages.py ocr/Dockerfile ocr/.dockerignore apps/documents/ocr.py tests/documents/test_ocr.py tests/test_bootstrap.py config/settings/base.py .dockerignore .github/workflows/ci.yml
 git -C /home/orkhan/Desktop/tailored-programmes commit -m "feat(documents): transcript OCR -- its own image, run on demand, behind an upload gate
 
@@ -1367,7 +1367,7 @@ Expected: every check clean; bandit reports no issues (the two `# nosec` markers
 
 ### Task 2b: The reader — minimised candidates, Jev's questions, verbatim copies
 
-> **Prerequisite: the decision layer's Task 1 must be in this branch first.** This task imports `Answer`, `Client` and `ask` from `apps/research/decisions.py`, which `docs/superpowers/plans/2026-09-23-decision-layer-and-rule-grammar.md` Task 1 creates (with the settings `TYPESAFE_MODEL`, `TYPESAFE_BASE_URL`, `DECISIONS_PROVIDER` beside the existing `TYPESAFE_API_KEY`, and the pinned `typesafe-sdk`). **No branch has it committed yet** (checked 2026-09-26): `claude/decision-layer` (worktree `/home/orkhan/Desktop/tehsil_agent/.claude/worktrees/agent-a0a4a92d0ab8ba4c7`) sits at master's `ee629959` with only an uncommitted `uv add` of the two SDKs in `pyproject.toml`/`uv.lock`; the plan itself lives on `claude/fetch-spec-refresh` and is also in this tree. So, in order of preference:
+> **Prerequisite: the decision layer's Task 1 must be in this branch first.** This task imports `Answer`, `Client` and `ask` from `apps/research/decisions.py`, which `docs/superpowers/plans/2026-09-23-decision-layer-and-rule-grammar.md` Task 1 creates (with the settings `TYPESAFE_MODEL`, `TYPESAFE_BASE_URL`, `DECISIONS_PROVIDER` beside the existing `TYPESAFE_API_KEY`, and the pinned `typesafe-sdk`). **No branch has it committed yet** (checked 2026-09-26): `claude/decision-layer` (worktree `/home/orkhan/Desktop/elmify/.claude/worktrees/agent-a0a4a92d0ab8ba4c7`) sits at master's `ee629959` with only an uncommitted `uv add` of the two SDKs in `pyproject.toml`/`uv.lock`; the plan itself lives on `claude/fetch-spec-refresh` and is also in this tree. So, in order of preference:
 >
 > 1. Execute that plan's Task 1 on `claude/decision-layer`, commit it, then bring it here:
 >    `git -C /home/orkhan/Desktop/tailored-programmes merge claude/decision-layer`
@@ -1728,7 +1728,7 @@ def test_a_printed_number_is_read_with_either_decimal_mark():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript.py -q`
 Expected: FAIL — `ImportError: cannot import name 'Highlight' from 'apps.documents.transcript'`
 
 - [ ] **Step 3: Write the questions**
@@ -2454,10 +2454,10 @@ In `tests/documents/test_transcript_worker.py`, delete `_content()`, `test_a_rea
 
 - [ ] **Step 6: Run to verify they pass, then the suite**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript.py -q`
 Expected: `16 passed`. The `_clear_rate_limit_cache` autouse fixture in `tests/documents/conftest.py` resets the limiter between tests.
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest -q`
 Expected: all pass. `TranscriptReading.uncertain` and the prefill still use the old field until Task 3b; nothing on this branch calls `read_transcript` until Task 3c.
 
 - [ ] **Step 7: Lint, types, commit**
@@ -2655,7 +2655,7 @@ def test_without_a_printed_total_the_key_number_is_our_sum_and_says_so():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript_checks.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript_checks.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.documents.transcript_checks'`
 
 - [ ] **Step 3: Implement**
@@ -2817,13 +2817,13 @@ The total credits key number is the last printed overall total (a table's overal
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript_checks.py tests/documents/test_transcript.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript_checks.py tests/documents/test_transcript.py -q`
 Expected: `29 passed`.
 
 - [ ] **Step 5: Lint, types, commit**
 
 ```bash
-cd /home/orkhan/Desktop/tailored-programmes && uv run ruff check apps/documents tests/documents && uv run mypy apps config && POSTGRES_DB=tehsil_tailored uv run pytest -q
+cd /home/orkhan/Desktop/tailored-programmes && uv run ruff check apps/documents tests/documents && uv run mypy apps config && POSTGRES_DB=elmify_tailored uv run pytest -q
 git -C /home/orkhan/Desktop/tailored-programmes add apps/documents/transcript_checks.py tests/documents/test_transcript_checks.py
 git -C /home/orkhan/Desktop/tailored-programmes commit -m "feat(documents): check a reading against its own totals and scale, and show -- never repair
 
@@ -2958,7 +2958,7 @@ Before writing the last test, read `tests/documents/test_api.py` for the fixture
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript_worker.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript_worker.py -q`
 Expected: FAIL — `ImportError: cannot import name 'TranscriptReading'`
 
 - [ ] **Step 3: Add `kind` to `DocumentVersion` and `register`**
@@ -3140,7 +3140,7 @@ def _read_transcript(document: DocumentVersion, object_key: str) -> None:
 
 - [ ] **Step 7: Run to verify it passes, plus the guards**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript_worker.py tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py tests/documents/test_api.py tests/documents/test_document_worker.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript_worker.py tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py tests/documents/test_api.py tests/documents/test_document_worker.py -q`
 Expected: all pass, including `test_every_tenant_scoped_model_has_rls_enabled_and_forced`.
 
 - [ ] **Step 8: Commit**
@@ -3211,7 +3211,7 @@ In `tests/documents/test_transcript_reading_rls.py`: import `_GRADE_UNSURE` besi
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/accounts/test_prefill.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/accounts/test_prefill.py -q`
 Expected: FAIL — `TypeError: TranscriptReading() got unexpected keyword arguments: 'highlights'`
 
 - [ ] **Step 3: The model, its migration, its erasure entry**
@@ -3317,13 +3317,13 @@ and in `with_answer`, the `academic_history` branch:
 
 - [ ] **Step 5: Run to verify, with the erasure and isolation guards**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/accounts tests/documents/test_transcript_reading_rls.py tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py -q && uv run python manage.py makemigrations --check --dry-run`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/accounts tests/documents/test_transcript_reading_rls.py tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py -q && uv run python manage.py makemigrations --check --dry-run`
 Expected: all pass — the RLS tests run behind a `NOBYPASSRLS` role — and `No changes detected`.
 
 - [ ] **Step 6: Lint, types, commit**
 
 ```bash
-cd /home/orkhan/Desktop/tailored-programmes && uv run ruff check apps tests && uv run mypy apps config && POSTGRES_DB=tehsil_tailored uv run pytest -q
+cd /home/orkhan/Desktop/tailored-programmes && uv run ruff check apps tests && uv run mypy apps config && POSTGRES_DB=elmify_tailored uv run pytest -q
 git -C /home/orkhan/Desktop/tailored-programmes add apps/documents/models.py apps/documents/migrations apps/audit/redaction.py apps/accounts/consultation.py tests/accounts/test_prefill.py tests/documents/test_transcript_reading_rls.py
 git -C /home/orkhan/Desktop/tailored-programmes commit -m "feat(documents): a stored reading holds its highlights and key numbers, and the prefill carries them
 
@@ -3655,7 +3655,7 @@ def test_the_document_worker_invokes_the_ocr_function_and_reaches_jev(template: 
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript_worker.py tests/infra/test_template.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript_worker.py tests/infra/test_template.py -q`
 Expected: FAIL — `AttributeError: <module 'apps.documents.document_worker' ...> does not have the attribute 'read_transcript'`, and `OcrFunction is not defined in infra/template.yaml`.
 
 - [ ] **Step 3: Route by kind, read between two transactions**
@@ -3913,7 +3913,7 @@ index 8e08b1ea..8dbef7cc 100644
 @@ -1709,6 +1798,16 @@ Resources:
                Value: runtime
              - Name: POSTGRES_RUNTIME_USER
-               Value: tehsil_runtime
+               Value: elmify_runtime
 +            # Transcript OCR is invoked, never run here (apps/documents/ocr.py).
 +            - Name: OCR_FUNCTION_NAME
 +              Value: !Ref OcrFunction
@@ -4031,7 +4031,7 @@ index 8e08b1ea..8dbef7cc 100644
 +      LogGroupName: !Ref OcrLogGroup
 +      FilterPattern: '?"Traceback (most recent call last)" ?"Task timed out" ?"Runtime exited"'
 +      MetricTransformations:
-+        - MetricNamespace: Tehsil/Documents
++        - MetricNamespace: Elmify/Documents
 +          MetricName: OcrFunctionFailures
 +          MetricValue: "1"
 +          DefaultValue: 0
@@ -4063,13 +4063,13 @@ The document worker keeps `OPENAI_API_KEY`: CV ingestion and generation still ca
 
 - [ ] **Step 6: Run to verify they pass, then the template's own lint**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript_worker.py tests/documents/test_api.py tests/documents/test_document_worker.py tests/infra -q && uv run cfn-lint`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript_worker.py tests/documents/test_api.py tests/documents/test_document_worker.py tests/infra -q && uv run cfn-lint`
 Expected: all pass; `cfn-lint` exits 0.
 
 - [ ] **Step 7: Lint, types, commit**
 
 ```bash
-cd /home/orkhan/Desktop/tailored-programmes && uv run ruff check apps tests && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py && POSTGRES_DB=tehsil_tailored uv run pytest -q
+cd /home/orkhan/Desktop/tailored-programmes && uv run ruff check apps tests && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py && POSTGRES_DB=elmify_tailored uv run pytest -q
 git -C /home/orkhan/Desktop/tailored-programmes add apps/documents/document_worker.py apps/documents/api.py tests/documents/test_transcript_worker.py infra/template.yaml infra/parameters tests/infra/test_template.py docs/runbooks/deploy.md
 git -C /home/orkhan/Desktop/tailored-programmes commit -m "feat(documents): the worker reads a transcript through an on-demand OCR function
 
@@ -4112,7 +4112,7 @@ def test_the_transcript_questions_come_after_every_other_question_but_the_notes(
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/accounts/test_consultation.py -q -k transcript_questions_come`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/accounts/test_consultation.py -q -k transcript_questions_come`
 Expected: FAIL — `academic_history` is fourth.
 
 - [ ] **Step 3: Move the two entries**
@@ -4128,7 +4128,7 @@ and paste them immediately before `_question("additional_notes", _always),`. Add
 
 - [ ] **Step 4: Run the accounts suite**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/accounts tests/acceptance -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/accounts tests/acceptance -q`
 Expected: the new test passes. Any test that walked the wizard in the old order (e.g. in `test_consultation_progress.py`, `test_wizard_sequencing_errors.py`, `tests/acceptance/helpers.py`) fails on which question comes next: change that test's expected order to the new one — never the code — and note each in the commit.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -4243,7 +4243,7 @@ def test_default_weights_sum_to_one():
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/accounts/test_profile_schema_v3.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/accounts/test_profile_schema_v3.py -q`
 Expected: FAIL — `ImportError: cannot import name 'DEFAULT_WEIGHTS'`
 
 - [ ] **Step 3: Change the schema**
@@ -4370,7 +4370,7 @@ and at the end of `validate_profile_relationships`, before `return self`:
 
 - [ ] **Step 5: Run the full suite**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest -q`
 Expected: the new test file passes. Failures in `tests/accounts/test_consultation*.py`, `test_wizard_sequencing_errors.py` and `tests/acceptance/` that come from the wizard's question list are expected until Task 5; any other failure is a real consumer of a changed field — fix it here.
 
 - [ ] **Step 6: Commit**
@@ -4531,7 +4531,7 @@ The answers in `_ANSWERS` must be in canonical form (what `_canonical_answer` pr
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/accounts/test_prefill.py -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/accounts/test_prefill.py -q`
 Expected: FAIL — `ImportError: cannot import name 'prefill_from_latest_reading'`
 
 - [ ] **Step 3: Replace the labels and the question list**
@@ -4707,7 +4707,7 @@ In `apps/accounts/forms.py`:
 
 - [ ] **Step 8: Run to verify**
 
-Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=tehsil_tailored uv run pytest tests/accounts tests/acceptance -q && POSTGRES_DB=tehsil_tailored uv run pytest -q`
+Run: `cd /home/orkhan/Desktop/tailored-programmes && POSTGRES_DB=elmify_tailored uv run pytest tests/accounts tests/acceptance -q && POSTGRES_DB=elmify_tailored uv run pytest -q`
 Expected: all pass.
 
 - [ ] **Step 9: Lint, types, migrations check, commit**
@@ -4785,7 +4785,7 @@ cd /home/orkhan/Desktop/tailored-programmes && for sample in tr_erzurum_1.pdf az
   OCR_PYTHON=$PWD/ocr/.venv/bin/python OCR_MODEL_HOME=$HOME/.paddlex \
   TYPESAFE_API_KEY=<the OpenRouter key> TYPESAFE_BASE_URL=https://openrouter.ai/api TYPESAFE_MODEL=typesafe/jev-1.13 \
   TRANSCRIPT_SAMPLE=.superpowers/ocr-eval/samples/$sample \
-  POSTGRES_DB=tehsil_tailored uv run pytest tests/documents/test_transcript_live.py -m live -s -q
+  POSTGRES_DB=elmify_tailored uv run pytest tests/documents/test_transcript_live.py -m live -s -q
 done
 ```
 

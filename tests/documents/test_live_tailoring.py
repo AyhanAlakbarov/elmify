@@ -12,7 +12,7 @@ skips unless both inputs are named:
 
     LIVE_CV_PDF=/path/to/cv.pdf \
     LIVE_PROGRAM_URL=https://www.fau.eu/degree-program/artificial-intelligence-ai-m-sc/ \
-    POSTGRES_DB=tehsil_ei uv run pytest tests/documents/test_live_tailoring.py -m live -s
+    POSTGRES_DB=elmify_ei uv run pytest tests/documents/test_live_tailoring.py -m live -s
 """
 
 import os
@@ -232,7 +232,7 @@ def test_a_programmes_own_rules_land_on_top_of_the_standard_ones(
         LIVE_PROGRAM_URL=https://... \
         LIVE_FUNDER=daad-study-scholarships \
         LIVE_CV_OUT=/tmp/tailored.pdf \
-        POSTGRES_DB=tehsil_ei uv run pytest \
+        POSTGRES_DB=elmify_ei uv run pytest \
           tests/documents/test_live_tailoring.py -m live -s \
           -k programmes_own_rules
     """

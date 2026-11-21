@@ -1,0 +1,151 @@
+field,term,language,note
+*,apply,en,"apply, applying"
+*,applica,en,"application, applicant"
+*,requirement,en,
+*,criteri,en,"criteria, criterion"
+*,condition,en,
+*,guideline,en,
+*,regulation,en,
+*,rules,en,
+*,faq,en,
+*,form,en,"form, forms"
+*,call,en,"call, call for applications"
+*,handbook,en,
+dates,deadline,en,
+dates,dates,en,
+dates,calendar,en,
+dates,timeline,en,
+dates,schedule,en,
+nationality,eligib,en,"eligible, eligibility"
+nationality,who can,en,
+nationality,countr,en,"country, countries"
+nationality,citizen,en,
+nationality,nationalit,en,
+target_level,level,en,
+target_level,degree,en,
+benefits,amount,en,
+benefits,coverage,en,
+benefits,benefit,en,
+benefits,stipend,en,
+benefits,allowance,en,
+benefits,payment,en,
+*,müraciət,az,application
+*,ərizə,az,application form
+*,tələb,az,requirement
+*,qayda,az,rules
+dates,son tarix,az,deadline
+dates,təqvim,az,calendar
+nationality,kimlər,az,who
+nationality,ölkə,az,country
+benefits,məbləğ,az,amount
+*,başvuru,tr,application
+*,şart,tr,condition
+*,koşul,tr,condition
+*,yönetmelik,tr,regulation
+*,yönerge,tr,directive
+*,sss,tr,FAQ
+dates,takvim,tr,calendar
+dates,son başvuru,tr,deadline
+nationality,kimler,tr,who
+nationality,ülke,tr,country
+benefits,tutar,tr,amount
+benefits,miktar,tr,amount
+benefits,kapsam,tr,coverage
+benefits,ödeme,tr,payment
+*,заявк,ru,"заявка, заявки"
+*,требован,ru,requirements
+*,услови,ru,conditions
+*,положени,ru,regulations
+*,правил,ru,rules
+*,анкет,ru,form
+dates,срок,ru,"срок, сроки"
+dates,приём,ru,"admission; folds to прием, so ё and е both match"
+nationality,кто может,ru,who can
+nationality,гражда,ru,"граждане, гражданство"
+target_level,магистр,ru,master
+target_level,бакалавр,ru,bachelor
+benefits,размер,ru,amount
+benefits,выплат,ru,payments
+*,өтінім,kk,application
+*,талап,kk,requirement
+*,ереже,kk,rules
+dates,мерзім,kk,deadline
+*,bewerb,de,"Bewerbung, Bewerber"
+*,voraussetz,de,requirements
+*,richtlinie,de,guidelines
+*,merkblatt,de,information sheet
+*,formular,de,form
+dates,frist,de,deadline
+dates,termin,de,dates
+nationality,länder,de,countries
+benefits,höhe,de,amount
+benefits,leistung,de,benefits
+*,candidat,fr,"candidature, candidat"
+*,règlement,fr,regulations
+*,formulaire,fr,form
+dates,date limite,fr,deadline
+dates,calendrier,fr,calendar
+nationality,pays,fr,countries
+benefits,montant,fr,amount
+*,convocatoria,es,call
+*,requisito,es,requirements
+*,bases,es,rules of a call
+*,solicitud,es,application
+dates,plazo,es,deadline
+benefits,cuantía,es,amount
+*,domanda,it,"domanda, domande: application"
+*,requisiti,it,requirements
+*,bando,it,"bando, bandi: call"
+*,regolamento,it,regulations
+*,modulo,it,"modulo, moduli: form"
+dates,scadenz,it,"scadenza, scadenze: deadline"
+dates,calendario,it,"calendar; Spanish calendario too"
+nationality,paesi,it,countries
+nationality,cittadin,it,"cittadini, cittadinanza"
+benefits,importo,it,amount
+*,aanvra,nl,"aanvraag, aanvragen: application"
+*,voorwaarden,nl,conditions
+*,toelating,nl,admission
+*,formulier,nl,form
+*,vereist,nl,"vereist, vereisten: requirements"
+dates,termijn,nl,deadline
+nationality,landen,nl,countries
+benefits,bedrag,nl,amount
+benefits,vergoeding,nl,"allowance, coverage"
+*,신청,ko,application
+*,모집,ko,call (recruitment)
+*,요강,ko,guidelines (모집요강)
+*,서류,ko,documents
+dates,일정,ko,schedule
+dates,마감,ko,deadline
+dates,기간,ko,period
+nationality,자격,ko,eligibility
+nationality,국가,ko,country
+benefits,혜택,ko,benefits
+benefits,금액,ko,amount
+*,募集,ja,call (recruitment)
+*,要項,ja,guidelines (募集要項)
+*,申請,ja,application
+*,応募,ja,apply
+*,書類,ja,documents
+dates,締切,ja,deadline
+dates,日程,ja,schedule
+dates,期間,ja,period
+nationality,資格,ja,eligibility
+nationality,国籍,ja,"nationality; Chinese 国籍 too"
+benefits,支給,ja,payment
+benefits,金額,ja,amount
+*,申请,zh,application
+*,招生,zh,admissions call
+*,简章,zh,prospectus
+*,条件,zh,conditions
+*,材料,zh,documents
+dates,截止,zh,deadline
+dates,时间,zh,"time, dates (申请时间)"
+nationality,国家,zh,countries
+benefits,资助,zh,funding
+benefits,金额,zh,amount
+benefits,待遇,zh,benefits
+nationality,азамат,kk,"азамат, азаматтар: citizen"
+benefits,мөлшер,kk,amount
+dates,күнтізбе,kk,calendar

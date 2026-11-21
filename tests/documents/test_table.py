@@ -32,14 +32,14 @@ def test_kinds_are_read_from_the_programme_s_own_sentences() -> None:
     assert kinds_named("A CV in English (max. 2 pages).") == {"CV"}
     assert kinds_named("A statement of purpose.") == {"MOTIVATION_LETTER"}
     assert kinds_named("Applications open in October.") == set()
-    assert kinds_named("Two letters of reference.") == {"RECOMMENDATION"}
-    assert kinds_named("Two academic references.") == {"RECOMMENDATION"}
+    assert kinds_named("Two letters of reference.") == {"REFERENCE_LETTER"}
+    assert kinds_named("Two academic references.") == {"REFERENCE_LETTER"}
     for text in (
         "Reference number must be quoted.",
         "Courses with references to the syllabus.",
         "Cite references in your essay",
     ):
-        assert "RECOMMENDATION" not in kinds_named(text)
+        assert "REFERENCE_LETTER" not in kinds_named(text)
     assert kinds_named("Proof of English.") == {"LANGUAGE_CERTIFICATE"}
     assert kinds_named("English language proficiency.") == {"LANGUAGE_CERTIFICATE"}
     assert kinds_named("English skills at B2.") == {"LANGUAGE_CERTIFICATE"}
@@ -230,3 +230,150 @@ def test_an_upload_being_checked_is_shown_but_neither_held_nor_missing() -> None
     assert str(Cell.CHECKING) == "checking…"
     assert table.counts_for(column.application_id) == (0, 1)
     assert table.missing_for(column.application_id) == ()
+
+
+# Several of one kind (plan 4b Task 6) -----------------------------------------
+
+
+@pytest.mark.django_db
+def test_two_diplomas_added_are_both_held_newest_first(
+    agency_a, membership_a, program_factory
+) -> None:
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        _, applications = _world(agency_a, membership_a, program_factory)
+        bachelor = _upload(agency_a, membership_a, kind="DIPLOMA")
+        master = _upload(agency_a, membership_a, kind="DIPLOMA")
+        table = table_for(membership_a, applications, [])
+    every = table.held_all_for("DIPLOMA", applications[0].id)
+    assert [held.document_id for held in every] == [master.id, bachelor.id]
+    # held_for is unchanged: the first of them.
+    assert table.held_for("DIPLOMA", applications[0].id) == every[0]
+
+
+@pytest.mark.django_db
+def test_a_retired_upload_is_not_held(agency_a, membership_a, program_factory) -> None:
+    from django.utils import timezone
+
+    from apps.concierge.models import DocumentVersion
+
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        _, applications = _world(agency_a, membership_a, program_factory)
+        old = _upload(agency_a, membership_a, kind="DIPLOMA")
+        new = _upload(agency_a, membership_a, kind="DIPLOMA")
+        DocumentVersion.objects.filter(id=old.id).update(retired_at=timezone.now())
+        table = table_for(membership_a, applications, [])
+    assert [h.document_id for h in table.held_all_for("DIPLOMA", applications[0].id)] == [new.id]
+
+
+@pytest.mark.django_db
+def test_only_the_newest_approved_cv_draft_is_held_for_a_cell(
+    agency_a, membership_a, program_factory
+) -> None:
+    """A draft has versions, not siblings: an older approved CV is never offered."""
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        _, applications = _world(agency_a, membership_a, program_factory)
+        _cv(agency_a, membership_a, version=1)
+        newest = _cv(agency_a, membership_a, version=2)
+        table = table_for(membership_a, applications, [])
+    assert [h.document_id for h in table.held_all_for("CV", applications[0].id)] == [newest.id]
+
+
+@pytest.mark.django_db
+def test_sendable_accepts_every_held_diploma(
+    agency_a, membership_a, program_factory
+) -> None:
+    from apps.documents.table import sendable
+
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        _, applications = _world(agency_a, membership_a, program_factory)
+        bachelor = _upload(agency_a, membership_a, kind="DIPLOMA")
+        master = _upload(agency_a, membership_a, kind="DIPLOMA")
+        old_cv = _cv(agency_a, membership_a, version=1)
+        _cv(agency_a, membership_a, version=2)
+        assert sendable(applications[0], document_id=bachelor.id, source="upload")
+        assert sendable(applications[0], document_id=master.id, source="upload")
+        assert not sendable(applications[0], document_id=old_cv.id, source="draft")
+
+
+@pytest.mark.django_db
+def test_disowned_or_refused_uploads_are_not_held_or_sendable(
+    agency_a, membership_a, paid_cycle_a, program_factory
+) -> None:
+    from apps.documents.models import DocumentReading, TranscriptUpload
+    from apps.documents.table import sendable
+
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        _, applications = _world(agency_a, membership_a, program_factory)
+        bad_cert = _upload(agency_a, membership_a, kind="LANGUAGE_CERTIFICATE")
+        DocumentReading.objects.create(
+            student=membership_a,
+            document=bad_cert,
+            kind="LANGUAGE_CERTIFICATE",
+            reader_version="text-1",
+            state="READ",
+            file_sha256="friend-cert",
+            values=[
+                {
+                    "key": "language.test_score",
+                    "value": "7.5",
+                    "snippet": "7.5",
+                    "proven": False,
+                    "why": "owner_mismatch",
+                }
+            ],
+        )
+        bad_transcript = _upload(agency_a, membership_a, kind="TRANSCRIPT")
+        TranscriptUpload.objects.create(
+            student=membership_a,
+            cycle=paid_cycle_a,
+            document=bad_transcript,
+            role="ORIGINAL",
+            state="REFUSED",
+            refusal="owner_mismatch",
+        )
+        table = table_for(membership_a, applications, [])
+        assert table.held_all_for("LANGUAGE_CERTIFICATE", applications[0].id) == ()
+        assert table.held_all_for("TRANSCRIPT", applications[0].id) == ()
+        assert not sendable(applications[0], document_id=bad_cert.id, source="upload")
+        assert not sendable(applications[0], document_id=bad_transcript.id, source="upload")
+
+
+@pytest.mark.django_db
+def test_a_scholarship_essay_draft_fills_its_scholarship_application_cell(
+    agency_a, membership_a
+) -> None:
+    from apps.documents.models import DocumentDraft
+    from apps.funding.models import FundingFamily, FundingOpportunity, OpportunityScope
+    from apps.portals.models import Application
+
+    award = FundingOpportunity.objects.create(
+        canonical_key="hanbit-scholars",
+        name="Hanbit Global Scholars",
+        family=FundingFamily.GOVERNMENT_SCHOLARSHIP,
+        scope_type=OpportunityScope.GLOBAL,
+    )
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        app = Application.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            program_id=award.id,
+            name="Hanbit Global Scholars",
+            kit_requirements=["Motivation letter", "CV"],
+        )
+        essay = DocumentDraft.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            version=1,
+            content={},
+            status=DocumentDraft.Status.APPROVED,
+            funding_opportunity=award,
+            application=app,
+            rendered_filename="essay.pdf",
+        )
+        table = table_for(membership_a, [app], [])
+    held = table.held_for("MOTIVATION_LETTER", app.id)
+    assert held is not None and held.document_id == essay.id
+    assert _row(table, "MOTIVATION_LETTER").cells == (Cell.APPROVED,)
+
+

@@ -33,7 +33,7 @@ from .wikidata import _QID
 #: Committed in the plan before any draw, so the order is reproducible and
 #: chosen by nobody. A new hold-out gets a new salt in the same commit as the
 #: rule change it measures, before the draw (plan Task 12, step 4b).
-SALT = "tehsil-resolver-holdout-vn-2026-09-25"
+SALT = "elmify-resolver-holdout-vn-2026-09-25"
 #: (label, class QID, how many) -- what the resolver will actually be asked,
 #: funders and the bodies adjacent to them, not "organisations in item
 #: order", which gave Kazakhstan seventeen embassies.

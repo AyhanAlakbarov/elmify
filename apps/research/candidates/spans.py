@@ -15,9 +15,14 @@ from .dates import find_relative_dates
 _TURKIC = r"(?:l[ıiuü][qk]|d[əea])?"
 _UNIT = (
     ("months",
-     r"months?|ay" + _TURKIC + r"|месяц\w*|мес\.|hónap\w*|mois|monat\w*|개월|个月|か月|ヶ月"),
-    ("years", r"years?|(?:il|yıl)" + _TURKIC + r"|год\w*|лет|év\w*|ans?|jahr\w*|년|年"),
-    ("semesters", r"semesters?|semestr\w*|dönem|семестр\w*|félév\w*|학기|学期"),
+     r"months?|ay" + _TURKIC + r"|месяц\w*|мес\.|hónap\w*|mois|monat\w*|개월|个月|か月|ヶ月|"
+     r"شهر|أشهر|اشهر|شهراً|شهرا|mese|mesi|mes|meses|bulan|tháng|miesiąc\w*|miesięcy"),
+    ("years",
+     r"years?|(?:il|yıl)" + _TURKIC + r"|год\w*|лет|év\w*|ans?|jahr\w*|년|年|"
+     r"سنة|سنوات|عام|أعوام|عاماً|عاما|anno|anni|año|años|tahun|năm|rok|lata|lat"),
+    ("semesters",
+     r"semesters?|semestr\w*|dönem|семестр\w*|félév\w*|학기|学期|"
+     r"فصل\s+دراسي|فصول\s+دراسية|semestre|semestri|học\s+kỳ"),
 )
 #: "1 il əvvəl" (one year before) is an offset, not how long anything lasts.
 _OFFSET = r"(?!\s+(?:əvvəl|önce|before|prior|ago|sonra|after|later|назад|спустя))"
@@ -29,7 +34,9 @@ _COUNT = re.compile(
 _PROGRAMME = re.compile(
     r"standard period of study|regelstudienzeit|full duration of (?:the )?"
     r"(?:study|studies|programme|program)|entire (?:duration|period) of (?:study|the programme)|"
-    r"весь период обучения|öğrenim süresi boyunca|tam təhsil müddəti|təhsil müddəti ərzində",
+    r"весь период обучения|öğrenim süresi boyunca|tam təhsil müddəti|təhsil müddəti ərzində|"
+    r"طوال\s+فترة\s+الدراسة|مد[ةه]\s+البرنامج\s+بالكامل|durata\s+normale\s+del\s+corso|"
+    r"toute\s+la\s+durée\s+du\s+programme|duración\s+total\s+del\s+programa",
     re.IGNORECASE)
 _INTAKE_YEARS = re.compile(r"(?<!\d)(?P<a>\d{4})\s*[/–-]\s*(?P<b>\d{4}|\d{2})(?!\d)")
 _SEASON = re.compile(

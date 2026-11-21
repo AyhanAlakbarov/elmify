@@ -1,7 +1,8 @@
-"""build_kit: everything a human needs to apply by hand, and it never raises.
+"""build_kit: the answers we would submit, and it never raises.
 
-The kit is the layer that works with no extension, on any device. Where
-mint_packet refuses, the kit degrades -- that asymmetry is the design.
+The kit is the assigned counsellor's read-only debugging view; a student is
+shown no by-hand page. Where mint_packet refuses, the kit degrades -- that
+asymmetry is the design.
 """
 
 from uuid import uuid4
@@ -631,3 +632,246 @@ def test_a_kit_never_captured_is_empty_not_an_error(agency_a, membership_a, monk
         kit = packets.build_kit(application)
     assert kit.requirements == () and kit.your_actions == () and kit.letter_cycle == ""
     assert kit.questions
+
+
+def test_capture_copies_the_programmes_file_rules(
+    agency_a, membership_a, program_factory, monkeypatch
+) -> None:
+    from apps.portals import packets
+
+    rules = [{"document": "DIPLOMA", "field": "max_bytes", "value": 2_000_000,
+              "conditional": False, "condition": "", "rule_text": "Max 2 MB.",
+              "source_url": "https://example.test/apply"}]
+    program = program_factory()
+    type(program).objects.filter(id=program.id).update(file_rules=rules)
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a)
+        application.program_id = program.id
+        application.save(update_fields=["program_id"])
+        packets.capture_requirements(application)
+        application.refresh_from_db()
+    assert application.kit_file_rules == rules
+
+
+def test_capture_for_a_programme_that_no_longer_exists_copies_no_file_rules(
+    agency_a, membership_a, monkeypatch
+) -> None:
+    from apps.portals import packets
+
+    monkeypatch.setattr(packets, "verified_values", lambda student: {})
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a)
+        application.program_id = uuid4()
+        application.save(update_fields=["program_id"])
+        packets.capture_requirements(application)
+        application.refresh_from_db()
+    assert application.kit_file_rules == []
+
+
+# --- CV build step 4.2: kit_cv_drafts -----------------------------------------
+
+
+def _award_opportunity():
+    from apps.funding.models import FundingFamily, FundingOpportunity, OpportunityScope
+
+    return FundingOpportunity.objects.create(
+        canonical_key=f"funder:{uuid4()}",
+        name="DAAD EPOS",
+        family=FundingFamily.PRIVATE_FOUNDATION,
+        scope_type=OpportunityScope.GLOBAL,
+    )
+
+
+def _award_card_for_kit(agency, student):
+    from apps.portals.models import Application
+    from tests.funding.conftest import make_db_candidate, make_run
+
+    opp = _award_opportunity()
+    run = make_run(agency, student)
+    candidate = make_db_candidate(agency, run, program_name=opp.name)
+    with tenant_scope(agency.id):
+        candidate.opportunity = opp
+        candidate.save(update_fields=["opportunity"])
+        return Application.objects.create(
+            tenant=agency, student=student, program_id=opp.id, candidate=candidate
+        )
+
+
+def _programme_card_for_kit(agency, student, *, program_id=None, candidate=None):
+    from apps.portals.models import Application
+
+    with tenant_scope(agency.id):
+        return Application.objects.create(
+            tenant=agency,
+            student=student,
+            program_id=program_id or uuid4(),
+            candidate=candidate,
+        )
+
+
+def _approved_kit_cv(
+    agency,
+    student,
+    *,
+    application=None,
+    programme_id=None,
+    funding_opportunity=None,
+    requirements="default",
+):
+    from apps.documents.models import DocumentDraft
+
+    with tenant_scope(agency.id):
+        version = (
+            DocumentDraft.objects.filter(
+                student=student, kind=DocumentDraft.Kind.CV
+            ).count()
+            + 1
+        )
+        return DocumentDraft.objects.create(
+            tenant=agency,
+            student=student,
+            kind=DocumentDraft.Kind.CV,
+            version=version,
+            content={},
+            status=DocumentDraft.Status.APPROVED,
+            application=application,
+            programme_id=programme_id,
+            funding_opportunity=funding_opportunity,
+            requirements={"items": []} if requirements == "default" else requirements,
+            rendered_filename="cv-standard.pdf",
+        )
+
+
+def _kit_cv_ids(application):
+    from apps.portals.packets import kit_cv_drafts
+
+    with tenant_scope(application.tenant_id):
+        return [d.id for d in kit_cv_drafts(application)]
+
+
+def test_a_scholarship_cv_never_reaches_another_applications_kit(
+    agency_a, membership_a
+) -> None:
+    award_card = _award_card_for_kit(agency_a, membership_a)
+    programme_card = _programme_card_for_kit(agency_a, membership_a)
+    _approved_kit_cv(
+        agency_a,
+        membership_a,
+        application=award_card,
+        funding_opportunity=award_card.candidate.opportunity,
+    )
+    assert _kit_cv_ids(programme_card) == []
+
+
+def test_an_award_card_gets_its_own_cv(agency_a, membership_a) -> None:
+    card = _award_card_for_kit(agency_a, membership_a)
+    cv = _approved_kit_cv(agency_a, membership_a, application=card)
+    assert _kit_cv_ids(card) == [cv.id]
+
+
+def test_only_the_newest_approved_cv_of_an_application_is_served(
+    agency_a, membership_a
+) -> None:
+    card = _programme_card_for_kit(agency_a, membership_a)
+    _approved_kit_cv(agency_a, membership_a, application=card)
+    newer = _approved_kit_cv(agency_a, membership_a, application=card)
+    assert _kit_cv_ids(card) == [newer.id]
+
+
+def test_a_legacy_programme_cv_still_reaches_its_kit(
+    agency_a, membership_a, program_factory
+) -> None:
+    program = program_factory()
+    card = _programme_card_for_kit(
+        agency_a, membership_a, program_id=program.id
+    )
+    legacy = _approved_kit_cv(
+        agency_a,
+        membership_a,
+        programme_id=card.program_id,
+        requirements=None,
+    )
+    assert _kit_cv_ids(card) == [legacy.id]
+
+
+def test_a_removed_applications_cv_never_reaches_a_new_card(
+    agency_a, membership_a
+) -> None:
+    from apps.portals.applications import remove_application
+
+    old = _programme_card_for_kit(agency_a, membership_a)
+    _approved_kit_cv(agency_a, membership_a, application=old)
+    with tenant_scope(agency_a.id):
+        remove_application(old, actor=old.student)
+    new = _programme_card_for_kit(
+        agency_a, membership_a, program_id=old.program_id
+    )
+    assert _kit_cv_ids(new) == []
+
+
+def test_a_re_applicants_new_card_does_not_get_last_years_cv(
+    agency_a, membership_a
+) -> None:
+    from tests.funding.conftest import make_db_candidate, make_run
+
+    last_year = _programme_card_for_kit(agency_a, membership_a)
+    _approved_kit_cv(agency_a, membership_a, application=last_year)
+    run = make_run(agency_a, membership_a)
+    new_candidate = make_db_candidate(agency_a, run)
+    this_year = _programme_card_for_kit(
+        agency_a,
+        membership_a,
+        program_id=last_year.program_id,
+        candidate=new_candidate,
+    )
+    assert _kit_cv_ids(this_year) == []
+
+
+def test_an_approved_motivation_letter_reaches_the_kit_and_packet(
+    agency_a, membership_a, monkeypatch
+) -> None:
+    from apps.documents.models import DocumentDraft
+    from apps.portals import packets
+    from apps.portals.models import FieldMap, PortalForm
+
+    monkeypatch.setattr(packets, "verified_values", lambda student: {})
+    card = _programme_card_for_kit(agency_a, membership_a)
+    with tenant_scope(agency_a.id):
+        form = PortalForm.objects.create(
+            portal_host="apply.example.edu",
+            form_key=f"kit-letter-{uuid4()}",
+            form_url="https://apply.example.edu/letter",
+        )
+        card.portal_form = form
+        card.save(update_fields=["portal_form"])
+        FieldMap.objects.create(
+            portal_form=form,
+            version=1,
+            entries=[],
+            slots=[
+                {
+                    "selector": "#letter",
+                    "kind": "MOTIVATION_LETTER",
+                    "variant": "ANY",
+                    "degree": None,
+                    "sure": True,
+                }
+            ],
+        )
+        letter = DocumentDraft.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            version=1,
+            content={"why_programme": "Test"},
+            status=DocumentDraft.Status.APPROVED,
+            application=card,
+            rendered_filename="motivation-letter.pdf",
+        )
+        kit = packets.build_kit(card)
+        packet = packets.mint_packet(card)
+
+    assert [(d.label, d.filename) for d in kit.documents] == [
+        ("Motivation letter", "motivation-letter.pdf")
+    ]
+    assert [(d.draft_id, d.selector) for d in packet.documents] == [(letter.id, "#letter")]

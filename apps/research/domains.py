@@ -100,7 +100,7 @@ _NATIONAL_CATALOGUES = (
     "bazaobrazovanja.rs",
     "russia-edu.minobrnauki.gov.ru",
     "yz.chsi.com.cn",
-    "studyinsaudi.moe.gov.sa",
+    "studyinsaudi.sa",
     "study-in-egypt.gov.eg",
     "cricos.education.gov.au",
     "tahatu.govt.nz",
@@ -108,7 +108,54 @@ _NATIONAL_CATALOGUES = (
     "emec.mec.gov.br",
     "postgrado.consejoderectores.cl",
     "allqs.saqa.org.za",
+    "euraxess.ec.europa.eu",
+    "academictransfer.com",
+    "grants.at",
+    "stipendium.at",
+    "stipendienlotse.de",
+    "mystipendium.de",
     "whed.net",
+    "study-research.pt",
+    "iesuperior.pt",
+    "studyinswitzerland.plus",
+    "fhmaster.ch",
+    "studujnavs.gov.cz",
+    "research.fi",
+    "tiedejatutkimus.fi",
+    "forskning.fi",
+    "saatiotrahastot.fi",
+    "ispik.srce.hr",
+    "isvu.hr",
+    "yokatlas.yok.gov.tr",
+    "epvo.kz",
+    "studyin.kz",
+    "studyin-uzbekistan.uz",
+    "studyinuzbekistan.uz",
+    "stat.edu.uz",
+    "studyin.gov.ge",
+    "reestri.eqe.ge",
+    "qatarscholarships.qa",
+    "studyincyprus.org.cy",
+    "studyinindia.gov.in",
+    "scholarships.gov.in",
+    "courseseeker.edu.au",
+    "studymelbourne.vic.gov.au",
+    "study.sydney",
+    "studyadelaide.com",
+    "studyqueensland.qld.gov.au",
+    "studyperth.com.au",
+    "universitystudy.ca",
+    "studiekeuze123.nl",
+    "wilweg.nl",
+    "antagning.se",
+    "studera.nu",
+    "ug.dk",
+    "utdanning.no",
+    "samordnaopptak.no",
+    "dbh.hkdir.no",
+    "felvi.hu",
+    "tpf.hu",
+    "radon.nauka.gov.pl",
 )
 
 _ROUTING = (
@@ -220,6 +267,7 @@ _SWEEP_AGGREGATORS = (
     "careers360.com", "mastersavenue.com", "uni2study.com",
     "manyagroup.com", "university-directory.eu", "gradschools.com",
     "internationalstudent.com", "helpstudyabroad.com", "mastergradschools.com",
+    "fastweb.com", "applykite.com", "research.com", "profellow.com", "wemakescholars.com",
 )
 
 #: The same sweep's single-country listings. Split from the wide ones only for
@@ -241,8 +289,14 @@ _SWEEP_LOCAL_AGGREGATORS = (
     "keuzegids.org", "welkemaster.nl", "studyinkz.kz", "studycyprus.cy", "apply.edu.pl",
     "studyinpoland.pl", "studyinireland.com", "studyin.sk", "studyinmalta.com",
     "studyinslovakia.sk", "studyprogrammes.ch", "jpss.jp", "studyinmorocco.com",
-    "studyinnigeria.ng", "studyinkenya.co.ke", "studyinsaudi.sa", "studyingreece.gr",
+    "studyinnigeria.ng", "studyinkenya.co.ke", "studyingreece.gr",
     "studyincroatia.org", "aquiseestudia.cl", "provuz.ru", "ucheba.ru", "amberstudent.com",
+    "istanbulgroup.az", "careerbridge.az", "tutor.az", "qebulol.az", "azstudy.az", "edoocator.az",
+    "univision.kz", "stipendium.ch", "stipendije.info", "czechuniversities.com",
+    "vysokeskoly.cz", "vysokeskoly.com", "kamnavs.cz", "studentum.fi", "eduvision.edu.pk",
+    "ilmkidunya.com", "pakadmissions.com", "brightsparks.com.sg", "singaporeeducation.info",
+    "stipendia.ge", "eduguide.ge", "aris.ge", "studiesinaustralia.com",
+    "gooduniversitiesguide.com.au", "ozstudies.com",
 )
 
 
@@ -278,14 +332,112 @@ HOPPABLE_CATALOGUES = (
 )
 
 
+#: Official national study & scholarship agency portals that act as routing
+#: catalogues for university degree programmes (`for_scholarship=False`) but
+#: speak as primary official sources for their own national/government
+#: scholarships (`for_scholarship=True`).
+DUAL_ROLE_NATIONAL_AGENCIES = (
+    "daad.de",
+    "eacea.ec.europa.eu",
+    "erasmus-plus.ec.europa.eu",
+    "studyinkorea.go.kr",
+    "campusfrance.org",
+    "studyinaustria.at",
+    "studyinflanders.be",
+    "studyinbelgium.be",
+    "studyincroatia.hr",
+    "studyin.cz",
+    "studyin.gov.cz",
+    "studyindenmark.dk",
+    "studyinestonia.ee",
+    "studyinfinland.fi",
+    "studyinfo.fi",
+    "study-in-germany.de",
+    "studyingreece.edu.gr",
+    "studyinhungary.hu",
+    "educationinireland.com",
+    "sepie.es",
+    "studyinitaly.esteri.it",
+    "studyinlatvia.lv",
+    "studyin.lt",
+    "studyinlithuania.lt",
+    "studyinnl.org",
+    "studyinholland.nl",
+    "study.gov.pl",
+    "go-poland.pl",
+    "studyinromania.gov.ro",
+    "studyinslovakia.saia.sk",
+    "studyinslovenia.si",
+    "studyinsweden.se",
+    "studyinnorway.no",
+    "swissuniversities.ch",
+    "studyiniceland.is",
+    "study.iceland.is",
+    "studyinserbia.rs",
+    "studyinturkiye.gov.tr",
+    "studyinjapan.go.jp",
+    "studyinrussia.ru",
+    "studyinazerbaijan.edu.az",
+    "educationingeorgia.ge",
+    "studyingeorgia.ge",
+    "studyinchina.edu.cn",
+    "studyinsaudi.moe.gov.sa",
+    "studyinsaudi.sa",
+    "studyaustralia.gov.au",
+    "studywithnewzealand.govt.nz",
+    "study-uk.britishcouncil.org",
+    "educationusa.state.gov",
+    "educanada.ca",
+    "grants.at",
+    "stipendium.at",
+    "study-research.pt",
+    "iesuperior.pt",
+    "dges.gov.pt",
+    "studyinswitzerland.plus",
+    "studujnavs.gov.cz",
+    "research.fi",
+    "tiedejatutkimus.fi",
+    "turkiyeburslari.gov.tr",
+    "studyin.kz",
+    "studyin-uzbekistan.uz",
+    "studyinuzbekistan.uz",
+    "studyin.gov.ge",
+    "qatarscholarships.qa",
+    "studyincyprus.org.cy",
+    "studyinindia.gov.in",
+    "scholarships.gov.in",
+    "beasiswalpdp.kemenkeu.go.id",
+    "studymelbourne.vic.gov.au",
+    "study.sydney",
+    "studyadelaide.com",
+    "studyqueensland.qld.gov.au",
+    "studyperth.com.au",
+    "wilweg.nl",
+    "tpf.hu",
+)
+
+
 def _matches(host: str, domains: tuple[str, ...]) -> bool:
     normalized = host.casefold()
     return any(normalized == domain or normalized.endswith(f".{domain}") for domain in domains)
 
 
-def is_catalogue(host: str) -> bool:
+def is_dual_role_agency(host: str) -> bool:
+    """True when `host` is an official national scholarship/study agency that
+    routes university programmes but administers or publishes official national
+    scholarships."""
+    return _matches(host, DUAL_ROLE_NATIONAL_AGENCIES)
+
+
+def is_catalogue(host: str, *, for_scholarship: bool = False) -> bool:
     # AGGREGATOR_DOMAINS, not CATALOGUE_DOMAINS: a host an adapter excludes
     # must also be one `from_url` demotes, or the denylist is advisory.
+    # When evaluating a scholarship/funder source (`for_scholarship=True`),
+    # official national agencies (DAAD, Campus France, GKS Study in Korea,
+    # MEXT Study in Japan, EACEA, etc.) are primary funders, not commercial
+    # aggregators.
+    if for_scholarship and is_dual_role_agency(host):
+        return False
     return _matches(host, AGGREGATOR_DOMAINS)
 
 
@@ -415,6 +567,248 @@ STEERING = {
         funder_query="پاکستان میں ماسٹرز اسکالرشپ دینے والے ادارے اور فاؤنڈیشنز",
         country_name="Pakistan",
     ),
+    # Full 53-country TARGET_COUNTRIES coverage in primary local languages:
+    "AT": Steering(
+        language="de",
+        funder_query=(
+            "Stiftungen und Förderstellen mit Stipendien für ein Masterstudium in Österreich"
+        ),
+        country_name="Austria",
+    ),
+    "BE": Steering(
+        language="nl",
+        funder_query="Fondsen en stichtingen met studiebeurzen voor een masteropleiding in België",
+        country_name="Belgium",
+    ),
+    "BG": Steering(
+        language="bg",
+        funder_query=(
+            "Фондации и организации предоставящи стипендии за магистърска степен в България"
+        ),
+        country_name="Bulgaria",
+    ),
+    "HR": Steering(
+        language="hr",
+        funder_query=(
+            "Zaklade i institucije koje dodjeljuju stipendije za diplomski studij u Hrvatskoj"
+        ),
+        country_name="Croatia",
+    ),
+    "CY": Steering(
+        language="el",
+        funder_query="Ιδρύματα και φορείς που χορηγούν υποτροφίες μεταπτυχιακών σπουδών στην Κύπρο",
+        country_name="Cyprus",
+    ),
+    "CZ": Steering(
+        language="cs",
+        funder_query=(
+            "Nadace a fondy poskytující stipendia na magisterské studium v České republice"
+        ),
+        country_name="Czechia",
+    ),
+    "DK": Steering(
+        language="da",
+        funder_query="Fonde og legater til kandidatstudier og masteruddannelser i Danmark",
+        country_name="Denmark",
+    ),
+    "EE": Steering(
+        language="et",
+        funder_query="Sihtasutused ja fondid magistriõppe stipendiumideks Eestis",
+        country_name="Estonia",
+    ),
+    "FI": Steering(
+        language="fi",
+        funder_query="Säätiöt ja rahastot maisteriopintojen apurahoihin Suomessa",
+        country_name="Finland",
+    ),
+    "GR": Steering(
+        language="el",
+        funder_query="Ιδρύματα και κληροδοτήματα με υποτροφίες μεταπτυχιακών σπουδών στην Ελλάδα",
+        country_name="Greece",
+    ),
+    "IE": Steering(
+        language="en",
+        funder_query="Foundations, trusts and bodies offering master's scholarships in Ireland",
+        country_name="Ireland",
+    ),
+    "LV": Steering(
+        language="lv",
+        funder_query="Fondi un organizācijas kas piešķir maģistrantūras stipendijas Latvijā",
+        country_name="Latvia",
+    ),
+    "LT": Steering(
+        language="lt",
+        funder_query="Fondai ir organizacijos skiriančios magistrantūros stipendijas Lietuvoje",
+        country_name="Lithuania",
+    ),
+    "LU": Steering(
+        language="fr",
+        funder_query=(
+            "Fondations et organismes offrant des bourses d'études de master au Luxembourg"
+        ),
+        country_name="Luxembourg",
+    ),
+    "MT": Steering(
+        language="en",
+        funder_query="Foundations and national schemes offering master's scholarships in Malta",
+        country_name="Malta",
+    ),
+    "PL": Steering(
+        language="pl",
+        funder_query="Fundacje i instytucje oferujące stypendia na studia magisterskie w Polsce",
+        country_name="Poland",
+    ),
+    "PT": Steering(
+        language="pt",
+        funder_query="Fundações e entidades que atribuem bolsas de mestrado em Portugal",
+        country_name="Portugal",
+    ),
+    "RO": Steering(
+        language="ro",
+        funder_query="Fundații și instituții care oferă burse de masterat în România",
+        country_name="Romania",
+    ),
+    "SK": Steering(
+        language="sk",
+        funder_query="Nadácie a fondy poskytujúce štipendiá na magisterské štúdium na Slovensku",
+        country_name="Slovakia",
+    ),
+    "SI": Steering(
+        language="sl",
+        funder_query=(
+            "Ustanove in skladi ki podeljujejo štipendije za magistrski študij v Sloveniji"
+        ),
+        country_name="Slovenia",
+    ),
+    "ES": Steering(
+        language="es",
+        funder_query="Fundaciones y organismos que convocan becas de máster en España",
+        country_name="Spain",
+    ),
+    "NO": Steering(
+        language="no",
+        funder_query="Stiftelser og legater med stipend for masterstudier i Norge",
+        country_name="Norway",
+    ),
+    "CH": Steering(
+        language="de",
+        funder_query="Stiftungen und Fonds mit Stipendien für ein Masterstudium in der Schweiz",
+        country_name="Switzerland",
+    ),
+    "IS": Steering(
+        language="is",
+        funder_query="Sjóðir og stofnanir sem veita námsstyrki til meistaranáms á Íslandi",
+        country_name="Iceland",
+    ),
+    "GB": Steering(
+        language="en",
+        funder_query=(
+            "Charitable trusts, foundations and colleges offering master's scholarships "
+            "in the United Kingdom"
+        ),
+        country_name="the United Kingdom",
+    ),
+    "SA": Steering(
+        language="ar",
+        funder_query="المنح الدراسية لدرجة الماجستير والمؤسسات المانحة في المملكة العربية السعودية",
+        country_name="Saudi Arabia",
+    ),
+    "AE": Steering(
+        language="ar",
+        funder_query="منح الماجستير والمؤسسات والهيئات المانحة في الإمارات العربية المتحدة",
+        country_name="the United Arab Emirates",
+    ),
+    "QA": Steering(
+        language="ar",
+        funder_query="منح دراسة الماجستير والمؤسسات التعليمية المانحة في قطر",
+        country_name="Qatar",
+    ),
+    "KW": Steering(
+        language="ar",
+        funder_query="منح وبعثات الماجستير والمؤسسات المانحة في الكويت",
+        country_name="Kuwait",
+    ),
+    "BH": Steering(
+        language="ar",
+        funder_query="منح وبعثات دراسة الماجستير والمؤسسات المانحة في البحرين",
+        country_name="Bahrain",
+    ),
+    "AU": Steering(
+        language="en",
+        funder_query=(
+            "Foundations, trusts and universities offering master's by coursework "
+            "scholarships in Australia"
+        ),
+        country_name="Australia",
+    ),
+    "NZ": Steering(
+        language="en",
+        funder_query=(
+            "Foundations, trusts and institutions offering master's scholarships in New Zealand"
+        ),
+        country_name="New Zealand",
+    ),
+    "SG": Steering(
+        language="en",
+        funder_query=(
+            "Foundations, ministries and institutions offering master's scholarships in Singapore"
+        ),
+        country_name="Singapore",
+    ),
+    "BN": Steering(
+        language="ms",
+        funder_query="Biasiswa sarjana dan yayasan penaja pengajian di Brunei Darussalam",
+        country_name="Brunei",
+    ),
+    "RS": Steering(
+        language="sr",
+        funder_query="Fondacije i institucije koje dodeljuju stipendije za master studije u Srbiji",
+        country_name="Serbia",
+    ),
+    "CN": Steering(
+        language="zh",
+        funder_query="中国硕士研究生奖学金基金会与资助机构",
+        country_name="China",
+    ),
+    "JP": Steering(
+        language="ja",
+        funder_query="日本の大学院修士課程向け奨学金財団・支給団体一覧",
+        country_name="Japan",
+    ),
+    "KR": Steering(
+        language="ko",
+        funder_query="대한민국 대학원 석사과정 장학재단 및 장학금 지원 기관",
+        country_name="South Korea",
+    ),
+    "RU": Steering(
+        language="ru",
+        funder_query=(
+            "Фонды и организации предоставляющие стипендии и гранты для магистратуры в России"
+        ),
+        country_name="Russia",
+    ),
+    "AM": Steering(
+        language="hy",
+        funder_query=(
+            "Հայաստանում մագիստրատուրայի կրթաթոշակ տրամադրող հիմնադրամներ և կազմակերպություններ"
+        ),
+        country_name="Armenia",
+    ),
+    "US": Steering(
+        language="en",
+        funder_query=(
+            "Foundations, fellowships and institutions offering master's degree "
+            "scholarships in the United States"
+        ),
+        country_name="the United States",
+    ),
+    "CA": Steering(
+        language="en",
+        funder_query=(
+            "Foundations, awards and institutions offering master's scholarships in Canada"
+        ),
+        country_name="Canada",
+    ),
 }
 
 
@@ -442,42 +836,151 @@ VERIFIED_SECOND_LEVEL = {
     "bel.tr": "SUBNATIONAL_GOVERNMENT",
     "edu.tr": "INSTITUTION",
     "k12.tr": "INSTITUTION",
-    # Azerbaijan, Kazakhstan, Uzbekistan, Georgia.
+    # Azerbaijan, Kazakhstan, Uzbekistan, Georgia, Armenia, Russia.
     "gov.az": "NATIONAL_GOVERNMENT",
     "edu.az": "INSTITUTION",
     "gov.kz": "NATIONAL_GOVERNMENT",
     "edu.kz": "INSTITUTION",
     "gov.uz": "NATIONAL_GOVERNMENT",
     "gov.ge": "NATIONAL_GOVERNMENT",
-    # South and South-East Asia.
+    "edu.ge": "INSTITUTION",
+    "gov.am": "NATIONAL_GOVERNMENT",
+    "gov.ru": "NATIONAL_GOVERNMENT",
+    # South, East and South-East Asia.
     "gov.in": "NATIONAL_GOVERNMENT",
+    "nic.in": "NATIONAL_GOVERNMENT",
     "ac.in": "INSTITUTION",
     "edu.in": "INSTITUTION",
+    "res.in": "INSTITUTION",
     "gov.pk": "NATIONAL_GOVERNMENT",
     "edu.pk": "INSTITUTION",
     "go.id": "NATIONAL_GOVERNMENT",
     "ac.id": "INSTITUTION",
     "gov.vn": "NATIONAL_GOVERNMENT",
     "edu.vn": "INSTITUTION",
-    # United Kingdom and Australia.
+    "gov.bn": "NATIONAL_GOVERNMENT",
+    "edu.bn": "INSTITUTION",
+    "gov.sg": "NATIONAL_GOVERNMENT",
+    "edu.sg": "INSTITUTION",
+    "gov.cn": "NATIONAL_GOVERNMENT",
+    "edu.cn": "INSTITUTION",
+    "ac.cn": "INSTITUTION",
+    "go.jp": "NATIONAL_GOVERNMENT",
+    "ac.jp": "INSTITUTION",
+    "go.kr": "NATIONAL_GOVERNMENT",
+    "ac.kr": "INSTITUTION",
+    # United Kingdom, Ireland, US, Canada, Australia, New Zealand.
     "gov.uk": "NATIONAL_GOVERNMENT",
+    "gov.scot": "SUBNATIONAL_GOVERNMENT",
+    "gov.wales": "SUBNATIONAL_GOVERNMENT",
     "ac.uk": "INSTITUTION",
+    "gov.ie": "NATIONAL_GOVERNMENT",
+    "gov": "NATIONAL_GOVERNMENT",
+    "edu": "INSTITUTION",
+    "gc.ca": "NATIONAL_GOVERNMENT",
+    "gouv.qc.ca": "SUBNATIONAL_GOVERNMENT",
+    "gov.on.ca": "SUBNATIONAL_GOVERNMENT",
+    "gov.ab.ca": "SUBNATIONAL_GOVERNMENT",
+    "gov.bc.ca": "SUBNATIONAL_GOVERNMENT",
     "gov.au": "NATIONAL_GOVERNMENT",
     "edu.au": "INSTITUTION",
-    # Gulf, East Asia, Balkans, Africa, Europe -- cited zones (recognition.GOVERNMENT_ZONES).
+    "govt.nz": "NATIONAL_GOVERNMENT",
+    "ac.nz": "INSTITUTION",
+    # Gulf, Africa, Europe.
     "gov.sa": "NATIONAL_GOVERNMENT",
+    "edu.sa": "INSTITUTION",
+    "gov.ae": "NATIONAL_GOVERNMENT",
+    "ac.ae": "INSTITUTION",
     "gov.qa": "NATIONAL_GOVERNMENT",
-    "gov.sg": "NATIONAL_GOVERNMENT",
-    "gov.cn": "NATIONAL_GOVERNMENT",
+    "edu.qa": "INSTITUTION",
+    "gov.kw": "NATIONAL_GOVERNMENT",
+    "edu.kw": "INSTITUTION",
+    "gov.bh": "NATIONAL_GOVERNMENT",
+    "edu.bh": "INSTITUTION",
     "gov.za": "NATIONAL_GOVERNMENT",
     "gov.it": "NATIONAL_GOVERNMENT",
+    "gv.at": "NATIONAL_GOVERNMENT",
+    "ac.at": "INSTITUTION",
+    "fgov.be": "NATIONAL_GOVERNMENT",
+    "ac.be": "INSTITUTION",
+    "gov.cy": "NATIONAL_GOVERNMENT",
+    "ac.cy": "INSTITUTION",
+    "gouv.fr": "NATIONAL_GOVERNMENT",
+    "gov.gr": "NATIONAL_GOVERNMENT",
+    "edu.gr": "INSTITUTION",
+    "gov.hu": "NATIONAL_GOVERNMENT",
+    "gov.lv": "NATIONAL_GOVERNMENT",
+    "edu.lv": "INSTITUTION",
+    "lrv.lt": "NATIONAL_GOVERNMENT",
+    "gouvernement.lu": "NATIONAL_GOVERNMENT",
+    "public.lu": "NATIONAL_GOVERNMENT",
+    "etat.lu": "NATIONAL_GOVERNMENT",
+    "gov.mt": "NATIONAL_GOVERNMENT",
+    "edu.mt": "INSTITUTION",
+    "gov.pl": "NATIONAL_GOVERNMENT",
+    "edu.pl": "INSTITUTION",
+    "gov.pt": "NATIONAL_GOVERNMENT",
+    "gov.ro": "NATIONAL_GOVERNMENT",
+    "edu.ro": "INSTITUTION",
+    "gov.sk": "NATIONAL_GOVERNMENT",
+    "gov.si": "NATIONAL_GOVERNMENT",
+    "gob.es": "NATIONAL_GOVERNMENT",
+    "edu.es": "INSTITUTION",
+    "admin.ch": "NATIONAL_GOVERNMENT",
+    "gov.rs": "NATIONAL_GOVERNMENT",
+    "ac.rs": "INSTITUTION",
+    "edu.rs": "INSTITUTION",
 }
 
 #: Government suffixes that label a holder's kind but prove no site: no registry
 #: page restricting them was found on 2026-10-03, so they are not in
 #: recognition.GOVERNMENT_ZONES. A test keeps the two lists from drifting apart.
 KIND_ONLY_GOVERNMENT_SUFFIXES: frozenset[str] = frozenset(
-    {"bel.tr", "gov.kz", "gov.uz", "gov.in", "gov.pk", "go.id", "gov.au"}
+    {
+        "bel.tr",
+        "gov.kz",
+        "gov.uz",
+        "gov.am",
+        "gov.ru",
+        "gov.in",
+        "nic.in",
+        "gov.pk",
+        "go.id",
+        "gov.bn",
+        "gov.scot",
+        "gov.wales",
+        "gov.ie",
+        "gc.ca",
+        "gouv.qc.ca",
+        "gov.on.ca",
+        "gov.ab.ca",
+        "gov.bc.ca",
+        "gov.au",
+        "govt.nz",
+        "gov.ae",
+        "gov.kw",
+        "gov.bh",
+        "gv.at",
+        "fgov.be",
+        "gov.cy",
+        "gouv.fr",
+        "gov.gr",
+        "gov.hu",
+        "gov.lv",
+        "lrv.lt",
+        "gouvernement.lu",
+        "public.lu",
+        "etat.lu",
+        "gov.mt",
+        "gov.pl",
+        "gov.pt",
+        "gov.ro",
+        "gov.sk",
+        "gov.si",
+        "gob.es",
+        "admin.ch",
+        "gov.rs",
+    }
 )
 
 

@@ -534,3 +534,113 @@ def test_every_constraint_key_has_its_own_rule_id(index):
     ids = {page_rule_id(index, key) for key in keys}
     assert len(ids) == len(keys)
     assert max(len(i) for i in ids) <= 20
+
+
+# --- spec 2026-10-12 §6.4 step 2: a note keeps what its rule would have written --
+
+
+def test_an_unsure_cv_rule_saves_the_value_it_would_have_written():
+    [note] = to_notes((_rule(0, "style", "photo_forbidden", note="unsure"),), source_url=_URL)
+    assert (note.key, note.readings.key, note.readings.values) == (
+        "undecided", "photo_allowed", (False,))
+
+
+def test_two_figures_of_one_unsure_sentence_pool_their_readings():
+    [note] = to_notes((
+        _rule(0, "limit", 2, unit="pages", bound="maximum", note="unsure"),
+        _rule(0, "limit", 3, unit="pages", bound="maximum", note="unsure"),
+    ), source_url=_URL)
+    assert note.readings.values == (2, 3)
+
+
+def test_a_third_party_valueless_or_letter_note_saves_no_readings():
+    notes = to_notes((
+        _rule(0, "limit", 2, unit="pages", note="third_party"),
+        _rule(1, "limit", None, note="unsure"),
+        _rule(2, "limit", 2, unit="pages", note="unsure", document="motivation_letter"),
+    ), source_url=_URL)
+    assert [n.readings for n in notes] == [None, None, None]
+
+
+def test_more_than_ten_pooled_readings_save_none_rather_than_crash():
+    """Final review I1: SavedReadings holds ten values; an eleventh raised
+    ValidationError out of to_notes and lost the page's whole read."""
+    [note] = to_notes(tuple(
+        _rule(0, "limit", n, unit="pages", bound="maximum", note="unsure") for n in range(1, 12)
+    ), source_url=_URL)
+    assert (note.key, note.readings) == ("undecided", None)
+
+
+def test_an_unsure_language_note_saves_no_readings():
+    """Final review I1: an unclear language is for information (step 2), so
+    the merge never reads its readings and none are saved."""
+    [note] = to_notes((_rule(0, "language", "de", note="unsure"),), source_url=_URL)
+    assert (note.key, note.readings) == ("undecided", None)
+
+
+def test_a_note_without_readings_dumps_exactly_as_before():
+    """Review focus 4: rederive_rules compares dumped rows to decide 'changed'."""
+    [note] = to_notes((_rule(1, "limit", None, note="unsure"),), source_url=_URL)
+    assert "readings" not in note.model_dump(mode="json")
+
+
+def test_a_required_photo_is_its_own_key():
+    """Spec 2026-10-12 §8: no longer `unapplied`."""
+    [rule] = to_constraint_rules((_rule(0, "style", "photo_required"),), source_url=_URL)
+    assert (rule.key, rule.value) == ("photo_required", True)
+
+
+def test_a_start_point_with_no_whole_count_of_years_is_an_unapplied_note():
+    bad = (_rule(0, "style", "cv_start_last_years", detail="2.5"),)
+    assert to_constraint_rules(bad, source_url=_URL) == ()
+    assert [n.key for n in to_notes(bad, source_url=_URL)] == ["unapplied"]
+
+
+def test_caps_on_two_sections_do_not_contradict_each_other():
+    from apps.documents.rule_sinks import resolve_conflicts
+
+    rules = resolve_conflicts((
+        _rule(0, "limit", 3, unit="entries", bound="maximum", detail="publications"),
+        _rule(1, "limit", 5, unit="entries", bound="maximum", detail="experience"),
+    ))
+    assert all(r.applied for r in rules)
+    assert [r.value for r in to_constraint_rules(rules, source_url=_URL)] == [
+        {"publications": 3}, {"experience": 5}]
+
+
+def test_two_section_caps_in_one_sentence_are_one_rule_with_one_id():
+    rules = to_constraint_rules((
+        _rule(0, "limit", 3, unit="entries", bound="maximum", detail="publications",
+              figure=0),
+        _rule(0, "limit", 5, unit="entries", bound="maximum", detail="awards", figure=1),
+        _rule(0, "limit", 4, unit="entries", bound="maximum", detail="awards", figure=2),
+    ), source_url=_URL)
+    assert [(r.rule_id, r.value) for r in rules] == [
+        ("PAGE-0-max_entries_p", {"publications": 3, "awards": 4})]
+
+
+def test_coverage_rules_become_advisory_constraints_with_their_values():
+    rules = to_constraint_rules((
+        _rule(0, "coverage", ("complete", "", 0), sentence="List all your activities."),
+        _rule(1, "coverage", ("last_n_years", "", 10), sentence="Covering the last 10 years."),
+        _rule(2, "coverage", ("section_cap", "publications", 5), sentence="Max 5 publications."),
+    ), source_url=_URL)
+    assert [(r.key, r.value) for r in rules] == [
+        ("cv_scope", "complete"),
+        ("cv_start", {"start": "last_n_years", "years": 10}),
+        ("cv_item_cap", {"section": "publications", "max": 5}),
+    ]
+    assert {r.enforcement for r in rules} == {Enforcement.ADVISORY_HIGH_RISK}
+    assert rules[2].rule_text == "Max 5 publications."
+
+
+def test_two_caps_on_one_page_both_survive_resolve_rules(program_factory):
+    stored = to_constraint_rules((
+        _rule(0, "coverage", ("section_cap", "publications", 5)),
+        _rule(1, "coverage", ("section_cap", "awards", 3)),
+    ), source_url=_URL)
+    programme = program_factory(cv_constraints=[r.model_dump(mode="json") for r in stored])
+    resolved = resolve_rules(programme, None, content=SimpleNamespace(research=()))
+    assert sorted(r.value["section"] for r in resolved if r.key == "cv_item_cap") == [
+        "awards", "publications",
+    ]

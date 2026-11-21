@@ -480,6 +480,40 @@ def test_the_candidate_list_is_unconfirmed_facts_only(
     assert [fact["id"] for fact in response.json()["facts"]] == [str(pending.id)]
 
 
+def test_the_candidate_list_leaves_out_a_document_read(client, domain_a, user_a, membership_a):
+    """Final review, item 8: a passport's doubtful value is a detail to check on
+    the dashboard, offered one key at a time -- never a bulk "confirm all" candidate."""
+    with tenant_scope(domain_a.agency_id):
+        mine = _candidate(membership_a)
+        VerifiedFact.objects.create(
+            student=membership_a, category=VerifiedFact.Category.IDENTITY,
+            payload={"date_of_birth": "1998-03-14"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:00000000-0000-0000-0000-000000000001",
+            confirmed_by=None, created_by=membership_a,
+        )
+    client.force_login(user_a)
+
+    response = client.get(CANDIDATES, HTTP_HOST=domain_a.host)
+
+    assert [fact["id"] for fact in response.json()["facts"]] == [str(mine.id)]
+
+
+def test_a_login_only_identity_is_not_a_candidate(client, domain_a, user_a, membership_a):
+    """A typed GitHub login with no IDENTITY yet holds no name: confirmed, it would open
+    generation's identity gate with nothing for a CV header, so it is never offered."""
+    from apps.documents.evidence import facts
+
+    with tenant_scope(domain_a.agency_id):
+        facts.set_github_login(membership_a, "0rkhann")
+        named = _candidate(membership_a)
+    client.force_login(user_a)
+
+    response = client.get(CANDIDATES, HTTP_HOST=domain_a.host)
+
+    assert [fact["id"] for fact in response.json()["facts"]] == [str(named.id)]
+
+
 def test_the_candidate_list_is_the_callers_ledger_only(
     client, domain_a, domain_b, user_a, membership_a, agency_b, membership_b
 ):
@@ -670,6 +704,7 @@ def test_generate_carries_a_programme_through_to_the_queue(
 
     assert response.status_code == 202
     assert queued[0].programme_id == programme.id
+    assert queued[0].application_id is None
 
 
 def test_a_programme_the_student_applies_to_counts_as_in_the_pack(
@@ -691,6 +726,7 @@ def test_a_programme_the_student_applies_to_counts_as_in_the_pack(
 
     assert response.status_code == 202
     assert queued[0].programme_id == programme.id
+    assert queued[0].application_id == application.id
 
 
 def test_an_existing_programme_outside_the_pack_is_400_and_enqueues_nothing(
@@ -796,13 +832,70 @@ def test_generation_is_rate_limited_and_enqueues_nothing(
 ):
     _generatable_student(agency_a, membership_a)
     client.force_login(user_a)
-    for _ in range(10):
+    for _ in range(20):
         _post(client, GENERATE, {"kind": "CV"}, domain_a.host)
 
     response = _post(client, GENERATE, {"kind": "CV"}, domain_a.host)
 
     assert response.status_code == 429
-    assert len(queued) == 10
+    assert len(queued) == 20
+
+
+def test_one_api_request_and_its_job_spend_one_cv_generation(
+    client, domain_a, user_a, membership_a, agency_a, queued, monkeypatch
+):
+    from types import SimpleNamespace
+
+    from django.core.cache import cache
+
+    from apps.documents import document_worker, generation
+    from apps.documents.schemas import CVContent, EducationEntry, PersonalInformation
+
+    _generatable_student(agency_a, membership_a)
+    client.force_login(user_a)
+    monkeypatch.setattr(generation, "OpenAI", lambda: SimpleNamespace(responses=None))
+    monkeypatch.setattr(
+        generation,
+        "_call_model",
+        lambda *_a, **_kw: CVContent(
+            personal_information=PersonalInformation(
+                full_name="Jane Doe", email="student@mail.example.test"
+            ),
+            education=(
+                EducationEntry(
+                    degree_as_awarded="BSc",
+                    institution_original="Example U",
+                    city="Berlin",
+                    country="DE",
+                    start_date="2020-09-01",
+                ),
+            ),
+            experience=(),
+            research=(),
+            publications=(),
+            awards=(),
+            skills=(),
+            languages=(),
+            document_language="en",
+        ),
+    )
+
+    response = _post(client, GENERATE, {"kind": "CV"}, domain_a.host)
+    assert response.status_code == 202
+    document_worker._generate(queued[0])
+    window = int(1_700_000_000 // generation._CV_GENERATION_RATE_WINDOW_SECONDS)
+    assert cache.get(f"ratelimit:cv_generation:{membership_a.id}:{window}") == 1
+
+
+def test_the_api_still_refuses_a_flood_of_requests(
+    client, domain_a, user_a, membership_a, agency_a, queued
+):
+    _generatable_student(agency_a, membership_a)
+    client.force_login(user_a)
+    responses = [
+        _post(client, GENERATE, {"kind": "CV"}, domain_a.host) for _ in range(21)
+    ]
+    assert responses[-1].status_code == 429
 
 
 def test_an_unsupported_kind_is_400(
@@ -1328,8 +1421,285 @@ def test_an_upload_may_be_any_document_the_table_lists(
         api, "presigned_upload", lambda document: {"url": "https://s3.test/", "fields": {}}
     )
     client.force_login(user_a)
-    for kind in ("PASSPORT", "DIPLOMA", "LANGUAGE_CERTIFICATE", "RECOMMENDATION", "OTHER"):
+    for kind in ("PASSPORT", "DIPLOMA", "LANGUAGE_CERTIFICATE", "REFERENCE_LETTER", "OTHER"):
         response = _post(client, "/api/documents/uploads", {"kind": kind}, domain_a.host)
         assert response.status_code == 201, kind
     refused = _post(client, "/api/documents/uploads", {"kind": "SELFIE"}, domain_a.host)
     assert refused.status_code == 400
+
+
+def _held_diploma(agency, student):
+    from apps.concierge.documents import register
+    from apps.concierge.models import DocumentVersion
+    from apps.tenancy.context import tenant_scope
+
+    with tenant_scope(agency.id):
+        document = register(agency.id, student.id, kind="DIPLOMA", mode="ADD")
+        DocumentVersion.objects.filter(id=document.id).update(state="AVAILABLE")
+    return document
+
+
+def _registered(agency, document_id):
+    from apps.concierge.models import DocumentVersion
+    from apps.tenancy.context import tenant_scope
+
+    with tenant_scope(agency.id):
+        return DocumentVersion.objects.get(id=document_id)
+
+
+def test_an_upload_replaces_the_one_diploma_held_by_default(
+    client, domain_a, user_a, membership_a, agency_a, _no_presign
+):
+    held = _held_diploma(agency_a, membership_a)
+    client.force_login(user_a)
+    response = _post(client, UPLOADS, {"kind": "DIPLOMA"}, domain_a.host)
+    assert response.status_code == 201
+    assert _registered(agency_a, response.json()["document_id"]).replaces == held.id
+
+
+def test_add_another_replaces_nothing(
+    client, domain_a, user_a, membership_a, agency_a, _no_presign
+):
+    _held_diploma(agency_a, membership_a)
+    client.force_login(user_a)
+    response = _post(client, UPLOADS, {"kind": "DIPLOMA", "mode": "ADD"}, domain_a.host)
+    assert response.status_code == 201
+    assert _registered(agency_a, response.json()["document_id"]).replaces is None
+
+
+def test_adding_a_second_passport_keeps_the_first(
+    client, domain_a, user_a, membership_a, agency_a, _no_presign
+):
+    from apps.concierge.documents import register
+    from apps.concierge.models import DocumentVersion
+    from apps.tenancy.context import tenant_scope
+
+    with tenant_scope(agency_a.id):
+        first = register(agency_a.id, membership_a.id, kind="PASSPORT")
+        DocumentVersion.objects.filter(id=first.id).update(state="AVAILABLE")
+    client.force_login(user_a)
+    response = _post(client, UPLOADS, {"kind": "PASSPORT", "mode": "ADD"}, domain_a.host)
+    assert response.status_code == 201
+    second = _registered(agency_a, response.json()["document_id"])
+    assert second.replaces is None and second.id != first.id
+    assert _registered(agency_a, first.id).retired_at is None
+
+
+def test_a_replace_among_several_diplomas_must_name_one(
+    client, domain_a, user_a, membership_a, agency_a, _no_presign
+):
+    _held_diploma(agency_a, membership_a)
+    master = _held_diploma(agency_a, membership_a)
+    client.force_login(user_a)
+    response = _post(client, UPLOADS, {"kind": "DIPLOMA", "mode": "REPLACE"}, domain_a.host)
+    assert (response.status_code, response.json()) == (400, {"error": "replace_which"})
+    named = _post(client, UPLOADS, {"kind": "DIPLOMA", "replaces": str(master.id)},
+                  domain_a.host)
+    assert named.status_code == 201
+    assert _registered(agency_a, named.json()["document_id"]).replaces == master.id
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"kind": "DIPLOMA", "mode": "RETAKE"},
+        {"kind": "DIPLOMA", "mode": "ADD", "replaces": "x"},
+        {"kind": "DIPLOMA", "replaces": "not-a-uuid"},
+        {"kind": "DIPLOMA", "replaces": "00000000-0000-0000-0000-000000000000"},
+        {"kind": "PASSPORT", "replaces": "DIPLOMA"},
+    ],
+)
+def test_a_malformed_replace_is_refused(
+    client, domain_a, user_a, membership_a, agency_a, _no_presign, body
+):
+    client.force_login(user_a)
+    response = _post(client, UPLOADS, body, domain_a.host)
+    assert response.status_code == 400
+    assert response.json()["error"] in {"invalid_mode", "invalid_replaces"}
+
+
+def test_a_replace_cannot_name_another_kind_or_another_students_upload(
+    client, domain_a, user_a, membership_a, agency_a, _no_presign, user_b
+):
+    from apps.tenancy.context import tenant_scope
+    from apps.tenancy.models import Membership
+
+    diploma = _held_diploma(agency_a, membership_a)
+    with tenant_scope(agency_a.id):
+        other = Membership.objects.create(
+            tenant=agency_a, user=user_b, role=Membership.Role.STUDENT
+        )
+    theirs = _held_diploma(agency_a, other)
+    client.force_login(user_a)
+    for target, kind in ((diploma, "PASSPORT"), (theirs, "DIPLOMA")):
+        response = _post(client, UPLOADS, {"kind": kind, "replaces": str(target.id)},
+                         domain_a.host)
+        assert (response.status_code, response.json()) == (400, {"error": "invalid_replaces"})
+
+
+def _held(agency, student, kind):
+    from apps.concierge.documents import register
+    from apps.concierge.models import DocumentVersion
+    from apps.tenancy.context import tenant_scope
+
+    with tenant_scope(agency.id):
+        document = register(agency.id, student.id, kind=kind, mode="ADD")
+        DocumentVersion.objects.filter(id=document.id).update(state="AVAILABLE")
+    return document
+
+
+def test_a_second_recommendation_letter_is_added_by_default(
+    client, domain_a, user_a, membership_a, agency_a, _no_presign
+):
+    """Fix I1: two referees, two letters. Replace only when the student chooses it."""
+    first = _held(agency_a, membership_a, "REFERENCE_LETTER")
+    client.force_login(user_a)
+    added = _post(client, UPLOADS, {"kind": "REFERENCE_LETTER"}, domain_a.host)
+    assert _registered(agency_a, added.json()["document_id"]).replaces is None
+    chosen = _post(client, UPLOADS, {"kind": "REFERENCE_LETTER", "mode": "REPLACE"},
+                   domain_a.host)
+    assert _registered(agency_a, chosen.json()["document_id"]).replaces == first.id
+
+
+def test_a_second_replace_of_the_same_upload_waits_for_the_first(
+    client, domain_a, user_a, membership_a, agency_a, _no_presign
+):
+    """Fix M2, mirroring register_transcript's replace_pending."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from apps.concierge.models import DocumentVersion
+    from apps.tenancy.context import tenant_scope
+
+    held = _held(agency_a, membership_a, "DIPLOMA")
+    client.force_login(user_a)
+    first = _post(client, UPLOADS, {"kind": "DIPLOMA", "replaces": str(held.id)}, domain_a.host)
+    assert first.status_code == 201
+    second = _post(client, UPLOADS, {"kind": "DIPLOMA"}, domain_a.host)
+    assert (second.status_code, second.json()) == (409, {"error": "replace_pending"})
+    # A form never posted stops blocking once its window has passed; a rejected one at once.
+    with tenant_scope(agency_a.id):
+        DocumentVersion.objects.filter(id=first.json()["document_id"]).update(
+            created_at=timezone.now() - timedelta(hours=1)
+        )
+    assert _post(client, UPLOADS, {"kind": "DIPLOMA"}, domain_a.host).status_code == 201
+
+
+def test_generate_is_409_while_a_newer_cv_awaits_confirmation(
+    client, domain_a, user_a, membership_a, agency_a, queued
+):
+    from django.utils import timezone
+
+    with tenant_scope(agency_a.id):
+        identity = _candidate(membership_a)
+        VerifiedFact.objects.filter(id=identity.id).update(
+            confirmed_by=membership_a, confirmed_at=timezone.now()
+        )
+        old = VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={
+                "degree_as_awarded": "BSc",
+                "institution_original": "UFAZ",
+                "city": "Baku",
+            },
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:first",
+            confirmed_by=membership_a,
+            confirmed_at=timezone.now(),
+            created_by=membership_a,
+        )
+        VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={**old.payload, "city": "Sumqayit"},
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:second",
+            supersedes=old,
+            created_by=membership_a,
+        )
+        membership_a.application_email = "student@mail.example.test"
+        membership_a.save(update_fields=["application_email"])
+    client.force_login(user_a)
+
+    response = _post(client, GENERATE, {"kind": "CV"}, domain_a.host)
+
+    assert response.status_code == 409
+    assert response.json() == {"error": "cv_changes_pending"}
+    assert queued == []
+
+
+def _left_out_draft(student, programme, digest="a" * 64):
+    from .test_render import _content
+
+    draft = create_draft(student=student, kind=DocumentDraft.Kind.CV, content=_content(),
+                         programme=programme)
+    DocumentDraft.objects.filter(id=draft.id).update(applied_fixes=[{
+        "kind": "left_out", "section": "awards", "item": "Chess prize (2018)",
+        "item_digest": digest, "reason": "not related to this programme",
+    }])
+    return draft
+
+
+def test_putting_back_a_left_out_item_records_it(
+    client, domain_a, user_a, membership_a, agency_a, program_factory
+):
+    from apps.documents.models import CVItemChoice
+
+    programme = program_factory()
+    with tenant_scope(agency_a.id):
+        draft = _left_out_draft(membership_a, programme)
+    client.force_login(user_a)
+    response = _post(
+        client, f"/api/documents/drafts/{draft.id}/put-back",
+        {"item_digest": "a" * 64}, domain_a.host,
+    )
+    assert response.status_code == 200
+    with tenant_scope(agency_a.id):
+        choice = CVItemChoice.objects.get(student=membership_a)
+    assert (choice.program_id, choice.section, choice.item_digest) == (
+        programme.id, "awards", "a" * 64
+    )
+
+
+@pytest.mark.parametrize("digest", ["b" * 64, "", "not-hex"])
+def test_a_digest_the_draft_never_left_out_is_not_found(
+    client, domain_a, user_a, membership_a, agency_a, program_factory, digest
+):
+    """Review Focus 3."""
+    from apps.documents.models import CVItemChoice
+
+    with tenant_scope(agency_a.id):
+        draft = _left_out_draft(membership_a, program_factory())
+    client.force_login(user_a)
+    response = _post(
+        client, f"/api/documents/drafts/{draft.id}/put-back",
+        {"item_digest": digest}, domain_a.host,
+    )
+    assert response.status_code == 404
+    with tenant_scope(agency_a.id):
+        assert not CVItemChoice.objects.exists()
+
+
+def test_another_students_draft_is_not_found(
+    client, domain_a, user_a, membership_a, agency_a, django_user_model, program_factory
+):
+    """Review Focus 3: the same digest, on a draft that is not the caller's."""
+    from apps.documents.models import CVItemChoice
+
+    with tenant_scope(agency_a.id):
+        other = Membership.objects.create(
+            tenant=agency_a, user=django_user_model.objects.create(username="other-pb"),
+            role=Membership.Role.STUDENT, active=True,
+        )
+        draft = _left_out_draft(other, program_factory())
+    client.force_login(user_a)
+    response = _post(
+        client, f"/api/documents/drafts/{draft.id}/put-back",
+        {"item_digest": "a" * 64}, domain_a.host,
+    )
+    assert response.status_code == 404
+    with tenant_scope(agency_a.id):
+        assert not CVItemChoice.objects.exists()
+

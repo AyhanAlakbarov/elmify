@@ -41,7 +41,7 @@ first. Its validity half landed and its ladder half did not. This plan supersede
 and keeps its test cases.
 
 **Base:** `master` at `115c752` (2026-09-26). Work on the branch this plan is committed to, in a fresh
-worktree. Test database: `POSTGRES_DB=tehsil_verification_ladder` — never share a test DB between
+worktree. Test database: `POSTGRES_DB=elmify_verification_ladder` — never share a test DB between
 sessions (CLAUDE.md).
 
 ---
@@ -176,7 +176,7 @@ sessions (CLAUDE.md).
   Never renumber by hand (the 2026-09-15 collision in CLAUDE.md).
 - **Never run `ruff format`** — the repo's gate is lint-only.
 - **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`,
-  `POSTGRES_DB=tehsil_verification_ladder uv run pytest`,
+  `POSTGRES_DB=elmify_verification_ladder uv run pytest`,
   `uv run python manage.py makemigrations --check --dry-run`,
   `uv run bandit -c pyproject.toml -r apps config`. All clean.
 - **Commits** use a pathspec (`git commit -- <paths>`), never `git add -A`.
@@ -294,7 +294,7 @@ def test_a_page_reaches_the_reader_only_by_name_or_year(text, expected):
 
 - [ ] **Step 2: Run to confirm they fail**
 
-Run: `POSTGRES_DB=tehsil_verification_ladder uv run pytest tests/research/test_cycle_vocabulary.py -q`
+Run: `POSTGRES_DB=elmify_verification_ladder uv run pytest tests/research/test_cycle_vocabulary.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.cycle_vocabulary'`.
 
 - [ ] **Step 3: Write the data file**
@@ -567,7 +567,7 @@ def test_a_normalised_nationality_is_what_select_deadline_matches():
     assert (chosen.date, chosen.condition) == (dt.date(2026, 10, 15), "NATIONALITY:IN")
 ```
 
-- [ ] **Step 2: Run** `POSTGRES_DB=tehsil_verification_ladder uv run pytest tests/funding/test_deadline_conditions.py -q`
+- [ ] **Step 2: Run** `POSTGRES_DB=elmify_verification_ladder uv run pytest tests/funding/test_deadline_conditions.py -q`
   Expected: FAIL, `ModuleNotFoundError`.
 
 - [ ] **Step 3: Write the data file** `docs/research/deadline-condition-terms.csv`. English only: these
@@ -750,7 +750,7 @@ def test_country_labels_are_written_from_wikidata_rows(tmp_path, monkeypatch):
         ("Türkiye", "TR", "label"), ("Indian", "IN", "demonym"),
     }
     assert all(r["source"] == command.SPARQL_URL and r["fetched_on"] for r in rows)
-    assert calls[0][2]["User-Agent"].startswith("tehsil")
+    assert calls[0][2]["User-Agent"].startswith("elmify")
 ```
 
 Then the command:
@@ -801,7 +801,7 @@ class Command(BaseCommand):
             params={"query": _QUERY.format(languages=languages), "format": "json"},
             headers={
                 "Accept": "application/sparql-results+json",
-                "User-Agent": "tehsil-agent/1.0 (country-labels; contact via repository)",
+                "User-Agent": "elmify/1.0 (country-labels; contact via repository)",
             },
         )
         today = timezone.now().date().isoformat()
@@ -943,7 +943,7 @@ In `tests/tenancy/test_database_isolation.py`, append to `_SHARED_TABLES`:
     "funding_fundingcycleverification",
 ```
 
-- [ ] **Step 2: Run** `POSTGRES_DB=tehsil_verification_ladder uv run pytest tests/funding/test_cycle_verification_rls.py tests/tenancy/test_database_isolation.py -q`
+- [ ] **Step 2: Run** `POSTGRES_DB=elmify_verification_ladder uv run pytest tests/funding/test_cycle_verification_rls.py tests/tenancy/test_database_isolation.py -q`
   Expected: FAIL, `ImportError: cannot import name 'FundingCycleVerification'`.
 
 - [ ] **Step 3: Add the model**

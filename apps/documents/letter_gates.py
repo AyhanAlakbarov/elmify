@@ -12,8 +12,11 @@ own new members rather than redefining it.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from itertools import combinations
+from uuid import UUID
 
 from .letter_schemas import ClaimKind, LetterContent, LetterUnit, Storyline
 
@@ -32,6 +35,14 @@ class GateCode(StrEnum):
     STORYLINE_DRIFT = "STORYLINE_DRIFT"
     #: Task 9. The page forbids naming and the letter named someone.
     NAMING_FORBIDDEN = "NAMING_FORBIDDEN"
+    #: One unit per requested archetype, and none unrequested. Measured live
+    #: 2026-09-25: six archetypes came back as 21 one-claim units.
+    UNIT_STRUCTURE = "UNIT_STRUCTURE"
+    #: A sentence about what the programme offers, with no SOURCED claim.
+    UNSOURCED_PROGRAMME_CLAIM = "UNSOURCED_PROGRAMME_CLAIM"
+    #: Stock AI vocabulary, participial -ing trailers, em-dashes, or flat
+    #: sentence-length uniformity that _INSTRUCTIONS forbids (human-voice.md).
+    AI_STYLE = "AI_STYLE"
 
 
 @dataclass(frozen=True)
@@ -39,9 +50,46 @@ class LetterGateViolation:
     code: GateCode
     detail: str
     unit_archetype: str | None = None
+    #: False for a warning: carried on the result for the student to see, never
+    #: a reason to block, retry or hold the letter (spec 2026-10-14 §5, §4.6).
+    blocking: bool = True
+    #: Closed-vocabulary subcode safe to include in retry instructions without
+    #: leaking model-authored prose into developer prompts.
+    subcode: str | None = None
 
 
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
+SAFE_GATE_SUBCODES: frozenset[str] = frozenset(
+    {
+        "stock_phrase",
+        "participial_trailer",
+        "em_dash",
+        "closing_summary",
+        "nominalization_density",
+        "uniform_sentence_length",
+        "consecutive_similar_length",
+        "cohort_overlap",
+        "declared_voice_missing",
+    }
+)
+
+
+#: Where a sentence ends, for every script a letter is written in. Latin, Arabic
+#: (؟) and Armenian (։) terminals end a sentence only before whitespace, so a
+#: version number ("3.11") never splits; CJK full-width terminals take no space
+#: after them and split before the next visible character, so a final one leaves
+#: no empty trailing sentence. ponytail: Greek writes its question mark as ";"
+#: (U+037E normalises to it), indistinguishable from a semicolon without the
+#: letter's language, so Greek questions are not split; pass the language in
+#: if a Greek letter ever needs it.
+#: Invisible marks (zero-width space and joiners, left-to-right and right-to-left
+#: marks, word joiner, BOM) count as part of the gap after a terminal: hygiene
+#: strips them, so a split that depended on them would change the sentence
+#: count across hygiene and fail `hygienic_letter_content` (final review, an
+#: Arabic "؟" followed by U+200F). At least one real space is still required.
+_INVISIBLE = "\u200b-\u200f\u2060\ufeff"
+_SENTENCE_SPLIT = re.compile(
+    rf"(?<=[.!?؟։])[{_INVISIBLE}]*\s[\s{_INVISIBLE}]*|(?<=[。！？])[\s{_INVISIBLE}]*(?=\S)"
+)
 _DIGIT_PATTERN = re.compile(r"\d")
 _DATE_PATTERN = re.compile(
     r"\b(19|20)\d{2}\b|\b\d{1,2}/\d{1,2}(/\d{2,4})?\b|\b(January|February|March|April|May|June|"
@@ -89,7 +137,7 @@ def capitalised_phrases(text: str, *, minimum_words: int = 2) -> list[str]:
                 # next one.
                 run[-1] = f"{run[-1]}."
                 continue
-            run, pending = _close(run, pending, phrases, minimum_words), []
+            run, pending = _close(run, phrases, minimum_words), []
             continue
         if part[:1].isupper():
             run.extend(pending)
@@ -98,14 +146,12 @@ def capitalised_phrases(text: str, *, minimum_words: int = 2) -> list[str]:
         elif run and part.casefold() in _CONNECTORS:
             pending.append(part)
         else:
-            run, pending = _close(run, pending, phrases, minimum_words), []
-    _close(run, pending, phrases, minimum_words)
+            run, pending = _close(run, phrases, minimum_words), []
+    _close(run, phrases, minimum_words)
     return phrases
 
 
-def _close(
-    run: list[str], pending: list[str], phrases: list[str], minimum_words: int
-) -> list[str]:
+def _close(run: list[str], phrases: list[str], minimum_words: int) -> list[str]:
     while run and run[0].casefold() in _LEADING_ARTICLES:
         run = run[1:]
     if len(run) >= minimum_words:
@@ -133,7 +179,8 @@ def _has_trigger(sentence: str) -> bool:
 
 
 def sentence_spans(text: str) -> list[tuple[str, int, int]]:
-    """Split ``text`` into sentences with their ``[start, end)`` offsets.
+    """Split ``text`` into sentences with their ``[start, end)`` offsets, for every
+    letter script (see ``_SENTENCE_SPLIT``).
 
     Public, and shared with ``letter_render.hygienic_letter_content``'s
     claim-span re-anchoring on purpose: that function has to reproduce this
@@ -301,18 +348,31 @@ _WHITESPACE = re.compile(r"\s+")
 _HANGUL = re.compile(r"[가-힣]")
 _KANA = re.compile(r"[぀-ヿ]")
 _HAN = re.compile(r"[一-鿿]")
-_NON_LATIN_SCRIPTS = {"ko": _HANGUL, "ja": _KANA, "zh": _HAN}
+_CYRILLIC = re.compile(r"[Ѐ-ӿ]")
+_GREEK = re.compile(r"[Ͱ-Ͽἀ-῿]")
+_ARABIC = re.compile(r"[؀-ۿݐ-ݿ]")
+_ARMENIAN = re.compile(r"[԰-֏]")
+_GEORGIAN = re.compile(r"[Ⴀ-ჿ]")
+#: Languages written in one non-Latin script. Serbian (Cyrillic and Latin) and
+#: Kazakh (Cyrillic, moving to Latin) are deliberately absent: a correct letter
+#: in either script must not fail the check.
+_NON_LATIN_SCRIPTS = {
+    "ko": _HANGUL, "ja": _KANA, "zh": _HAN,
+    "ru": _CYRILLIC, "uk": _CYRILLIC, "be": _CYRILLIC, "bg": _CYRILLIC, "mk": _CYRILLIC,
+    "el": _GREEK, "ar": _ARABIC, "hy": _ARMENIAN, "ka": _GEORGIAN,
+}
+#: Languages whose length is counted in characters, not words. A separate set
+#: from the script table on purpose: `letter_shape.counts_characters` used to
+#: read `script_of`, so every script added here would have switched that
+#: language's word caps off.
+CHARACTER_COUNTED_LANGUAGES = frozenset({"ko", "ja", "zh"})
 
 
 def script_of(document_language: str) -> re.Pattern[str] | None:
     """The script a language is written in, or None for a Latin-script one.
 
     The PRIMARY SUBTAG only: `document_language` holds up to ten characters,
-    so "ja-JP" and "zh-Hans" are storable. `letter_shape.counts_characters`
-    became subtag-aware in one round and this check did not, which widened the
-    gap it was closing -- those were exactly the values newly exempted from
-    every word bound, leaving the check that the letter is in that script off
-    as well. One function now, read by both.
+    so "ja-JP" and "zh-Hans" are storable.
     """
     return _NON_LATIN_SCRIPTS.get(document_language.lower().split("-")[0])
 
@@ -382,8 +442,27 @@ _EXEMPT_ARCHETYPES = {"OPENING", "CLOSING"}
 _SOURCED_REQUIRED_ARCHETYPES = {"WHY_PROGRAMME"}
 
 
-def check_generic_paragraph(content: LetterContent) -> tuple[LetterGateViolation, ...]:
+def check_generic_paragraph(
+    content: LetterContent,
+    *,
+    programme_input_ids: frozenset[UUID] = frozenset(),
+    has_facts: bool = True,
+) -> tuple[LetterGateViolation, ...]:
+    """Every body paragraph rests on a fact; WHY_PROGRAMME rests on a verified
+    programme fact. Only a SOURCED claim citing one of `programme_input_ids`
+    (research rows verified for THIS programme) satisfies WHY_PROGRAMME: a
+    SOURCED claim carrying only a URL was a link the model could make up. When
+    nothing is verified for the programme, or the student has no confirmed
+    facts, the miss is a warning -- blocking it would block every such letter."""
     violations: list[LetterGateViolation] = []
+    has_programme_sourced_unit = bool(programme_input_ids) and any(
+        u.archetype in _SOURCED_REQUIRED_ARCHETYPES
+        and any(
+            c.kind == ClaimKind.SOURCED and c.input_id in programme_input_ids
+            for c in u.claims
+        )
+        for u in content.units
+    )
     for unit in content.units:
         if unit.archetype in _EXEMPT_ARCHETYPES:
             continue
@@ -391,15 +470,31 @@ def check_generic_paragraph(content: LetterContent) -> tuple[LetterGateViolation
         if not kinds & {"FACTUAL", "SOURCED"}:
             violations.append(
                 LetterGateViolation(
-                    GateCode.GENERIC_PARAGRAPH, "no FACTUAL or SOURCED claim", unit.archetype
+                    GateCode.GENERIC_PARAGRAPH,
+                    "no FACTUAL or SOURCED claim"
+                    if has_facts
+                    else "no confirmed facts: written from the programme and the plan only",
+                    unit.archetype,
+                    blocking=has_facts,
                 )
             )
-        elif unit.archetype in _SOURCED_REQUIRED_ARCHETYPES and "SOURCED" not in kinds:
+        elif (
+            unit.archetype in _SOURCED_REQUIRED_ARCHETYPES
+            and not has_programme_sourced_unit
+            and not any(
+                claim.kind == ClaimKind.SOURCED and claim.input_id in programme_input_ids
+                for claim in unit.claims
+            )
+        ):
             violations.append(
                 LetterGateViolation(
                     GateCode.GENERIC_PARAGRAPH,
-                    f"{unit.archetype} without SOURCED claim",
+                    f"{unit.archetype} without a SOURCED claim citing a verified programme fact"
+                    if programme_input_ids
+                    else f"{unit.archetype} not specific to this programme: "
+                    "no verified programme fact",
                     unit.archetype,
+                    blocking=bool(programme_input_ids),
                 )
             )
     return tuple(violations)
@@ -421,21 +516,20 @@ def check_duplicates_sibling_answers(
 ) -> tuple[LetterGateViolation, ...]:
     answers = [u for u in content.units if u.answers_question]
     violations: list[LetterGateViolation] = []
-    for i, a in enumerate(answers):
-        for b in answers[i + 1 :]:
-            set_a, set_b = _unit_sentences(a), _unit_sentences(b)
-            if not set_a or not set_b:
-                continue
-            overlap = len(set_a & set_b) / len(set_a | set_b)
-            if overlap > threshold:
-                violations.append(
-                    LetterGateViolation(
-                        GateCode.DUPLICATES_SIBLING_ANSWER,
-                        f"{a.answers_question} and {b.answers_question}: "
-                        f"{overlap:.0%} sentence overlap",
-                        a.archetype,
-                    )
+    for a, b in combinations(answers, 2):
+        set_a, set_b = _unit_sentences(a), _unit_sentences(b)
+        if not set_a or not set_b:
+            continue
+        overlap = len(set_a & set_b) / len(set_a | set_b)
+        if overlap > threshold:
+            violations.append(
+                LetterGateViolation(
+                    GateCode.DUPLICATES_SIBLING_ANSWER,
+                    f"{a.answers_question} and {b.answers_question}: "
+                    f"{overlap:.0%} sentence overlap",
+                    a.archetype,
                 )
+            )
     return tuple(violations)
 
 
@@ -458,6 +552,103 @@ def check_first_person_plural(content: LetterContent) -> tuple[LetterGateViolati
                     unit.archetype,
                 )
             )
+    return tuple(violations)
+
+
+def check_unit_structure(
+    content: LetterContent, *, archetypes: tuple[str, ...]
+) -> tuple[LetterGateViolation, ...]:
+    """A unit is a paragraph, not a claim. An empty `archetypes` skips the
+    check: a short-answer set is keyed by question instead."""
+    if not archetypes:
+        return ()
+    violations: list[LetterGateViolation] = []
+    seen: set[str] = set()
+    for unit in content.units:
+        if unit.archetype not in archetypes:
+            detail = "archetype was not requested"
+        elif unit.archetype in seen:
+            detail = "archetype split across several units"
+        else:
+            seen.add(unit.archetype)
+            continue
+        if not any(v.unit_archetype == unit.archetype for v in violations):
+            violations.append(
+                LetterGateViolation(GateCode.UNIT_STRUCTURE, detail, unit.archetype)
+            )
+    return tuple(violations)
+
+
+#: Words that describe what a programme offers. A sentence using one asserts a
+#: fact about the programme, and only a page we read can vouch for that -- a
+#: FACTUAL or DECLARED claim is about the applicant. Lowercase on purpose:
+#: `_has_trigger` already catches a capitalised name, and what it missed
+#: (measured live 2026-09-25) was "the programme's module focused on
+#: free-energy methods", invented from the student's wish to learn them.
+# ponytail: English words only; another language relies on the prompt rule.
+# Widen per language when a letter in it shows the same invention.
+_PROGRAMME_OFFERING = re.compile(
+    # Not lab/laboratory: measured live 2026-09-25, "what is tested in the
+    # laboratory" is a place, not an offering, and a named lab is capitalised.
+    r"\b("
+    r"modules?|electives?|curricul(?:um|a)|speciali[sz]ations?|research groups?|"
+    r"professors?|supervisors?|facult(?:y|ies)|"
+    r"wahlpflicht(?:modul\w*|fach\w*|fächer\w*)?|lehrst(?:uhl\w*|ühl\w*)|"
+    r"forschungsgruppen?|professor(?:en|innen)|"
+    r"enseignements?|équipe[s]?\s+de\s+recherche|professeurs?|"
+    r"seçmeli\s+ders\w*|müfredat\w*|araştırma\s+gru(?:bu|pları)\w*|anabilim\s+dalı\w*|"
+    r"модул(?:ь|и|ей|ях)|специализаци(?:я|и|ей)|исследовательск\w+\s+групп\w+|"
+    r"профессор(?:а|ов)?|научн\w+\s+руководител\w+"
+    r")\b",
+    re.IGNORECASE,
+)
+#: The applicant's own past: a supervisor or lab there is theirs, not the
+#: programme's.
+_APPLICANT_PAST_ARCHETYPES = {
+    "ACADEMIC_PREPARATION", "PERSONAL_BACKGROUND", "LEADERSHIP_EXAMPLE", "RELATIONSHIP_COMMUNITY",
+}
+#: The applicant's future at home: a faculty, supervisors or a research group
+#: there are where they will work, not what this programme offers.
+_APPLICANT_FUTURE_ARCHETYPES = {"CAREER_PLAN_RETURN", "HOME_COUNTRY_CONTRIBUTION"}
+
+
+def check_unsourced_programme_claim(
+    content: LetterContent, *, programme_input_ids: frozenset[UUID] = frozenset()
+) -> tuple[LetterGateViolation, ...]:
+    """A sentence about what the programme offers needs a SOURCED claim citing a
+    research row verified for this programme (`programme_input_ids`). A SOURCED
+    claim carrying only a URL does not count: that was a link the model could
+    make up (spec 2026-10-14 §5), the same rule `check_generic_paragraph` applies.
+
+    With nothing verified for the programme the miss is a warning, as spec §5
+    has it: the offering words also appear in the student's own needs ("I am
+    looking for supervisors who work on catalysis"), and blocking those would
+    block every such letter while research fit is off (final review). The
+    student's own past and their future at home are never programme claims."""
+    violations: list[LetterGateViolation] = []
+    for unit in content.units:
+        if unit.archetype in _APPLICANT_PAST_ARCHETYPES | _APPLICANT_FUTURE_ARCHETYPES:
+            continue
+        for sentence, start, end in sentence_spans(unit.text):
+            if not _PROGRAMME_OFFERING.search(sentence):
+                continue
+            # Overlap, not enclosure: hygienic_letter_content widens a span
+            # onto its sentence before generation runs any gate.
+            if not any(
+                claim.kind == ClaimKind.SOURCED
+                and claim.input_id in programme_input_ids
+                and claim.span_start < end
+                and claim.span_end > start
+                for claim in unit.claims
+            ):
+                violations.append(
+                    LetterGateViolation(
+                        GateCode.UNSOURCED_PROGRAMME_CLAIM,
+                        sentence.strip(),
+                        unit.archetype,
+                        blocking=bool(programme_input_ids),
+                    )
+                )
     return tuple(violations)
 
 
@@ -485,6 +676,233 @@ def check_storyline_drift(
     return ()
 
 
+_AI_STOCK_RE = re.compile(
+    r"\b(?:"
+    r"delv(?:e|es|ed|ing)|tapestry|testament\s+to|pivotal\s+moment|"
+    r"underscor(?:e|es|ed|ing)\s+(?:its|the|my|a|an|how)|evolving\s+landscape|"
+    r"breathtaking|nestled|boasts|(?:serves|stands)\s+as\s+a\s+testament|"
+    r"marks\s+a\s+pivotal|i\s+have\s+always\s+wanted\s+to\s+be|"
+    r"not\s+only\s+[^.!?]{1,60}\s+but\s+also|"
+    r"it\s+is\s+not\s+(?:just|merely)\s+[^.!?]{1,50},\s*it\s+is|"
+    r"meticulous(?:ly)?|bolster(?:ed|s|ing)?|deep\s+dive|unwavering(?:ly)?|"
+    r"wholeheartedly|foster(?:ed|s|ing)?\s+(?:a|an|the|my)|"
+    r"intricate\s+(?:web|tapestry|balance|interplay)|"
+    r"vibrant\s+(?:community|ecosystem|environment|academic)|camaraderie|palpable|"
+    r"unterstreicht\s+die\s+bedeutung|von\s+entscheidender\s+bedeutung|"
+    r"hiermit\s+bewerbe\s+ich\s+mich|seit\s+meiner\s+kindheit|"
+    r"zusammenfassend\s+l[äa]sst\s+sich\s+sagen|"
+    r"souligne\s+l['\u2019]importance|il\s+convient\s+de\s+souligner|"
+    r"depuis\s+mon\s+enfance|c['\u2019]est\s+avec\s+un\s+vif\s+int[ée]r[êe]t|"
+    r"je\s+suis\s+fermement\s+persuad[ée]|"
+    r"подчеркивает\s+важность|играет\s+ключевую\s+роль|с\s+самого\s+детства|"
+    r"в\s+заключение\s+следует\s+отметить|"
+    r"önemini\s+vurgulamaktadır|kritik\s+bir\s+rol\s+oynamaktadır|"
+    r"çocukluğumdan\s+beri|sonuç\s+olarak\s+belirtmek\s+gerekirse"
+    r")\b",
+    re.IGNORECASE,
+)
+_AI_PARTICIPIAL_TRAILER_RE = re.compile(
+    r",\s+(?:highlighting|reflecting|showcasing|underscoring)\s+(?:the|my|its|how|a)\b",
+    re.IGNORECASE,
+)
+_AI_CLOSING_SUMMARY_RE = re.compile(
+    r"^\s*(?:overall|ultimately|in\s+summary|in\s+conclusion|all\s+in\s+all),\s+"
+    r"(?:this\s+(?:experience|project|role|work)|i\s+learned|it\s+taught\s+me)\b",
+    re.IGNORECASE,
+)
+_NOMINALIZATION_WORD_RE = re.compile(
+    r"\b(?:"
+    r"[a-zàâäéèêëîïôöùûüç]{4,}(?:tions?|ments?|ness(?:es)?|it(?:y|ies|és?)|ances?|ences?)|"
+    r"[a-zäöüß]{4,}(?:ungen|ung|keiten|keit|heiten|heit|itäten|ität)|"
+    r"[а-яё]{4,}(?:ост(?:ь|и|ей|ью)|ени(?:е|я|й|ю|ем)|ани(?:е|я|й|ю|ем))|"
+    r"[a-zçğıöşü]{4,}(?:l[ıiuü]k(?:lar|ler)?|m[ae]s[ıi])"
+    r")\b",
+    re.IGNORECASE,
+)
+_CONTENT_WORD_RE = re.compile(r"[^\W\d_]{4,}")
+_VOICE_STOPWORDS = frozenset(
+    {
+        "that", "this", "with", "from", "have", "were", "been", "their", "there", "which",
+        "would", "could", "should", "about", "after", "before", "during", "while", "where",
+        "when", "into", "through", "between", "under", "over", "also", "more", "most", "some",
+        "such", "only", "other", "than", "then", "them", "they", "these", "those", "your",
+        "want", "will", "work", "study", "programme", "program", "master", "masters",
+        "university", "research", "project", "course",
+    }
+)
+
+
+def _has_three_consecutive_uniform_sentences(counts: list[int]) -> bool:
+    """True when 3+ consecutive sentences of >=12 words differ by <=1 word."""
+    return any(
+        min(w) >= 12 and (max(w) - min(w)) <= 1 for w in zip(counts, counts[1:], counts[2:])
+    )
+
+
+def check_ai_style(content: LetterContent) -> tuple[LetterGateViolation, ...]:
+    """Deterministic enforcement of the anti-AI style and burstiness rules in
+    `letters._INSTRUCTIONS` (`docs/research/2026-09-28-letter-engine/human-voice.md`)."""
+    violations: list[LetterGateViolation] = []
+    for unit in content.units:
+        text = unit.text
+        stock_match = _AI_STOCK_RE.search(text)
+        if stock_match is not None:
+            violations.append(
+                LetterGateViolation(
+                    GateCode.AI_STYLE,
+                    f"banned AI phrase: {stock_match.group(0)}",
+                    unit.archetype,
+                    subcode="stock_phrase",
+                )
+            )
+            continue
+        trailer_match = _AI_PARTICIPIAL_TRAILER_RE.search(text)
+        if trailer_match is not None:
+            violations.append(
+                LetterGateViolation(
+                    GateCode.AI_STYLE,
+                    f"participial trailer: {trailer_match.group(0)}",
+                    unit.archetype,
+                    subcode="participial_trailer",
+                )
+            )
+            continue
+        if "\u2014" in text:
+            violations.append(
+                LetterGateViolation(
+                    GateCode.AI_STYLE,
+                    "em dash used",
+                    unit.archetype,
+                    subcode="em_dash",
+                )
+            )
+            continue
+        spans = sentence_spans(text)
+        if len(spans) >= 2:
+            last_sentence = spans[-1][0]
+            if _AI_CLOSING_SUMMARY_RE.search(last_sentence) is not None:
+                violations.append(
+                    LetterGateViolation(
+                        GateCode.AI_STYLE,
+                        "moralizing paragraph-closing summary",
+                        unit.archetype,
+                        subcode="closing_summary",
+                    )
+                )
+                continue
+        nom_violation = False
+        for sent_text, _, _ in spans:
+            words = sent_text.split()
+            if 0 < len(words) <= 28:
+                noms = {m.lower() for m in _NOMINALIZATION_WORD_RE.findall(sent_text)}
+                if len(noms) >= 5:
+                    violations.append(
+                        LetterGateViolation(
+                            GateCode.AI_STYLE,
+                            "noun-heavy nominalization density",
+                            unit.archetype,
+                            subcode="nominalization_density",
+                        )
+                    )
+                    nom_violation = True
+                    break
+        if nom_violation:
+            continue
+        counts = [len(s.split()) for s, _, _ in spans if s.strip()]
+        if len(counts) >= 4 and min(counts) >= 10 and (max(counts) - min(counts)) <= 2:
+            violations.append(
+                LetterGateViolation(
+                    GateCode.AI_STYLE,
+                    "uniform sentence lengths across paragraph",
+                    unit.archetype,
+                    subcode="uniform_sentence_length",
+                )
+            )
+        elif len(counts) >= 3 and _has_three_consecutive_uniform_sentences(counts):
+            violations.append(
+                LetterGateViolation(
+                    GateCode.AI_STYLE,
+                    "three consecutive sentences of near-identical length",
+                    unit.archetype,
+                    subcode="consecutive_similar_length",
+                )
+            )
+    return tuple(violations)
+
+
+def _salient_words(text: str) -> set[str]:
+    return {
+        w.casefold()
+        for w in _CONTENT_WORD_RE.findall(text)
+        if w.casefold() not in _VOICE_STOPWORDS
+    }
+
+
+def check_declared_voice_retention(
+    content: LetterContent,
+    *,
+    declared_input_texts: Mapping[UUID, str] = {},
+) -> tuple[LetterGateViolation, ...]:
+    """Advisory check (`human-voice.md` §5, Implication #4): when a unit cites a
+    student-authored `DECLARED` input containing >=5 salient content words, at
+    least one salient content word from the student's input should survive in
+    the unit rather than being completely paraphrased away."""
+    if not declared_input_texts:
+        return ()
+    violations: list[LetterGateViolation] = []
+    for unit in content.units:
+        unit_words = _salient_words(unit.text)
+        for claim in unit.claims:
+            if (
+                claim.kind != ClaimKind.DECLARED
+                or claim.input_id is None
+                or claim.input_id not in declared_input_texts
+            ):
+                continue
+            source_words = _salient_words(declared_input_texts[claim.input_id])
+            if len(source_words) >= 5 and not (unit_words & source_words):
+                violations.append(
+                    LetterGateViolation(
+                        GateCode.AI_STYLE,
+                        "declared claim preserves none of the student's own terms",
+                        unit.archetype,
+                        blocking=False,
+                        subcode="declared_voice_missing",
+                    )
+                )
+                break
+    return tuple(violations)
+
+
+def check_cohort_overlap(
+    content: LetterContent,
+    *,
+    cohort_sentences: frozenset[str] = frozenset(),
+    threshold: float = 0.35,
+) -> tuple[LetterGateViolation, ...]:
+    """Cross-student sameness gate (`human-voice.md` §2 TUM court ruling &
+    `2026-10-12` Implication #5): flags a paragraph whose sentences overlap
+    with recent letters written for other students targeting the same programme."""
+    if not cohort_sentences:
+        return ()
+    violations: list[LetterGateViolation] = []
+    for unit in content.units:
+        unit_sents = _unit_sentences(unit)
+        if not unit_sents:
+            continue
+        overlap = len(unit_sents & cohort_sentences) / len(unit_sents)
+        if overlap > threshold:
+            violations.append(
+                LetterGateViolation(
+                    GateCode.GENERIC_PARAGRAPH,
+                    f"cohort sentence overlap: {overlap:.0%}",
+                    unit.archetype,
+                    subcode="cohort_overlap",
+                )
+            )
+    return tuple(violations)
+
+
 def run_letter_gates(
     content: LetterContent,
     *,
@@ -497,6 +915,11 @@ def run_letter_gates(
     naming: str = "UNSTATED",
     institution_names: frozenset[str] = frozenset(),
     research_names: frozenset[str] = frozenset(),
+    programme_input_ids: frozenset[UUID] = frozenset(),
+    has_facts: bool = True,
+    archetypes: tuple[str, ...] = (),
+    declared_input_texts: Mapping[UUID, str] = {},
+    cohort_sentences: frozenset[str] = frozenset(),
 ) -> tuple[LetterGateViolation, ...]:
     """Runs every deterministic gate and concatenates their violations. Does
     NOT fold in claim-verdict blocking (UNSUPPORTED / immigration-UNCERTAIN)
@@ -512,10 +935,23 @@ def run_letter_gates(
     violations.extend(check_prompt_requirement_unmet(content, questions=questions))
     violations.extend(check_header_block_missing(content, required=header_block_required))
     violations.extend(check_language_mismatch(content, document_language=document_language))
-    violations.extend(check_generic_paragraph(content))
+    violations.extend(
+        check_generic_paragraph(
+            content, programme_input_ids=programme_input_ids, has_facts=has_facts
+        )
+    )
     violations.extend(check_duplicates_sibling_answers(content))
     violations.extend(check_first_person_plural(content))
     violations.extend(check_storyline_drift(content, storyline=storyline))
+    violations.extend(check_unit_structure(content, archetypes=archetypes))
+    violations.extend(check_ai_style(content))
+    violations.extend(
+        check_declared_voice_retention(content, declared_input_texts=declared_input_texts)
+    )
+    violations.extend(check_cohort_overlap(content, cohort_sentences=cohort_sentences))
+    violations.extend(
+        check_unsourced_programme_claim(content, programme_input_ids=programme_input_ids)
+    )
     violations.extend(
         check_naming_forbidden(
             content,

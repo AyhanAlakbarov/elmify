@@ -16,8 +16,8 @@ import re
 import unicodedata
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
-from uuid import UUID
+from datetime import timedelta
+from uuid import UUID, uuid4
 
 from botocore.exceptions import BotoCoreError, ClientError  # type: ignore[import-untyped]
 from django.conf import settings
@@ -40,16 +40,22 @@ from apps.tenancy.middleware import deletion_lock_target
 from apps.tenancy.models import Membership
 
 from .azure_layout import AzureLayout, analyze_layout
+from .id_reading import known_owner_names, raise_identity_mismatch_alert
 from .models import TranscriptPage, TranscriptReading, TranscriptUpload
-from .ocr import InventoryPage, OcrPage, PageRead, inventory, read_inventory
+from .ocr import Box, InventoryPage, OcrPage, PageRead, crop_cells, inventory, read_inventory
 from .ocr_errors import OcrUnavailable, PageRefused
+from .storage import crop_key, store_crop
 from .transcript import (
+    Highlight,
+    Row,
     TranscriptReadingDisabled,
     academic_record,
     check_gates,
     personal_names,
     read_from_pages,
+    transcript_owner_matches,
 )
+from .transcript_check import DOUBTFUL_CELLS
 from .transcript_checks import highlights, key_numbers
 
 logger = logging.getLogger(__name__)
@@ -508,9 +514,10 @@ def _check_ceiling(tenant_id: UUID, pages: tuple[InventoryPage, ...]) -> None:
     wanted = sum(1 for page in pages if page.source == "image")
     if not wanted:
         return
-    midnight = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    from .document_reading import azure_pages_today  # a cycle otherwise
+
     with tenant_scope(tenant_id), tenant_transaction(tenant_id):
-        used = TranscriptPage.objects.filter(source="azure", created_at__gte=midnight).count()
+        used = azure_pages_today()
     if used + wanted > settings.TRANSCRIPT_TENANT_DAILY_AZURE_PAGES:
         raise _OverCeiling()
 
@@ -576,6 +583,13 @@ def _write(tenant_id: UUID, upload: TranscriptUpload, reads: tuple[PageRead, ...
             # Only the old transcript is replaced: what was sent before this REPLACE (its charge
             # stays: it was read). Nothing newer with pages exists (refused above).
             live.filter(upload__created_at__lt=fresh.created_at).update(superseded_at=now)
+            # The document table follows the reading: the files sent before this REPLACE
+            # are retired with their pages, in the same transaction (plan 4b Task 6).
+            DocumentVersion.objects.filter(
+                transcriptupload__cycle=cycle,
+                transcriptupload__created_at__lt=fresh.created_at,
+                retired_at__isnull=True,
+            ).update(retired_at=now)
             first = 1
         elif fresh.mode == TranscriptUpload.Mode.RETAKE:
             old = live.filter(slot=fresh.retake_slot or 0).first()
@@ -585,6 +599,12 @@ def _write(tenant_id: UUID, upload: TranscriptUpload, reads: tuple[PageRead, ...
                 raise _Refused("retakes_used")
             old.superseded_at = now
             old.save(update_fields=["superseded_at"])
+            if not live.filter(upload_id=old.upload_id).exists():
+                # Every page of that file has now been retaken: it holds nothing the
+                # transcript uses, so it is no longer held or sent (fix I2).
+                DocumentVersion.objects.filter(
+                    transcriptupload__id=old.upload_id, retired_at__isnull=True
+                ).update(retired_at=now)
             first, retakes = old.slot, old.retakes + 1
         else:
             first = (live.aggregate(last=Max("slot"))["last"] or 0) + 1
@@ -595,6 +615,69 @@ def _write(tenant_id: UUID, upload: TranscriptUpload, reads: tuple[PageRead, ...
             )
         fresh.state, fresh.refusal, fresh.next_attempt_at = State.READ, "", None
         fresh.save(update_fields=["state", "refusal", "next_attempt_at", "updated_at"])
+
+
+#: Ten doubtful rows' credits and grades per parser call: well under its 60-box limit and its
+#: reply-size cap even for a phone photo.
+_CROPS_PER_CALL = 20
+
+
+def _region(page: OcrPage, row: Row, cell: str) -> Box | None:
+    origin = row.origin
+    if origin is None or cell not in origin.cells:
+        return None
+    try:
+        return page.cell_regions[origin.table][origin.row][origin.cells[cell]]
+    except IndexError:  # no grid (a text-layer page) or one shaped otherwise
+        return None
+
+
+def _crops(
+    reading_id: UUID,
+    student: Membership,
+    rows: tuple[Row, ...],
+    flagged: tuple[Highlight, ...],
+    live: dict[int, tuple[TranscriptPage, OcrPage]],
+) -> dict[str, str]:
+    """A PNG of each flagged row's doubtful cells, cut from the live page's own upload, in
+    batches per page. Never fails the reading: a batch that fails is logged and its rows are
+    shown without a picture."""
+    by_index = {row.index: row for row in rows}
+    wanted: dict[int, dict[str, Box]] = {}
+    for highlight in flagged:
+        row = by_index.get(int(highlight.ref)) if highlight.scope == "row" else None
+        if row is None or row.origin is None or row.origin.slot not in live:
+            continue
+        slot = row.origin.slot
+        for cell in DOUBTFUL_CELLS.get(highlight.kind, ()):
+            box = _region(live[slot][1], row, cell)
+            if box is not None:
+                wanted.setdefault(slot, {})[f"{row.index}:{cell}"] = box
+    crops: dict[str, str] = {}
+    for slot, boxes in wanted.items():
+        page, read = live[slot]
+        refs = list(boxes)
+        # Batches, so a page full of doubtful rows stays within one reply's size, and a failed
+        # batch loses only its own pictures.
+        for start in range(0, len(refs), _CROPS_PER_CALL):
+            batch = refs[start : start + _CROPS_PER_CALL]
+            try:
+                images = crop_cells(
+                    page.upload.document, page.number, [boxes[ref] for ref in batch],
+                    aspect=read.page_aspect,
+                    angle=read.page_angle,
+                )
+                for ref, image in zip(batch, images, strict=True):
+                    key = crop_key(
+                        tenant_id=student.tenant_id, student_id=student.id,
+                        reading_id=reading_id, ref=ref,
+                    )
+                    store_crop(key, image)
+                    crops[ref] = key
+            except (OcrUnavailable, ClientError, BotoCoreError) as error:
+                # The parser's own message names a type, never the document's text.
+                logger.warning("transcript crop failed for reading %s: %s", reading_id, error)
+    return crops
 
 
 def assemble(tenant_id: UUID, upload_id: UUID, *, client: Client | None = None) -> None:
@@ -629,7 +712,9 @@ def assemble(tenant_id: UUID, upload_id: UUID, *, client: Client | None = None) 
         )
         live = list(
             TranscriptPage.objects.filter(cycle_id=upload.cycle_id, superseded_at__isnull=True)
-            .select_related("upload")
+            # The document too, while the tenant is set: crops need it after this block, and a
+            # lazy forward-FK read outside it would run with no tenant GUC and find nothing.
+            .select_related("upload__document")
             .order_by("slot")
         )
         waiting = any(
@@ -646,12 +731,42 @@ def assemble(tenant_id: UUID, upload_id: UUID, *, client: Client | None = None) 
             )
             return
         names = personal_names(upload.student)
+        owner_names = known_owner_names(upload.student)
+    read_pages = tuple(OcrPage.model_validate(page.page) for page in readable)
+    upload_pages = tuple(
+        OcrPage.model_validate(page.page) for page in readable if page.upload_id == upload.id
+    )
+    owner_ok = transcript_owner_matches(read_pages, owner_names) and (
+        not upload_pages
+        or len(upload_pages) == len(read_pages)
+        or transcript_owner_matches(
+            upload_pages, owner_names, allow_unlabeled_continuation=True
+        )
+    )
+    if not owner_ok:
+        with tenant_scope(tenant_id), tenant_transaction(tenant_id):
+            TranscriptPage.objects.filter(
+                upload_id=upload.id, superseded_at__isnull=True
+            ).update(superseded_at=timezone.now())
+            raise_identity_mismatch_alert(
+                upload.student,
+                message=(
+                    "Identity mismatch on uploaded transcript for "
+                    f"{upload.student.user.get_full_name() or upload.student.user.email}: "
+                    "document holder does not match the student."
+                ),
+            )
+        _finish(tenant_id, upload.id, State.REFUSED, "owner_mismatch")
+        return
     try:
         # read_upload returns before its gates for an upload already READ, so the provider check
         # and the Jev launch gate (spec T19, §3.1) are made again here, before anything is sent.
         check_gates()
         reading = read_from_pages(
-            tuple(OcrPage.model_validate(page.page) for page in readable), names, client=client
+            read_pages,
+            names,
+            client=client,
+            slots=tuple(page.slot for page in readable),
         )
     except TranscriptReadingDisabled:
         # Stays READ and unassembled; the sweep resumes it once the gate reopens. Not an attempt.
@@ -669,6 +784,12 @@ def assemble(tenant_id: UUID, upload_id: UUID, *, client: Client | None = None) 
         else:
             delay(tenant_id, upload.id, reason="DecisionsUnavailable")
         return
+    flagged = highlights(reading)
+    reading_id = uuid4()
+    crops = _crops(
+        reading_id, upload.student, reading.rows, flagged,
+        {page.slot: (page, read) for page, read in zip(readable, read_pages, strict=True)},
+    )
     with tenant_scope(tenant_id), tenant_transaction(tenant_id):
         # ponytail: the Jev call above can still run twice for a concurrent redelivery and sweep;
         # the lock only keeps the second from writing a second reading. Lease the assembly if
@@ -678,12 +799,17 @@ def assemble(tenant_id: UUID, upload_id: UUID, *, client: Client | None = None) 
         TranscriptReading.objects.get_or_create(
             document_id=upload.document_id,
             defaults={
+                # Named up front so the crops stored above sit under this reading's id. A
+                # reading already written by a concurrent assembly keeps its own; these crops
+                # are then unreferenced, under the student's prefix, and erased with it.
+                "id": reading_id,
                 "student_id": upload.student_id,
                 "cycle_id": upload.cycle_id,
                 "record": academic_record(reading.content),
-                "highlights": [highlight.model_dump() for highlight in highlights(reading)],
+                "highlights": [highlight.model_dump() for highlight in flagged],
                 "key_numbers": key_numbers(reading).model_dump(mode="json"),
                 "rows": [asdict(row) for row in reading.rows],
+                "crops": crops,
             },
         )
         TranscriptUpload.objects.filter(id=upload.id).update(

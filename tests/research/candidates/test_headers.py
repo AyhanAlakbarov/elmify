@@ -38,6 +38,17 @@ from apps.research.candidates.headers import DATE_HEADER_CUES_FILE, ROLES, heade
     ("신청 마감", "deadline"),
     ("신청 마감일", "deadline"),
     ("신청 발표", "results"),
+    ("فترة التقديم", "application_window"),
+    ("آخر موعد للتقديم", "deadline"),
+    ("إعلان النتائج", "results"),
+    ("Bewerbungsfrist", "deadline"),
+    ("Date limite de candidature", "deadline"),
+    ("Scadenza bando", "deadline"),
+    ("Fecha límite", "deadline"),
+    ("截止日期", "deadline"),
+    ("応募締切", "deadline"),
+    ("Batas akhir pendaftaran", "deadline"),
+    ("Hạn chót nộp hồ sơ", "deadline"),
 ])
 def test_a_column_header_names_its_dates_role(header, role):
     assert header_cue(header) == role

@@ -4,9 +4,8 @@ apps/research/queue.py and apps/documents/europass_queue.py were the same
 sixty lines twice, differing only in the model they validated and whether the
 queue was FIFO. Both now import from here. Each app keeps its own message model
 and its own enqueue wrapper, because the group-id policy is the only thing that
-genuinely differs between them: research groups by tenant, and Europass and
-portals have no groups at all -- apps/portals/queue.py explains why the portal
-queue deliberately sends no group id.
+genuinely differs between them: research groups by tenant, and Europass has
+no groups at all.
 """
 
 from collections.abc import Callable
@@ -19,7 +18,7 @@ from pydantic import BaseModel
 
 
 class SQSClient(Protocol):
-    def send_message(self, **kwargs: str) -> object: ...
+    def send_message(self, **kwargs: Any) -> object: ...
 
     def receive_message(self, **kwargs: object) -> dict[str, object]: ...
 
@@ -32,7 +31,10 @@ def enqueue(
     client: SQSClient | None = None,
     queue_url: str,
     group_id: str | None = None,
+    delay_seconds: int = 0,
 ) -> None:
+    if not 0 <= delay_seconds <= 900:
+        raise ValueError(f"delay_seconds must be in 0..900, got {delay_seconds}")
     if client is None and is_local_queue(queue_url):
         _spool(queue_url, message.model_dump_json())
         return
@@ -46,6 +48,8 @@ def enqueue(
     # guard on it.
     if group_id is not None:
         kwargs["MessageGroupId"] = group_id
+    if delay_seconds > 0:
+        kwargs["DelaySeconds"] = delay_seconds
     sqs.send_message(**kwargs)
 
 

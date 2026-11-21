@@ -54,3 +54,22 @@ def test_everything_done_hides_the_steps():
         profile_done=True, applications=1, documents_total=1, documents_done=1, submitted=1
     )
     assert done.all_steps_done
+
+
+def test_a_submitted_application_does_not_mark_apply_done_while_documents_remain():
+    steps = dict(
+        _overview(
+            profile_done=True,
+            applications=2,
+            documents_total=3,
+            documents_done=1,
+            submitted=1,
+        ).steps
+    )
+    assert steps == {
+        "profile": "done",
+        "matches": "done",
+        "choose": "done",
+        "documents": "current",
+        "apply": "todo",
+    }

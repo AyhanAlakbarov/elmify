@@ -20,4 +20,5 @@ urlpatterns = [
     ),
     path("platform/gold/", views.gold_queue, name="gold-queue"),
     path("platform/gold/<uuid:item_id>/", views.gold_label, name="gold-label"),
+    path("platform/catalogue/", views.catalogue_overview, name="platform-catalogue"),
 ]

@@ -16,11 +16,13 @@ never runs the parser beside the app's secrets.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import logging
 import math
 import subprocess  # nosec B404 -- a fixed argv and no shell; the upload travels as stdin data
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal, Self
 
@@ -30,9 +32,11 @@ from botocore.exceptions import BotoCoreError, ClientError  # type: ignore[impor
 from django.conf import settings
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from apps.concierge.documents import DocumentUnavailable
 from apps.concierge.models import DocumentVersion
 
 from .azure_layout import AzureLayout, AzurePage, analyze_layout
+from .file_rules import FileRule
 from .ocr_errors import OcrUnavailable, PageRefused
 
 logger = logging.getLogger(__name__)
@@ -41,6 +45,24 @@ logger = logging.getLogger(__name__)
 #: measured well under a second a page; 60 s covers a cold start. Far under the scan queue's 900 s
 #: visibility timeout, so a slow read is never redelivered while it is still running.
 _TIMEOUT_SECONDS = 60
+
+
+#: (left, top, right, bottom), each a fraction of the page.
+Box = tuple[float, float, float, float]
+
+
+def _box(polygon: Sequence[float], width: float, height: float) -> Box | None:
+    """The polygon's axis-aligned bounding box as fractions of its page. A rotated photo's
+    polygon is not a rectangle; its extremes still contain the cell."""
+    if len(polygon) < 8 or not width or not height:
+        return None
+    xs, ys = polygon[0::2], polygon[1::2]
+    return (
+        round(min(xs) / width, 4),
+        round(min(ys) / height, 4),
+        round(max(xs) / width, 4),
+        round(max(ys) / height, 4),
+    )
 
 
 class OcrPage(BaseModel):
@@ -54,6 +76,16 @@ class OcrPage(BaseModel):
     #: Same shape as `tables`: Azure's confidence for each cell (the lowest of its words), None for
     #: a blank cell and for every text-layer cell -- the document's own text has no reader doubt.
     cell_confidence: tuple[tuple[tuple[float | None, ...], ...], ...] = ()
+    #: Same shape again: where each cell sits on its page, as fractions of the page's width and
+    #: height, so nothing downstream needs the page's unit. None for a blank cell and every
+    #: text-layer cell (no reader doubt, so nothing to show the student).
+    cell_regions: tuple[tuple[tuple[Box | None, ...], ...], ...] = ()
+    #: The page's width / height as Azure measured it: a crop rendered in another frame (an
+    #: EXIF or /Rotate turn of 90 degrees) is refused instead of cutting the wrong area.
+    page_aspect: float | None = None
+    #: How far Azure found the text turned clockwise, in degrees: a page photographed upside down
+    #: or sideways still gives an upright crop (the parser turns it back).
+    page_angle: float | None = None
     source: Literal["text_layer", "azure"] = "text_layer"
     #: The Azure API version that produced this page; "" for a text-layer page.
     api_version: str = ""
@@ -151,6 +183,7 @@ def _gate(page: AzurePage, scan_ppi: float | None) -> str | None:
 def _azure_page(layout: AzureLayout, page: AzurePage) -> OcrPage:
     tables: list[tuple[tuple[str, ...], ...]] = []
     confidences: list[tuple[tuple[float | None, ...], ...]] = []
+    regions: list[tuple[tuple[Box | None, ...], ...]] = []
     in_tables: set[int] = set()
     for table in layout.tables:
         first = table.boundingRegions[0].pageNumber if table.boundingRegions else None
@@ -167,6 +200,7 @@ def _azure_page(layout: AzureLayout, page: AzurePage) -> OcrPage:
         rows = max(cell.rowIndex for cell in mine) - top + 1
         grid = [[""] * table.columnCount for _ in range(rows)]
         conf: list[list[float | None]] = [[None] * table.columnCount for _ in range(rows)]
+        boxes: list[list[Box | None]] = [[None] * table.columnCount for _ in range(rows)]
         for cell in mine:
             text = " ".join(cell.content.split())
             r = cell.rowIndex - top
@@ -180,8 +214,14 @@ def _azure_page(layout: AzureLayout, page: AzurePage) -> OcrPage:
             for span in cell.spans:
                 in_tables.update(range(span.offset, span.offset + span.length))
             conf[r][cell.columnIndex] = min(found) if found and text else None
+            if text and cell.boundingRegions:
+                # `mine` holds only this page's cells, so `page` is the cell's own page.
+                boxes[r][cell.columnIndex] = _box(
+                    cell.boundingRegions[0].polygon, page.width, page.height
+                )
         tables.append(tuple(tuple(row) for row in grid))
         confidences.append(tuple(tuple(row) for row in conf))
+        regions.append(tuple(tuple(row) for row in boxes))
     lines = tuple(
         line.content
         for line in page.lines
@@ -191,6 +231,9 @@ def _azure_page(layout: AzureLayout, page: AzurePage) -> OcrPage:
         lines=lines,
         tables=tuple(tables),
         cell_confidence=tuple(confidences),
+        cell_regions=tuple(regions),
+        page_aspect=round(page.width / page.height, 4) if page.width and page.height else None,
+        page_angle=page.angle,
         source="azure",
         api_version=settings.AZURE_DI_API_VERSION,
     )
@@ -278,9 +321,18 @@ def _scanned_version(document: DocumentVersion) -> str:
     return document.scanned_version
 
 
-def _invoke(key: str, version: str, op: str = "") -> bytes:
+#: A timeout, memory blow-up or crash on this one file, or the parser's own "object is larger"
+#: refusal; any other function error (env, permissions, import) is the deployment, i.e. an outage.
+_JOB_ERROR_TYPES = frozenset(
+    {"Sandbox.Timedout", "Runtime.OutOfMemory", "Runtime.ExitError", "ValueError"}
+)
+
+
+def _invoke(key: str, version: str, op: str = "", body: dict[str, Any] | None = None) -> bytes:
     try:
-        event = {"key": key, "version_id": version} | ({"op": op} if op else {})
+        event = body if body is not None else (
+            {"key": key, "version_id": version} | ({"op": op} if op else {})
+        )
         response = _lambda_client().invoke(
             FunctionName=settings.OCR_FUNCTION_NAME, Payload=json.dumps(event).encode()
         )
@@ -293,7 +345,10 @@ def _invoke(key: str, version: str, op: str = "") -> bytes:
         # The error's type only: its message and stack trace can quote the document's text.
         error_type = json.loads(payload or b"{}").get("errorType", response["FunctionError"])
         logger.warning("OcrFunctionError error=%s", error_type)
-        raise OcrUnavailable(f"function error {error_type}")
+        raise OcrUnavailable(
+            f"function error {error_type}",
+            kind="job" if error_type in _JOB_ERROR_TYPES else "outage",
+        )
     return payload
 
 
@@ -308,13 +363,17 @@ def _run_child(content: bytes, *flags: str) -> bytes:
             env=_child_env(),
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
+    except subprocess.TimeoutExpired as error:
+        # This file outran the child, as Sandbox.Timedout on Lambda: the next file may not.
+        raise OcrUnavailable(type(error).__name__, kind="job") from error
+    except OSError as error:  # no interpreter to run: down for every file
         raise OcrUnavailable(type(error).__name__) from error
     if done.returncode != 0:
         # The exception's name only: a traceback's message can quote the document's text.
         last = done.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or [""]
         logger.warning("OcrCrashed exit=%s error=%s", done.returncode, last[0].split(":")[0])
-        raise OcrUnavailable(f"exit {done.returncode}")
+        # This file crashed the child, as Runtime.ExitError on Lambda.
+        raise OcrUnavailable(f"exit {done.returncode}", kind="job")
     return done.stdout
 
 
@@ -343,3 +402,194 @@ def inspect_upload(document: DocumentVersion, content: bytes) -> UploadVerdict:
         return UploadVerdict.model_validate_json(raw)
     except ValidationError as error:
         raise OcrUnavailable("unparseable output") from error
+
+
+#: Enough for a printed digit to read clearly, far under the parser's page-size refusal.
+CROP_DPI = 150
+
+
+def crop_cells(
+    document: DocumentVersion,
+    page: int,
+    boxes: Sequence[Box],
+    *,
+    aspect: float | None = None,
+    angle: float | None = None,
+) -> list[bytes]:
+    """A PNG of each box on page `page` (1-based) of an upload, cut where uploads are parsed
+    (transcript plan 3a): the upload is untrusted bytes and is never rendered in this process.
+    Anything but one PNG per box is OcrUnavailable."""
+    if document.state != "AVAILABLE":
+        raise OcrUnavailable("upload no longer available")
+    request: dict[str, Any] = {
+        "op": "crop", "page": page, "boxes": [list(box) for box in boxes], "dpi": CROP_DPI
+    }
+    if aspect is not None:
+        request["aspect"] = aspect
+    if angle is not None:
+        request["angle"] = angle
+    if settings.OCR_FUNCTION_NAME:
+        raw = _invoke(
+            "", "", body={
+                **request, "key": document.object_key, "version_id": _scanned_version(document)
+            },
+        )
+    else:
+        from .storage import read_upload
+
+        try:
+            content = read_upload(document)
+        except (DocumentUnavailable, KeyError) as error:
+            raise OcrUnavailable(type(error).__name__) from error
+        envelope = {**request, "inline": base64.b64encode(content).decode()}
+        raw = _run_child(json.dumps(envelope).encode(), "--crop")
+    try:
+        crops = [base64.b64decode(crop, validate=True) for crop in json.loads(raw)["crops"]]
+    except (ValueError, KeyError, TypeError) as error:
+        raise OcrUnavailable("unparseable output") from error
+    if len(crops) != len(boxes) or not all(crop.startswith(b"\x89PNG") for crop in crops):
+        raise OcrUnavailable("unparseable output")
+    return crops
+
+
+@dataclass(frozen=True)
+class Part:
+    upload: DocumentVersion | None = None  # read by the parser from its scanned version
+    own: bytes = b""  # our generated document, sent inline
+    #: The 1-based pages of this file to take, in order; None for all (a transcript merge
+    #: takes each file's live TranscriptPage numbers).
+    pages: tuple[int, ...] | None = None
+
+
+class Prepared(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content_type: Literal["application/pdf", "image/jpeg", "image/png"] | None = None
+    sha256: str = ""
+    body: bytes = b""
+    refused: str = ""
+
+
+#: Inline parts are our own documents (the request itself is capped at 6 MB), and the most the
+#: parser hands back: a target above it is shrunk to it, not refused unshrunk.
+INLINE_MAX = 4_000_000
+
+
+def prepare_files(parts: Sequence[Part], target: FileRule) -> Prepared:
+    """Plan 4: one file meeting `target`, built where untrusted files are parsed.
+    Uploads travel as their scanned version's key; our own documents inline."""
+    target_json = {
+        "format": target.format,
+        "max_bytes": target.max_bytes,
+        "one_file": target.one_file,
+    }
+    if sum(len(p.own) for p in parts) > INLINE_MAX:
+        return Prepared(refused="too_large")
+    if settings.OCR_FUNCTION_NAME:
+        if any(p.upload is not None and p.upload.state != "AVAILABLE" for p in parts):
+            return Prepared(refused="unreadable")
+        event_parts = [
+            {
+                **(
+                    {"key": p.upload.object_key, "version_id": _scanned_version(p.upload)}
+                    if p.upload is not None
+                    else {"inline": base64.b64encode(p.own).decode()}
+                ),
+                **({"pages": list(p.pages)} if p.pages is not None else {}),
+            }
+            for p in parts
+        ]
+        raw = _invoke(
+            "", "", body={"op": "prepare", "parts": event_parts, "target": target_json}
+        )
+    else:
+        # Locally the child gets every part inline: the promoted copy is the same
+        # bytes the scan cleared (promote_upload copies only the verdict's digest).
+        from .storage import read_upload
+
+        try:
+            inline = [read_upload(p.upload) if p.upload is not None else p.own for p in parts]
+        except (DocumentUnavailable, KeyError) as error:
+            raise OcrUnavailable(type(error).__name__) from error
+        envelope = {
+            "parts": [
+                {
+                    "inline": base64.b64encode(b).decode(),
+                    **({"pages": list(p.pages)} if p.pages is not None else {}),
+                }
+                for b, p in zip(inline, parts, strict=True)
+            ],
+            "target": target_json,
+        }
+        raw = _run_child(json.dumps(envelope).encode(), "--prepare")
+    try:
+        answer = json.loads(raw)
+        if "refused" in answer:
+            return Prepared(refused=str(answer["refused"]))
+        body = base64.b64decode(answer["body"])
+        if hashlib.sha256(body).hexdigest() != answer["sha256"]:
+            raise OcrUnavailable("digest mismatch")
+        if len(body) > INLINE_MAX:
+            return Prepared(refused="too_large_to_return")
+        if answer["content_type"] is None:
+            raise OcrUnavailable("unparseable output")
+        return Prepared(
+            content_type=answer["content_type"],
+            sha256=answer["sha256"],
+            body=body,
+        )
+    except (ValueError, KeyError, TypeError, ValidationError) as error:
+        raise OcrUnavailable("unparseable output") from error
+
+
+class Flattened(BaseModel):
+    """ocr/read_pages.py::flatten's answer (spec 2026-10-12 §5.3)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Base64 of the image-only PDF, or None for an image upload (sent as it is).
+    image_pdf: str | None = None
+    pages: int = Field(ge=1)
+    #: Each page's visible text, for a born-digital PDF's cross-check; () for an image.
+    visible: tuple[str, ...] = ()
+
+    def body(self, original: bytes) -> bytes:
+        if not self.image_pdf:
+            return original
+        try:
+            return base64.b64decode(self.image_pdf, validate=True)
+        except ValueError as error:  # binascii.Error: an answer that is not base64 is no answer
+            raise OcrUnavailable("unparseable output") from error
+
+
+class _FlattenOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_pdf: str | None = None
+    pages: int = 0
+    visible: tuple[str, ...] = ()
+    refused: _Refusal | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_answer(self) -> Self:
+        if (self.pages > 0) == (self.refused is not None):
+            raise ValueError("answer must carry pages or a refused reason, not both")
+        return self
+
+
+def flatten(document: DocumentVersion, content: bytes, *, max_pages: int) -> Flattened:
+    """A diploma's or certificate's pages as pictures, through the isolated parser."""
+    if settings.OCR_FUNCTION_NAME:
+        raw = _invoke("", "", body={
+            "key": document.object_key, "version_id": _scanned_version(document),
+            "op": "flatten", "max_pages": max_pages,
+        })
+    else:
+        raw = _run_child(content, "--flatten", str(max_pages))
+    try:
+        output = _FlattenOutput.model_validate_json(raw)
+    except ValidationError as error:
+        raise OcrUnavailable("unparseable output") from error
+    if output.refused is not None:
+        raise PageRefused(output.refused.reason, output.refused.page)
+    return Flattened(image_pdf=output.image_pdf, pages=output.pages, visible=output.visible)

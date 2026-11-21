@@ -22,7 +22,7 @@ def _clear_cache():
 def test_a_page_on_the_domain_is_fetched_split_and_digested():
     calls = []
 
-    def fetch(url):
+    def fetch(url, **_):
         calls.append(url)
         return FetchResult("https://www.tum.de/robotics", (), "text/html", _HTML)
 
@@ -36,7 +36,7 @@ def test_a_page_on_the_domain_is_fetched_split_and_digested():
 
 
 def test_a_redirect_off_the_domain_is_refused_unread():
-    def fetch(url):
+    def fetch(url, **_):
         return FetchResult("https://evil.example/", ("https://www.tum.de/x",), "text/html", _HTML)
 
     page, outcome = fetch_page(
@@ -46,7 +46,7 @@ def test_a_redirect_off_the_domain_is_refused_unread():
 
 
 def test_a_plaintext_http_final_url_is_refused_unread():
-    def fetch(url):
+    def fetch(url, **_):
         return FetchResult("http://www.tum.de/robotics", (), "text/html", _HTML)
 
     page, outcome = fetch_page(
@@ -58,7 +58,7 @@ def test_a_plaintext_http_final_url_is_refused_unread():
 def test_a_shell_is_unreadable_not_empty():
     shell = b"<html><body><div id='app'></div>" + b"<script>x</script>" * 2000 + b"</body></html>"
 
-    def fetch(url):
+    def fetch(url, **_):
         return FetchResult(url, (), "text/html", shell)
 
     page, outcome = fetch_page(
@@ -68,7 +68,7 @@ def test_a_shell_is_unreadable_not_empty():
 
 
 def test_a_fetch_failure_is_an_outcome_not_an_exception():
-    def fetch(url):
+    def fetch(url, **_):
         raise SourceBlocked("403")
 
     page, outcome = fetch_page(
@@ -81,7 +81,7 @@ def test_the_second_fetch_of_the_same_url_in_a_tenant_hits_the_cache():
     tenant = uuid4()
     calls = []
 
-    def fetch(url):
+    def fetch(url, **_):
         calls.append(url)
         return FetchResult(url, (), "text/html", _HTML)
 
@@ -109,7 +109,7 @@ def test_a_capture_carries_its_date_onto_the_page():
     )
     page, outcome = fetch_page(
         "https://www.tum.de/robotics", domain="tum.de", tenant_id=uuid4(),
-        fetch=lambda _url: archived,
+        fetch=lambda _url, **_: archived,
     )
     assert outcome == "ok" and page.captured_at == "2026-06-25"
 
@@ -117,7 +117,7 @@ def test_a_capture_carries_its_date_onto_the_page():
 def test_a_live_page_carries_no_capture_date():
     page, _ = fetch_page(
         "https://www.tum.de/robotics", domain="tum.de", tenant_id=uuid4(),
-        fetch=lambda url: FetchResult(url, (), "text/html", _HTML),
+        fetch=lambda url, **_: FetchResult(url, (), "text/html", _HTML),
     )
     assert page.captured_at == ""
 
@@ -133,10 +133,10 @@ def test_the_capture_date_survives_the_page_cache():
     )
     first, _ = fetch_page(
         "https://www.tum.de/robotics", domain="tum.de", tenant_id=tenant,
-        fetch=lambda _url: archived,
+        fetch=lambda _url, **_: archived,
     )
     second, _ = fetch_page(
         "https://www.tum.de/robotics", domain="tum.de", tenant_id=tenant,
-        fetch=lambda _url: pytest.fail("the cache should have answered"),
+        fetch=lambda _url, **_: pytest.fail("the cache should have answered"),
     )
     assert first == second and second.captured_at == "2026-06-25"

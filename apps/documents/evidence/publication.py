@@ -12,11 +12,14 @@ which is why the schema stores an index the student picks.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
 from .sources import DoiRef
 from .transport import Transport, Urllib3Transport
+
+logger = logging.getLogger(__name__)
 
 _CROSSREF = "https://api.crossref.org/works/"
 _OPENALEX = "https://api.openalex.org/works/https://doi.org/"
@@ -102,14 +105,20 @@ def fetch_publication(
     must never become a partial fact.
     """
     client = transport if transport is not None else Urllib3Transport()
-    status, body = client.get_json(f"{_CROSSREF}{ref.doi}")
+    status, body, _ = client.get_json(f"{_CROSSREF}{ref.doi}")
     if status == 200:
         record = _from_crossref(ref.doi, body)
         if record is not None:
             return record
-    status, body = client.get_json(f"{_OPENALEX}{ref.doi}")
+        logger.warning("PublicationRecordIncomplete party=crossref status=200")
+    elif status != 404:
+        logger.warning("PublicationLookupDegraded party=crossref status=%d", status)
+    status, body, _ = client.get_json(f"{_OPENALEX}{ref.doi}")
     if status == 200:
         record = _from_openalex(ref.doi, body)
         if record is not None:
             return record
+        logger.warning("PublicationRecordIncomplete party=openalex status=200")
+    elif status != 404:
+        logger.warning("PublicationLookupDegraded party=openalex status=%d", status)
     raise PublicationNotFound(ref.doi)

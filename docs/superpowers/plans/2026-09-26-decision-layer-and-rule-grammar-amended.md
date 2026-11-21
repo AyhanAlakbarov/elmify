@@ -24,7 +24,7 @@ Read the addendum in full, then the design's §3, §4, §6, §9, §9a and §11, 
 
 **Branch and database:**
 - Branch `claude/requirement-reader`, in worktree `.worktrees/requirement-reader`.
-- Test database `POSTGRES_DB=tehsil_requirement_reader`. Never share a test database between sessions (CLAUDE.md).
+- Test database `POSTGRES_DB=elmify_requirement_reader`. Never share a test database between sessions (CLAUDE.md).
 - Commit with `uv run git commit` (the pre-commit hooks need the venv), and end every message with the line `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
 
 ## Global Constraints
@@ -101,12 +101,12 @@ Expected: three new commits. If a pick conflicts, master has changed the same li
 
 - [ ] **Step 2: Run the three fixes' own tests**
 
-Run: `cd .worktrees/requirement-reader && POSTGRES_DB=tehsil_requirement_reader uv run pytest -q tests/documents/test_letter_derive.py tests/documents/test_letter_terms.py tests/documents/test_letter_shape.py tests/research/test_reader.py`
+Run: `cd .worktrees/requirement-reader && POSTGRES_DB=elmify_requirement_reader uv run pytest -q tests/documents/test_letter_derive.py tests/documents/test_letter_terms.py tests/documents/test_letter_shape.py tests/research/test_reader.py`
 Expected: all pass. They include `test_every_letter_verdict_field_is_sent_as_required`, `test_a_pdf_the_vendor_already_rendered_is_read_as_the_html_it_is`, `test_a_count_written_as_a_word_or_space_grouped_is_on_the_line` and `test_number_verification_stays_strict`.
 
 - [ ] **Step 3: Run the full gate**
 
-Run: `cd .worktrees/requirement-reader && POSTGRES_DB=tehsil_requirement_reader uv run pytest -q && uv run ruff check . && uv run mypy apps config && uv run python manage.py makemigrations --check --dry-run`
+Run: `cd .worktrees/requirement-reader && POSTGRES_DB=elmify_requirement_reader uv run pytest -q && uv run ruff check . && uv run mypy apps config && uv run python manage.py makemigrations --check --dry-run`
 Expected: all pass, and "No changes detected".
 
 - [ ] **Step 4: Open the fixes' own PR — owner's go-ahead required**
@@ -116,7 +116,7 @@ Pushing and opening a PR is outward-facing. Ask the owner first. With a yes:
 ```bash
 git -C .worktrees/judge-schema-fix fetch origin && git -C .worktrees/judge-schema-fix rebase origin/master
 git -C .worktrees/judge-schema-fix push -u origin claude/judge-schema-fix
-gh pr create --repo 0rkhann/tehsil_agent --head claude/judge-schema-fix --base master \
+gh pr create --repo 0rkhann/elmify --head claude/judge-schema-fix --base master \
   --title "fix: three defects the first live letter-rule run found" \
   --body "Anthropic refused the page-rule schema (every read crashed with a key set); every PDF programme page read as empty; limits written as words or '1 000' were dropped. Measured 2026-09-25/26 on real programme pages; each fix pinned by a test that fails without it.
 
@@ -558,7 +558,7 @@ def test_an_adapter_refusal_is_refused(settings, monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/research/test_decisions.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/research/test_decisions.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.decisions'`
 
 - [ ] **Step 3: Write the module**
@@ -1106,7 +1106,7 @@ does not, stop and report it; do not loosen a pin.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/research/test_decisions.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/research/test_decisions.py -v`
 Expected: 21 passed (the 12 original tests plus 9 new ones: 5 functions, one of them parametrized
 four ways).
 
@@ -1120,8 +1120,8 @@ transitively) were just added from a source this repo has not used before. Do no
 - [ ] **Step 6: Commit**
 
 ```bash
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader add apps/research/decisions.py config/settings/base.py pyproject.toml uv.lock tests/research/test_decisions.py
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader commit -m "feat: the typed-decision layer -- closed questions, probabilities, one provider
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/requirement-reader add apps/research/decisions.py config/settings/base.py pyproject.toml uv.lock tests/research/test_decisions.py
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/requirement-reader commit -m "feat: the typed-decision layer -- closed questions, probabilities, one provider
 
 One module owns every question and threshold, which is what makes a threshold
 reviewable and a provider swappable. Nothing here generates text: a question is
@@ -1177,7 +1177,7 @@ A UUID primary key owns no sequence, so there is no sequence to revoke.
 
 - [ ] **Step 0: Re-read the migration tip**
 
-Run: `ls /home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader/apps/research/migrations/`
+Run: `ls /home/orkhan/Desktop/elmify/.worktrees/requirement-reader/apps/research/migrations/`
 Expected: the newest is `0009_site_job_record_rls.py`, so this task writes `0010` and `0011`. If
 the tip has moved, take the next free pair. Repoint `0011`'s `research` dependency at the real
 `0010`, and keep its `("funding", "0049_catalog_grants")` edge. A dependency naming a node that no
@@ -1275,7 +1275,7 @@ def test_it_is_in_the_shared_tables_list():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/research/test_decision_record_rls.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/research/test_decision_record_rls.py -v`
 Expected: FAIL with `ImportError: cannot import name 'DecisionRecord'`
 
 - [ ] **Step 3: Write the model and the table migration**
@@ -1346,7 +1346,7 @@ class DecisionRecord(models.Model):
 Generate the table migration:
 
 ```bash
-POSTGRES_DB=tehsil_requirement_reader uv run python manage.py makemigrations research --name decision_record
+POSTGRES_DB=elmify_requirement_reader uv run python manage.py makemigrations research --name decision_record
 ```
 
 Expected: `apps/research/migrations/0010_decision_record.py`, depending on
@@ -1384,7 +1384,7 @@ class Migration(migrations.Migration):
     operations = [migrations.RunSQL(RLS_SQL, REVERSE_RLS_SQL)]
 ```
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/tenancy/test_catalog_grants.py::test_every_catalogue_table_is_revoked_from_web_and_granted_to_engine -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/tenancy/test_catalog_grants.py::test_every_catalogue_table_is_revoked_from_web_and_granted_to_engine -v`
 Expected: FAIL with `AssertionError: ('research_decisionrecord', 'SELECT')`. The default privileges
 from `funding/0049` granted the new table to `runtime_web`, which is exactly what the guard exists
 to catch.
@@ -1457,7 +1457,7 @@ grant, which is the safe side, and reversing `0010` drops the table anyway.
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/research/test_decision_record_rls.py tests/tenancy/test_database_isolation.py tests/tenancy/test_catalog_grants.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/research/test_decision_record_rls.py tests/tenancy/test_database_isolation.py tests/tenancy/test_catalog_grants.py -v`
 Expected: all pass. That includes:
 - `test_task7_rls_policy_shapes_and_runtime_acl`, which now sees exactly
   `runtime_engine_write`/`ALL` and `shared_catalog_select`/`SELECT` on the new table;
@@ -1466,14 +1466,14 @@ Expected: all pass. That includes:
 
 - [ ] **Step 7: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean, "No changes detected"
 
 - [ ] **Step 8: Commit**
 
 ```bash
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader add apps/research/models.py apps/research/migrations/0010_decision_record.py apps/research/migrations/0011_decision_record_rls.py tests/research/test_decision_record_rls.py tests/tenancy/test_database_isolation.py
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader commit -m "feat: DecisionRecord -- the calibration input, the re-derivation input, and the cache
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/requirement-reader add apps/research/models.py apps/research/migrations/0010_decision_record.py apps/research/migrations/0011_decision_record_rls.py tests/research/test_decision_record_rls.py tests/tenancy/test_database_isolation.py
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/requirement-reader commit -m "feat: DecisionRecord -- the calibration input, the re-derivation input, and the cache
 
 Shared catalog, because no student data is ever in a state and which sentence a
 page states is the same fact for every agency. Built by the 2026-09-25 recipe:
@@ -1694,7 +1694,7 @@ def test_a_noul_round_trips_through_the_cache():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/research/test_decisions_cache.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/research/test_decisions_cache.py -v`
 Expected: FAIL with `ImportError: cannot import name 'month_tokens_spent'`
 
 - [ ] **Step 3: Extend the module**
@@ -1909,20 +1909,20 @@ def ask(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/research/test_decisions.py tests/research/test_decisions_cache.py tests/research/test_decision_record_rls.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/research/test_decisions.py tests/research/test_decisions_cache.py tests/research/test_decision_record_rls.py -v`
 Expected: all pass: 21 + 12 + 4. Task 1's file now reads and writes the cache, which its
 `pytestmark` allows.
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest`
 Expected: all clean; the full suite passes.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader add apps/research/decisions.py tests/research/test_decisions_cache.py
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader commit -m "feat: the decision cache, the monthly ceiling and the outage policy
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/requirement-reader add apps/research/decisions.py tests/research/test_decisions_cache.py
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/requirement-reader commit -m "feat: the decision cache, the monthly ceiling and the outage policy
 
 The cache key is the state, the whole question map and the pinned model, so a
 reworded question or a new pin misses -- reading a stale answer would report a
@@ -2069,7 +2069,7 @@ def test_the_writer_is_told_the_floor():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_letter_min_chars.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_letter_min_chars.py -v`
 Expected: FAIL — `TypeError: LetterShape.__init__() got an unexpected keyword argument 'min_chars'`
 
 - [ ] **Step 3: The column and its migration**
@@ -2209,12 +2209,12 @@ a cap in those scripts is aimed at 85% of the cap. Neither has appeared on a mea
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_letter_min_chars.py tests/documents/test_letter_shape.py tests/documents/test_letters.py tests/documents/test_letter_formal_render.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_letter_min_chars.py tests/documents/test_letter_shape.py tests/documents/test_letters.py tests/documents/test_letter_formal_render.py -v`
 Expected: `test_letter_min_chars.py` 6 passed; the three existing files pass unchanged.
 
 - [ ] **Step 6: Run the checks and commit**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && uv run python manage.py makemigrations --check --dry-run && POSTGRES_DB=tehsil_requirement_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && uv run python manage.py makemigrations --check --dry-run && POSTGRES_DB=elmify_requirement_reader uv run pytest`
 Expected: all clean, no missing migration, full suite green.
 
 ```bash
@@ -2459,7 +2459,7 @@ def test_the_plausibility_bands_moved_rather_than_forked():
 
 - [ ] **Step 8: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_grammar_types.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_grammar_types.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.grammar'`
 
 - [ ] **Step 9: Write the vocabulary**
@@ -2815,12 +2815,12 @@ from .grammar import _IMPLAUSIBLE_CAP, _IMPLAUSIBLE_MAX
 
 - [ ] **Step 10: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_grammar_types.py tests/documents/test_letter_shape.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_grammar_types.py tests/documents/test_letter_shape.py -v`
 Expected: `test_grammar_types.py` 30 passed (17 tests, one parametrised over 14 cases) <!-- reconciled 2026-09-26 -->; `test_letter_shape.py` unchanged and green — its implausible-cap tests now exercise the moved constants.
 
 - [ ] **Step 11: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest`
 Expected: all clean. If ruff reports `I001` on an import block, `uv run ruff check --fix` on that file only (a lint fix, not `ruff format`).
 
 - [ ] **Step 12: Commit**
@@ -3018,7 +3018,7 @@ def test_a_long_page_is_chunked_rather_than_truncated():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_grammar_slots.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_grammar_slots.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.grammar_questions'`
 
 - [ ] **Step 3: Write the questions**
@@ -3280,12 +3280,12 @@ def _ask(
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_grammar_slots.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_grammar_slots.py -v`
 Expected: 9 passed <!-- reconciled 2026-09-26 -->
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -3401,7 +3401,7 @@ def test_a_figures_span_indexes_the_normalised_line() -> None:
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_letter_terms.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_letter_terms.py -v`
 Expected: FAIL with `ImportError: cannot import name 'figures_on_line'`
 
 - [ ] **Step 3: Write `figures_on_line`**
@@ -3520,13 +3520,13 @@ def figures_on_line(text: str) -> tuple[Figure, ...]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_letter_terms.py tests/documents/test_letter_shape.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_letter_terms.py tests/documents/test_letter_shape.py -v`
 Expected: every `test_letter_terms.py` test passes, 12 more than before (10 parametrised cases +
 2); `numbers_on_line`'s own tests and `test_letter_shape.py` are unchanged.
 
 - [ ] **Step 5: Run the checks and commit**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest`
 Expected: all clean
 
 ```bash
@@ -4043,7 +4043,7 @@ def test_a_sentence_about_no_document_yields_nothing_at_all():
 
 - [ ] **Step 7: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_grammar_values.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_grammar_values.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.grammar_values'`
 
 - [ ] **Step 8: Write the value questions**
@@ -4771,12 +4771,12 @@ def language_candidates(text: str) -> tuple[tuple[str, str], ...]:
 
 - [ ] **Step 9: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_grammar_values.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_grammar_values.py -v`
 Expected: 36 passed (33 tests; three parametrised, over 2 cases each) <!-- reconciled 2026-09-26 -->
 
 - [ ] **Step 10: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest`
 Expected: all clean. `I001` on the `.grammar` import block → `uv run ruff check --fix apps/documents/grammar_values.py`.
 
 - [ ] **Step 11: Commit**
@@ -5009,7 +5009,7 @@ def test_two_topics_are_both_kept():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_rule_conflicts.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_rule_conflicts.py -v`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.documents.rule_sinks'`
 
 - [ ] **Step 3: Write the resolver**
@@ -5138,12 +5138,12 @@ def resolve_conflicts(rules: Sequence[Rule]) -> tuple[Rule, ...]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_rule_conflicts.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_rule_conflicts.py -v`
 Expected: 16 passed
 
 - [ ] **Step 5: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest`
 Expected: all clean
 
 - [ ] **Step 6: Commit**
@@ -5389,7 +5389,7 @@ def test_a_letter_rule_is_not_a_cv_constraint():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_rule_sinks_cv.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_rule_sinks_cv.py -v`
 Expected: FAIL with `ImportError: cannot import name 'cv_limit_key'`
 
 - [ ] **Step 3: Write the projection**
@@ -5584,7 +5584,7 @@ def format_decision(rules: Sequence[Rule]) -> tuple[str, str]:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_rule_sinks_cv.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_rule_sinks_cv.py -v`
 Expected: 20 passed
 
 - [ ] **Step 5: Run the checks**
@@ -6121,7 +6121,7 @@ def test_a_stated_letter_language_is_enforced_when_the_letter_is_written() -> No
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_rule_sinks_letter.py tests/documents/test_grammar_page.py tests/documents/test_letter_shape.py tests/funding/test_requirements.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_rule_sinks_letter.py tests/documents/test_grammar_page.py tests/documents/test_letter_shape.py tests/funding/test_requirements.py -v`
 Expected: FAIL. Collection stops with `ImportError: cannot import name 'PageFacts'`, and
 `TypeError: LetterShape.__init__() got an unexpected keyword argument 'document_language'` follows
 once that is fixed.
@@ -6206,7 +6206,7 @@ from .letter_shape import (
 )
 ```
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_letter_shape.py tests/documents/test_letter_derive.py -q`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_letter_shape.py tests/documents/test_letter_derive.py -q`
 Expected: the tests that existed before this task all pass. The move changes no behaviour, and the
 four tests appended in Step 1 still fail.
 
@@ -6590,14 +6590,14 @@ def to_letter_shape(
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_rule_sinks_letter.py tests/documents/test_grammar_page.py tests/documents/test_letter_shape.py tests/documents/test_letter_derive.py tests/funding/test_requirements.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_rule_sinks_letter.py tests/documents/test_grammar_page.py tests/documents/test_letter_shape.py tests/documents/test_letter_derive.py tests/funding/test_requirements.py -v`
 Expected: all pass: 32 in `test_rule_sinks_letter.py` (29 functions, two of them
 parametrized), 4 in `test_grammar_page.py`, and every existing test in the other three files plus
 the 5 appended.
 
 - [ ] **Step 8: Run the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents -q`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents -q`
 Expected: all clean
 
 - [ ] **Step 9: Commit**
@@ -7019,7 +7019,7 @@ def test_an_outage_leaves_the_catalog_untouched_and_never_falls_back(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_derive_grammar.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_derive_grammar.py -v`
 Expected: FAIL — `TypeError: derive_page_rules() got an unexpected keyword argument 'client'`.
 <!-- reconciled 2026-09-26 -->
 
@@ -7268,17 +7268,17 @@ change.
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_derive_grammar.py tests/research/test_decisions.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_derive_grammar.py tests/research/test_decisions.py -v`
 Expected: all pass (21 in `test_derive_grammar.py`).
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_derive.py tests/documents/test_letter_derive.py tests/documents/test_letter_shape.py tests/research/test_reader.py -q`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_derive.py tests/documents/test_letter_derive.py tests/documents/test_letter_shape.py tests/research/test_reader.py -q`
 Expected: all pass, unchanged. These are the frontier path's tests. They now reach it through
 <!-- reconciled 2026-09-26 -->
 a `not_configured` raise, which is the proof that the fallback is the old path, byte for byte.
 
 - [ ] **Step 8: Run the whole suite and the checks**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest && POSTGRES_DB=tehsil_requirement_reader uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest && POSTGRES_DB=elmify_requirement_reader uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean.
 
 - [ ] **Step 9: Commit**
@@ -7657,14 +7657,14 @@ def test_negated_limits_read_the_right_way_round(capsys):
 - [ ] **Step 3: Run the gates**
 
 ```bash
-POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_grammar_gate.py -v
+POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_grammar_gate.py -v
 ```
 Expected: 4 passed, 2 deselected. **If gate 7 fails, the grammar is short an operation: add it to
 `grammar.py`, give it a sink and re-run. That is the gate working, not the test being wrong.**
 
 ```bash
-set -a; . ~/.config/tehsil_agent/openrouter.env; set +a
-POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_grammar_gate.py -m live -v -s
+set -a; . ~/.config/elmify/openrouter.env; set +a
+POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_grammar_gate.py -m live -v -s
 ```
 Expected: both pass, with the printed lists empty or nearly so. **Record the four figures in the
 commit message:** CV correct/48, CV action wrong, letter EN asserted, and wrong caps. If the action
@@ -7858,7 +7858,7 @@ def test_a_programme_with_no_statements_is_skipped(program_factory, grammar):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_rederive_rules.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_rederive_rules.py -v`
 Expected: FAIL with `CommandError: Unknown command: 'rederive_rules'`
 
 - [ ] **Step 3: Write the command**
@@ -7988,7 +7988,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/test_rederive_rules.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/test_rederive_rules.py -v`
 Expected: 6 passed
 
 - [ ] **Step 5: Rewrite the record**
@@ -8035,7 +8035,7 @@ blockquote at the top (after "…the measurements that set the bar."):
 
 - [ ] **Step 6: Run everything**
 
-Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=tehsil_requirement_reader uv run pytest && uv run bandit -c pyproject.toml -r apps config && uv run pip-audit && POSTGRES_DB=tehsil_requirement_reader uv run python manage.py makemigrations --check --dry-run`
+Run: `uv run ruff check apps config tests scripts && uv run mypy apps config && POSTGRES_DB=elmify_requirement_reader uv run pytest && uv run bandit -c pyproject.toml -r apps config && uv run pip-audit && POSTGRES_DB=elmify_requirement_reader uv run python manage.py makemigrations --check --dry-run`
 Expected: all clean
 
 - [ ] **Step 7: Commit**
@@ -8248,7 +8248,7 @@ def test_entity_by_pattern(sentence, expected):
     assert entity_by_pattern(sentence) == expected
 ```
 
-Run: `POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/research_fit/test_jev.py -v`
+Run: `POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/research_fit/test_jev.py -v`
 Expected: FAIL with `TypeError: JevClassifier.__init__() got an unexpected keyword argument 'client'`
 
 - [ ] **Step 2: Implement**
@@ -8370,7 +8370,7 @@ In `tests/documents/research_fit/test_live.py`, change the skip condition to
 - [ ] **Step 3: Verify**
 
 ```bash
-POSTGRES_DB=tehsil_requirement_reader uv run pytest tests/documents/research_fit/ -v
+POSTGRES_DB=elmify_requirement_reader uv run pytest tests/documents/research_fit/ -v
 uv run ruff check apps config tests scripts && uv run mypy apps config
 ```
 
@@ -8529,8 +8529,8 @@ Every exported name other plans consume is unchanged: `decisions.ask`, `Decision
 #### Stale assumptions found in the original Tasks 1–3 (verified against `origin/master` at `f5cfac64`, 2026-09-26)
 
 1. **Base branch** (plan:13) is `claude/fetch-spec-refresh`. Execute from `origin/master` in
-   `/home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader`, test DB
-   `POSTGRES_DB=tehsil_requirement_reader` (addendum §9).
+   `/home/orkhan/Desktop/elmify/.worktrees/requirement-reader`, test DB
+   `POSTGRES_DB=elmify_requirement_reader` (addendum §9).
 2. **Settings insert point** (plan:22, 83, 96, 650) says "after `ANTHROPIC_JUDGE_MODEL`, line 120".
    `ANTHROPIC_JUDGE_MODEL` is at `config/settings/base.py:121`, and `TYPESAFE_API_KEY` already
    exists at `config/settings/base.py:147-149`. The new block replaces those three lines.
@@ -8611,11 +8611,11 @@ listed under "What Tasks 8–11 must absorb" below.
 
 **Base:** `origin/master` at execution time, with `claude/judge-schema-fix` already merged
 (addendum §11 step 1 — Task 6 Step 0 checks for it). **Test database:**
-`POSTGRES_DB=tehsil_requirement_reader`. **Checks after every task** (Global Constraints):
+`POSTGRES_DB=elmify_requirement_reader`. **Checks after every task** (Global Constraints):
 `uv run ruff check apps config tests scripts`, `uv run mypy apps config`,
-`POSTGRES_DB=tehsil_requirement_reader uv run pytest`, and
+`POSTGRES_DB=elmify_requirement_reader uv run pytest`, and
 `uv run python manage.py makemigrations --check --dry-run`. Never `ruff format`.
-<!-- reconciled 2026-09-26 --> **Git:** `WT=/home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader`;
+<!-- reconciled 2026-09-26 --> **Git:** `WT=/home/orkhan/Desktop/elmify/.worktrees/requirement-reader`;
 every git command is `git -C "$WT" ...` and every commit `uv run git -C "$WT" commit`, as in
 Tasks 1–3 and 8–13 — the shell's cwd resets to the main checkout between calls.
 
@@ -8661,8 +8661,8 @@ Plan line numbers are `docs/superpowers/plans/2026-09-23-decision-layer-and-rule
    "Use", so "Use Times New Roman" yields nothing; `_format_value` (plan:2771–2798) counts a
    phrasing below the bar as a vote (two-of-three "unsure") and treats required + preferred as
    agreement (three different verdicts applied `europass_preferred`). Both fixed below.
-9. Base branch `claude/fetch-spec-refresh` and DB `tehsil_decisions` → `origin/master` and
-   `tehsil_requirement_reader` (addendum §9). Commit trailers → `Claude Opus 5.5`.
+9. Base branch `claude/fetch-spec-refresh` and DB `elmify_decisions` → `origin/master` and
+   `elmify_requirement_reader` (addendum §9). Commit trailers → `Claude Opus 5.5`.
 10. **Not fixed here, flagged:** Task 4's `_letter_sink("language")` returns `"document_language"`
    (plan:1639), which is not a `LetterShape` field, and Task 9 passes it into `LetterShape(...)`
    (plan:3708) — addendum §6.4; Task 9 adds the field. Task 10 deletes the frontier judge that
@@ -8810,10 +8810,10 @@ Tasks 8–12 import these names and fail at import or at their first test withou
   only by the deferred cleanup after Task 13, on the trigger stated there."* `decisions.ask()`
   itself still never degrades (Task 1's `test_an_absent_key_raises_rather_than_degrading` stands);
   the one caller that catches the raise is `derive_page_rules`.
-- Test database: **`POSTGRES_DB=tehsil_requirement_reader`**, replacing `tehsil_decisions` in
+- Test database: **`POSTGRES_DB=elmify_requirement_reader`**, replacing `elmify_decisions` in
   every command.
 - Git: the executing worktree is `$WT` (for this session,
-  `/home/orkhan/Desktop/tehsil_agent/.worktrees/requirement-reader`). Every git command uses
+  `/home/orkhan/Desktop/elmify/.worktrees/requirement-reader`). Every git command uses
   `git -C "$WT"` — the shell's cwd resets to the main checkout between calls.
 
 #### Stale assumptions in the 2026-09-23 text of Tasks 8–13, re-resolved against `f5cfac6`

@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from django.core.cache import cache
 
-from apps.ratelimit import rate_limited
+from apps.ratelimit import rate_limited, seconds_until_reset
 
 
 def test_the_limit_trips_after_the_configured_count() -> None:
@@ -74,3 +74,7 @@ def test_a_key_recreated_without_ttl_does_not_block_the_next_window(
     # A new window: a different key, untouched by the one still stuck with no TTL.
     now["t"] += window_seconds
     assert rate_limited(bucket, actor, limit=3, window_seconds=window_seconds) is False
+
+
+def test_seconds_until_reset_counts_down_to_the_window_edge() -> None:
+    assert seconds_until_reset(3600) == 3600 - 1_700_000_000 % 3600

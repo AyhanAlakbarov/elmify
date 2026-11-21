@@ -6,6 +6,8 @@
  * text or a model's opinion. A false positive interrupts a student who was
  * doing fine; a false negative strands one.
  */
+import { visible } from "./verify.js";
+
 const CHALLENGE_MARKERS: [string, string][] = [
   ["recaptcha", ".g-recaptcha"],
   ["hcaptcha", ".h-captcha"],
@@ -49,4 +51,55 @@ export function readStatus(): {
       .map((node) => (node.textContent ?? "").trim().slice(0, 200))
       .filter(Boolean),
   };
+}
+
+const CONTROLS = "input,select,textarea";
+
+function errorClassed(node: Element): boolean {
+  return (node.getAttribute("class") ?? "")
+    .toLowerCase()
+    .split(/\s+/)
+    .some((t) => {
+      if (!t || t.startsWith("no-") || t.endsWith("-hint") || t.endsWith("-help")) return false;
+      return (
+        /(error|invalid|fehler)$/.test(t) ||
+        /^(error|invalid|has-error|is-invalid|invalid-feedback)/.test(t)
+      );
+    });
+}
+
+function clean(text: string | null | undefined): string | null {
+  const trimmed = (text ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  return trimmed || null;
+}
+
+/** A message node never holds a control, and never is the page itself. */
+function messageNode(node: Element | null): node is Element {
+  return !!node && node !== document.body && !node.querySelector(CONTROLS);
+}
+
+/** The portal's own validation message for a control, or null. Page text:
+ *  it goes to the panel only, never into the marks layer. */
+export function portalErrorFor(element: HTMLElement): string | null {
+  if (element.getAttribute("aria-invalid") === "true") {
+    const only = element.getAttribute("aria-errormessage")?.trim();
+    const ids = (only || element.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    const targets = ids.map((id) => document.getElementById(id)).filter((n): n is HTMLElement => messageNode(n));
+    // With several describedby targets prefer the visible, error-classed one.
+    const best = only
+      ? targets[0]
+      : (targets.find((n) => visible(n) && errorClassed(n)) ?? targets[0]);
+    const text = best ? clean(best.textContent) : null;
+    if (text) return text;
+  }
+  // The wrapper's children count only when this is the wrapper's one control.
+  const wrapper = element.parentElement;
+  const own = wrapper && wrapper.querySelectorAll(CONTROLS).length === 1;
+  const candidates = [element.nextElementSibling, ...(own ? Array.from(wrapper.children) : [])];
+  for (const node of candidates) {
+    if (!node || node === element || !errorClassed(node) || !messageNode(node)) continue;
+    const text = node instanceof HTMLElement && visible(node) ? clean(node.textContent) : null;
+    if (text) return text;
+  }
+  return null;
 }

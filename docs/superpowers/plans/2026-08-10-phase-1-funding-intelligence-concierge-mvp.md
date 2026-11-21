@@ -133,7 +133,7 @@ Use these direct dependency families in `pyproject.toml`; resolve current patch 
 
 ```toml
 [project]
-name = "tehsil-agent"
+name = "elmify"
 version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -524,7 +524,7 @@ Use a PostgreSQL `DomainLease` row locked with `select_for_update()` for cross-w
 
 Extend CloudFormation with private web/worker subnets, no public task IPs, one pilot NAT gateway, VPC Flow Logs, and VPC endpoints for S3, SQS, ECR, CloudWatch Logs, and Secrets Manager. The worker security group has no inbound rule. The validation task must prove: official public HTTPS succeeds through NAT; private, loopback, link-local, and metadata targets fail; S3/SQS/Secrets use endpoints; flow logs contain the public test connection; and a blocked public source creates a consultant task without an evasive fallback.
 
-Run: `uv run python -m scripts.validate_controlled_egress --stack-name tehsil-phase1-validation`
+Run: `uv run python -m scripts.validate_controlled_egress --stack-name elmify-phase1-validation`
 
 Expected: exit zero with each assertion and destination recorded in `docs/validation/controlled-egress.md`.
 

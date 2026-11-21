@@ -16,7 +16,7 @@
 {% endcomment %}
 <ul>
   {% for item in content.awards %}
-  <li><div class="entry-header"><span class="award-title">{{ item.title }}{% if item.awarding_body %}, {{ item.awarding_body }}{% endif %}</span>{% if item.date %}<span>{{ item.date|month_year }}</span>{% endif %}</div>{% if item.detail %}<div class="gloss">{{ item.detail }}</div>{% endif %}</li>
+  <li class="award"><div class="entry-header"><span class="award-title">{{ item.title }}{% if item.awarding_body %}, {{ item.awarding_body }}{% endif %}</span>{% if item.date %}<span>{{ item.date|month_year }}</span>{% endif %}</div>{% if item.detail %}<div class="gloss">{{ item.detail }}</div>{% endif %}</li>
   {% endfor %}
 </ul>
 {% endif %}{% endif %}

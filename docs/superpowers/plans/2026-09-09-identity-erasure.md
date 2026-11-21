@@ -19,7 +19,7 @@
 - **`email` is not unique** (verified) — blanking it is safe.
 - **Refuse to scrub `is_staff` or `is_superuser` users, and any membership whose role is not `STUDENT`.**
 - **Sessions need no code.** `set_unusable_password()` changes the password hash, which changes `get_session_auth_hash()`, which invalidates every session. Do not write session-flushing code.
-- **Run tests as:** `export POSTGRES_DB=tehsil_erasure` then `uv run pytest ...`. `ruff` and `mypy` (strict) are blocking CI gates; `ruff format` is deliberately not used.
+- **Run tests as:** `export POSTGRES_DB=elmify_erasure` then `uv run pytest ...`. `ruff` and `mypy` (strict) are blocking CI gates; `ruff format` is deliberately not used.
 
 ---
 
@@ -98,7 +98,7 @@ def test_username_is_not_blanked_because_it_is_unique():
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `export POSTGRES_DB=tehsil_erasure && uv run pytest tests/audit/test_identity.py -q`
+Run: `export POSTGRES_DB=elmify_erasure && uv run pytest tests/audit/test_identity.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.audit.identity'`
 
 - [ ] **Step 3: Write the classification**
@@ -175,7 +175,7 @@ IDENTITY_KEEP: tuple[str, ...] = (
 
 - [ ] **Step 4: Run the tests**
 
-Run: `export POSTGRES_DB=tehsil_erasure && uv run pytest tests/audit/test_identity.py -q`
+Run: `export POSTGRES_DB=elmify_erasure && uv run pytest tests/audit/test_identity.py -q`
 Expected: PASS, 4 tests. If `test_every_user_field_is_classified_exactly_once` fails naming a field, this Django version has one these lists do not — classify it rather than deleting the assertion.
 
 - [ ] **Step 5: Check the gates**
@@ -250,7 +250,7 @@ pytestmark = pytest.mark.django_db
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `export POSTGRES_DB=tehsil_erasure && uv run pytest tests/audit/test_identity.py -q`
+Run: `export POSTGRES_DB=elmify_erasure && uv run pytest tests/audit/test_identity.py -q`
 Expected: FAIL — `AttributeError` or `TypeError` on `identity_retained`.
 
 - [ ] **Step 3: Add the field**
@@ -283,7 +283,7 @@ Do not classify it REDACT: erasing the record of what was erased defeats its pur
 
 - [ ] **Step 6: Run the tests**
 
-Run: `export POSTGRES_DB=tehsil_erasure && uv run pytest tests/audit/ -q && uv run python manage.py makemigrations --check --dry-run`
+Run: `export POSTGRES_DB=elmify_erasure && uv run pytest tests/audit/ -q && uv run python manage.py makemigrations --check --dry-run`
 Expected: all pass; no further migrations detected.
 
 - [ ] **Step 7: Commit**
@@ -445,7 +445,7 @@ def test_refuses_a_non_student_membership(agency_a, django_user_model):
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `export POSTGRES_DB=tehsil_erasure && uv run pytest tests/audit/test_identity.py -q`
+Run: `export POSTGRES_DB=elmify_erasure && uv run pytest tests/audit/test_identity.py -q`
 Expected: FAIL — `ImportError: cannot import name 'redact_identity'`.
 
 - [ ] **Step 3: Implement it**
@@ -499,7 +499,7 @@ def redact_identity(*, user_id: Any, membership_role: str) -> bool:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `export POSTGRES_DB=tehsil_erasure && uv run pytest tests/audit/test_identity.py -q`
+Run: `export POSTGRES_DB=elmify_erasure && uv run pytest tests/audit/test_identity.py -q`
 Expected: PASS, 9 tests.
 
 If `test_scrubs_the_login_...` fails asserting the password is still usable, check that `"password"` is in `update_fields` — it is, because `update_fields=list(IDENTITY_REDACT)` includes it, and `set_unusable_password()` mutates `user.password` in memory before the save.
@@ -623,7 +623,7 @@ def test_executed_records_a_retained_identity(
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `export POSTGRES_DB=tehsil_erasure && uv run pytest tests/audit/test_identity.py -q -k "executed"`
+Run: `export POSTGRES_DB=elmify_erasure && uv run pytest tests/audit/test_identity.py -q -k "executed"`
 Expected: FAIL — `assert True is False` on `student.active`. That failing assertion is the access-revocation defect, reproduced.
 
 - [ ] **Step 3: Wire it in**
@@ -665,13 +665,13 @@ and inside the `EXECUTED` branch, replace the `transaction.atomic()` block with:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `export POSTGRES_DB=tehsil_erasure && uv run pytest tests/audit/ -q`
+Run: `export POSTGRES_DB=elmify_erasure && uv run pytest tests/audit/ -q`
 Expected: PASS. Every pre-existing test in `tests/audit/` must still pass — they exercise the same transitions. If one fails because it asserts a `Membership` is still active after erasure, read it before changing it and say so prominently in your report.
 
 - [ ] **Step 5: Run the full gate**
 
 ```bash
-export POSTGRES_DB=tehsil_erasure
+export POSTGRES_DB=elmify_erasure
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config

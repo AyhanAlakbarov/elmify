@@ -221,6 +221,50 @@ def test_a_fabricated_name_with_a_lowercase_joiner_is_unsupported():
     assert verdicts[0].verdict == Verdict.UNSUPPORTED
 
 
+def test_an_invented_number_is_unsupported():
+    """The audit's own example, and it verified SUPPORTED until 2026-09-24.
+
+    A citation to a real page carrying two invented figures is worse than no
+    citation: the reader can check a number faster than anything else in the
+    letter, and it is the student who pays when it is wrong. Verified by
+    removing the number loop from `sourced_claim_matches` -- the verdict then
+    flips to SUPPORTED.
+    """
+    entry = _research_input()
+    content = _sourced(
+        "the Chair of Robotics has led the group since 1998 and supervises "
+        "40 doctoral researchers",
+        input_id=entry.id,
+    )
+    verdicts = verify_letter_claims(content, facts={}, inputs={entry.id: entry}, immigration=False)
+    assert verdicts[0].verdict == Verdict.UNSUPPORTED
+
+
+def test_a_number_the_page_really_states_is_supported():
+    """The positive control: tightening must not block a figure that is there."""
+    entry = _research_input()
+    entry.provenance["sentence"] = (
+        "The Chair of Robotics has hosted 12 master's theses on legged locomotion."
+    )
+    content = _sourced(
+        "the Chair of Robotics has hosted 12 master's theses", input_id=entry.id
+    )
+    verdicts = verify_letter_claims(content, facts={}, inputs={entry.id: entry}, immigration=False)
+    assert verdicts[0].verdict == Verdict.SUPPORTED
+
+
+def test_a_number_inside_a_longer_number_does_not_satisfy_the_check():
+    """Digit boundaries, not substrings: the "40" in the page's "1940" is not
+    the claim's "40 doctoral researchers"."""
+    entry = _research_input()
+    entry.provenance["sentence"] = "The Chair of Robotics was founded in 1940."
+    content = _sourced(
+        "the Chair of Robotics supervises 40 doctoral researchers", input_id=entry.id
+    )
+    verdicts = verify_letter_claims(content, facts={}, inputs={entry.id: entry}, immigration=False)
+    assert verdicts[0].verdict == Verdict.UNSUPPORTED
+
+
 def test_a_different_url_from_the_provenance_is_unsupported():
     entry = _research_input()
     content = _sourced(
@@ -229,6 +273,91 @@ def test_a_different_url_from_the_provenance_is_unsupported():
     )
     verdicts = verify_letter_claims(content, facts={}, inputs={entry.id: entry}, immigration=False)
     assert verdicts[0].verdict == Verdict.UNSUPPORTED
+
+
+def test_sourced_claim_citing_verified_paper_title_finding_and_year_is_supported():
+    from apps.documents.letters import is_letter_blocked
+
+    entry = _research_input(entity="Marco Hutter", url="https://rsl.ethz.ch/people/hutter")
+    entry.provenance.update(
+        {
+            "paper_title": "Tube Model Predictive Control for Quadruped Locomotion",
+            "paper_year": 2025,
+            "paper_url": "https://doi.org/10.1109/tro.2025.001",
+            "paper_finding": "Reduces slip on 25-degree gravel inclines by 40 percent.",
+        }
+    )
+    content = _sourced(
+        "Marco Hutter's 2025 paper on Tube Model Predictive Control reduces slip on "
+        "25-degree gravel inclines by 40 percent",
+        input_id=entry.id,
+        url="https://rsl.ethz.ch/people/hutter",
+    )
+    verdicts = verify_letter_claims(content, facts={}, inputs={entry.id: entry}, immigration=False)
+    assert verdicts[0].verdict == Verdict.SUPPORTED
+    assert not is_letter_blocked(verdicts, (), immigration=False)
+
+    # Also supported when citing paper_url directly:
+    content_paper_url = _sourced(
+        "Marco Hutter's 2025 work on Tube Model Predictive Control",
+        input_id=entry.id,
+        url="https://doi.org/10.1109/tro.2025.001",
+    )
+    verdicts_paper_url = verify_letter_claims(
+        content_paper_url, facts={}, inputs={entry.id: entry}, immigration=False
+    )
+    assert verdicts_paper_url[0].verdict == Verdict.SUPPORTED
+
+    # Still unsupported if a number or capitalized phrase is absent from both sentence and paper:
+    content_invented = _sourced(
+        "Marco Hutter's 2025 paper on Tube Model Predictive Control tested 95 robots",
+        input_id=entry.id,
+        url="https://rsl.ethz.ch/people/hutter",
+    )
+    verdicts_invented = verify_letter_claims(
+        content_invented, facts={}, inputs={entry.id: entry}, immigration=False
+    )
+    assert verdicts_invented[0].verdict == Verdict.UNSUPPORTED
+
+
+def test_sourced_claim_with_titled_person_entity_supports_surname_and_blocks_invented_first_name():
+    entry = _research_input(
+        entity="Prof. Dr. Marco Hutter", url="https://rsl.ethz.ch/people/hutter"
+    )
+    entry.provenance.update(
+        {
+            "kind": "named_person",
+            "paper_title": "Tube Model Predictive Control for Quadruped Locomotion",
+            "paper_year": 2025,
+            "paper_url": "https://doi.org/10.1109/tro.2025.001",
+            "paper_finding": "Reduces slip on 25-degree gravel inclines by 40 percent.",
+        }
+    )
+    for valid_text in (
+        "Marco Hutter's 2025 paper on Tube Model Predictive Control reduces slip by 40 percent",
+        "Prof. Hutter's 2025 paper on Tube Model Predictive Control reduces slip by 40 percent",
+        "In his 2025 paper on Tube Model Predictive Control, Hutter reduces slip by 40 percent",
+    ):
+        verdicts = verify_letter_claims(
+            _sourced(valid_text, input_id=entry.id, url="https://rsl.ethz.ch/people/hutter"),
+            facts={},
+            inputs={entry.id: entry},
+            immigration=False,
+        )
+        assert verdicts[0].verdict == Verdict.SUPPORTED
+
+    wrong_first_name = _sourced(
+        "Prof. Anna Hutter's 2025 paper on Tube Model Predictive Control",
+        input_id=entry.id,
+        url="https://rsl.ethz.ch/people/hutter",
+    )
+    assert (
+        verify_letter_claims(
+            wrong_first_name, facts={}, inputs={entry.id: entry}, immigration=False
+        )[0].verdict
+        == Verdict.UNSUPPORTED
+    )
+
 
 
 def test_an_input_id_pointing_at_a_non_research_input_is_unsupported():

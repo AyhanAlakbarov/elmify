@@ -1,0 +1,9 @@
+{% if prepared_files %}
+  <section aria-labelledby="prepared-heading">
+    <h2 id="prepared-heading">Prepared files</h2>
+    {% for application, files in prepared_files %}
+      <h3>{{ application.candidate.program_name }}</h3>
+      <ul>{% for row, label, note in files %}<li>{{ label }} <a href="{% url 'portals-prepared-view' row.id %}" target="_blank" rel="noopener">View</a>{% if staff_view %} <a href="{% url 'portals-staff-download-prepared' row.id %}">Download</a>{% elif note %}<p class="doc-note">{{ note }}</p>{% endif %}</li>{% endfor %}</ul>
+    {% endfor %}
+  </section>
+{% endif %}

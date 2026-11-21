@@ -1,3 +1,5 @@
+from uuid import uuid4
+
 import pytest
 
 from apps.documents.constraints import ConstraintRule, Enforcement
@@ -469,3 +471,31 @@ def test_field_mapped_word_count_still_blocks_on_the_text_it_does_send():
             structure=ApplicationPrompt.Structure.SHORT_ANSWER_SET,
             constraints=(rule,),
         )
+
+
+def test_hygiene_keeps_a_japanese_claim_anchored_to_its_sentence():
+    text = "東京大学で研究しました。次に進みます。"
+    first = "東京大学で研究しました。"
+    claim = LetterClaim(
+        text=first, span_start=0, span_end=len(first),
+        kind=ClaimKind.FACTUAL, fact_id=uuid4(),
+    )
+    content = LetterContent(
+        language="ja",
+        units=(LetterUnit(archetype="WHY_FIELD", text=text, claims=(claim,)),),
+    )
+    unit = hygienic_letter_content(content).units[0]
+    anchored = unit.claims[0]
+    assert unit.text[anchored.span_start:anchored.span_end] == first
+
+
+def test_hygiene_survives_a_right_to_left_mark_after_an_arabic_question():
+    text = "هل تعلم؟‏ نعم درست في 2020."
+    claim = LetterClaim(
+        text="نعم درست في 2020", span_start=0, span_end=len(text),
+        kind=ClaimKind.FACTUAL, fact_id=uuid4(),
+    )
+    content = LetterContent(
+        language="ar", units=(LetterUnit(archetype="WHY_FIELD", text=text, claims=(claim,)),)
+    )
+    hygienic_letter_content(content)  # raised ContentHygieneFailed before the fix

@@ -188,6 +188,8 @@ def generate_letter_for(message: DocumentWorkMessage) -> None:
                 version=(last or 0) + 1,
                 content=result.content.model_dump(mode="json"),
                 programme=programme,
+                application=application,
+                destination_label=", ".join(p for p in (programme.name, own) if p),
                 status=DocumentDraft.Status.DRAFT,
                 letter_gates=[
                     {"code": str(v.code), "unit_archetype": v.unit_archetype}
@@ -215,9 +217,19 @@ def approve_letter_for(message: DocumentWorkMessage) -> None:
                 .first()
             )
         if draft is None or draft.programme_id is None or application is None:
+            if application is not None:
+                with tenant_transaction(message.tenant_id):
+                    _settle(application, "", "")
             logger.info("approve_letter: draft %s or its application is gone", message.draft_id)
             return
-        programme = Program.objects.select_related("institution").get(id=draft.programme_id)
+        programme = (
+            Program.objects.select_related("institution").filter(id=draft.programme_id).first()
+        )
+        if programme is None:
+            with tenant_transaction(message.tenant_id):
+                _settle(application, "", "")
+            logger.info("approve_letter: programme %s is gone", draft.programme_id)
+            return
         prompt = _prompt_for(programme, draft.letter_cycle)
         content = LetterContent.model_validate(draft.content)
         gates = tuple(

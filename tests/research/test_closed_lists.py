@@ -20,7 +20,7 @@ def _list(**overrides: object) -> ClosedList:
     fields: dict[str, object] = dict(
         slug="igo_regional_global", title="Intergovernmental and regional funds",
         country_code="", holder_kinds=["INTERGOVERNMENTAL", "REGIONAL_FUND"], rung=1,
-        source_url="https://github.com/0rkhann/tehsil_agent/blob/master/docs/research/closed-lists/igo_regional_global.csv",
+        source_url="https://github.com/0rkhann/elmify/blob/master/docs/research/closed-lists/igo_regional_global.csv",
         maintainer="own compilation", carries_purpose=True, carries_website=True,
         reuse_terms=ClosedList.Terms.OWN_COMPILATION, is_denominator=True,
         read_policy=ClosedList.ReadPolicy.FUNDING_READ, verified_on=date(2026, 9, 25),

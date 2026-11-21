@@ -1,7 +1,20 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Your profile{% endblock %}
+{% block head %}
+  <link rel="stylesheet" href="{% static 'dashboard/consultation.css' %}">
+  <script src="{% static 'dashboard/consultation.js' %}" defer></script>
+{% endblock %}
 {% block content %}
-  <div class="page-head"><div><h1>Your profile</h1><p>One question at a time. Your answers are kept as you go.</p></div></div>
+  <div class="page-head">
+    <div>
+      <h1>Your profile</h1>
+      <p>{% if review %}{% if has_existing_profile %}Review or update the answers our AI uses to match programmes and scholarships to you.{% else %}Check your answers below before we start your programme and scholarship search.{% endif %}{% else %}One question at a time. Your answers are kept as you go.{% endif %}</p>
+    </div>
+  </div>
+  {% if not review %}
+  <a class="write-callout" href="{% url 'student-documents' %}"><span class="ico ico-doc" aria-hidden="true"></span><span><strong>Have your transcript, CV, or passport ready?</strong><small>Upload your documents first to fill in your degree, identity, and language details automatically.</small></span><span class="write-callout-go">Open documents</span></a>
+  {% endif %}
   <div class="panel consultation">
     {% include "student/_consultation_step.html" %}
   </div>

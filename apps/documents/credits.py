@@ -15,10 +15,34 @@ from __future__ import annotations
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
-CreditUnit = Literal["ECTS", "US_SEMESTER_HOUR", "LOCAL", "UNKNOWN"]
+CreditUnit = Literal[
+    "ECTS",
+    "US_SEMESTER_HOUR",
+    "US_QUARTER_HOUR",
+    "UK_CATS",
+    "RU_ZET",
+    "JP_CREDIT",
+    "KR_CREDIT",
+    "IN_CBCS",
+    "CN_CREDIT",
+    "AU_EFTSL",
+    "LOCAL",
+    "UNKNOWN",
+]
 
 _ECTS_PER_YEAR = Decimal("60")
-_YEAR_LOAD: dict[str, Decimal] = {"ECTS": Decimal("60"), "US_SEMESTER_HOUR": Decimal("30")}
+_YEAR_LOAD: dict[str, Decimal] = {
+    "ECTS": Decimal("60"),
+    "US_SEMESTER_HOUR": Decimal("30"),
+    "US_QUARTER_HOUR": Decimal("45"),
+    "UK_CATS": Decimal("120"),
+    "RU_ZET": Decimal("60"),
+    "JP_CREDIT": Decimal("31"),
+    "KR_CREDIT": Decimal("33"),
+    "IN_CBCS": Decimal("40"),
+    "CN_CREDIT": Decimal("40"),
+    "AU_EFTSL": Decimal("1"),
+}
 _CENT = Decimal("0.01")
 
 

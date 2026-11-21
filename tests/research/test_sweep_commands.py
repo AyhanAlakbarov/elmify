@@ -2,6 +2,7 @@
 run a pass that cannot say what it measured."""
 
 from datetime import date
+from io import StringIO
 
 import pytest
 from django.core.management import CommandError, call_command
@@ -11,9 +12,31 @@ from apps.research.models import ClosedList, SweepAngle
 pytestmark = pytest.mark.django_db
 
 
-def test_generation_without_a_vocabulary_is_refused_with_the_interim_named() -> None:
+@pytest.fixture(autouse=True)
+def _funder_check_live(settings) -> None:
+    settings.FUNDER_SWEEP_LEVEL_CHECK_LIVE = True
+
+
+def test_generation_without_a_vocabulary_is_refused_with_the_interim_named(
+    monkeypatch, tmp_path
+) -> None:
+    # An unbuilt data directory: the committed kind_words.json is not this test's.
+    monkeypatch.setattr("apps.research.vocabulary.DATA_DIR", tmp_path)
     with pytest.raises(CommandError, match="--from-steering"):
         call_command("generate_sweep_angles", "--country", "TR", "--family", "PRIVATE_FOUNDATION")
+
+
+def test_generation_with_the_committed_vocabulary_gets_past_the_refusal(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "apps.research.management.commands.generate_sweep_angles.pass_languages",
+        lambda country, family, *, source, home_language: ("tr", "en"),
+    )
+    out = StringIO()
+    call_command(
+        "generate_sweep_angles", "--country", "TR", "--family", "PRIVATE_FOUNDATION",
+        "--dry-run", stdout=out,
+    )
+    assert "would generate TR/PRIVATE_FOUNDATION in tr, en" in out.getvalue()
 
 
 def test_the_steering_interim_writes_one_labelled_row() -> None:
@@ -187,3 +210,13 @@ def test_explicit_budget_usd_zero_is_not_replaced_by_default(
 
     assert recorded_config is not None
     assert recorded_config.budget_usd == 0.0
+
+
+def test_generation_without_an_openrouter_key_is_refused(monkeypatch, settings) -> None:
+    settings.OPENROUTER_API_KEY = ""
+    monkeypatch.setattr(
+        "apps.research.management.commands.generate_sweep_angles.pass_languages",
+        lambda country, family, *, source, home_language: ("tr", "en"),
+    )
+    with pytest.raises(CommandError, match="OPENROUTER_API_KEY"):
+        call_command("generate_sweep_angles", "--country", "TR", "--family", "PRIVATE_FOUNDATION")

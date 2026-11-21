@@ -18,12 +18,17 @@ from typing import cast
 
 from babel import Locale
 
-#: The languages pages are read in (verified-catalog §5.3).
+#: The languages pages are read in (verified-catalog §5.3 + all 57 STEERING countries).
 LANGUAGES: tuple[str, ...] = (
     "az", "tr", "ru", "en", "fr", "de", "hu", "ko", "zh", "ja", "es", "it", "pl", "uk", "kk",
+    "ka", "uz", "nl", "sv", "id", "vi", "hi", "ur", "bg", "cs", "hr", "el", "da", "et", "fi",
+    "lv", "lt", "pt", "ro", "sk", "sl", "no", "is", "ar", "ms", "sr", "hy",
 )
 #: Languages whose names take case endings; only these are matched by stem.
-INFLECTING = frozenset({"az", "tr", "ru", "uk", "kk", "hu"})
+INFLECTING = frozenset({"az", "tr", "ru", "uk", "kk", "hu", "uz"})
+#: Languages where CLDR's ("format", "wide") is genitive/partitive and ("stand-alone", "wide")
+#: carries the nominative month name without falling back to another locale.
+_STANDALONE_NOMINATIVE_MONTHS = frozenset({"ru", "uk", "pl", "cs", "sk", "lt", "fi", "el", "hy"})
 #: Of those, the ones whose ending replaces a final vowel ("Турция" -> "Турции"). Turkic and
 #: Hungarian endings attach to the whole name ("Türkiye'de", "Rusiyada"); dropping a vowel there
 #: made Hungarian "Chile" match "children".
@@ -50,7 +55,7 @@ def month_names(lang: str, wide_only: bool = False) -> dict[str, int]:
     contexts = [("format", "wide")]
     if not wide_only:
         contexts.append(("format", "abbreviated"))
-    if lang in ("ru", "uk"):
+    if lang in _STANDALONE_NOMINATIVE_MONTHS:
         contexts.append(("stand-alone", "wide"))
     names: dict[str, int] = {}
     for context, width in contexts:

@@ -11,6 +11,7 @@ from apps.concierge.models import ConversationMessage, DocumentVersion, Notifica
 from apps.dashboard.board import board_for
 from apps.dashboard.needs import items_for
 from apps.funding.models import AuditEvent
+from apps.funding.rates import store
 from apps.mailbox.models import MailboxConnection, MailSignal
 from apps.portals.models import Application
 from apps.privacy.models import PrivacyRequest
@@ -18,7 +19,7 @@ from apps.tenancy.context import tenant_scope
 from apps.tenancy.models import CounselorAssignment
 from tests.conftest import verify_mfa_session
 
-from .conftest import add_card
+from .conftest import AZN_RATES, add_card, set_profile
 
 pytestmark = pytest.mark.django_db
 
@@ -79,7 +80,9 @@ def test_the_counselor_sees_the_students_board_without_start(
     assert "Needs you now" in body
     assert "What each application needs" in body
     assert "/start/" not in body
-    assert "/kit/" not in body
+    assert "Apply to" not in body
+    assert "/answers/" in body
+    assert "Answers we'll submit" in body.replace("&#x27;", "'")
     assert f'action="{base}applications/{application.id}/remove/"' in body
     assert counselor_client.get(f"{base}gap-interview/", HTTP_HOST=domain_a.host).status_code == 200
 
@@ -213,6 +216,7 @@ def test_the_counselor_registers_an_upload_for_the_student(
 
 _EVERY_ROUTE = [
     ("get", ""),
+    ("get", f"applications/{uuid4()}/"),
     ("get", "gap-interview/"),
     ("post", "gap-interview/"),
     ("post", "messages/send/"),
@@ -338,7 +342,11 @@ def test_a_paused_students_board_is_read_only(
 
 
 @pytest.mark.parametrize(
-    ("method", "suffix"), [route for route in _EVERY_ROUTE if route != ("get", "")]
+    ("method", "suffix"), [
+        route for route in _EVERY_ROUTE
+        # reads: the board and the programme page, which stay open while paused
+        if route != ("get", "") and not (route[0] == "get" and route[1].startswith("applications/"))
+    ]
 )
 def test_every_write_is_refused_while_the_student_is_paused(
     counselor_client, paused, agency_a, domain_a, membership_a, counselor_membership,
@@ -414,3 +422,51 @@ def test_a_counselor_transcript_without_a_role_is_refused(
     assert (response.status_code, response.json()) == (400, {"error": "invalid_role"})
     with tenant_scope(agency_a.id):
         assert not DocumentVersion.objects.filter(student=membership_a).exists()
+
+
+def test_a_counselor_upload_can_add_another_diploma(
+    counselor_client, agency_a, domain_a, membership_a, monkeypatch
+) -> None:
+    import apps.dashboard.views as views
+    from apps.concierge.documents import register
+
+    monkeypatch.setattr(
+        views, "presigned_upload", lambda document: {"url": "https://s3.test/", "fields": {}}
+    )
+    with tenant_scope(agency_a.id):
+        held = register(agency_a.id, membership_a.id, kind="DIPLOMA")
+        DocumentVersion.objects.filter(id=held.id).update(state="AVAILABLE")
+
+    def _post(**body):
+        return counselor_client.post(
+            f"/counselor/students/{membership_a.id}/uploads/", json.dumps(body),
+            content_type="application/json", HTTP_HOST=domain_a.host,
+        )
+
+    added = _post(kind="DIPLOMA", mode="ADD")
+    replaced = _post(kind="DIPLOMA", mode="REPLACE", replaces=str(held.id))
+    refused = _post(kind="DIPLOMA", mode="SOMETIMES")
+    assert (added.status_code, replaced.status_code) == (201, 201)
+    assert (refused.status_code, refused.json()) == (400, {"error": "invalid_mode"})
+    with tenant_scope(agency_a.id):
+        assert DocumentVersion.objects.get(id=added.json()["document_id"]).replaces is None
+        assert DocumentVersion.objects.get(id=replaced.json()["document_id"]).replaces == held.id
+
+
+def test_the_budget_line_shows_on_both_boards(
+    counselor_client, agency_a, domain_a, membership_a, pack
+):
+    programme, _award = pack
+    store(AZN_RATES)
+    set_profile(
+        agency_a, membership_a, country_of_residence="AZ",
+        application_budget={"amount": "500.00", "currency": "AZN"},
+    )
+    with tenant_scope(agency_a.id):
+        add_card(agency_a, membership_a, programme)
+    expected = "Application budget 500 AZN · Paid 0 · Committed 150 · Free 350 (≈, see note)"
+    body = counselor_client.get(
+        f"/counselor/students/{membership_a.id}/", HTTP_HOST=domain_a.host
+    ).content.decode()
+    assert expected in body
+    assert "Change my application budget" not in body

@@ -25,7 +25,6 @@ from typing import Literal
 from apps.funding.models import FundingBenefit, FundingOpportunity
 
 FieldState = Literal["FILLED", "UNCONFIRMED", "UNSTATED", "NOT_READ", "NOT_APPLICABLE"]
-CARD_FIELDS = ("amount", "duration", "timing", "cycle", "required_documents", "contact")
 #: The one route on which nobody is written to: the money comes with the place.
 _NO_CONTACT_ROUTE = "AUTOMATIC_ON_ADMISSION"
 

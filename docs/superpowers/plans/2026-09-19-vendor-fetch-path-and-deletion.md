@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-18-funder-reader-fetch-tiers-and-resolution-queue-design.md` §4 — specifically §4.0a (the measured ladder), §4.1 (capability routing), §4.1a (scrape.do), §4.1b (economics), §4.1c (free tier vs paid), §4.3 (what is kept). This plan is increments **2 and 3** of that spec's §7, merged: increment 3 as written assumed our own plain client survived as tier zero, and the owner's decision of 2026-09-19 removes it.
 
-**Base branch:** `claude/program-page-reader`. Work in a fresh worktree (`git worktree add ../vendor-fetch claude/program-page-reader`). Test database: `POSTGRES_DB=tehsil_vendor_fetch` — never share a test DB between sessions.
+**Base branch:** `claude/program-page-reader`. Work in a fresh worktree (`git worktree add ../vendor-fetch claude/program-page-reader`). Test database: `POSTGRES_DB=elmify_vendor_fetch` — never share a test DB between sessions.
 
 ## Global Constraints
 
@@ -22,7 +22,7 @@
 - **Every vendor-reported final URL runs through `validate_public_url`** before it becomes provenance (§4.3). A private-address or credential-carrying final URL is rejected exactly as before.
 - **`fetched_via` is recorded on every fetch**: `FIRECRAWL | SCRAPE_DO | EGRESS`. `EGRESS` remains reachable only for `europa.eu`, and a test asserts no other host uses it.
 - **Keys come from the environment, never from settings defaults**: `FIRECRAWL_API_KEY`, `SCRAPEDO_API_KEY`. Absent key → the provider raises at call time, never silently degrades.
-- Never run `ruff format` here. After every task: `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_vendor_fetch uv run pytest`.
+- Never run `ruff format` here. After every task: `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=elmify_vendor_fetch uv run pytest`.
 - No migration is needed by any task in this plan. `uv run python manage.py makemigrations --check --dry-run` must stay clean.
 
 ---
@@ -93,7 +93,7 @@ def test_an_unknown_vendor_label_is_refused():
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_fetch_router.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_fetch_router.py -v`
 Expected: FAIL, `ModuleNotFoundError: No module named 'apps.research.fetch'`
 
 - [ ] **Step 3: Write the types**
@@ -147,7 +147,7 @@ class FetchedPage(FetchResult):
 
 - [ ] **Step 4: Run the tests and watch them pass**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_fetch_router.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_fetch_router.py -v`
 Expected: 2 passed
 
 - [ ] **Step 5: Add the settings**
@@ -250,7 +250,7 @@ def test_a_missing_key_raises_before_any_request():
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_fetch_firecrawl.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_fetch_firecrawl.py -v`
 Expected: FAIL, `ImportError: cannot import name 'firecrawl'`
 
 - [ ] **Step 3: Write the provider**
@@ -341,7 +341,7 @@ def scrape(url: str, *, api_key: str, tag: str = "default", post: Post = _post) 
 
 - [ ] **Step 4: Run them and watch them pass**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_fetch_firecrawl.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_fetch_firecrawl.py -v`
 Expected: 5 passed
 
 - [ ] **Step 5: Commit**
@@ -419,7 +419,7 @@ def test_a_missing_key_raises_before_any_request():
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_fetch_scrapedo.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_fetch_scrapedo.py -v`
 Expected: FAIL, `ImportError: cannot import name 'scrapedo'`
 
 - [ ] **Step 3: Write the provider**
@@ -488,7 +488,7 @@ def scrape(url: str, *, api_key: str, get: Get = _get) -> FetchedPage:
 
 - [ ] **Step 4: Run them and watch them pass**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_fetch_scrapedo.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_fetch_scrapedo.py -v`
 Expected: 4 passed
 
 - [ ] **Step 5: Commit**
@@ -574,7 +574,7 @@ def test_the_budget_stops_the_sweep_before_a_200_credit_domain_drains_it():
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_fetch_router.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_fetch_router.py -v`
 Expected: FAIL, `ImportError: cannot import name 'fetch_page'`
 
 - [ ] **Step 3: Write the router**
@@ -649,7 +649,7 @@ def fetch_page(
 
 - [ ] **Step 4: Run them and watch them pass**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_fetch_router.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_fetch_router.py -v`
 Expected: 6 passed
 
 - [ ] **Step 5: Commit**
@@ -697,7 +697,7 @@ def test_retrieve_official_source_goes_to_the_vendor_path():
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_discovery.py::test_retrieve_official_source_goes_to_the_vendor_path -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_discovery.py::test_retrieve_official_source_goes_to_the_vendor_path -v`
 Expected: FAIL, `TypeError: retrieve_official_source() got an unexpected keyword argument 'fetch'`
 
 - [ ] **Step 3: Rewrite `retrieve_official_source`**
@@ -722,7 +722,7 @@ def retrieve_official_source(
 
 - [ ] **Step 4: Run the whole research suite**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research -v`
 Expected: PASS except tests that stub `plain_fetch=`/`browser_render=`. Update each to stub `fetch=` instead — the substitution is mechanical and the assertions do not change.
 
 - [ ] **Step 5: Commit**
@@ -779,7 +779,7 @@ def test_nothing_in_research_can_fetch_a_page_without_a_vendor():
 
 - [ ] **Step 2: Run them and watch the first fail**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/research/test_egress.py -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/research/test_egress.py -v`
 Expected: FAIL on `assert not hasattr(egress, "fetch_official_source")`
 
 - [ ] **Step 3: Delete**
@@ -804,7 +804,7 @@ Every remaining hit must be fixed before the next step; there should be none.
 
 - [ ] **Step 4: Run the full suite**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest`
 Expected: all pass. `uv run ruff check apps config tests scripts` and `uv run mypy apps config` clean.
 
 - [ ] **Step 5: Commit**
@@ -848,7 +848,7 @@ def test_no_browser_tier_remains(template: Template) -> None:
 
 - [ ] **Step 2: Run it and watch it fail**
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest tests/infra/test_template.py::test_no_browser_tier_remains -v`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest tests/infra/test_template.py::test_no_browser_tier_remains -v`
 Expected: FAIL — the `Browser*` resources are present.
 
 - [ ] **Step 3: Delete the resources, the stage and the dependency**
@@ -865,7 +865,7 @@ grep -n "Browser\|scrapling\|patchright" infra/template.yaml Dockerfile pyprojec
 
 Delete from `tests/infra/test_template.py`: `test_the_browser_task_has_no_role_and_no_secrets`, `test_only_the_research_worker_may_reach_the_browser`, `test_the_browser_service_ships_stopped`, `test_the_worker_is_told_where_the_browser_is`, `test_the_browser_crash_alarm_pages_on_a_single_traceback`, and the browser half of `test_the_openai_key_stays_off_the_web_and_browser_tiers` (keep the web half). Leave `test_no_payment_or_browser_submission_resources` — it pins a different thing.
 
-Run: `POSTGRES_DB=tehsil_vendor_fetch uv run pytest`
+Run: `POSTGRES_DB=elmify_vendor_fetch uv run pytest`
 Expected: all pass.
 
 - [ ] **Step 5: Commit**
@@ -898,7 +898,7 @@ Add under §7 item 3: `LocalEgressProxy` survives until the glass-box portal del
 - [ ] **Step 3: Run everything one last time**
 
 ```bash
-POSTGRES_DB=tehsil_vendor_fetch uv run pytest
+POSTGRES_DB=elmify_vendor_fetch uv run pytest
 uv run ruff check apps config tests scripts
 uv run mypy apps config
 uv run python manage.py makemigrations --check --dry-run --settings=config.settings.test

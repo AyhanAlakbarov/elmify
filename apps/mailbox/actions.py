@@ -15,6 +15,7 @@ nothing the model returns is ever stored as text on the signal.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -23,10 +24,12 @@ from urllib.parse import urlsplit, urlunsplit
 from django.utils import timezone
 
 from apps.concierge.models import Notification, RoadmapItem
+from apps.documents.models import RefereeRequest
 from apps.mailbox.classify import MailVerdict
 from apps.mailbox.filter import host_in
 from apps.mailbox.models import MailSignal
 from apps.portals.actions import queue_action
+from apps.portals.fees import mark_fee_paid
 from apps.portals.models import Application, ApplicationStep, DeviceAction, zone_named
 from apps.portals.outcome import record_from_mail
 
@@ -45,6 +48,7 @@ _MAILBOX_ACTION_TTL = timedelta(hours=1, minutes=30)
 #: A verification code a human is expected to type. Anything longer is not a
 #: code, and the extension types what it is given.
 _MAX_CODE_LENGTH = 12
+_FORMATTED_CODE_RE = re.compile(r"^[A-Za-z0-9]{2,6}(?:[- ][A-Za-z0-9]{2,6})+$")
 
 #: Labels that mean the student has something to do or read now. The message
 #: never carries the email's own words -- only who wrote and what kind of thing.
@@ -65,6 +69,10 @@ _ALERTS = {
         RoadmapItem.Stage.FEE_EXECUTION,
         "{domain} says a fee is due. Check the amount and the deadline.",
     ),
+    "FEE_PAID": (
+        RoadmapItem.Stage.FEE_EXECUTION,
+        "{domain} confirms your fee payment.",
+    ),
     # Never urgent (_alert_student): a student who registered a moment ago is
     # usually looking at the portal already, and on a trusted message the
     # extension opens the link itself. The card is for the mail nothing may
@@ -76,6 +84,13 @@ _ALERTS = {
     ),
 }
 _ALERT_HORIZON = timedelta(days=7)
+
+#: A "your referee has submitted" mail on a card two or more professors were asked for:
+#: the mail does not say which, so the student is asked (lanes spec §11.3).
+_WHICH_REFEREE = (
+    "{domain} says a referee submitted a letter for {title}. "
+    "Mark which professor it was on your referees page."
+)
 
 #: The label card when a tag names a portal the student has several
 #: applications on (final review I6b): the platform never guesses which, so
@@ -175,6 +190,39 @@ def _alert_student(
         deadline=deadline if deadline is not None and deadline > now else now + _ALERT_HORIZON,
         urgent=urgent,
         message=message,
+        application=application,
+        action=Notification.Action.OPEN_MESSAGE,
+    )
+
+
+def _referee_submitted(signal: MailSignal, application: Application) -> None:
+    """Spec §11.3: a trusted "your referee has submitted" mail marks a professor
+    SUBMITTED only when they are the card's one request outside DECLINED and SUBMITTED,
+    and were ASKED or AGREED. Any other professor still in play -- proposed (the student
+    may have sent them the package too), asked, agreed, or already submitted (the mail
+    may be that one's confirmation) -- means the mail cannot say which, so nothing
+    changes and the student is asked. Reached only behind apply_verdict's trust gate:
+    untrusted mail never changes a referee status (spec §15)."""
+    requests = list(
+        RefereeRequest.objects.filter(application=application).exclude(
+            state=RefereeRequest.State.DECLINED
+        )
+    )
+    open_requests = [r for r in requests if r.state != RefereeRequest.State.SUBMITTED]
+    if not open_requests:
+        return
+    if len(requests) == 1 and open_requests[0].state in ("ASKED", "AGREED"):
+        open_requests[0].state = RefereeRequest.State.SUBMITTED
+        open_requests[0].save(update_fields=["state", "updated_at"])
+        return
+    student = signal.connection.membership
+    Notification.raise_card(
+        student=student,
+        recipient=student,
+        owner=student,
+        stage=RoadmapItem.Stage.DOCUMENTS,
+        deadline=timezone.now() + _ALERT_HORIZON,
+        message=_WHICH_REFEREE.format(domain=signal.sender_domain, title=application.title),
         application=application,
         action=Notification.Action.OPEN_MESSAGE,
     )
@@ -318,6 +366,13 @@ def apply_verdict(
 
     application = signal.application
     if application is not None:
+        if verdict.label == "FEE_PAID":
+            # A receipt marks the fee paid only behind the trust gate above, and
+            # only from OPEN or UNKNOWN: a student's own record is never rewritten.
+            mark_fee_paid(
+                application, source=Application.FeePaidSource.MAIL, at=signal.received_at,
+                actor=None,
+            )
         if verdict.label == "RECEIVED" and application.state == Application.State.SUBMITTED:
             application.state = Application.State.CONFIRMED
             application.save(update_fields=["state"])
@@ -336,6 +391,8 @@ def apply_verdict(
             )
         if reading is not None:
             record_from_mail(application, signal, reading)
+        if verdict.label == "REFEREE_SUBMITTED":
+            _referee_submitted(signal, application)
 
     if verdict.action_kind == "OPEN_VERIFICATION_URL":
         url = _verification_url(verdict.action_value, link_hosts)
@@ -353,13 +410,18 @@ def apply_verdict(
 
     if verdict.action_kind == "TYPE_CODE":
         code = verdict.action_value.strip()
-        if not code or len(code) > _MAX_CODE_LENGTH or not code.isalnum():
+        if _FORMATTED_CODE_RE.fullmatch(code):
+            code = code.replace("-", "").replace(" ", "")
+        # ASCII only: "٤١٨" is isalnum() too, and the extension types only what
+        # a portal's code box takes (extension/src/content/code.ts::CODE_RE).
+        if not code or len(code) > _MAX_CODE_LENGTH or not (code.isascii() and code.isalnum()):
             logger.warning("refused a verification code on signal %s", signal.id)
             return None
         return queue_action(
             signal.connection.membership,
             DeviceAction.Kind.TYPE_CODE,
-            {"code": code},
+            # The sender, for the panel: a code shown there names its portal.
+            {"code": code, "from": signal.sender_domain},
             application=application,
             ttl=_MAILBOX_ACTION_TTL,
         )

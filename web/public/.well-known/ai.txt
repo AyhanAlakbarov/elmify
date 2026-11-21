@@ -1,0 +1,17 @@
+# Elmify AI Discovery Specification (geo-checklist.dev)
+User-Agent: *
+Allow: /
+
+Name: Elmify
+URL: https://elmify.com
+Locales: en (https://elmify.com/), az (https://elmify.com/az), ru (https://elmify.com/ru)
+Primary-Launch-Market: Azerbaijan (AZ)
+Category: EducationalApplication
+Scope: Funded master's programmes (MSc, MA, LLM, MRes) and scholarships abroad live today; Bachelor's degree support will be done soon; PhD programmes not covered
+LLMs-Txt: https://elmify.com/llms.txt
+LLMs-Full-Txt: https://elmify.com/llms-full.txt
+AI-Summary: https://elmify.com/ai/summary.json
+AI-FAQ: https://elmify.com/ai/faq.json
+AI-Service: https://elmify.com/ai/service.json
+Sitemap: https://elmify.com/sitemap.xml
+Contact: mailto:hello@elmify.com

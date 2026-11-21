@@ -39,13 +39,13 @@ Each source writes only the facts it can establish by itself. What it cannot est
 ## Global Constraints
 
 - **Branch `claude/build-enumerators` from current `master`.** Do not hard-code a migration number. Before Task 1, run `ls apps/research/migrations/ | sort | tail -3`. As of 2026-09-25 the leaf is `0009_site_job_record_rls`. The new migration takes the next number and depends on whatever the leaf is. If another branch lands a research migration before this one merges, `makemigrations --check` in CI will report two leaves. Then add a merge migration with `uv run python manage.py makemigrations research --merge`, never a renumber (CLAUDE.md, "Migrations").
-- **Test database:** every `pytest` and `manage.py` call carries `POSTGRES_DB=tehsil_enumerators`. Read `${PIPESTATUS[0]}`, never a piped exit code.
+- **Test database:** every `pytest` and `manage.py` call carries `POSTGRES_DB=elmify_enumerators`. Read `${PIPESTATUS[0]}`, never a piped exit code.
 - **Do not edit** `apps/research/register.py`, `apps/research/pipeline.py`, `apps/research/funding_reader.py`, `apps/research/funding_judge.py`, `apps/research/vgm.py` or anything under `apps/funding/`. Other items (10, 11, 13) edit the reader and pipeline. This plan **calls** `record_organisation`, `run_discovery` and `_FAMILY_BY_HOLDER`, and changes none of them. The one shared module it touches is `apps/research/egress.py` (Task 7, one additive keyword argument).
 - **Shared-catalog rule.** `ClosedList`, `RegisterEntry` and `RegisterEntryPartner` are read by every tenant, written only by `catalog_ingestion`, and never carry a person. RLS travels in the same migration as the tables. Verification goes through `runtime_connection`, because the test role bypasses RLS (CLAUDE.md §"Row-level security"). Catalog writes run under `DATABASE_ROLE=migration`, or `SET ROLE catalog_ingestion`, as `discover` already says.
 - **No e-mail address and no person in any committed file.** The list loader refuses any cell containing `@`. A captured API fixture is trimmed to the keys the adapter reads. Grep every fixture for `@`, `contact`, `person`, `phone` and `email` before committing it.
 - **Nothing names a scheme, funder or country in code** (§3 principle 7). Lists, classes, types, action codes and bounds are CSV rows under `docs/research/`. Code reads them.
 - **Provider discipline.** Wikidata, ROR and EACEA are data sources under open terms (CC0, CC0, and the Europa reuse notice). Persisting what they return is permitted (CLAUDE.md: "do not carry either rule onto the other"). The page a list names is still fetched from the origin before any fact is read from it.
-- **Validation before every commit:** `uv run ruff check apps config tests`, `uv run mypy apps config`, the focused tests, and `POSTGRES_DB=tehsil_enumerators uv run python manage.py makemigrations --check --dry-run`.
+- **Validation before every commit:** `uv run ruff check apps config tests`, `uv run mypy apps config`, the focused tests, and `POSTGRES_DB=elmify_enumerators uv run python manage.py makemigrations --check --dry-run`.
 - **Commit convention:** `feat(research): …` / `test(research): …` / `docs(research): …`. One task per commit. End every commit message with the attribution lines your session's system prompt supplies.
 
 ---
@@ -93,7 +93,7 @@ ls apps/research/migrations/ | sort | tail -3   # note the leaf; expect 0009_sit
 - [ ] **Step 2: Prove the suite is green before touching anything**
 
 ```bash
-POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_vgm.py tests/research/test_organisation_register.py tests/research/test_classify.py tests/tenancy/test_database_isolation.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_vgm.py tests/research/test_organisation_register.py tests/research/test_classify.py tests/tenancy/test_database_isolation.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 ```
 
 Expected: `… passed`, `EXIT=0`.
@@ -138,7 +138,7 @@ def _list(**overrides: object) -> ClosedList:
     fields: dict[str, object] = dict(
         slug="igo_regional_global", title="Intergovernmental and regional funds",
         country_code="", holder_kinds=["INTERGOVERNMENTAL", "REGIONAL_FUND"], rung=1,
-        source_url="https://github.com/0rkhann/tehsil_agent/blob/master/docs/research/closed-lists/igo_regional_global.csv",
+        source_url="https://github.com/0rkhann/elmify/blob/master/docs/research/closed-lists/igo_regional_global.csv",
         maintainer="own compilation", carries_purpose=True, carries_website=True,
         reuse_terms=ClosedList.Terms.OWN_COMPILATION, is_denominator=True,
         read_policy=ClosedList.ReadPolicy.FUNDING_READ, verified_on=date(2026, 9, 25),
@@ -189,7 +189,7 @@ def test_a_partner_row_is_bound_exactly_when_its_disposition_says_so() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_closed_lists.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_closed_lists.py -q 2>&1 | tail -3`
 Expected: FAIL with `ImportError: cannot import name 'ClosedList'`.
 
 - [ ] **Step 3: Add the models**
@@ -381,7 +381,7 @@ class RegisterEntryPartner(models.Model):
 - [ ] **Step 4: Generate the migration, then add the RLS by hand**
 
 ```bash
-POSTGRES_DB=tehsil_enumerators uv run python manage.py makemigrations research --name closed_lists
+POSTGRES_DB=elmify_enumerators uv run python manage.py makemigrations research --name closed_lists
 ```
 
 Open the generated file. Add this at the top, below the imports:
@@ -416,7 +416,7 @@ ALTER TABLE public.{table} DISABLE ROW LEVEL SECURITY;
 
 Then append `migrations.RunSQL(RLS_SQL, reverse_sql=REVERSE_RLS_SQL),` as the last operation. Its dependencies must name **only** `research` migrations. A research→funding edge raises `InvalidMigrationPlan` (`tests/migrations/test_task7_migrations.py` reproduces it), and `_HOLDER_VALUES` is imported into the model and not needed by the migration. If the generated file imports `apps.funding` for the check constraints, inline the tuple values instead, as `research/0003` does.
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run python manage.py makemigrations --check --dry-run 2>&1 | tail -2`
+Run: `POSTGRES_DB=elmify_enumerators uv run python manage.py makemigrations --check --dry-run 2>&1 | tail -2`
 Expected: `No changes detected`.
 
 - [ ] **Step 5: Add both tables to the shared-catalog list**
@@ -529,7 +529,7 @@ def test_the_runtime_role_cannot_write_a_partner(runtime_connection) -> None:
 
 - [ ] **Step 7: Run everything touched**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_closed_lists.py tests/research/test_closed_list_rls.py tests/tenancy/test_database_isolation.py tests/research/test_vgm.py tests/migrations -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_closed_lists.py tests/research/test_closed_list_rls.py tests/tenancy/test_database_isolation.py tests/research/test_vgm.py tests/migrations -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
 Expected: all pass, `EXIT=0`.
 
 - [ ] **Step 8: Lint, type-check, commit**
@@ -784,7 +784,7 @@ def test_a_signal_only_list_yields_nothing_without_a_signal(tmp_path: Path) -> N
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_closed_lists.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_closed_lists.py -q 2>&1 | tail -3`
 Expected: the new tests FAIL with `ModuleNotFoundError: No module named 'apps.research.closed_lists'`.
 
 - [ ] **Step 3: Implement `apps/research/closed_lists.py`**
@@ -1174,7 +1174,7 @@ class ClosedListSource:
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_closed_lists.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_closed_lists.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
 Expected: all pass, `EXIT=0`.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -1407,7 +1407,7 @@ def test_a_list_past_its_recheck_date_is_stale_but_not_failed(settings) -> None:
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_read_state.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_read_state.py -q 2>&1 | tail -3`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.read_state'`.
 
 - [ ] **Step 4: Implement `apps/research/read_state.py`**
@@ -1614,7 +1614,7 @@ def list_gate(slug: str, *, now: datetime) -> ListGate:
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_read_state.py tests/research/test_closed_lists.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_read_state.py tests/research/test_closed_lists.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
 Expected: all pass.
 
 - [ ] **Step 6: Lint, type-check, commit**
@@ -1714,7 +1714,7 @@ def test_read_closed_list_refuses_a_list_nothing_reads(tmp_path: Path) -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_closed_list_commands.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_closed_list_commands.py -q 2>&1 | tail -3`
 Expected: FAIL with `CommandError: Unknown command: 'load_closed_lists'`.
 
 - [ ] **Step 3: Implement the three commands**
@@ -1922,7 +1922,7 @@ If `run_discovery` raises `ProgrammingError`, copy `discover.py`'s `except Progr
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_closed_list_commands.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_closed_list_commands.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
 Expected: all pass.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -1949,7 +1949,7 @@ This is a content task. The list is compiled from each body's own page and never
 ```csv
 slug,title,country_code,holder_kinds,rung,source_url,maintainer,carries_purpose,carries_website,reuse_terms,reuse_terms_url,is_denominator,read_policy,printed_size,verified_on
 eacea_emjm,Erasmus Mundus Joint Masters (EACEA project records),,,1,https://erasmus-plus.ec.europa.eu/projects/search,European Education and Culture Executive Agency,yes,yes,OPEN,https://commission.europa.eu/legal-notice_en,yes,ENUMERATE_ONLY,,2026-09-25
-igo_regional_global,Intergovernmental bodies and regional funds with a master's award open to individuals,,INTERGOVERNMENTAL|REGIONAL_FUND|NATIONAL_GOVERNMENT|PRIVATE_FOUNDATION,1,https://github.com/0rkhann/tehsil_agent/blob/master/docs/research/closed-lists/igo_regional_global.csv,tehsil_agent (compiled from each body's own page),yes,yes,OWN_COMPILATION,,yes,FUNDING_READ,,2026-09-25
+igo_regional_global,Intergovernmental bodies and regional funds with a master's award open to individuals,,INTERGOVERNMENTAL|REGIONAL_FUND|NATIONAL_GOVERNMENT|PRIVATE_FOUNDATION,1,https://github.com/0rkhann/elmify/blob/master/docs/research/closed-lists/igo_regional_global.csv,elmify (compiled from each body's own page),yes,yes,OWN_COMPILATION,,yes,FUNDING_READ,,2026-09-25
 vgm_tr,Vakıflar Genel Müdürlüğü -- scholarship-giving foundations (IsGrant=true),TR,PRIVATE_FOUNDATION,1,https://www.vgm.gov.tr/vakif-sorgulama/vakif-sorgulama?IsGrant=true,Vakıflar Genel Müdürlüğü,yes,no,UNREAD,,yes,CLASSIFY,4076,2026-09-24
 ```
 
@@ -2039,7 +2039,7 @@ def test_no_list_row_is_verified_in_the_future() -> None:
 
 - [ ] **Step 4: Run, fix the data until green, commit**
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_closed_list_data.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_closed_list_data.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
 Expected: all pass. Fix a failure in the file, never in the test.
 
 ```bash
@@ -2233,7 +2233,7 @@ def test_fetch_json_api_accepts_a_declared_json_dialect(public_dns) -> None:
 
 In `fetch_json_api`, add the parameter `accept: tuple[str, ...] = ("application/json",)`. Replace `"Accept": "application/json",` with `"Accept": ", ".join(accept),`, and replace `if content_type != "application/json":` with `if content_type not in accept:`. Add one docstring line: "`accept` widens the content types a caller will parse (SPARQL's `application/sparql-results+json`); the default is unchanged."
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_egress.py -q 2>&1 | tail -3`. Expected: all pass. Commit:
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_egress.py -q 2>&1 | tail -3`. Expected: all pass. Commit:
 
 ```bash
 git add apps/research/egress.py tests/research/test_egress.py
@@ -2249,7 +2249,7 @@ git commit -m "feat(research): fetch_json_api names the JSON dialects a caller p
 # throttled or refused. Operator-run enumeration only (apps/research/wikidata.py).
 WIKIDATA_USER_AGENT = os.getenv(
     "WIKIDATA_USER_AGENT",
-    "tehsil-agent-enumerator/1.0 (https://github.com/0rkhann/tehsil_agent)",
+    "elmify-enumerator/1.0 (https://github.com/0rkhann/elmify)",
 )
 ```
 
@@ -2530,7 +2530,7 @@ class Command(BaseCommand):
 QUERY=$(uv run python -c "from apps.research.wikidata import query_text, EnumerationRow; print(query_text(EnumerationRow('wd_tr_university','TR','Q3918','INSTITUTION',False,150,400,('ANY',),('TR',))))")
 curl -sS -G https://query.wikidata.org/sparql --data-urlencode "query=$QUERY" --data-urlencode format=json \
   -H 'Accept: application/sparql-results+json' \
-  -A 'tehsil-agent-enumerator/1.0 (https://github.com/0rkhann/tehsil_agent)' -o /tmp/wd_tr.json
+  -A 'elmify-enumerator/1.0 (https://github.com/0rkhann/elmify)' -o /tmp/wd_tr.json
 uv run python -c "import json; b=json.load(open('/tmp/wd_tr.json')); print(len(b['results']['bindings'])); b['results']['bindings']=b['results']['bindings'][:3]; json.dump(b, open('tests/research/fixtures/wikidata_tr_university.json','w'), ensure_ascii=False, indent=1)"
 ```
 
@@ -2621,12 +2621,12 @@ def test_a_qid_already_on_another_body_is_a_conflict_not_a_merge() -> None:
 
 The last test works because `record_organisation` finds `b.edu.tr` by domain and then raises on attaching `Q1`, which `a.edu.tr` already holds.
 
-Run: `POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_wikidata.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`. Expected: all pass.
+Run: `POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_wikidata.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`. Expected: all pass.
 
 - [ ] **Step 6: Live dry run, tighten bounds, add rows, commit**
 
 ```bash
-POSTGRES_DB=tehsil_enumerators uv run python manage.py enumerate_wikidata --dry-run
+POSTGRES_DB=elmify_enumerators uv run python manage.py enumerate_wikidata --dry-run
 ```
 
 Set each row's `min_count`/`max_count` to half and double the printed count. Then add rows for the classes the set-difference report needs, for both countries: `Q157031` foundation → `PRIVATE_FOUNDATION`; `Q327333` government agency and `Q192350` ministry → `NATIONAL_GOVERNMENT`; `Q22687` bank → `BANK_OR_LENDER`. Dry-run them and bound them the same way, and give each a registry row with `is_denominator=no`.
@@ -2666,8 +2666,8 @@ Use the column rules from Task 5 Step 2. One row per body the list names. `websi
 - [ ] **Step 3: Load, then run the data tests**
 
 ```bash
-DATABASE_ROLE=migration POSTGRES_DB=tehsil_enumerators uv run python manage.py load_closed_lists
-POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_closed_list_data.py tests/research/test_register_survey.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+DATABASE_ROLE=migration POSTGRES_DB=elmify_enumerators uv run python manage.py load_closed_lists
+POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_closed_list_data.py tests/research/test_register_survey.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 ```
 
 - [ ] **Step 4: Read what each policy says to read**
@@ -3124,8 +3124,8 @@ If the capture shows `organisationRole` in another case, keep `.upper()`. The co
 - [ ] **Step 5: Run the tests, then live, then commit**
 
 ```bash
-POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_eacea.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
-DATABASE_ROLE=migration POSTGRES_DB=tehsil_enumerators uv run python manage.py enumerate_eacea
+POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_eacea.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+DATABASE_ROLE=migration POSTGRES_DB=elmify_enumerators uv run python manage.py enumerate_eacea
 ```
 
 Expected live: two totals near 166 and 249, summed into `printed_size`, and one entry per project. The disposition histogram will **not** match the 09-14 table (277/137/47/…). That table joined against DEQAR, and this one joins against our own register, where most partners are `NEW` on a fresh database. The comparable number is the **conflict share**, which was measured at 1.0% (6 of 576). Above 2% on this population means the binding code is wrong, not the data: stop and read the conflicts.
@@ -3155,7 +3155,7 @@ git commit -m "feat(research): every EMJM from EACEA's records; partners bound P
 Build the names file:
 
 ```bash
-DATABASE_ROLE=migration POSTGRES_DB=tehsil_enumerators uv run python manage.py shell -c "
+DATABASE_ROLE=migration POSTGRES_DB=elmify_enumerators uv run python manage.py shell -c "
 import csv, sys
 from apps.research.models import RegisterEntry
 w = csv.writer(sys.stdout); w.writerow(['name','domain','source'])
@@ -3325,7 +3325,7 @@ Only ROR's own `chosen` flag counts as a name match. That is ROR's confident mat
 - [ ] **Step 4: Run tests, run the gate live, commit**
 
 ```bash
-POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_ror.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_ror.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 uv run python manage.py ror_gate | tee /tmp/ror_gate.txt
 git add apps/research/ror.py apps/research/management/commands/ror_gate.py docs/research/ror-gate-names.csv tests/research/test_ror.py tests/research/fixtures/ror_domain_metu.json config/settings/base.py
 git commit -m "feat(research): the ROR gate -- website agreement on the 58 hosts, name matching measured for item 8"
@@ -3382,9 +3382,9 @@ Append to `ror.py` the following. `EnumerationRow` has the same fields as Wikida
 - [ ] **Step 3: Run tests, dry-run, run live, commit**
 
 ```bash
-POSTGRES_DB=tehsil_enumerators uv run pytest tests/research/test_ror.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
-POSTGRES_DB=tehsil_enumerators uv run python manage.py enumerate_ror --dry-run
-DATABASE_ROLE=migration POSTGRES_DB=tehsil_enumerators uv run python manage.py enumerate_ror
+POSTGRES_DB=elmify_enumerators uv run pytest tests/research/test_ror.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_enumerators uv run python manage.py enumerate_ror --dry-run
+DATABASE_ROLE=migration POSTGRES_DB=elmify_enumerators uv run python manage.py enumerate_ror
 git add apps/research/ror.py apps/research/management/commands/enumerate_ror.py docs/research/ror-enumerations.csv docs/research/closed-lists.csv tests/research/test_ror.py tests/research/fixtures/ror_country_tr_education.json
 git commit -m "feat(research): ROR enumerator -- country x type, active only, CANDIDATE, behind its gate"
 ```
@@ -3429,7 +3429,7 @@ git commit -m "docs: record the Wikidata, ROR and EACEA enumerators as outbound 
 Re-run Task 8 Step 4 for any list that shows `UNREAD`, until the only non-passing entries are ones the budget cannot reach this month. Then run:
 
 ```bash
-DATABASE_ROLE=migration POSTGRES_DB=tehsil_enumerators uv run python manage.py closed_list_coverage --gate \
+DATABASE_ROLE=migration POSTGRES_DB=elmify_enumerators uv run python manage.py closed_list_coverage --gate \
   --list igo_regional_global --list eacea_emjm \
   --list tr_outbound_gov --list tr_bilateral --list tr_heis --list tr_banks --list tr_professional_bodies \
   --list az_outbound_gov --list az_bilateral --list az_heis --list az_banks --list az_professional_bodies \

@@ -185,6 +185,18 @@ Every refusal names one reason from a fixed list, shown in the student's languag
 - **Never refused for these alone:** a tilted page, and a page with a stamp over some cells (those
   cells are flagged instead, §6.3). Whether Azure pairs rows correctly on a tilted page is part of
   §9 gate 3; the current reader needed straightening for it.
+- **Owner decisions, 2026-10-15.** An upside-down or sideways photo is never a retake either.
+  **This rests on an untested assumption: that Azure reads a turned page's tables (cells, and
+  which cells share a row) as well as an upright page's. Nobody has measured it; it is §9 gate 9,
+  and the decision does not stand until that gate passes.** Azure reports the page's angle, and
+  the parser turns each cell picture (plan 3a) upright by it. When the file's own flag turns the page a quarter turn (EXIF 6/8, `/Rotate`
+  90/270), which frame Azure read is inferred from the page's shape; a near-square page fits both
+  and gets no pictures, as does a file whose flag turns it half way or mirrors it (EXIF 2, 3, 4, 5,
+  7; `/Rotate 180`). No picture, never one of the wrong area. One live Azure call on such files
+  would turn the inference into a constant and give those pages pictures again. Blur
+  is caught by this gate's `unreadable` reason after reading, plus live capture hints on the
+  upload screen; there is no separate blur check before Azure (it would save about a cent a page
+  and needs thresholds measured on blurred copies first).
 
 ## 6. After reading: checks, then the few questions
 
@@ -414,6 +426,14 @@ repeatability is a §9 gate. The trade is a new processor (§4).
    before the first real student, so the first transcripts are audited at the launch rate.
 8. **A real phone upload** from an iPhone and an Android phone, through the actual upload page: the
    file type that arrives, and that it is read (§3.1).
+9. **Turned photos (owner, 2026-10-15) — not yet tested.** Each gate-1 page photographed upside
+   down and turned both ways sideways, plus one phone photo stored with orientation flag 6 and one
+   PDF page carrying `/Rotate 90`, read by Azure. Compared with the same page read upright and with
+   the hand key: every cell value, which cells share a row, and the column order. Any difference
+   counts. The same run records which frame Azure reports polygons in for the flagged files, which
+   pins plan 3a's frame choice (§5 decision note). **If turned pages read worse, the decision
+   reverses:** a turned page is refused with a retake reason taken from Azure's angle ("This page is
+   upside down / sideways. Retake it upright."), before its rows are read.
 
 ## 10. What changes in the code
 

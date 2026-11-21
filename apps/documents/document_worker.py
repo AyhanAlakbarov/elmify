@@ -20,33 +20,55 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import time
 from uuid import UUID
 
 from django.conf import settings
 
-from apps.concierge.documents import SCAN_STATES, apply_scan_result
-from apps.concierge.models import UPLOAD_REJECTIONS, DocumentVersion
-from apps.funding.models import Program
+from apps.concierge.documents import SCAN_STATES, apply_scan_result, retire_replaced
+from apps.concierge.models import PDF_ONLY_KINDS, UPLOAD_REJECTIONS, DocumentVersion
 from apps.research.provenance import Verdict, programme_verdict
 from apps.research.storage import S3ObjectStore
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.db import tenant_transaction
 from apps.tenancy.models import Membership
 
-from . import letter_worker, storage
-from .document_queue import DocumentWorkMessage, ScanResultEvent
+from . import document_reading, letter_worker, storage
+from .document_queue import DocumentWorkMessage, ScanResultEvent, queue_evidence_refresh
 from .drafts import create_draft
 from .europass_queue import EuropassRenderMessage, enqueue_europass_render
-from .generation import generate_cv
+from .evidence import facts as evidence_facts
+from .evidence import refresh as evidence_refresh
+from .generation import (
+    _CV_GENERATION_RATE_WINDOW_SECONDS,
+    ApplicationEmailMissing,
+    ChangesPending,
+    GenerationRateLimited,
+    IdentityNotConfirmed,
+    generate_cv,
+)
 from .ingestion import UnsupportedUpload, ingest_uploaded_cv
 from .models import DocumentDraft, TranscriptUpload, VerifiedFact
 from .ocr import inspect_upload
-from .render import UnsupportedRenderVariant, render_draft, resolve_variant
+from .render import (
+    UnsupportedRenderVariant,
+    render_draft,
+    resolve_variant,
+    select_render_variant,
+    warning_record,
+)
 from .storage import DocumentStoreRefused, artefact_filename, store_document
+from .tailoring import _RATE_LIMIT_WINDOW_SECONDS as _SKILL_MATCH_RATE_WINDOW_SECONDS
+from .tailoring import SkillMatchRateLimited
 from .transcript_pages import delay, process_upload
 from .verification import generatable_facts
 
 logger = logging.getLogger(__name__)
+
+#: DocumentScanQueue's VisibilityTimeout (infra/template.yaml): past it, SQS redelivers.
+SCAN_VISIBILITY_SECONDS = 900
+#: One parser call plus margin, kept free when preparation follows a scan.
+SCAN_MARGIN_SECONDS = 90
 
 #: The exact shape register() derives: quarantine/{tenant_uuid}/{document_uuid},
 #: hex and slashes only. Matching it is how the tenant scope for the write is
@@ -68,6 +90,7 @@ def handle_scan_result(event: ScanResultEvent) -> None:
     message is DELETED rather than redelivered forever. There is no future
     delivery in which an unknown key becomes known.
     """
+    started = time.monotonic()
     tenant_id = _tenant_of(event)
     if tenant_id is None:
         return
@@ -101,15 +124,44 @@ def handle_scan_result(event: ScanResultEvent) -> None:
     # CHECKING is committed before the check, as the transcript read does: the check is a
     # call to the isolated function, and a task that dies during it leaves the document
     # CHECKING for the redelivery. Nothing below runs on an unchecked file.
-    if document.state == "CHECKING" and not _check_and_promote(tenant_id, document):
+    promoted = document.state == "CHECKING"
+    if promoted and not _check_and_promote(tenant_id, document):
+        return
+    _read_promoted(tenant_id, document, event.object_key)
+    if promoted:
+        # Last, after ingestion and the transcript read, and only in what their time
+        # leaves: past the visibility timeout SQS redelivers and the (billed) read reruns.
+        from apps.portals.prepare import PREPARE_BUDGET_SECONDS
+
+        left = SCAN_VISIBILITY_SECONDS - SCAN_MARGIN_SECONDS - (time.monotonic() - started)
+        budget = min(PREPARE_BUDGET_SECONDS, left)
+        if budget > 0:
+            _prepare(tenant_id, document.student_id, budget=budget)
+
+
+#: Uploads that change what the evidence refresh reads: a CV's links name repos, and a
+#: thesis or report is read as research work (CV evidence spec §12.1).
+_EVIDENCE_KINDS = frozenset({"CV", "THESIS_OR_REPORT"})
+
+
+def _read_promoted(tenant_id: UUID, document: DocumentVersion, object_key: str) -> None:
+    """A clean, promoted upload: a CV is ingested, a transcript read, a passport, diploma or
+    language certificate read into facts; nothing else is."""
+    if document.kind in document_reading.READ_KINDS:
+        # Read in the background (spec 2026-10-12 §5); nothing else waits on it. Outside any
+        # transaction: the reading downloads and calls Azure.
+        document_reading.process_document(tenant_id, document.id)
         return
     with tenant_scope(tenant_id), tenant_transaction(tenant_id):
+        if document.kind in _EVIDENCE_KINDS:
+            # After commit, so the refresh sees the promoted upload and the ingested facts.
+            queue_evidence_refresh(tenant_id, document.student_id)
         if document.kind == "CV":
-            _ingest_cv(document, event.object_key)
+            _ingest_cv(document, object_key)
             return
         if document.kind != "TRANSCRIPT":
-            # A passport, diploma, certificate or letter is stored for the
-            # student to attach (dashboard spec §6). Nothing reads its contents.
+            # A letter or other upload is stored for the student to attach
+            # (dashboard spec §6). Nothing reads its contents.
             return
         upload = (
             TranscriptUpload.objects.filter(document=document).values_list("id", flat=True).first()
@@ -148,7 +200,9 @@ def _check_and_promote(tenant_id: UUID, document: DocumentVersion) -> bool:
         logger.warning("DocumentUploadMismatch document=%s", document.id)
         _settle(tenant_id, document, "REVIEW_REQUIRED")
         return False
-    if verdict.type is None:
+    if verdict.type is None or (
+        document.kind in PDF_ONLY_KINDS and verdict.type != "application/pdf"
+    ):
         rejected = "REJECTED_TYPE"
     elif verdict.active_content:
         rejected = "REJECTED_ACTIVE_CONTENT"
@@ -156,6 +210,7 @@ def _check_and_promote(tenant_id: UUID, document: DocumentVersion) -> bool:
         try:
             with tenant_scope(tenant_id), tenant_transaction(tenant_id):
                 storage.promote_upload(document, body, content_type=verdict.type, store=store)
+                retire_replaced(document)
         except DocumentStoreRefused:
             # Another verdict was written while this one was checked; it stands.
             logger.info("DocumentUploadSuperseded document=%s", document.id)
@@ -254,10 +309,10 @@ def _ingest_cv(document: DocumentVersion, object_key: str) -> None:
         document.save(update_fields=["state"])
 
 
-#: The variants render_draft turns into PDF bytes with nothing else supplied.
-#: FUNDER_TEMPLATE needs a funder_template_id no draft carries, and
-#: FIELD_MAPPED produces a dict. Both are out of this door's scope.
-_LOCAL_PDF_VARIANTS = frozenset({"STANDARD", "EUROPASS", "GERMAN_TABULAR"})
+#: The variants render_draft turns into PDF bytes (with funder_template_id
+#: resolved from draft.funding_opportunity for FUNDER_TEMPLATE).
+#: FIELD_MAPPED produces a dict and is out of this door's scope.
+_LOCAL_PDF_VARIANTS = frozenset({"STANDARD", "EUROPASS", "GERMAN_TABULAR", "FUNDER_TEMPLATE"})
 
 
 def _object_store() -> S3ObjectStore:
@@ -274,8 +329,30 @@ def handle_document_work(message: DocumentWorkMessage) -> None:
         _generate(message)
     elif message.action == "capture_requirements":
         _capture(message)
+    elif message.action == "prepare_documents":
+        _prepare(message.tenant_id, message.student_id)
+    elif message.action == "read_document":
+        if message.document_id is None:
+            raise ValueError("read_document message carries no document_id")
+        document_reading.process_document(message.tenant_id, message.document_id)
+    elif message.action == "refresh_evidence":
+        _refresh_evidence(message)
     else:
         _render(message)
+
+
+def _refresh_evidence(message: DocumentWorkMessage) -> None:
+    """The evidence refresh (CV evidence spec §12.1). refresh_evidence never raises for a
+    limit, a GitHub failure or an unreadable upload, so this message is deleted rather
+    than redelivered forever; a bug still raises. Not wrapped in one transaction: refresh
+    opens its own short ones and makes HTTP and model calls between them (spec §7.5)."""
+    with tenant_scope(message.tenant_id):
+        student = evidence_facts.refreshable_student(message.tenant_id, message.student_id)
+        if student is None:
+            logger.info("refresh_evidence: student %s is gone, inactive or being erased",
+                        message.student_id)
+            return
+        evidence_refresh.refresh_evidence(student)
 
 
 def _capture(message: DocumentWorkMessage) -> None:
@@ -285,6 +362,7 @@ def _capture(message: DocumentWorkMessage) -> None:
     catalogue; the web tier that created the Application may not.
     """
     from apps.portals import packets
+    from apps.portals.award_deadline import award_deadline
     from apps.portals.models import Application
 
     if message.application_id is None:
@@ -301,79 +379,233 @@ def _capture(message: DocumentWorkMessage) -> None:
             logger.info("capture_requirements: application %s is gone", message.application_id)
             return
         packets.capture_requirements(application)
+        if application.deadline is None:
+            deadline = award_deadline(application)
+            if deadline is not None:
+                application.deadline = deadline
+                with tenant_transaction(message.tenant_id):
+                    application.save(update_fields=["deadline"])
+    _prepare(message.tenant_id, application.student_id, only=application.id)
+    if application.cv_status == "":
+        from .cv_jobs import queue_application_cv
+
+        queue_application_cv(application)
+
+
+def _prepare(
+    tenant_id: UUID, student_id: UUID, *, only: UUID | None = None, budget: float | None = None
+) -> None:
+    """Prepare the student's open applications to their file rules (plan 4), or
+    just `only`. Never raises: the capture, promotion or render that triggered it
+    has already succeeded, and the original file is served until a later trigger
+    prepares it. A failure is logged with its traceback, so the crash alarm sees
+    a bug rather than a redelivery loop."""
+    from apps.documents.ocr_errors import OcrUnavailable
+    from apps.portals import prepare
+    from apps.portals.applications import is_startable
+    from apps.portals.models import Application
+
+    # One budget for the whole run, shared by every application.
+    deadline = time.monotonic() + (prepare.PREPARE_BUDGET_SECONDS if budget is None else budget)
+
+    try:
+        with tenant_scope(tenant_id), tenant_transaction(tenant_id):
+            applications = Application.objects.select_related("student").filter(
+                student_id=student_id
+            )
+            if only is not None:
+                applications = applications.filter(id=only)
+            todo = [a for a in applications if is_startable(a)]
+    except Exception:
+        logger.exception("PrepareFailed student=%s", student_id)
+        return
+    for application in todo:
+        budget = deadline - time.monotonic()
+        if budget <= 0:
+            logger.info("PrepareBudgetSpent student=%s", student_id)
+            return
+        try:
+            prepare.prepare_documents(application, budget=budget)
+        except OcrUnavailable:
+            # Down for this application is down for the rest: stop, no traceback.
+            logger.warning("PrepareParserUnavailable student=%s", student_id)
+            return
+        except Exception:
+            logger.exception("PrepareFailed application=%s", application.id)
 
 
 def _generate(message: DocumentWorkMessage) -> None:
     """Generate a document from the student's confirmed ledger and store the draft.
 
-    The programme is loaded here, not passed on the message, because it is a
-    shared-catalog row the web tier cannot read: the queue carries its id, and
-    the endpoint (`api._programme_id`) now accepts only a programme in the
-    student's current pack or one of their own `portals.Application` rows --
-    it no longer merely checks that the value is a UUID. This worker's
+    The programme or scholarship is loaded here, not passed on the message,
+    because it is a shared-catalog row the web tier cannot read: the queue
+    carries `application_id` and `programme_id`, and `application_list` builds
+    the application's `RequirementList` before generation. This worker's
     unknown-programme drop stays as defence in depth (e.g. a programme deleted
     between request and job): refused HERE, logged as the requester's error
     and returned from, so the message is deleted rather than crashing the
     task through three redeliveries into the DLQ; no redelivery makes an
     unknown id known.
 
-    It is handed to BOTH calls on purpose -- ``generate_cv`` uses it to tailor
-    the skills section, and ``create_draft`` records it so ``resolve_variant``
-    can see it at render time. Passing it to only the first silently renders a
-    funder-template programme as STANDARD.
-
-    Every predictable failure (identity not confirmed, no application email,
-    rate limit) was already checked synchronously by the generate endpoint.
-    What reaches here and fails is model refusal, a GenerationFailure, or
-    SkillMatchRateLimited -- rare, and the DLQ alarm is the right place for it.
+    Predictable prerequisites (identity not confirmed, no application email,
+    rate limit) are turned into visible `Application.cv_status` states or
+    deferred here rather than sent to the dead-letter queue.
     """
+    from apps.portals.models import Application
+
+    from . import application_list
+
     if message.kind != DocumentDraft.Kind.CV:
-        # Letters take their own branch (letter_worker, dispatched above), so
-        # anything else reaching here would be filed as a CV -- silently,
-        # since create_draft stores whatever kind it is handed.
+        # The letter engine adds its branch here. Until it does, widening
+        # api._SUPPORTED_KINDS alone would file a motivation letter as a CV --
+        # silently, since create_draft stores whatever kind it is handed.
         raise ValueError(f"no generator for kind {message.kind!r}")
     tenant_id = message.tenant_id
-    with tenant_scope(tenant_id), tenant_transaction(tenant_id):
-        student = Membership.objects.get(id=message.student_id)
-        programme = None
-        if message.programme_id is not None:
-            programme = Program.objects.filter(id=message.programme_id).first()
-            if programme is None:
-                # Silent to the student: the request was accepted at the door
-                # (api._programme_id already verified this id names a
-                # programme in the student's pack or own applications --
-                # this is the defence-in-depth path for a programme deleted
-                # between that check and this job running), and this WARNING
-                # is the only trace. A metric filter or a student-visible
-                # failure on DocumentGenerateUnknownProgramme is not built.
-                logger.warning(
-                    "DocumentGenerateUnknownProgramme requester sent programme=%s "
-                    "student=%s: no such catalogue programme, message dropped",
-                    message.programme_id,
-                    message.student_id,
+    application: Application | None = None
+    with tenant_scope(tenant_id):
+        if getattr(settings, "CV_REPO_BULLETS_ENABLED", False):
+            refreshable = evidence_facts.refreshable_student(
+                tenant_id, message.student_id
+            )
+            if refreshable is not None:
+                evidence_refresh.refresh_evidence(refreshable)
+        try:
+            with tenant_transaction(tenant_id):
+                student = Membership.objects.get(id=message.student_id)
+                if message.application_id is not None:
+                    application = (
+                        Application.objects.select_related("candidate__opportunity")
+                        .filter(id=message.application_id)
+                        .first()
+                    )
+                    if application is None:
+                        logger.info(
+                            "generate: application %s is gone", message.application_id
+                        )
+                        return
+
+                inputs = application_list.inputs_for(application, message.programme_id)
+                if inputs is None:
+                    logger.warning(
+                        "DocumentGenerateUnknownProgramme requester sent programme=%s "
+                        "student=%s: no such catalogue programme, message dropped",
+                        message.programme_id
+                        or (application.program_id if application is not None else None),
+                        message.student_id,
+                    )
+                    return
+
+                if inputs.programme is not None:
+                    verdict, code = programme_verdict(inputs.programme)
+                    if verdict == Verdict.BLOCKED:
+                        logger.warning(
+                            "DocumentGenerateBlockedProgramme programme=%s code=%s "
+                            "student=%s: not generated",
+                            inputs.programme.id,
+                            code,
+                            message.student_id,
+                        )
+                        return
+
+                built = application_list.build_for(inputs, student, application)
+                if any(
+                    item.key == "cv_format" and item.value == "structured_fields_only"
+                    for item in built.items
+                ):
+                    if application is not None:
+                        application.cv_status = Application.CVStatus.NO_CV
+                        application.cv_resumes_at = None
+                        application.save(update_fields=["cv_status", "cv_resumes_at"])
+                    return
+
+                if (
+                    application is not None
+                    and DocumentDraft.objects.filter(
+                        application=application,
+                        kind=message.kind,
+                        requirements_digest=built.digest(),
+                    )
+                    .exclude(status=DocumentDraft.Status.SUPERSEDED)
+                    .exists()
+                ):
+                    return
+
+                result = generate_cv(
+                    student=student,
+                    programme=inputs.programme,
+                    requirements=built,
                 )
-                return
-            verdict, code = programme_verdict(programme)
-            if verdict == Verdict.BLOCKED:
-                # Spec §7.5, defence in depth: pack membership is already
-                # verdict-filtered, so this fires only for a body blocked after
-                # the pack was built. Dropped, not raised, for the same
-                # reason as the unknown-programme case above.
-                logger.warning(
-                    "DocumentGenerateBlockedProgramme programme=%s code=%s student=%s: "
-                    "not generated",
-                    programme.id, code, message.student_id,
+                create_draft(
+                    student=student,
+                    kind=message.kind,
+                    content=result.content,
+                    facts=list(generatable_facts(student)),
+                    programme=inputs.programme,
+                    funding_opportunity=inputs.opportunity,
+                    application=application,
+                    requirements=built,
+                    destination_label=inputs.destination_label,
+                    render_variant=select_render_variant(
+                        inputs.programme, inputs.opportunity
+                    ),
+                    is_general=(
+                        application is None
+                        and inputs.programme is None
+                        and inputs.opportunity is None
+                    ),
+                    applied_fixes=[
+                        *(fix.as_json() for fix in result.applied_fixes),
+                        *(left.record() for left in result.left_out),
+                    ],
+                    actor=student,
                 )
-                return
-        result = generate_cv(student=student, programme=programme)
-        create_draft(
-            student=student,
-            kind=message.kind,
-            content=result.content,
-            facts=list(generatable_facts(student)),
-            programme=programme,
-            actor=student,
-        )
+                if application is not None:
+                    application.cv_status = Application.CVStatus.MADE
+                    application.cv_resumes_at = None
+                    application.save(update_fields=["cv_status", "cv_resumes_at"])
+        except ChangesPending:
+            # The API refuses this up front; only a CV uploaded between that
+            # check and this job reaches here. Dropped, not raised, like an
+            # unknown programme: retrying cannot settle the student's list.
+            logger.warning(
+                "DocumentGenerateChangesPending student=%s: not generated",
+                message.student_id,
+            )
+            return
+        except IdentityNotConfirmed:
+            if application is not None:
+                with tenant_transaction(tenant_id):
+                    Application.objects.filter(id=application.id).update(
+                        cv_status=Application.CVStatus.WAITING_IDENTITY,
+                        cv_resumes_at=None,
+                    )
+            return
+        except ApplicationEmailMissing:
+            if application is not None:
+                with tenant_transaction(tenant_id):
+                    Application.objects.filter(id=application.id).update(
+                        cv_status=Application.CVStatus.WAITING_EMAIL,
+                        cv_resumes_at=None,
+                    )
+            return
+        except GenerationRateLimited:
+            from .cv_jobs import defer
+
+            defer(
+                message,
+                window_seconds=_CV_GENERATION_RATE_WINDOW_SECONDS,
+                application=application,
+            )
+            return
+        except SkillMatchRateLimited:
+            from .cv_jobs import defer
+
+            defer(
+                message,
+                window_seconds=_SKILL_MATCH_RATE_WINDOW_SECONDS,
+                application=application,
+            )
+            return
 
 
 def _render(message: DocumentWorkMessage) -> None:
@@ -418,3 +650,9 @@ def _render(message: DocumentWorkMessage) -> None:
                 content=artifact.pdf_bytes,
                 store=_object_store(),
             )
+            DocumentDraft.objects.filter(id=draft.id).update(
+                render_warnings=[warning_record(w) for w in getattr(artifact, "warnings", ())]
+            )
+    # Approval queued preparation too, but this render may finish after it ran:
+    # a CV is preparable only once rendered.
+    _prepare(tenant_id, draft.student_id)

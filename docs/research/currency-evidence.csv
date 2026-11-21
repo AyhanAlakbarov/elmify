@@ -75,3 +75,68 @@ renminbi,CNY,name,drafted
 рубля,RUB,name,drafted
 рублей,RUB,name,drafted
 сум,UZS,name,drafted
+sfr,CHF,abbreviation,drafted
+sfr.,CHF,abbreviation,drafted
+schweizer franken,CHF,name,drafted
+franc suisse,CHF,name,drafted
+francs suisses,CHF,name,drafted
+franco svizzero,CHF,name,drafted
+franchi svizzeri,CHF,name,drafted
+swiss franc,CHF,name,drafted
+swiss francs,CHF,name,drafted
+lei,RON,name,drafted
+leu,RON,name,drafted
+leul,RON,name,drafted
+динара,RSD,name,drafted
+динар,RSD,name,drafted
+dinara,RSD,name,drafted
+dinar,RSD,name,drafted
+dinar,KWD,name,drafted
+dinar,BHD,name,drafted
+бел. руб,BYN,abbreviation,drafted
+беларускіх рублёў,BYN,name,drafted
+белорусских рублей,BYN,name,drafted
+د.إ,AED,symbol,drafted
+uae dirham,AED,name,drafted
+uae dirhams,AED,name,drafted
+درهم إماراتي,AED,name,drafted
+ر.س,SAR,symbol,drafted
+saudi riyal,SAR,name,drafted
+saudi riyals,SAR,name,drafted
+ريال سعودي,SAR,name,drafted
+ريال,SAR,name,drafted
+ريال,QAR,name,drafted
+ر.ق,QAR,symbol,drafted
+qatari riyal,QAR,name,drafted
+qatari riyals,QAR,name,drafted
+ريال قطري,QAR,name,drafted
+د.ك,KWD,symbol,drafted
+kuwaiti dinar,KWD,name,drafted
+kuwaiti dinars,KWD,name,drafted
+دينار كويتي,KWD,name,drafted
+دينار,KWD,name,drafted
+دينار,BHD,name,drafted
+د.ب,BHD,symbol,drafted
+bahraini dinar,BHD,name,drafted
+bahraini dinars,BHD,name,drafted
+دينار بحريني,BHD,name,drafted
+b$,BND,symbol,drafted
+brunei dollar,BND,name,drafted
+brunei dollars,BND,name,drafted
+ringgit brunei,BND,name,drafted
+rm,MYR,symbol,drafted
+malaysian ringgit,MYR,name,drafted
+ringgit malaysia,MYR,name,drafted
+ringgit,MYR,name,drafted
+ringgit,BND,name,drafted
+rp,IDR,symbol,drafted
+rupiah,IDR,name,drafted
+₫,VND,symbol,drafted
+đồng,VND,name,drafted
+vietnamese dong,VND,name,drafted
+s$,SGD,symbol,drafted
+singapore dollar,SGD,name,drafted
+singapore dollars,SGD,name,drafted
+nz$,NZD,symbol,drafted
+new zealand dollar,NZD,name,drafted
+new zealand dollars,NZD,name,drafted

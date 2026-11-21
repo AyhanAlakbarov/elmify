@@ -199,3 +199,22 @@ def test_a_cyrillic_or_greek_prefix_is_also_not_a_count() -> None:
     like the Latin "A4" case should have refused."""
     assert [(f.number, f.unit) for f in figures_on_line("А4 2 страницы")] == [(2, "страницы")]
     assert all(f.number != 4 for f in figures_on_line("Σ4 2 pages"))
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Təqaüd magistr tələbələri üçün nəzərdə tutulub və müraciətlər 15 mayadək qəbul "
+         "edilir. Namizədlər həm də IELTS sertifikatı təqdim etməlidir.", "az"),
+        ("Бұл стипендия магистранттар үшін арналған, өтінімдер 15 мамырға дейін "
+         "қабылданады. Үміткерлер IELTS сертификатын осы портал арқылы ұсынады.", "kk"),
+        ("Bu burs yüksek lisans öğrencileri için verilir ve başvurular 15 Mayıs tarihine "
+         "kadar kabul edilir. Adaylar ayrıca bir IELTS belgesi sunmalıdır.", "tr"),
+        ("Эта стипендия предназначена для студентов магистратуры, и заявки принимаются до "
+         "15 мая. Кандидаты подают сертификат IELTS по почте.", "ru"),
+    ],
+)
+def test_azerbaijani_and_kazakh_are_told_apart_from_turkish_and_russian(text, expected) -> None:
+    """Owner, 2026-10-13: az and kk are detected now, and their neighbours are not taken for
+    them -- the shared Turkic and Cyrillic words are kept out of the az and kk rows."""
+    assert detect_language(text) == expected

@@ -15,7 +15,7 @@
       <ul class="item-list">
         {% for record in held %}
           <li>
-            <span><strong>{{ record.student.user.get_username }}</strong> — {{ record.get_review_reason_display|default:"held for review" }}<br><small>asked {{ record.created_at|date:"j M Y" }}{% if record.reason %} · {{ record.get_reason_display }}{% endif %}</small></span>
+            <span><strong>Request {{ record.id }}</strong> — {{ record.get_review_reason_display|default:"held for review" }}<br><small>asked {{ record.created_at|date:"j M Y" }}{% if record.reason %} · {{ record.get_reason_display }}{% endif %}</small></span>
             <form method="post" action="{% url 'audit-release-deletion' record.id %}">{% csrf_token %}<button type="submit">Release</button></form>
             <form method="post" action="{% url 'audit-deny-deletion' record.id %}">{% csrf_token %}<button type="submit" class="btn-quiet">Deny</button></form>
           </li>
@@ -31,7 +31,7 @@
     {% if counting_down %}
       <ul class="item-list">
         {% for record in counting_down %}
-          <li><span><strong>{{ record.student.user.get_username }}</strong><br><small>erased on {{ record.execute_after|date:"j F Y" }}</small></span></li>
+          <li><span><strong>Request {{ record.id }}</strong><br><small>erased on {{ record.execute_after|date:"j F Y" }}</small></span></li>
         {% endfor %}
       </ul>
     {% else %}
@@ -55,6 +55,19 @@
       </div>
     {% else %}
       <p class="muted">None.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="staff-heading">
+    <div class="panel-head"><h2 id="staff-heading">Elmify staff file access</h2><span class="pill">{{ staff_views|length }}</span></div>
+    {% if staff_views %}
+      <ul class="item-list">
+        {% for v in staff_views %}
+          <li><span>{{ v.accessed_at|date:"j F Y H:i" }} &middot; {{ v.staff_name }} &middot; {{ v.action }} &middot; {{ v.document_kind }}</span></li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No Elmify staff have opened a student file.</p>
     {% endif %}
   </section>
 {% endblock %}

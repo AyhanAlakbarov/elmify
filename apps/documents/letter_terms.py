@@ -41,6 +41,13 @@ _STOPWORDS: dict[str, tuple[str, ...]] = {
     "pt": ("o", "a", "os", "de", "e", "para", "com", "uma", "que", "não"),
     "ru": ("и", "в", "на", "не", "для", "что", "с", "по", "как", "или"),
     "tr": ("ve", "bir", "için", "ile", "bu", "olarak", "da", "veya"),
+    # Detection only (owner, 2026-10-13): no letter-terms row exists for these two, so TERMS
+    # never carries them and derive.py reads them as it reads "" (`TERMS.get`). The words are
+    # NLTK's stopword corpus (Azerbaijani list, nltk_data PR #100; Kazakh list, PR #52;
+    # https://github.com/nltk/nltk_data/blob/gh-pages/packages/corpora/stopwords.zip, read
+    # 2026-10-13; stopwords-iso has neither), chosen to share none with the tr and ru rows.
+    "az": ("və", "üçün", "ilə", "də", "isə", "həm", "hər", "edir", "deyil", "qədər"),
+    "kk": ("мен", "үшін", "бұл", "осы", "арқылы", "туралы", "бар", "емес", "дейін", "кейін"),
 }
 _WORD = re.compile(r"\w+")
 #: CJK count words are written with the multiplier spelled out (五百字 = 500
@@ -63,7 +70,6 @@ class TermRow:
     portfolio: tuple[str, ...]
     thesis: tuple[str, ...]
     coursework: tuple[str, ...]
-    stopwords: tuple[str, ...]
 
 
 def _split(cell: str) -> tuple[str, ...]:
@@ -71,22 +77,20 @@ def _split(cell: str) -> tuple[str, ...]:
 
 
 def _load() -> dict[str, TermRow]:
-    with _TERMS_CSV.open(encoding="utf-8", newline="") as handle:
-        rows = list(csv.DictReader(handle))
     loaded: dict[str, TermRow] = {}
-    for row in rows:
-        code = row["language"].strip().casefold()
-        loaded[code] = TermRow(
-            language=code,
-            document=_split(row["document"]),
-            unit=_split(row["unit"]),
-            signature=_split(row["signature"]),
-            naming=_split(row["naming"]),
-            portfolio=_split(row["portfolio"]),
-            thesis=_split(row["thesis"]),
-            coursework=_split(row["coursework"]),
-            stopwords=_STOPWORDS.get(code, ()),
-        )
+    with _TERMS_CSV.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            code = row["language"].strip().casefold()
+            loaded[code] = TermRow(
+                language=code,
+                document=_split(row["document"]),
+                unit=_split(row["unit"]),
+                signature=_split(row["signature"]),
+                naming=_split(row["naming"]),
+                portfolio=_split(row["portfolio"]),
+                thesis=_split(row["thesis"]),
+                coursework=_split(row["coursework"]),
+            )
     return loaded
 
 
@@ -335,7 +339,8 @@ def figures_on_line(text: str) -> tuple[Figure, ...]:
 
 
 def detect_language(page_text: str, *, html_lang: str = "") -> str:
-    """The page's language as a seeded two-letter code, or "" when unknown.
+    """The page's language as a two-letter code -- a `TERMS` row, or a detection-only stopword
+    row (az, kk) -- or "" when unknown.
 
     "" is a real answer and the caller must treat it as one: candidates then
     come from the reader's labels alone (spec §3) and the miss is logged, so a
@@ -358,11 +363,8 @@ def detect_language(page_text: str, *, html_lang: str = "") -> str:
     if _HAN.search(page_text):
         return "zh"
     words = {match.group().casefold() for match in _WORD.finditer(page_text)}
-    scores = {
-        code: len(words.intersection(row.stopwords))
-        for code, row in TERMS.items()
-        if row.stopwords
-    }
+    # Every stopword row, not only the letter-term rows, so az and kk are detected without one.
+    scores = {code: len(words.intersection(stop)) for code, stop in _STOPWORDS.items()}
     best = max(scores, key=lambda code: scores[code], default="")
     # Two hits, not one: a single shared function word ("de" is Dutch, Spanish
     # and Portuguese; "a" is English and Portuguese) decides nothing.

@@ -61,7 +61,7 @@ def test_an_open_award_lists_every_eligible_programme_from_both_lists() -> None:
 
     groups = group_under_funding([tum, kth, daad], extra=[lmu], extra_label="in Other options")
 
-    assert groups[0].label == "Eligible programmes in DE"
+    assert groups[0].label == "Eligible programmes in Germany"
     assert [(p.candidate.program_name, p.elsewhere) for p in groups[0].programmes] == [
         ("TUM M.Sc.", ""),
         ("LMU M.Sc.", "in Other options"),
@@ -92,3 +92,36 @@ def test_unfunded_programmes_close_the_list_and_undated_awards_come_last() -> No
 
     assert [g.award.program_name if g.award else None for g in groups] == ["Dated", "Undated", None]
     assert [p.candidate.program_name for p in groups[-1].programmes] == ["KTH M.Sc."]
+
+
+def test_a_home_country_holder_scheme_never_groups_domestic_programmes_by_country() -> None:
+    baku = _programme("Baku State MSc", country_code="AZ")
+    abroad = _programme("ELTE MSc", country_code="HU")
+    state_prog = _award(
+        "State Programme",
+        scope="HOLDER",
+        country_code="AZ",
+        funds_program_ids=[abroad.program_id],
+    )
+
+    groups = group_under_funding([baku, abroad, state_prog], home_country="AZ")
+
+    assert groups[0].label == "Programmes it can pay for"
+    assert [p.candidate.program_name for p in groups[0].programmes] == ["ELTE MSc"]
+    assert [p.candidate.program_name for p in groups[-1].programmes] == ["Baku State MSc"]
+
+
+def test_group_under_funding_orders_programmes_by_rank_then_name() -> None:
+    z_first_rank = _programme("Zeta MSc", rank=1)
+    a_second_rank = _programme("Alpha MSc", rank=2)
+    b_unranked = _programme("Beta MSc", rank=None)
+
+    groups = group_under_funding([b_unranked, a_second_rank, z_first_rank])
+
+    assert [p.candidate.program_name for p in groups[-1].programmes] == [
+        "Zeta MSc",
+        "Alpha MSc",
+        "Beta MSc",
+    ]
+
+

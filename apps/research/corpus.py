@@ -18,7 +18,7 @@ import hashlib
 import pathlib
 import re
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from urllib.parse import urlsplit
 
 from apps.documents.constraints import CONSTRAINT_KEYS, Enforcement
@@ -130,8 +130,7 @@ class Corpus:
 
 
 def host(url: str) -> str:
-    name = (urlsplit(url).hostname or "").casefold()
-    return name[4:] if name.startswith("www.") else name
+    return (urlsplit(url).hostname or "").casefold().removeprefix("www.")
 
 
 def normalize_url(url: str) -> str:
@@ -258,7 +257,7 @@ def load_corpus(
             errors.append(
                 f"{where}: source host was in the eval set or the survey; it may not be held out"
             )
-        rules.append(Rule(**{column: row[column] for column in RULE_COLUMNS}))
+        rules.append(Rule(**row))
 
     for programme_id in by_id:
         accepted = {
@@ -349,20 +348,8 @@ class Tally:
         return self._ratio(self.outcome_correct, self.programmes)
 
     def add(self, other: Tally) -> None:
-        for name in (
-            "programmes",
-            "binding_hit",
-            "binding_total",
-            "hit",
-            "total",
-            "true_positive",
-            "false_positive",
-            "unjudged",
-            "localized",
-            "outcome_correct",
-            "drifted",
-        ):
-            setattr(self, name, getattr(self, name) + getattr(other, name))
+        for f in fields(self):
+            setattr(self, f.name, getattr(self, f.name) + getattr(other, f.name))
 
 
 @dataclass(frozen=True)

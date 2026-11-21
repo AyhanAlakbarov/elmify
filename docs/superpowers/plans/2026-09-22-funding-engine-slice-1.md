@@ -27,7 +27,7 @@ spine), §11's privacy rule for a platform table. Everything from item 5 on is o
 not be started here.
 
 **Base branch:** `master`. Work in a fresh worktree (`git worktree add ../funding-slice-1 master`).
-Test database: `POSTGRES_DB=tehsil_funding_slice1` — never share a test DB between sessions.
+Test database: `POSTGRES_DB=elmify_funding_slice1` — never share a test DB between sessions.
 
 ---
 
@@ -56,7 +56,7 @@ Test database: `POSTGRES_DB=tehsil_funding_slice1` — never share a test DB bet
 - **Every model-calling path keeps its limiter.** Nothing in this plan adds a model call; nothing in
   it may remove a `rate_limited()` call either.
 - Never run `ruff format` here. After every task: `uv run ruff check apps config tests scripts`,
-  `uv run mypy apps config`, `POSTGRES_DB=tehsil_funding_slice1 uv run pytest`,
+  `uv run mypy apps config`, `POSTGRES_DB=elmify_funding_slice1 uv run pytest`,
   `uv run python manage.py makemigrations --check --dry-run`.
 
 ---
@@ -214,7 +214,7 @@ Everything else merges: the holder axis on `LineVerdict`/`FundingDecision`, `poi
 
 ```
 uv run python manage.py makemigrations --check --dry-run    # must print "No changes detected"
-POSTGRES_DB=tehsil_funding_slice1 DATABASE_ROLE=migration uv run python manage.py migrate
+POSTGRES_DB=elmify_funding_slice1 DATABASE_ROLE=migration uv run python manage.py migrate
 ```
 
 A `dependencies` entry naming a migration that was renumbered upstream is the expected failure; fix
@@ -347,8 +347,8 @@ SQL. No `CREATE ROLE`: it exists.
 - [ ] **Step 4: Verify against a real `NOBYPASSRLS` role**
 
 ```
-POSTGRES_DB=tehsil_funding_slice1 uv run pytest tests/tenancy/test_database_isolation.py -v
-POSTGRES_DB=tehsil_funding_slice1 uv run pytest tests/research/test_organisation_register.py -v
+POSTGRES_DB=elmify_funding_slice1 uv run pytest tests/tenancy/test_database_isolation.py -v
+POSTGRES_DB=elmify_funding_slice1 uv run pytest tests/research/test_organisation_register.py -v
 ```
 
 The isolation test must run through `runtime_connection`. A green test on the default role proves

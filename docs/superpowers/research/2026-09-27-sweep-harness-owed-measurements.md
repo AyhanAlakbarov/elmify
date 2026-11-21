@@ -56,7 +56,15 @@ least as many hand-labelled novel foundations as `auto`, with no higher noise sh
 
 ## Measurement 2: the saturation gate (Task 11)
 
-**Prerequisites, refused until all hold** (per the plan's Task 11):
+**Prerequisites, refused until all hold** (per the plan's Task 11). **The first one holds since
+2026-10-12:** `_vocabulary()` returns `kind_words.load_kind_words()`, read from the committed
+`apps/research/resolver_data/kind_words.json` that `manage.py build_kind_words` writes from
+Wikidata. Its bullet is kept below as the record of what was missing. Where Wikidata lacked the
+word real pages use, or had a wrong one, `kind_word_corrections.json` beside it carries the fix
+with the official page or standard dictionary it was read from -- Azerbaijani "fond", Turkish
+"dernek", Estonian "sihtasutus" and 27 more, and one wrong Kazakh word dropped (owner decision
+2026-10-12). Still empty after a search: everything in Carolinian, and a religious body in Maltese,
+Tamil and Nynorsk.
 - A per-language kind-word vocabulary adapter is wired into
   `generate_sweep_angles._vocabulary()`. As built, `_vocabulary()` returns `None` and the
   command's own docstring says why: item 8's `apps/research/vocabulary.py` maps a folded word

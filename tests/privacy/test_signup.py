@@ -1,4 +1,6 @@
 
+import re
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
@@ -39,12 +41,24 @@ def _post(client, host, extra=None, **over):
         "full_name": "Aysel Mammadova",
         "email": "Aysel@Example.com",
         "password": "correct-horse-battery-staple",
+        "password_again": "correct-horse-battery-staple",
         "language": "en",
         CONSENT: "on",
     }
     data.update(over)
     data.setdefault("documents", _shown_ids(data["language"]))
-    return client.post(reverse("privacy-signup"), data, HTTP_HOST=host, **(extra or {}))
+    response = client.post(reverse("privacy-signup"), data, HTTP_HOST=host, **(extra or {}))
+    return _enter_mailed_code(client, host, response)
+
+def _enter_mailed_code(client, host, response):
+    """Sign-up mails a code first; type the last one mailed back, as the student would."""
+    from django.core import mail
+
+    if response.status_code != 302 or response["Location"] != reverse("privacy-signup-verify"):
+        return response
+    code = re.search(r"\b(\d{6})\b", mail.outbox[-1].subject).group(1)
+    return client.post(reverse("privacy-signup-verify"), {"code": code}, HTTP_HOST=host)
+
 
 
 
@@ -79,7 +93,10 @@ def test_signup_with_an_existing_email_in_any_case_is_refused(
     assert _post(client, domain_a.host).status_code == 302
     client.logout()
     response = _post(client, domain_a.host, email="AYSEL@example.COM")
+    body = response.content.decode()
     assert response.status_code == 400
+    assert "already exists" not in body
+    assert "Unable to complete sign-up with these details" in body
     assert get_user_model().objects.count() == 1
 
 
@@ -96,6 +113,14 @@ def test_legal_page_shows_the_current_text(client, domain_a, published):
     url = reverse("privacy-legal", args=["terms"]) + "?lang=az"
     response = client.get(url, HTTP_HOST=domain_a.host)
     assert response.status_code == 200 and b"terms v1" in response.content
+    terms_alias = client.get(
+        reverse("privacy-legal", args=["terms_of_service"]), HTTP_HOST=domain_a.host
+    )
+    assert terms_alias.status_code == 200 and b"terms v1" in terms_alias.content
+    privacy_alias = client.get(
+        reverse("privacy-legal", args=["privacy_notice"]), HTTP_HOST=domain_a.host
+    )
+    assert privacy_alias.status_code == 200 and b"privacy_notice_agency v1" in privacy_alias.content
     unknown = client.get(reverse("privacy-legal", args=["cookies"]), HTTP_HOST=domain_a.host)
     assert unknown.status_code == 404
 
@@ -215,3 +240,68 @@ def test_repeated_signups_for_a_taken_email_are_limited(client, domain_a, publis
 
     assert response.status_code == 429
     assert get_user_model().objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_signup_mails_a_code_and_creates_nothing_until_it_is_typed(client, domain_a, published):
+    from django.core import mail
+
+    data = {
+        "full_name": "Aysel Mammadova",
+        "email": "aysel@example.com",
+        "password": "correct-horse-battery-staple",
+        "password_again": "correct-horse-battery-staple",
+        "language": "en",
+        CONSENT: "on",
+        "documents": _shown_ids(),
+    }
+    response = client.post(reverse("privacy-signup"), data, HTTP_HOST=domain_a.host)
+    assert response["Location"] == reverse("privacy-signup-verify")
+    assert len(mail.outbox) == 1
+    assert not get_user_model().objects.exists()
+    code = re.search(r"\b(\d{6})\b", mail.outbox[0].subject).group(1)
+    assert code in mail.outbox[0].body
+
+    wrong = "000000" if code != "000000" else "111111"
+    bad = client.post(reverse("privacy-signup-verify"), {"code": wrong}, HTTP_HOST=domain_a.host)
+    assert bad.status_code == 400
+    assert not get_user_model().objects.exists()
+
+    ok = client.post(reverse("privacy-signup-verify"), {"code": code}, HTTP_HOST=domain_a.host)
+    assert ok["Location"] == "/student/"
+    assert get_user_model().objects.filter(username="aysel@example.com").exists()
+    assert "pending_signup" not in client.session
+
+
+@pytest.mark.django_db
+def test_five_wrong_codes_end_the_pending_signup(client, domain_a, published):
+    from django.core import mail
+
+    _post_form = {
+        "full_name": "Aysel Mammadova",
+        "email": "aysel@example.com",
+        "password": "correct-horse-battery-staple",
+        "password_again": "correct-horse-battery-staple",
+        "language": "en",
+        CONSENT: "on",
+        "documents": _shown_ids(),
+    }
+    client.post(reverse("privacy-signup"), _post_form, HTTP_HOST=domain_a.host)
+    code = re.search(r"\b(\d{6})\b", mail.outbox[0].subject).group(1)
+    wrong = "000000" if code != "000000" else "111111"
+    for _ in range(5):
+        last = client.post(
+            reverse("privacy-signup-verify"), {"code": wrong}, HTTP_HOST=domain_a.host
+        )
+    assert last["Location"] == reverse("privacy-signup")
+    late = client.post(reverse("privacy-signup-verify"), {"code": code}, HTTP_HOST=domain_a.host)
+    assert late["Location"] == reverse("privacy-signup")
+    assert not get_user_model().objects.exists()
+
+
+@pytest.mark.django_db
+def test_the_two_passwords_must_match(client, domain_a, published):
+    response = _post(client, domain_a.host, password_again="something-else-entirely")
+    assert response.status_code == 400
+    assert "not the same" in response.content.decode()
+    assert not get_user_model().objects.exists()

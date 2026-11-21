@@ -159,14 +159,25 @@ def test_the_cv_pane_carries_the_cv_paths_own_derivations() -> None:
             "source_url": "https://example.test/cv",
         }
     ]
-    programme.cv_directives = ["emphasise(research)"]
+    programme.cv_directives = [
+        "emphasise(research)",
+        {
+            "action": "include",
+            "target": "publications",
+            "value": None,
+            "rule_text": "Include a list of publications.",
+            "source_url": "https://example.test/cv-pubs",
+        },
+    ]
     programme.save()
     panes = program_requirements(programme, cycle="2027")
     assert [item.text for item in panes.cv] == [
         "europass_required",
         "The CV must not exceed two pages.",
         "emphasise(research)",
+        "Include a list of publications.",
     ]
+    assert panes.cv[-1].source_url == "https://example.test/cv-pubs"
 
 
 @pytest.mark.django_db

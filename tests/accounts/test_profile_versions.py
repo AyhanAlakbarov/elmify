@@ -566,3 +566,61 @@ def test_profile_route_handles_changed_membership_without_writes(
     with tenant_scope(agency_a.id):
         assert StudentProfileVersion.objects.count() == 0
         assert RecommendationRun.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_profile_version_locks_dob_nationality_and_completed_degree_but_allows_gpa_progression(
+    agency_a, membership_a, counselor_membership, valid_phase1_profile_payload
+) -> None:
+    from apps.concierge.models import Notification
+    from apps.tenancy.models import CounselorAssignment
+
+    rejected, schema, create = _contracts()
+    with tenant_scope(agency_a.id):
+        CounselorAssignment.objects.create(
+            tenant=agency_a, counselor=counselor_membership, student=membership_a
+        )
+        v1 = create(
+            student=membership_a, snapshot=schema.model_validate(valid_phase1_profile_payload)
+        )
+        assert v1.version == 1
+
+        progressed = deepcopy(valid_phase1_profile_payload)
+        progressed["academic_history"][0]["grade"] = "95"
+        v2 = create(student=membership_a, snapshot=schema.model_validate(progressed))
+        assert v2.version == 2
+
+        changed_dob = deepcopy(progressed)
+        changed_dob["date_of_birth"] = "2002-05-05"
+        with pytest.raises(rejected, match="identity continuity"):
+            create(student=membership_a, snapshot=schema.model_validate(changed_dob))
+
+        changed_nat = deepcopy(progressed)
+        changed_nat["nationality"] = "TR"
+        with pytest.raises(rejected, match="identity continuity"):
+            create(student=membership_a, snapshot=schema.model_validate(changed_nat))
+
+        replaced_degree = deepcopy(progressed)
+        replaced_degree["academic_history"] = [
+            {
+                "institution": "Istanbul Technical University",
+                "country_code": "TR",
+                "qualification": "BSc",
+                "field": "Mechanical Engineering",
+                "grade": "88",
+                "grading_scale": "100",
+                "completed_on": "2026-06-30",
+            }
+        ]
+        with pytest.raises(rejected, match="identity continuity"):
+            create(student=membership_a, snapshot=schema.model_validate(replaced_degree))
+
+        v3 = create(
+            student=membership_a,
+            snapshot=schema.model_validate(changed_dob),
+            allow_identity_override=True,
+        )
+        assert v3.version == 3
+        assert Notification.objects.filter(
+            roadmap_item__student=membership_a, recipient=counselor_membership
+        ).exists()

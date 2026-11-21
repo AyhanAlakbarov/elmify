@@ -43,6 +43,7 @@ from apps.funding.validity import (
     Validity,
     cycle_validity,
     intake_start_year,
+    intake_start_years,
     projected_window,
 )
 from apps.ratelimit import rate_limited
@@ -56,7 +57,8 @@ from apps.research.hosts import registrable_domain
 from apps.research.metering import Meter
 from apps.research.model_cost import CostMeter, ReadingTier
 from apps.research.providers.base import ProviderUnavailable, on_domain
-from apps.research.reader import _MIN_BYTES_FOR_FLOOR, _MIN_READABLE_CHARS, readable_text
+from apps.research.reader import is_shell, readable_text
+from apps.research.reader import normalize as _normalised
 from apps.research.snapshot import ObjectStore
 
 _ORDER = ("0", "1", "1b", "1c", "2", "3")
@@ -120,7 +122,7 @@ def _key(entry: Mapping[str, Any]) -> tuple[Any, ...]:
             str(entry["deadlines"]))
 
 
-def _cadence(opportunity: FundingOpportunity) -> RegisterCadence | None:
+def cadence_of(opportunity: FundingOpportunity) -> RegisterCadence | None:
     org = opportunity.organisation
     if org is None:
         return None
@@ -154,12 +156,22 @@ def record_read_evidence(
     line speaks to. The row's first ladder run is due at once.
     """
     new = entries_from_decision(decision, step="0", url=url, sha256=sha256, at=at)
-    cadence = _cadence(opportunity)
-    for year in tracked_intakes(today):
-        row, _ = FundingCycleVerification.objects.select_for_update().get_or_create(
+    cadence = cadence_of(opportunity)
+    tracked = list(tracked_intakes(today))
+    min_tracked = min(tracked) if tracked else today.year
+    for named_year in intake_start_years(decision.applies_to):
+        if named_year >= min_tracked and named_year not in tracked:
+            tracked.append(named_year)
+    seed_evidence: list[dict[str, Any]] | None = None
+    for year in tracked:
+        row, created = FundingCycleVerification.objects.select_for_update().get_or_create(
             opportunity=opportunity, intake_start_year=year
         )
+        if created and not row.evidence and seed_evidence is not None:
+            row.evidence = list(seed_evidence)
         row.evidence = _merge(row.evidence, new)
+        if seed_evidence is None:
+            seed_evidence = list(row.evidence)
         evidence = to_evidence(row.evidence, target_year=year, cadence=cadence,
                                page_removed=row.page_removed, lapsed=row.projection_lapsed)
         row.state = cycle_validity(evidence, student={}, target_intake=str(year), today=today)
@@ -290,12 +302,31 @@ def joins(decision: FundingDecision, subject: Subject) -> bool:
     return any(bounded.search(_normalised(quote)) for quote in decision.quotes)
 
 
+_PROGRAMME_SCOPED_KINDS = frozenset(
+    {
+        "I2_PROGRAMME_ATTACHED",
+        "I3_STIPEND_OR_ASSISTANTSHIP",
+        "I5_FUNDED_DUAL_DEGREE",
+        "I6_PARTNER_EMPLOYER",
+    }
+)
+
+
 def _same_kind(decision: FundingDecision, subject: Subject) -> bool:
-    return decision.kind == subject.kind and decision.scope == subject.scope
-
-
-def _normalised(text: str) -> str:
-    return " ".join(text.casefold().split())
+    if decision.scope != subject.scope:
+        return False
+    if decision.kind == subject.kind:
+        return True
+    # A standalone negation on a crawled sub-page ("The recruitment of the
+    # 2027-2029 student intake will be without scholarship") is often classified
+    # by the judge as generic I2_PROGRAMME_ATTACHED even when the catalog award
+    # is I5_FUNDED_DUAL_DEGREE or I3_STIPEND_OR_ASSISTANTSHIP.
+    return (
+        decision.offered == "NO"
+        and decision.scope in ("PROGRAM", "PROGRAMS")
+        and decision.kind in _PROGRAMME_SCOPED_KINDS
+        and subject.kind in _PROGRAMME_SCOPED_KINDS
+    )
 
 
 @dataclass(frozen=True)
@@ -726,7 +757,7 @@ def subject_for(opportunity: FundingOpportunity) -> Subject:
         domains=frozenset(d for d in domains if d),
         primary_domain=primary,
         ambiguous=siblings.exclude(pk=opportunity.pk).exclude(agreement="WITHDRAWN").exists(),
-        cadence=_cadence(opportunity),
+        cadence=cadence_of(opportunity),
         languages=tuple(dict.fromkeys(languages)),
         heading=_heading(opportunity),
     )
@@ -781,7 +812,7 @@ def funding_reader_for(
 
     def read(page: FetchedPage) -> tuple[FundingDecision, ...]:
         whole_page = readable_text(page, terms=None)
-        if len(whole_page) < _MIN_READABLE_CHARS and len(page.body) >= _MIN_BYTES_FOR_FLOOR:
+        if is_shell(whole_page, page.body):
             return ()  # a shell: never read as "no funding"
         chunks = funding_chunks(
             readable_text(page, terms=_FUNDING_TERMS, select_only_over_cap=False)
@@ -929,7 +960,7 @@ def persist_verdict(
         # The verdict never saw these entries; decide on everything the row holds.
         state = cycle_validity(
             to_evidence(entries, target_year=locked.intake_start_year,
-                        cadence=_cadence(opportunity), page_removed=verdict.page_removed,
+                        cadence=cadence_of(opportunity), page_removed=verdict.page_removed,
                         lapsed=verdict.lapsed),
             student={}, target_intake=str(locked.intake_start_year), today=today,
         )

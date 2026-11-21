@@ -4,9 +4,9 @@ DRAFT — translation for legal review, not yet approved.
 
 ## Biz kimik
 
-Tehsil tələbələrə xaricdəki universitetlərə və fondlara müraciətləri tapmaqda, hazırlamaqda və təqdim etməkdə kömək edən xidmət göstərir. Sizin agentliyiniz, {{ agency }}, fərdi məlumatlarınızın mülkiyyətçisidir. Tehsil onun operatorudur və məlumatlarınızı yalnız agentliyin göstərişləri əsasında emal edir.
+Elmify tələbələrə xaricdəki universitetlərə və fondlara müraciətləri tapmaqda, hazırlamaqda və təqdim etməkdə kömək edən xidmət göstərir. Sizin agentliyiniz, {{ agency }}, fərdi məlumatlarınızın mülkiyyətçisidir. Elmify onun operatorudur və məlumatlarınızı yalnız agentliyin göstərişləri əsasında emal edir.
 
-Bu xidmət üzrə əlaqə: privacy@tehsil.example. Agentliyin məlumatlarınızdan özünün istifadəsi barədə suallar üçün {{ agency }} agentliyinə müraciət edin.
+Bu xidmət üzrə əlaqə: privacy@elmify.example. Agentliyin məlumatlarınızdan özünün istifadəsi barədə suallar üçün {{ agency }} agentliyinə müraciət edin.
 
 Şirkətin adı və ünvanı: işə salınmadan əvvəl tamamlanacaq
 
@@ -16,6 +16,7 @@ Bu xidmət üzrə əlaqə: privacy@tehsil.example. Agentliyin məlumatlarınızd
 - Əlaqə məlumatları: e-poçt ünvanınız, telefon nömrəniz və ölkəniz.
 - Təhsil tarixçəsi, transkriptlər və qiymətlər.
 - CV-niz, motivasiya məktublarınız və onların əsaslandığı faktlar.
+- GitHub hesabınızdan və töhfə verdiyiniz repozitoriyalardan açıq məlumat — GitHub istifadəçi adınızı bizə verdikdə və ya CV-niz ona keçid verdikdə.
 - Proqram və maliyyələşdirmə seçimləriniz.
 - Müraciətin statusu və nəticələri.
 - Poçt qutusu funksiyası vasitəsilə qoşmağı seçdiyiniz məktublar.
@@ -50,7 +51,7 @@ Fərdi məlumatları hesabınız aktiv olduğu müddət üstəgəl 12 ay saxlay�
 
 ## Hüquqlarınız
 
-Məlumatlarınıza çıxış, düzəliş, silinmə tələb edə, onların emalını dayandırmağı xahiş edə və səbəb göstərmədən emala etiraz edə bilərsiniz. İstənilən vaxt razılığınızı geri götürə bilərsiniz. Bizə e-poçtla yazın: privacy@tehsil.example; 7 iş günü ərzində cavab veririk. Hesabınızın e-poçt ünvanından göndərilən sorğulara cavab veririk; başqa ünvandan yazsanız, öz ünvanınızdan yazmağınızı xahiş edəcəyik. Əlavə vaxt lazım olsa, bunu sizə bildirir və daha 7 iş günü qədər vaxt götürürük. İmtina etsək, səbəbini 5 iş günü ərzində bildiririk.
+Məlumatlarınıza çıxış, düzəliş, silinmə tələb edə, onların emalını dayandırmağı xahiş edə və səbəb göstərmədən emala etiraz edə bilərsiniz. İstənilən vaxt razılığınızı geri götürə bilərsiniz. Bizə e-poçtla yazın: privacy@elmify.example; 7 iş günü ərzində cavab veririk. Hesabınızın e-poçt ünvanından göndərilən sorğulara cavab veririk; başqa ünvandan yazsanız, öz ünvanınızdan yazmağınızı xahiş edəcəyik. Əlavə vaxt lazım olsa, bunu sizə bildirir və daha 7 iş günü qədər vaxt götürürük. İmtina etsək, səbəbini 5 iş günü ərzində bildiririk.
 
 Razılığınızı geri götürdüyünüz və ya emala etiraz etdiyiniz zaman məlumatlarınızın emalını dərhal dayandırırıq. Bu, davam etməyimizi xahiş edənə qədər hesabınızı dayandırır.
 

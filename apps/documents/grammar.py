@@ -19,15 +19,22 @@ module defines what may be asked and where each answer goes.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Literal, get_args
 
-from .constraints import _INCLUDE_TARGETS, _ORDER_DIRECTIONS, _ORDER_TARGETS, _SECTIONS
+from .constraints import (
+    _INCLUDE_TARGETS,
+    _ORDER_DIRECTIONS,
+    _ORDER_TARGETS,
+    _SECTIONS,
+    CAP_SECTIONS,
+)
 
 Document = Literal["cv", "motivation_letter", "reference_letter", "other"]
 Operation = Literal[
     "limit", "language", "format", "include", "order", "emphasise", "style",
-    "topic", "student_action", "form", "naming", "other",
+    "topic", "student_action", "form", "naming", "coverage", "other",
 ]
 
 DOCUMENTS: tuple[str, ...] = get_args(Document)
@@ -37,7 +44,7 @@ OPERATIONS: tuple[str, ...] = get_args(Operation)
 #: Every sentence about a reference letter is asked the referee questions on
 #: top of its own operation, so the sentence keeps its sink (a student action)
 #: and also yields one `referee` rule per fact it states.
-RuleOperation = Operation | Literal["referee"]
+RuleOperation = Operation | Literal["referee", "file"]
 
 #: What a page can state about its reference letters, field -> closed values.
 #: Owner-approved 2026-10-08 with the student-dashboard session, whose
@@ -53,6 +60,28 @@ REFEREE_FIELDS: dict[str, tuple[str, ...]] = {
     "due": ("WITH_APPLICATION", "BEFORE_DEADLINE", "NOT_STATED"),
 }
 
+#: What a page can state about the FILE a document is submitted as.
+#: NOT_STATED never becomes a rule. `document` EVERY_DOCUMENT is a rule for all
+#: the applicant's documents at once ("all documents as one PDF, max 10 MB").
+FILE_FIELDS: dict[str, tuple[str, ...]] = {
+    "document": ("CV", "MOTIVATION_LETTER", "REFERENCE_LETTER", "TRANSCRIPT", "DIPLOMA",
+                 "PASSPORT", "LANGUAGE_CERTIFICATE", "EVERY_DOCUMENT", "NOT_STATED"),
+    "format": ("PDF", "JPG", "PDF_OR_JPG", "NOT_STATED"),
+    "combine": ("ONE_FILE", "SEPARATE_FILES", "NOT_STATED"),
+}
+
+#: A file thing a sentence can name. Matched on the raw line; code decides only
+#: WHETHER to ask, never what the answer is. Lives here (not in grammar_values)
+#: because derive.py imports it and grammar_values imports derive. ponytail:
+#: English, German, French, Russian and Turkish words for file/size; a page in
+#: another language still reaches the questions through "PDF"/"MB".
+_FILE_TERMS = re.compile(
+    r"\b(?:pdf|jpe?g|\d+(?:[.,]\d+)?\s*(?:mb|kb|mo|ko|megabytes?|kilobytes?)|file ?name"
+    r"|one file|single file|datei|fichier|dosya|файл|мб|кб)\b"
+    r"|\b[\w-]+\.(?:pdf|jpe?g|png)\b",
+    re.IGNORECASE,
+)
+
 #: The units a length may be stated in. `pages` is a CV and letter unit;
 #: `words` and `characters` are the letter's (ApplicationPrompt.letter_max_words,
 #: letter_max_chars) and the CV's max_words / max_chars_incl_spaces.
@@ -61,7 +90,10 @@ REFEREE_FIELDS: dict[str, tuple[str, ...]] = {
 #: a page prints, the frontier judge derived max_bytes from it, and without
 #: this unit the grammar could only call it `other`. The letter has no size
 #: field, so a letter's megabytes cap is `unapplied`.
-UNITS: tuple[str, ...] = ("pages", "words", "characters", "megabytes")
+#: `entries` is a count of items in one CV section ("at most 3 publications"),
+#: the CV's max_entries_per_section (spec 2026-10-12 §8, the planned
+#: `cv_item_cap`); its section is asked per figure. The letter has none.
+UNITS: tuple[str, ...] = ("pages", "words", "characters", "megabytes", "entries")
 
 #: What one figure in a length sentence IS (addendum §6.1). `approximate` is
 #: read as a cap, as decide_letter_shape has always read it: "about one page"
@@ -109,6 +141,10 @@ STYLE_VALUES: tuple[str, ...] = (
     # CV checker already -- render._check_no_unexplained_gaps and
     # _check_prohibited_content -- that no slot could reach.
     "no_gaps", "no_hyperlinks",
+    # Spec 2026-10-12 §8: how much of the history a CV must hold, and from
+    # when. `cv_start_last_years` reads its number through `style_number`.
+    "cv_complete", "cv_relevant_only",
+    "cv_start_upper_secondary", "cv_start_first_degree", "cv_start_last_years",
 )
 
 #: What a condition may be about, limited to what the student ledger can answer.
@@ -117,6 +153,57 @@ STYLE_VALUES: tuple[str, ...] = (
 CONDITION_KINDS: tuple[str, ...] = (
     "nationality", "degree_level", "work_experience", "track", "other",
 )
+
+#: Spec §8, the coverage operation's closed answers. `none` is the escape a
+#: Choice needs when the list does not fit; it has no sink and is `unapplied`.
+COVERAGE_VALUES: tuple[str, ...] = (
+    "complete", "relevant_only", "from_upper_secondary", "from_first_degree",
+    "last_n_years", "section_cap", "none",
+)
+#: The largest count of entries or span of years a coverage rule may carry.
+#: Above it the figure is a misread digit, not a rule, as _IMPLAUSIBLE_MAX.
+_COVERAGE_MAX = 50
+
+
+def _plausible_count(number: object) -> bool:
+    return isinstance(number, int) and not isinstance(number, bool) and 1 <= number <= _COVERAGE_MAX
+
+
+def coverage_key(value: object) -> str:
+    """The constraint key a coverage value writes, or "" when nothing can carry it.
+
+    The value is the (kind, section, number) triple grammar_values builds,
+    the same shape `order` uses for its pair. A cap naming a section outside
+    CAP_SECTIONS -- education, languages -- has no sink: a page cap never
+    removes a degree (spec §8).
+    """
+    if not (isinstance(value, tuple | list) and len(value) == 3):
+        return ""
+    kind, section, number = value
+    if kind in ("complete", "relevant_only"):
+        return "cv_scope"
+    if kind in ("from_upper_secondary", "from_first_degree"):
+        return "cv_start"
+    if kind == "last_n_years":
+        return "cv_start" if _plausible_count(number) else ""
+    if kind == "section_cap":
+        return "cv_item_cap" if section in CAP_SECTIONS and _plausible_count(number) else ""
+    return ""
+
+
+def coverage_rule_value(value: object) -> object:
+    """The stored ConstraintRule.value for a coverage triple coverage_key accepts."""
+    assert isinstance(value, tuple | list)
+    kind, section, number = value
+    if kind in ("complete", "relevant_only"):
+        return kind
+    if kind == "from_upper_secondary":
+        return {"start": "upper_secondary"}
+    if kind == "from_first_degree":
+        return {"start": "first_degree"}
+    if kind == "last_n_years":
+        return {"start": "last_n_years", "years": number}
+    return {"section": section, "max": number}
 
 # Moved verbatim from derive.py so the grammar keeps the guards and Task 10's
 # cut of derive.py cannot take them.
@@ -130,7 +217,7 @@ CONDITION_KINDS: tuple[str, ...] = (
 #: Applies to CAPS only, never floors: a floor is already bounded above by
 #: the page's own text, and a too-small floor is harmless (it only asks for
 #: a longer letter, exactly like a false floor from a fabricated number).
-_IMPLAUSIBLE_CAP = {"words": 50, "chars": 200, "pages": 0.25, "megabytes": 0.1}
+_IMPLAUSIBLE_CAP = {"words": 50, "chars": 200, "pages": 0.25, "megabytes": 0.1, "entries": 1}
 
 #: The largest figure any real programme states. Above this it is a misread, not a
 #: rule: no motivation letter runs to twenty pages, and a floor above these blocks
@@ -141,17 +228,19 @@ _IMPLAUSIBLE_CAP = {"words": 50, "chars": 200, "pages": 0.25, "megabytes": 0.1}
 #: read, statements and snapshot included.
 #: A megabytes figure above 100 is a misread too -- or a kilobyte figure read
 #: as megabytes ("300 KB"), which is exactly the reading this band must drop.
-_IMPLAUSIBLE_MAX = {"words": 20_000, "chars": 100_000, "pages": 20, "megabytes": 100}
+_IMPLAUSIBLE_MAX = {
+    "words": 20_000, "chars": 100_000, "pages": 20, "megabytes": 100, "entries": 50,
+}
 
 #: operation -> the CV constraint key it writes, for the operations whose value
 #: does not pick the key itself.
-#: `photo_required` is deliberately absent (fix round 1, finding 2, controller
-#: ruling): `render._check_photo` only fires on `photo_allowed=False`, so
-#: mapping `photo_required` onto that key would name a sink nothing requires
-#: a photo from -- an applied-looking rule that enforces nothing. It returns
-#: "" (unapplied) instead. Every other key here lacking a pre-flight checker
-#: stays, by the same ruling: a loud "no pre-flight check" is acceptable.
+#: `photo_required` has its own key (spec 2026-10-12 §8) and its own checker,
+#: render._check_photo_required. It used to return "" (unapplied) because the
+#: only photo key, photo_allowed, stores "required" and "allowed" alike as
+#: True. Every key here lacking a pre-flight checker stays, by the fix-round-1
+#: ruling: a loud "no pre-flight check" is acceptable.
 _CV_STYLE_SINK: dict[str, str] = {
+    "photo_required": "photo_required",
     "photo_forbidden": "photo_allowed",
     "signature_required": "signature_required",
     "date_of_issue_required": "date_of_issue_required",
@@ -160,12 +249,18 @@ _CV_STYLE_SINK: dict[str, str] = {
     "font_family": "font",
     "no_gaps": "no_unexplained_gaps",
     "no_hyperlinks": "prohibited_content",
+    "cv_complete": "cv_scope",
+    "cv_relevant_only": "cv_scope",
+    "cv_start_upper_secondary": "cv_start",
+    "cv_start_first_degree": "cv_start",
+    "cv_start_last_years": "cv_start",
 }
 _CV_LIMIT_SINK: dict[str, str] = {
     "pages": "max_pages",
     "words": "max_words",
     "characters": "max_chars_incl_spaces",
     "megabytes": "max_bytes",
+    "entries": "max_entries_per_section",
 }
 #: The letter's sinks are LetterShape field names; apply_derived_shape writes
 #: them onto ApplicationPrompt.letter_*.
@@ -178,7 +273,7 @@ _LETTER_FLOOR_SINK: dict[str, str] = {"words": "min_words", "characters": "min_c
 #: `single_file_bundle` is deliberately absent (fix round 1, finding 2,
 #: controller ruling): `apps/funding/requirements.py` acts on nothing keyed by
 #: `file_bundle`, so the mapping named a sink no checker reads. It returns ""
-#: (unapplied) instead -- the same ruling as `photo_required` above.
+#: (unapplied) instead -- by the fix-round-1 ruling (finding 2).
 _LETTER_STYLE_SINK: dict[str, str] = {
     "signed_declaration": "signed_declaration",
     "handwritten": "handwritten",
@@ -326,6 +421,8 @@ def _cv_sink(operation: str, value: object) -> str:
         ) else ""
     if operation == "emphasise":
         return "cv_directives" if value in _SECTIONS else ""
+    if operation == "coverage":
+        return coverage_key(value)
     # `topic` has no CV sink: the CV states facts from the ledger and has no
     # free-text section a topic could steer. On the letter it does.
     return ""
@@ -367,7 +464,8 @@ def _letter_sink(operation: str, value: object) -> str:
 #: lists allow and asserts this set is exactly what that walk produces.
 SINKS: frozenset[str] = frozenset(
     {"cv_directives", "cv_format_requirement", "student_actions", "written_requirements",
-     "document_language", "form", "naming", "language", "max_chars_excl_spaces", ""}
+     "document_language", "form", "naming", "language", "max_chars_excl_spaces",
+     "cv_scope", "cv_start", "cv_item_cap", ""}
     | set(_CV_LIMIT_SINK.values())
     | set(_CV_STYLE_SINK.values())
     | set(_LETTER_LIMIT_SINK.values())

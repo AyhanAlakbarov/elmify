@@ -12,7 +12,7 @@ KMS-encrypted (`alias/aws/sqs`).
 | `QuietGroupAgeAlarm` | age of oldest message in quiet tenant groups > 120s | A low-traffic tenant is being starved by fairness batching |
 | `NoisyGroupsAlarm` | count of noisy tenant groups > 0 | One tenant is dominating queue throughput |
 | `DeadLetterDepthAlarm` | DLQ `ApproximateNumberOfMessagesVisible` > 0 | A message failed all 3 delivery attempts |
-| `FailedResearchRateAlarm` | `Tehsil/App FailedResearchMessages` > 3 / 5 min | Worker tracebacks (see filter below) |
+| `FailedResearchRateAlarm` | `Elmify/App FailedResearchMessages` > 3 / 5 min | Worker tracebacks (see filter below) |
 
 ## DLQ triage
 
@@ -23,7 +23,7 @@ KMS-encrypted (`alias/aws/sqs`).
    ```
 2. Decode each `Body` as `apps.research.schemas.ResearchMessage` JSON;
    note `tenant_id` and `run_id`.
-3. Check `WorkerLogGroup` (`/tehsil/app/<stack>/worker`) around the
+3. Check `WorkerLogGroup` (`/elmify/app/<stack>/worker`) around the
    message's approximate send time for the traceback that sent it to the
    DLQ (`FailedResearchMetricFilter` matches
    `"Traceback (most recent call last)"`).

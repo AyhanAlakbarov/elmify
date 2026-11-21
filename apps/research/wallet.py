@@ -36,7 +36,7 @@ from django.utils import timezone
 from apps.tenancy.db import tenant_transaction
 from apps.tenancy.models import Membership
 
-from .models import SearchTap, SearchWallet, WalletCharge
+from .models import PlatformAgency, SearchTap, SearchWallet, WalletCharge
 
 logger = logging.getLogger(__name__)
 
@@ -63,22 +63,36 @@ def open_wallet(student: Membership, intake: date) -> SearchWallet:
     """The student's wallet for `intake`, opened on first use.
 
     A third distinct intake inside 365 days reuses the newest wallet rather
-    than minting money (plan decision 4). The membership row is locked so two
-    concurrent opens cannot both pass the count.
+    than minting money (plan decision 4). Direct retail B2C students on
+    `PlatformAgency` use `STUDENT_B2C_SEARCH_WALLET_USD` ($35) and
+    `STUDENT_B2C_SEARCH_WALLETS_PER_YEAR` (1) so a 299 AZN / 499 AZN cycle pass
+    stays unit-economics positive even under cold sweeps. The membership row is
+    locked so two concurrent opens cannot both pass the count.
     """
     with tenant_transaction(student.tenant_id):
         Membership.objects.select_for_update().get(id=student.id)
         existing = SearchWallet.objects.filter(student=student, intended_intake=intake).first()
         if existing is not None:
             return existing
+        is_direct_b2c = PlatformAgency.objects.filter(agency_id=student.tenant_id).exists()
+        max_wallets = (
+            settings.STUDENT_B2C_SEARCH_WALLETS_PER_YEAR
+            if is_direct_b2c
+            else settings.SEARCH_WALLETS_PER_YEAR
+        )
+        budget_usd = (
+            settings.STUDENT_B2C_SEARCH_WALLET_USD
+            if is_direct_b2c
+            else settings.SEARCH_WALLET_USD
+        )
         recent = SearchWallet.objects.filter(
             student=student, created_at__gte=timezone.now() - timedelta(days=365)
         ).order_by("-created_at")
         newest = recent.first()
-        if newest is not None and recent.count() >= settings.SEARCH_WALLETS_PER_YEAR:
+        if newest is not None and recent.count() >= max_wallets:
             return newest
         return SearchWallet.objects.create(
-            student=student, intended_intake=intake, budget_usd=settings.SEARCH_WALLET_USD
+            student=student, intended_intake=intake, budget_usd=budget_usd
         )
 
 
@@ -126,25 +140,55 @@ def tap_spent(tap: SearchTap) -> Decimal:
     return total or Decimal("0")
 
 
+def _reserve(tap: SearchTap) -> Decimal:
+    """What this tap may never spend of the wallet: a FIRST search leaves the
+    follow-up reserve. Checked live against the wallet, not only through the
+    allowance fixed at request time -- a follow-up that spends between a first
+    search's request and its run would otherwise let it eat the reserve."""
+    if tap.kind == SearchTap.Kind.FIRST:
+        return Decimal(settings.SEARCH_FOLLOWUP_RESERVE_USD)
+    return Decimal("0")
+
+
+def spendable(tap: SearchTap, wallet: SearchWallet) -> Decimal:
+    """What this tap may still spend: its allowance left, the wallet left, the reserve kept."""
+    return max(
+        Decimal("0"),
+        min(tap.allowance_usd - tap_spent(tap), remaining(wallet) - _reserve(tap)),
+    )
+
+
 def _crossed(tap: SearchTap, wallet: SearchWallet, usd: Decimal) -> str | None:
     """The first ceiling `usd` more would cross, as a SearchTap.Ending, or None."""
     if tap_spent(tap) + usd > tap.allowance_usd:
         return SearchTap.Ending.TAP_SHARE_SPENT
-    if wallet.spent_usd + usd > wallet.budget_usd:
+    if wallet.spent_usd + usd > wallet.budget_usd - _reserve(tap):
         return SearchTap.Ending.WALLET_SPENT
     if tenant_spend_today(now=timezone.now()) + usd > settings.SEARCH_TENANT_DAILY_CEILING_USD:
         return SearchTap.Ending.TENANT_CEILING
     return None
 
 
-def preflight(tap: SearchTap, provider: str) -> None:
-    """Refuse a call whose worst-case price would cross any ceiling. Writes nothing."""
-    worst = settings.PROVIDER_CALL_PREFLIGHT_USD.get(provider, _UNKNOWN_PROVIDER_USD)
+def preflight(
+    tap: SearchTap, provider: str, *, worst: Decimal | None = None,
+    in_flight: Decimal = Decimal("0"),
+) -> Decimal:
+    """Refuse a call whose worst-case price would cross any ceiling. Writes nothing.
+    Returns the worst-case price it checked.
+
+    `worst` overrides the provider's table price for a call the table does not
+    describe (the first search's 100-result Exa call is ~8x the 15-result one).
+    `in_flight` is the worst-case price of calls already made and not yet
+    charged (the tap's parallel calls): it counts as spent.
+    """
+    if worst is None:
+        worst = settings.PROVIDER_CALL_PREFLIGHT_USD.get(provider, _UNKNOWN_PROVIDER_USD)
     with tenant_transaction(tap.tenant_id):
         wallet = SearchWallet.objects.get(id=tap.wallet_id)
-        ending = _crossed(tap, wallet, worst)
+        ending = _crossed(tap, wallet, worst + in_flight)
     if ending is not None:
         raise WalletExhausted(ending)
+    return worst
 
 
 def charge(

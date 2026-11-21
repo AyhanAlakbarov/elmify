@@ -1,13 +1,14 @@
 {
-  "name": "tehsil-copilot",
-  "version": "0.1.0",
+  "name": "elmify-copilot",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
+    "build:test": "node build.mjs --test",
     "typecheck": "tsc --noEmit",
-    "package": "node build.mjs && cd dist && zip -r ../tehsil-copilot.zip .",
-    "check": "npm run typecheck && npm run build"
+    "package": "node build.mjs && cd dist && zip -r ../elmify-copilot.zip .",
+    "check": "npm run typecheck && npm run build && npm run build:test"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",

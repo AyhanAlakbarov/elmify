@@ -1,0 +1,251 @@
+# https://unstats.un.org/unsd/methodology/m49/overview/ fetched 2026-10-14 (English table, columns kept as published)
+# iso_alpha2	country	sub_region_code	intermediate_region_code	ldc
+ISO-alpha2 Code	Country or Area	Sub-region Code	Intermediate Region Code	
+DZ	Algeria	015		
+EG	Egypt	015		
+LY	Libya	015		
+MA	Morocco	015		
+SD	Sudan	015		LDC
+TN	Tunisia	015		
+EH	Western Sahara	015		
+IO	British Indian Ocean Territory	202	014	
+BI	Burundi	202	014	LDC
+KM	Comoros	202	014	LDC
+DJ	Djibouti	202	014	LDC
+ER	Eritrea	202	014	LDC
+ET	Ethiopia	202	014	LDC
+TF	French Southern Territories	202	014	
+KE	Kenya	202	014	
+MG	Madagascar	202	014	LDC
+MW	Malawi	202	014	LDC
+MU	Mauritius	202	014	
+YT	Mayotte	202	014	
+MZ	Mozambique	202	014	LDC
+RE	R&#233;union	202	014	
+RW	Rwanda	202	014	LDC
+SC	Seychelles	202	014	
+SO	Somalia	202	014	LDC
+SS	South Sudan	202	014	LDC
+UG	Uganda	202	014	LDC
+TZ	United Republic of Tanzania	202	014	LDC
+ZM	Zambia	202	014	LDC
+ZW	Zimbabwe	202	014	
+AO	Angola	202	017	LDC
+CM	Cameroon	202	017	
+CF	Central African Republic	202	017	LDC
+TD	Chad	202	017	LDC
+CG	Congo	202	017	
+CD	Democratic Republic of the Congo	202	017	LDC
+GQ	Equatorial Guinea	202	017	
+GA	Gabon	202	017	
+ST	Sao Tome and Principe	202	017	
+BW	Botswana	202	018	
+SZ	Eswatini	202	018	
+LS	Lesotho	202	018	LDC
+NA	Namibia	202	018	
+ZA	South Africa	202	018	
+BJ	Benin	202	011	LDC
+BF	Burkina Faso	202	011	LDC
+CV	Cabo Verde	202	011	
+CI	C&#244;te d’Ivoire	202	011	
+GM	Gambia	202	011	LDC
+GH	Ghana	202	011	
+GN	Guinea	202	011	LDC
+GW	Guinea-Bissau	202	011	LDC
+LR	Liberia	202	011	LDC
+ML	Mali	202	011	LDC
+MR	Mauritania	202	011	LDC
+NE	Niger	202	011	LDC
+NG	Nigeria	202	011	
+SH	Saint Helena	202	011	
+SN	Senegal	202	011	LDC
+SL	Sierra Leone	202	011	LDC
+TG	Togo	202	011	LDC
+AI	Anguilla	419	029	
+AG	Antigua and Barbuda	419	029	
+AW	Aruba	419	029	
+BS	Bahamas	419	029	
+BB	Barbados	419	029	
+BQ	Bonaire, Sint Eustatius and Saba	419	029	
+VG	British Virgin Islands	419	029	
+KY	Cayman Islands	419	029	
+CU	Cuba	419	029	
+CW	Cura&#231;ao	419	029	
+DM	Dominica	419	029	
+DO	Dominican Republic	419	029	
+GD	Grenada	419	029	
+GP	Guadeloupe	419	029	
+HT	Haiti	419	029	LDC
+JM	Jamaica	419	029	
+MQ	Martinique	419	029	
+MS	Montserrat	419	029	
+PR	Puerto Rico	419	029	
+BL	Saint Barth&#233;lemy	419	029	
+KN	Saint Kitts and Nevis	419	029	
+LC	Saint Lucia	419	029	
+MF	Saint Martin (French Part)	419	029	
+VC	Saint Vincent and the Grenadines	419	029	
+SX	Sint Maarten (Dutch part)	419	029	
+TT	Trinidad and Tobago	419	029	
+TC	Turks and Caicos Islands	419	029	
+VI	United States Virgin Islands	419	029	
+BZ	Belize	419	013	
+CR	Costa Rica	419	013	
+SV	El Salvador	419	013	
+GT	Guatemala	419	013	
+HN	Honduras	419	013	
+MX	Mexico	419	013	
+NI	Nicaragua	419	013	
+PA	Panama	419	013	
+AR	Argentina	419	005	
+BO	Bolivia (Plurinational State of)	419	005	
+BV	Bouvet Island	419	005	
+BR	Brazil	419	005	
+CL	Chile	419	005	
+CO	Colombia	419	005	
+EC	Ecuador	419	005	
+FK	Falkland Islands (Malvinas)	419	005	
+GF	French Guiana	419	005	
+GY	Guyana	419	005	
+PY	Paraguay	419	005	
+PE	Peru	419	005	
+GS	South Georgia and the South Sandwich Islands	419	005	
+SR	Suriname	419	005	
+UY	Uruguay	419	005	
+VE	Venezuela (Bolivarian Republic of)	419	005	
+BM	Bermuda	021		
+CA	Canada	021		
+GL	Greenland	021		
+PM	Saint Pierre and Miquelon	021		
+US	United States of America	021		
+AQ	Antarctica			
+KZ	Kazakhstan	143		
+KG	Kyrgyzstan	143		
+TJ	Tajikistan	143		
+TM	Turkmenistan	143		
+UZ	Uzbekistan	143		
+CN	China	030		
+HK	China, Hong Kong Special Administrative Region	030		
+MO	China, Macao Special Administrative Region	030		
+KP	Democratic People&#39;s Republic of Korea	030		
+JP	Japan	030		
+MN	Mongolia	030		
+KR	Republic of Korea	030		
+BN	Brunei Darussalam	035		
+KH	Cambodia	035		LDC
+ID	Indonesia	035		
+LA	Lao People&#39;s Democratic Republic	035		LDC
+MY	Malaysia	035		
+MM	Myanmar	035		LDC
+PH	Philippines	035		
+SG	Singapore	035		
+TH	Thailand	035		
+TL	Timor-Leste	035		LDC
+VN	Viet Nam	035		
+AF	Afghanistan	034		LDC
+BD	Bangladesh	034		LDC
+BT	Bhutan	034		
+IN	India	034		
+IR	Iran (Islamic Republic of)	034		
+MV	Maldives	034		
+NP	Nepal	034		LDC
+PK	Pakistan	034		
+LK	Sri Lanka	034		
+AM	Armenia	145		
+AZ	Azerbaijan	145		
+BH	Bahrain	145		
+CY	Cyprus	145		
+GE	Georgia	145		
+IQ	Iraq	145		
+IL	Israel	145		
+JO	Jordan	145		
+KW	Kuwait	145		
+LB	Lebanon	145		
+OM	Oman	145		
+QA	Qatar	145		
+SA	Saudi Arabia	145		
+PS	State of Palestine	145		
+SY	Syrian Arab Republic	145		
+TR	T&#252;rkiye	145		
+AE	United Arab Emirates	145		
+YE	Yemen	145		LDC
+BY	Belarus	151		
+BG	Bulgaria	151		
+CZ	Czechia	151		
+HU	Hungary	151		
+PL	Poland	151		
+MD	Republic of Moldova	151		
+RO	Romania	151		
+RU	Russian Federation	151		
+SK	Slovakia	151		
+UA	Ukraine	151		
+AX	&#197;land Islands	154		
+DK	Denmark	154		
+EE	Estonia	154		
+FO	Faroe Islands	154		
+FI	Finland	154		
+GG	Guernsey	154		
+IS	Iceland	154		
+IE	Ireland	154		
+IM	Isle of Man	154		
+JE	Jersey	154		
+LV	Latvia	154		
+LT	Lithuania	154		
+NO	Norway	154		
+SJ	Svalbard and Jan Mayen Islands	154		
+SE	Sweden	154		
+GB	United Kingdom of Great Britain and Northern Ireland	154		
+AL	Albania	039		
+AD	Andorra	039		
+BA	Bosnia and Herzegovina	039		
+HR	Croatia	039		
+GI	Gibraltar	039		
+GR	Greece	039		
+VA	Holy See	039		
+IT	Italy	039		
+MT	Malta	039		
+ME	Montenegro	039		
+MK	North Macedonia	039		
+PT	Portugal	039		
+SM	San Marino	039		
+RS	Serbia	039		
+SI	Slovenia	039		
+ES	Spain	039		
+AT	Austria	155		
+BE	Belgium	155		
+FR	France	155		
+DE	Germany	155		
+LI	Liechtenstein	155		
+LU	Luxembourg	155		
+MC	Monaco	155		
+NL	Netherlands (Kingdom of the)	155		
+CH	Switzerland	155		
+AU	Australia	053		
+CX	Christmas Island	053		
+CC	Cocos (Keeling) Islands	053		
+HM	Heard Island and McDonald Islands	053		
+NZ	New Zealand	053		
+NF	Norfolk Island	053		
+FJ	Fiji	054		
+NC	New Caledonia	054		
+PG	Papua New Guinea	054		
+SB	Solomon Islands	054		LDC
+VU	Vanuatu	054		
+GU	Guam	057		
+KI	Kiribati	057		LDC
+MH	Marshall Islands	057		
+FM	Micronesia (Federated States of)	057		
+NR	Naoero	057		
+MP	Northern Mariana Islands	057		
+PW	Palau	057		
+UM	United States Minor Outlying Islands	057		
+AS	American Samoa	061		
+CK	Cook Islands	061		
+PF	French Polynesia	061		
+NU	Niue	061		
+PN	Pitcairn	061		
+WS	Samoa	061		
+TK	Tokelau	061		
+TO	Tonga	061		
+TV	Tuvalu	061		LDC
+WF	Wallis and Futuna Islands	061		

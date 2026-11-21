@@ -62,7 +62,8 @@ def test_the_worker_copies_what_the_board_shows_onto_each_candidate(slice_driver
     assert programme.country_code == "DE"
     assert programme.degree_level == "MASTER"
     assert programme.institution_id is not None
-    assert programme.application_fee is not None
+    # The slice's programme states no fee: "not known", never 0.00 (spec §7.4).
+    assert (programme.application_fee, programme.application_fee_currency) == (None, "")
     assert programme.funding_card == {}
     assert award.funding_card["holder"] == "Example Foundation"
     assert award.funding_card["scope"] == "HOLDER"
@@ -189,3 +190,26 @@ def test_an_award_without_a_stated_duration_copies_none() -> None:
     card = _award_copy(opportunity, _packed(opportunity))["funding_card"]
     assert card["duration_months"] is None  # type: ignore[index]
     assert card["duration_text"] == ""  # type: ignore[index]
+
+
+_REFEREES = [{
+    "field": "count", "value": "TWO", "date": "", "conditional": False, "condition": "",
+    "rule_text": "Two letters of recommendation.", "source_url": "https://uni.example.de/apply",
+}]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_worker_copies_the_programme_s_referee_facts(slice_driver) -> None:
+    """Lanes spec §3.1: the web tier reads the candidate's copy, never Program."""
+    run = slice_driver.student_submits_profile_and_starts_research()
+    _fund_the_programme()
+    Program.objects.filter(name="MSc Chemistry").update(referee_requirements=_REFEREES)
+    slice_driver.worker_processes(slice_driver.receive_message())
+
+    with tenant_scope(run.tenant_id):
+        programme = RecommendationCandidate.objects.get(run=run, program__isnull=False)
+        award = RecommendationCandidate.objects.get(
+            run=run, opportunity__isnull=False, opportunity__scope_type="HOLDER"
+        )
+    assert programme.referee_requirements == _REFEREES
+    assert award.referee_requirements == []

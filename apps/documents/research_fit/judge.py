@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from django.conf import settings
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from apps.research.extraction import (
     MessagesAPI,
@@ -32,10 +32,12 @@ logger = logging.getLogger(__name__)
 _MAX_OUTPUT_TOKENS = 300
 _CLAUDE_MAX_TOKENS = 600
 _QUESTION = (
-    "Does the page sentence describe research or teaching work that the applicant's work is "
-    "DIRECTLY about -- the same problem, method or system -- rather than merely the same broad "
-    "field? Answer strong (directly about it), weak (same field, different problem), or none. "
-    "Quote the excerpt of the page sentence that decided it."
+    "Does the page sentence describe research or teaching work that the applicant's work or "
+    "stated training goal is DIRECTLY about -- the same problem, a shared method/tool/analytical "
+    "framework, or a course/track teaching that specific method or topic -- rather than merely "
+    "the same broad discipline? Answer strong (same problem, shared method/system, or directly "
+    "targeted course/track), weak (only the same broad discipline with no shared method or "
+    "topic), or none. Quote the excerpt of the page sentence that decided it."
 )
 _PHRASINGS = (
     "Two items follow, labelled DATA: an applicant's work and one sentence from a programme "
@@ -78,9 +80,17 @@ def _openai_reading(
             max_output_tokens=_MAX_OUTPUT_TOKENS,
             store=False,
         )
-    except Exception:  # a model SDK's transport/rate-limit/5xx errors are plain
+    except ValidationError:
+        logger.warning("research-fit OpenAI alignment reading was off-schema")
+        return None
+    except Exception as exc:  # a model SDK's transport/rate-limit/5xx errors are plain
         # Exceptions, not ValueError/ValidationError -- a dropped reading is
         # a supported state (the survivors decide), never a raise (D11).
+        logger.warning(
+            "research-fit OpenAI alignment reading degraded (%s): %s",
+            type(exc).__name__,
+            exc,
+        )
         return None
     return parsed_or_none(response, AlignmentReading)
 
@@ -97,7 +107,7 @@ def _claude_reading(
             identifier=student_id,
             max_tokens=_CLAUDE_MAX_TOKENS,
         )
-    except Exception:  # a model SDK's transport/rate-limit/5xx errors are plain
+    except Exception as exc:  # a model SDK's transport/rate-limit/5xx errors are plain
         # Exceptions, not ValueError/ValidationError -- a dropped reading is
         # a supported state (the survivors decide), never a raise (D11).
         # claude_parsed_or_none already catches ValidationError itself, so
@@ -110,6 +120,11 @@ def _claude_reading(
         # same as OpenAI's parsed_or_none). A response missing stop_reason
         # entirely is now dropped rather than accepted -- see
         # test_a_response_missing_stop_reason_is_dropped_not_accepted.
+        logger.warning(
+            "research-fit Claude alignment reading degraded (%s): %s",
+            type(exc).__name__,
+            exc,
+        )
         return None
 
 

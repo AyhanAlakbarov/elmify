@@ -164,10 +164,39 @@ def test_the_references_page_is_disabled_and_lists_who_asks(
 def test_the_plan_page_shows_whether_the_year_is_paid(
     client, agency_a, domain_a, user_a, membership_a
 ) -> None:
+    from uuid import uuid4
+
+    from django.utils import timezone
+
+    from apps.concierge.models import StudentCycle
+    from apps.portals.models import Application
+
     client.force_login(user_a)
     body = client.get("/student/settings/plan/", HTTP_HOST=domain_a.host).content.decode()
     assert "is not paid yet" in body
+    assert "Unpaid (Explore preview)" in body
+    assert "299 AZN" in body
+    assert "499 AZN" in body
     assert "<button type=\"button\" disabled>Pay by card</button>" in body
+
+    with tenant_scope(agency_a.id):
+        StudentCycle.objects.create(
+            student=membership_a, academic_year="2026-2027", paid_at=timezone.now()
+        )
+    with reads_no_catalogue():
+        paid_body = client.get("/student/settings/plan/", HTTP_HOST=domain_a.host).content.decode()
+    assert "2026-2027 is paid" in paid_body
+    assert "Unconsumed 7-Day Preview Window (Refund / Rollover Eligible)" in paid_body
+
+    with tenant_scope(agency_a.id):
+        Application.objects.create(student=membership_a, program_id=uuid4())
+        Application.objects.create(student=membership_a, program_id=uuid4())
+    with reads_no_catalogue():
+        consumed_body = client.get(
+            "/student/settings/plan/", HTTP_HOST=domain_a.host
+        ).content.decode()
+    assert "Active &amp; Consumed (Non-Refundable)" in consumed_body
+    assert "Application kits drafted: <code>2</code>" in consumed_body
 
 
 def test_the_counsellor_sees_flagged_letters_of_their_own_students(
@@ -206,5 +235,3 @@ def test_a_student_cannot_open_the_review_list(
 ) -> None:
     client.force_login(user_a)
     assert client.get("/counselor/letters/", HTTP_HOST=domain_a.host).status_code == 403
-
-

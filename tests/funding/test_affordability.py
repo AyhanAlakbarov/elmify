@@ -290,3 +290,155 @@ def test_a_grant_with_no_repayable_share_covers_in_full() -> None:
 
     assert result.covered == Decimal("10000.00")
     assert result.gap == Decimal("0.00")
+
+
+# --- what the student can pay themselves (self_funding_capacity, per year) ----
+
+
+def test_self_funding_is_the_yearly_capacity_over_the_programme_s_length() -> None:
+    """The question asks "per year", the gap is a whole-programme figure: two
+    years at 6,000 a year pays 12,000 of a 20,000 gap and leaves 8,000."""
+    from apps.accounts.schemas import Money
+
+    profile = make_profile(self_funding_capacity=Money(amount=Decimal("6000"), currency="EUR"))
+    candidate = make_candidate(
+        duration_months=24, cost_components=(make_cost("TUITION", "10000.00"),), benefits=()
+    )
+
+    result = calculate_affordability(profile, candidate, EUR_RATES)
+
+    assert result.gap == Decimal("20000.00")  # the funding gap is unchanged
+    assert result.self_funded == Decimal("12000.00")
+    assert result.shortfall == Decimal("8000.00")
+
+
+def test_self_funding_never_exceeds_the_gap() -> None:
+    from apps.accounts.schemas import Money
+
+    profile = make_profile(self_funding_capacity=Money(amount=Decimal("50000"), currency="EUR"))
+    candidate = make_candidate(
+        duration_months=12, cost_components=(make_cost("TUITION", "3000.00"),), benefits=()
+    )
+
+    result = calculate_affordability(profile, candidate, EUR_RATES)
+
+    assert result.self_funded == Decimal("3000.00")
+    assert result.shortfall == Decimal("0.00")
+
+
+def test_no_stated_capacity_pays_nothing() -> None:
+    profile = make_profile(funding_dependency="MANDATORY", self_funding_capacity=None)
+    candidate = make_candidate(
+        duration_months=12, cost_components=(make_cost("TUITION", "3000.00"),), benefits=()
+    )
+
+    result = calculate_affordability(profile, candidate, EUR_RATES)
+
+    assert result.self_funded == Decimal("0.00")
+    assert result.shortfall == result.gap == Decimal("3000.00")
+
+
+def test_a_capacity_in_another_currency_is_converted() -> None:
+    from apps.accounts.schemas import Money
+
+    profile = make_profile(self_funding_capacity=Money(amount=Decimal("1085"), currency="USD"))
+    candidate = make_candidate(
+        duration_months=12, cost_components=(make_cost("TUITION", "3000.00"),), benefits=()
+    )
+
+    result = calculate_affordability(profile, candidate, EUR_RATES)
+
+    assert result.self_funded == Decimal("1000.00")
+
+
+def test_a_capacity_with_no_rate_counts_nothing_and_says_so(caplog) -> None:
+    """One unconvertible capacity must not drop every programme (the evaluator
+    drops a candidate on UnconvertibleCurrency): it counts as 0, loudly."""
+    from apps.accounts.schemas import Money
+
+    profile = make_profile(self_funding_capacity=Money(amount=Decimal("5000"), currency="GBP"))
+    candidate = make_candidate(
+        duration_months=12, cost_components=(make_cost("TUITION", "3000.00"),), benefits=()
+    )
+
+    with caplog.at_level("WARNING", logger="apps.funding.affordability"):
+        result = calculate_affordability(profile, candidate, EUR_RATES)
+
+    assert result.self_funded == Decimal("0.00")
+    assert "GBP" in caplog.text
+
+
+def test_calculate_affordability_forwards_today_to_age_gated_benefit_applies() -> None:
+    from datetime import date
+
+    from apps.funding.evaluation import ApplicantConditionFact, BenefitFact
+
+    profile = make_profile(date_of_birth=date(2000, 6, 1))
+    benefit = BenefitFact(
+        id="age-capped-waiver",
+        kind="TUITION",
+        amount=Decimal("10000.00"),
+        currency="EUR",
+        period="FULL_PROGRAM",
+        scope_type="GLOBAL",
+        accessibility="ORDINARY",
+        eligibility_confidence="VERIFIED",
+        is_current=True,
+    )
+    age_cond = ApplicantConditionFact(
+        benefit_id="age-capped-waiver",
+        condition_type="AGE_CAP",
+        key="AGE",
+        operator="LTE",
+        value="25",
+        comparable_value=Decimal("25"),
+        comparable_unit=None,
+        rule_text="Under 25 years of age.",
+    )
+    candidate = make_candidate(
+        duration_months=12,
+        cost_components=(make_cost("TUITION", "10000.00"),),
+        benefits=(benefit,),
+        applicant_conditions=(age_cond,),
+    )
+
+    # On 2025-05-01 the student is 24 (<= 25), so the benefit applies and gap is 0
+    res_young = calculate_affordability(
+        profile, candidate, EUR_RATES, today=date(2025, 5, 1)
+    )
+    assert res_young.covered == Decimal("10000.00")
+    assert res_young.gap == Decimal("0.00")
+
+    # On 2027-05-01 the student is 26 (> 25), so the benefit is excluded and gap is 10,000
+    res_old = calculate_affordability(
+        profile, candidate, EUR_RATES, today=date(2027, 5, 1)
+    )
+    assert res_old.covered == Decimal("0.00")
+    assert res_old.gap == Decimal("10000.00")
+
+
+def test_excluded_benefit_with_unconvertible_currency_does_not_abort_affordability() -> None:
+    """An excluded benefit whose currency is not in the rate table should not raise
+    UnconvertibleCurrency or break affordability for an otherwise valid candidate."""
+    profile = make_profile()
+    candidate = make_candidate(
+        program_country_code="DE",
+        cost_components=(make_cost("TUITION", "5000.00", currency="EUR"),),
+        benefits=(
+            # Benefit is excluded because country_code does not match DE
+            make_benefit(
+                scope_type="COUNTRY",
+                country_code="US",
+                amount="10000.00",
+                currency="XYZ_UNSUPPORTED",  # Currency not in EUR_RATES
+            ),
+        ),
+    )
+
+    result = calculate_affordability(profile, candidate, EUR_RATES)
+    assert result.baseline_cost == Decimal("5000.00")
+    assert result.gap == Decimal("5000.00")
+    assert len(result.benefit_items) == 1
+    assert result.benefit_items[0].bucket == "EXCLUDED"
+    assert result.benefit_items[0].program_total == Decimal("0.00")
+

@@ -197,6 +197,15 @@ def _create_unresolved(program: Program, cycle: str) -> ApplicationPrompt:
     # tenant reads, and a transient fetch failure must not overwrite a previously
     # resolved funder with an UNRESOLVED placeholder. A re-resolution that succeeds
     # writes through _upsert(); a failure leaves what was already there standing.
+    # I6: every non-VERIFIED rung returns a usable row so a default letter can
+    # always be drafted; archetypes=[] made generate_letter take the full-reuse
+    # branch with nothing to reuse and return a blocked zero-unit letter.
+    defaults = apply_silent_funder_defaults(
+        funder_kind=_FALLBACK_FUNDER_KIND,
+        country_code=program.country_code,
+        track=program.academic_track or "taught",
+        portfolio_led=program.portfolio_led,
+    )
     prompt, created = ApplicationPrompt.objects.get_or_create(
         programme=program,
         cycle=cycle,
@@ -206,10 +215,11 @@ def _create_unresolved(program: Program, cycle: str) -> ApplicationPrompt:
             "source": ApplicationPrompt.Source.UNRESOLVED,
             "funder_kind": _FALLBACK_FUNDER_KIND,
             "structure": ApplicationPrompt.Structure.CONTINUOUS_LETTER,
-            "archetypes": [],
+            "archetypes": list(cast("tuple[str, ...]", defaults["archetypes"])),
             "questions": [],
             "programme_evidence": {},
             "document_language": _FALLBACK_LANGUAGE,
+            "header_block_required": bool(defaults["header_block_required"]),
         },
     )
     if created:
@@ -285,7 +295,22 @@ def _create_extracted(
     # is_high_confidence check has confirmed extraction.structure is a
     # non-None member of _VALID_STRUCTURES; the cast just tells mypy what
     # that check already guarantees.
+    if (
+        extraction.letter_required in {"required", "optional", "not_requested"}
+        and program.letter_required == Program.LetterRequired.UNKNOWN
+    ):
+        program.letter_required = extraction.letter_required
+        program.save(update_fields=["letter_required"])
     funder_kind = _safe_funder_kind(extraction.funder_kind)
+    # I6: LetterPromptExtraction has no archetypes field; draw the same
+    # silent-funder defaults _create_inferred uses so an EXTRACTED row never
+    # ships archetypes=[] into generate_letter's full-reuse branch.
+    defaults = apply_silent_funder_defaults(
+        funder_kind=funder_kind,
+        country_code=program.country_code,
+        track=program.academic_track or "taught",
+        portfolio_led=program.portfolio_led,
+    )
     return _upsert(
         program,
         cycle,
@@ -295,10 +320,11 @@ def _create_extracted(
             "source": ApplicationPrompt.Source.EXTRACTED,
             "funder_kind": funder_kind,
             "structure": cast(str, extraction.structure),
-            "archetypes": [],
+            "archetypes": list(cast("tuple[str, ...]", defaults["archetypes"])),
             "questions": [],
             "programme_evidence": {},
             "document_language": _safe_language(extraction.document_language),
+            "header_block_required": bool(defaults["header_block_required"]),
             "immigration": funder_kind == ApplicationPrompt.FunderKind.IMMIGRATION_AUTHORITY,
         },
     )

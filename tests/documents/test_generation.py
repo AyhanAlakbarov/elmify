@@ -534,3 +534,350 @@ def test_generate_cv_prompt_carries_the_project_through_unfolded(agency_a, djang
         client = _mock_client()
         generate_cv(student=student, client=client)
         assert "the project is never folded into it" in _prompt_text(client).lower()
+
+
+def test_generate_cv_stamps_bullets_and_skill_category_from_confirmed_facts(
+    agency_a, django_user_model
+):
+    from apps.documents.schemas import ExperienceEntry, SkillEntry
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g12")
+        _fact(student, confirmed=True)
+        exp_fact = ExperienceEntry(
+            employer="EPFL",
+            title="Research Intern",
+            start_date="2025-09-01",
+            end_date="2025-12-01",
+            bullets=("Built catalyst pipeline.", "Published benchmark dataset."),
+        )
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EXPERIENCE,
+            payload=fact_payload(exp_fact, category=VerifiedFact.Category.EXPERIENCE),
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:test",
+            confirmed_by=student,
+            confirmed_at=timezone.now(),
+            created_by=student,
+        )
+        skill_fact = SkillEntry(name="Python", category="Programming")
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.SKILL,
+            payload=fact_payload(skill_fact, category=VerifiedFact.Category.SKILL),
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:test",
+            confirmed_by=student,
+            confirmed_at=timezone.now(),
+            created_by=student,
+        )
+        # Model output mutates bullets and drops skill category:
+        drifted = _content().model_copy(
+            update={
+                "experience": (
+                    exp_fact.model_copy(update={"bullets": ("Invented bullet.",)}),
+                ),
+                "skills": (SkillEntry(name="Python", category="Other"),),
+            }
+        )
+        client = _mock_client(drifted)
+        result = generate_cv(student=student, client=client)
+        assert result.content.experience[0].bullets == exp_fact.bullets
+        assert result.content.skills[0].category == "Programming"
+
+
+def test_generate_cv_stamps_relevant_coursework_from_checked_transcript_courses(
+    agency_a, django_user_model
+):
+    from apps.documents.requirement_list import Requirement, RequirementList
+
+    req_list = RequirementList(
+        items=(
+            Requirement(
+                document="cv",
+                key="include",
+                value="education.relevant_coursework",
+                origin="programme",
+                force="strict",
+                sentence="Include relevant coursework.",
+                source_url="https://uni.example/cv",
+            ),
+        )
+    )
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g13")
+        _fact(
+            student,
+            confirmed=True,
+            courses=[
+                {"title": "Machine Learning", "credits": 6.0},
+                {"title": "Quantum Chemistry", "credits": 5.0},
+            ],
+        )
+        client = _mock_client()
+        result = generate_cv(student=student, client=client, requirements=req_list)
+        assert (
+            result.content.education[0].relevant_coursework
+            == "Machine Learning, Quantum Chemistry"
+        )
+
+
+def test_generate_cv_applies_ban_rules_from_requirements(agency_a, django_user_model):
+    from apps.documents.constraints import ConstraintRule, Enforcement
+    from apps.documents.requirement_list import Requirement, RequirementList
+
+    ban = ConstraintRule(
+        rule_id="R-PHOTO",
+        key="prohibited_content",
+        value=["photo", "date_of_birth"],
+        enforcement=Enforcement.BINDING,
+        rule_text="No photo or date of birth.",
+    )
+    req_list = RequirementList(
+        items=(
+            Requirement(
+                document="cv",
+                key="prohibited_content",
+                value=["photo", "date_of_birth"],
+                origin="scholarship",
+                force="strict",
+                rule=ban,
+            ),
+        )
+    )
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g14")
+        VerifiedFact.objects.filter(
+            student=student, category=VerifiedFact.Category.IDENTITY
+        ).delete()
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.IDENTITY,
+            payload={
+                "full_name": "Jane Doe",
+                "date_of_birth": "2001-04-10",
+                "photo_url": "https://example.org/p.jpg",
+            },
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:test",
+            confirmed_by=student,
+            confirmed_at=timezone.now(),
+            created_by=student,
+        )
+        _fact(student, confirmed=True)
+        with_banned = _content().model_copy(
+            update={
+                "personal_information": PersonalInformation(
+                    full_name="Jane Doe",
+                    email="g14@applications.example",
+                    date_of_birth="2001-04-10",
+                    photo_url="https://example.org/p.jpg",
+                )
+            }
+        )
+        client = _mock_client(with_banned)
+        result = generate_cv(student=student, client=client, requirements=req_list)
+        assert result.content.personal_information.photo_url is None
+        assert result.content.personal_information.date_of_birth is None
+
+
+def test_retry_preserves_clean_sections_when_second_pass_breaks_them(
+    agency_a, django_user_model
+):
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g15")
+        _fact(student, confirmed=True)
+        # Pass 1 has clean education, but an unsupported summary -> triggers retry.
+        pass1 = _content(summary="Hallucinated summary.")
+        # Pass 2 removes summary, but hallucinates an unsupported institution on education.
+        bad_edu = _EDUCATION.model_copy(
+            update={"institution_original": "Hallucinated University"}
+        )
+        pass2 = _content(summary=None).model_copy(update={"education": (bad_edu,)})
+
+        client = MagicMock()
+        r1 = MagicMock(output_parsed=pass1, output=[], usage=None, id="r1")
+        r2 = MagicMock(output_parsed=pass2, output=[], usage=None, id="r2")
+        client.responses.parse.side_effect = [r1, r2]
+
+        result = generate_cv(student=student, client=client)
+        assert result.retried is True
+        assert result.content.summary is None
+        assert (
+            result.content.education[0].institution_original
+            == "Example University"
+        )
+        assert all(v.verdict == Verdict.SUPPORTED for v in result.verdicts)
+
+
+def _pending_change(student):
+    old = _fact(student, confirmed=True)
+    return VerifiedFact.objects.create(
+        student=student,
+        category=VerifiedFact.Category.EDUCATION,
+        payload={**old.payload, "city": "Hamburg"},
+        source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+        source_ref="upload:second",
+        supersedes=old,
+        created_by=student,
+    )
+
+
+def test_generation_refuses_while_a_newer_cv_awaits_confirmation(
+    agency_a, django_user_model
+):
+    from apps.documents.generation import ChangesPending
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g-pending")
+        _pending_change(student)
+        client = _mock_client()
+        with pytest.raises(ChangesPending):
+            generate_cv(student=student, client=client)
+    client.responses.parse.assert_not_called()
+
+
+def test_the_pending_check_runs_before_the_identity_check(
+    agency_a, django_user_model
+):
+    """A re-spelled name is itself a pending change; the student must be told
+    to settle the list, not that they have no name."""
+    from apps.documents.generation import ChangesPending
+
+    with tenant_scope(agency_a.id):
+        student = _student(
+            agency_a, django_user_model, "g-order", identity_confirmed=True
+        )
+        identity = VerifiedFact.objects.get(student=student)
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.IDENTITY,
+            payload={"full_name": "Jane Q. Doe"},
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:second",
+            supersedes=identity,
+            created_by=student,
+        )
+        with pytest.raises(ChangesPending):
+            generate_cv(student=student, client=_mock_client())
+
+
+def test_generation_restores_the_ledgers_bullets(agency_a, django_user_model):
+    from datetime import date as _date
+
+    from apps.documents.schemas import ExperienceEntry
+
+    post = ExperienceEntry(
+        employer="EPFL",
+        title="Research Intern",
+        start_date=_date(2025, 6, 1),
+        bullets=("Wrote the pipeline.",),
+    )
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g-stamp")
+        _fact(student, confirmed=True)
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EXPERIENCE,
+            payload=fact_payload(post, category=VerifiedFact.Category.EXPERIENCE),
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:test",
+            confirmed_by=student,
+            confirmed_at=timezone.now(),
+            created_by=student,
+        )
+        reworded = _content().model_copy(
+            update={
+                "experience": (
+                    post.model_copy(update={"bullets": ("Spearheaded a pipeline.",)}),
+                )
+            }
+        )
+        result = generate_cv(student=student, client=_mock_client(reworded))
+    assert result.content.experience[0].bullets == ("Wrote the pipeline.",)
+
+
+def test_generation_leaves_a_soft_skill_out_and_records_it(agency_a, django_user_model):
+    from apps.documents.schemas import SkillEntry
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g-soft")
+        _fact(student, confirmed=True)
+        for name in ("Python", "Teamwork"):
+            VerifiedFact.objects.create(
+                student=student,
+                category=VerifiedFact.Category.SKILL,
+                payload={"name": name},
+                source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+                source_ref="upload:test",
+                confirmed_by=student,
+                confirmed_at=timezone.now(),
+                created_by=student,
+            )
+        content = _content().model_copy(
+            update={"skills": (SkillEntry(name="Python"), SkillEntry(name="Teamwork"))}
+        )
+        result = generate_cv(student=student, client=_mock_client(content))
+    assert [s.name for s in result.content.skills] == ["Python"]
+    assert [f.original for f in result.applied_fixes] == ["Teamwork"]
+
+
+def test_an_omitted_soft_skill_stays_omitted_through_tailoring():
+    """Fixes run before _apply_tailoring, whose empty-intersection fallback
+    returns the content it was given -- already without the soft skill."""
+    from apps.documents.generation import _apply_tailoring
+
+    kept = _content_with_skills("Python")
+    assert [s.name for s in _apply_tailoring(kept, _tailored("Teamwork")).skills] == ["Python"]
+
+
+def test_generation_records_a_verb_fix(agency_a, django_user_model, settings):
+    from datetime import date as _date
+
+    from apps.documents.schemas import ExperienceEntry
+    from apps.research.decisions import Answer
+
+    settings.CV_VERB_JEV_ENABLED = True
+    settings.DECISIONS_PROVIDER = {"default": "typesafe"}
+
+    def jev(state, questions, *, model, provider):
+        return {
+            q: Answer(
+                id=q,
+                value="built",
+                confidence=0.97,
+                probabilities={"built": 0.97},
+                model=model,
+                provider=provider,
+            )
+            for q in questions
+        }
+
+    post = ExperienceEntry(
+        employer="EPFL",
+        title="Research Intern",
+        start_date=_date(2025, 6, 1),
+        end_date=_date(2025, 9, 1),
+        bullets=("Wrote the scripts for the group.", "A pipeline for the lab and the team."),
+    )
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g-verb")
+        _fact(student, confirmed=True)
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EXPERIENCE,
+            payload=fact_payload(post, category=VerifiedFact.Category.EXPERIENCE),
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:test",
+            confirmed_by=student,
+            confirmed_at=timezone.now(),
+            created_by=student,
+        )
+        content = _content().model_copy(update={"experience": (post,)})
+        result = generate_cv(student=student, client=_mock_client(content), decisions_client=jev)
+    assert result.content.experience[0].bullets[1] == "Built a pipeline for the lab and the team."
+    assert result.applied_fixes[-1].original == "A pipeline for the lab and the team."
+
+
+

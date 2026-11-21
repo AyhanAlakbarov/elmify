@@ -976,3 +976,20 @@ def test_gap_rows_follow_an_oldest_first_programme_into_europass():
         "Research Intern",
         "Assistant",
     ]
+
+
+def test_certifications_ride_in_honours_awards_under_a_certificate_label():
+    """Plan decision 21: the captured award shape, not the uncaptured
+    'certifications' key whose wrong guess would 500 the whole render."""
+    from apps.documents.europass import europass_payload
+    from apps.documents.schemas import AwardEntry, CertificationEntry
+
+    content = _content().model_copy(update={
+        "awards": (AwardEntry(title="Debate prize"),),
+        "certifications": (CertificationEntry(title="First Aid", issuer="Red Crescent"),),
+    })
+    titles = [e["title"] for e in europass_payload(content)["profile"]["honoursAwards"]]
+    assert titles == ["Debate prize", "Certificate: First Aid, Red Crescent"]
+    orders = [e["order"] for e in europass_payload(content)["profile"]["honoursAwards"]]
+    assert orders == [0, 1]
+

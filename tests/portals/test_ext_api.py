@@ -22,7 +22,7 @@ def _pair(client, agency, membership, domain, installation="install-1"):
     from apps.portals import pairing as pairing_module
 
     with tenant_scope(agency.id):
-        code = pairing_module.issue_pairing_code(membership)
+        code = pairing_module.issue_pairing_code(membership, passwords_allowed=True)
     response = client.post(
         PAIR,
         data=json.dumps({"code": code, "installation_id": installation}),
@@ -153,6 +153,8 @@ def test_the_packet_route_returns_what_the_extension_types(
             "method": "fill",
             "value": "Ada Byron",
             "profile_field": "identity.full_name",
+            "from_answer": False,  # typed from a verified fact, not an earlier answer
+            "source_kind": "",  # no document proved it
         }
     ]
     assert body["form_url"] == "https://apply.example.edu/personal"
@@ -361,6 +363,94 @@ def test_a_snapshot_becomes_a_field_map(
     assert response.status_code == 201
     assert response.json()["field_map_version"] == 1
 
+    from apps.portals.models import PageRecord
+
+    record = PageRecord.objects.get(portal_form_id=application.portal_form_id)
+    assert (record.source, record.page_kind, record.learned_by_tenant_id) == (
+        "LIVE_LEARN", "FORM", agency_a.id,
+    )
+    assert record.html_key == ""
+    assert record.snapshot["page_url"] == "https://apply.example.edu"  # the origin only
+
+
+def test_the_snapshot_route_hands_the_students_earlier_answers_to_redaction(
+    client, agency_a, domain_a, membership_a, monkeypatch
+) -> None:
+    from apps.portals import ext_api
+    from apps.portals.models import FieldMap, PortalAnswer
+
+    seen: dict[str, object] = {}
+
+    def fake(form, snapshot, **kwargs):
+        seen.update(kwargs)
+        return FieldMap.objects.create(
+            portal_form=form, version=1,
+            entries=[{"profile_field": "identity.full_name", "action": {
+                "selector": "#name", "method": "fill", "arguments": ["%value%"]}}],
+        )
+
+    monkeypatch.setattr(ext_api, "learn_from_snapshot", fake)
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a)
+        PortalAnswer.objects.create(
+            tenant=agency_a, student=membership_a, portal_form=application.portal_form,
+            selector="#x", value="AZ", outcome="NEW_ANSWER",
+        )
+    token = _pair(client, agency_a, membership_a, domain_a)
+    response = client.post(
+        f"/ext/portal-forms/{application.portal_form_id}/snapshot",
+        data=json.dumps(SNAPSHOT_BODY), content_type="application/json",
+        HTTP_HOST=domain_a.host, HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert response.status_code == 201
+    assert seen["redact_values"] == ["AZ"]
+    assert "AZ" not in seen["forbidden_values"]
+
+
+def _post_echoing_snapshot(client, agency_a, domain_a, membership_a, monkeypatch, answer):
+    from apps.portals import ext_api
+    from apps.portals.models import FieldMap, PortalAnswer
+
+    monkeypatch.setattr(
+        ext_api, "verified_values", lambda student: {"identity.full_name": "Ada Byron"}
+    )
+    monkeypatch.setattr(
+        ext_api, "learn_from_snapshot",
+        lambda form, snapshot, **kwargs: FieldMap.objects.create(
+            portal_form=form, version=1, entries=[]
+        ),
+    )
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a)
+        if answer:
+            PortalAnswer.objects.create(
+                tenant=agency_a, student=membership_a, portal_form=application.portal_form,
+                selector="#x", value=answer, outcome="NEW_ANSWER",
+            )
+    token = _pair(client, agency_a, membership_a, domain_a)
+    body = json.loads(json.dumps(SNAPSHOT_BODY))
+    body["controls"][0]["context"] = "Signed in as Ada Byron, Azerbaijan"
+    response = client.post(
+        f"/ext/portal-forms/{application.portal_form_id}/snapshot", data=json.dumps(body),
+        content_type="application/json", HTTP_HOST=domain_a.host,
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert response.status_code == 201
+    return application
+
+
+def test_a_live_learned_page_record_is_redacted_of_the_students_values(
+    client, agency_a, domain_a, membership_a, user_a, monkeypatch
+) -> None:
+    from apps.portals.models import PageRecord
+
+    application = _post_echoing_snapshot(
+        client, agency_a, domain_a, membership_a, monkeypatch, "Azerbaijan"
+    )
+    record = PageRecord.objects.get(portal_form_id=application.portal_form_id)
+    # a verified fact AND a PortalAnswer value echoed in `context` are both blanked
+    assert record.snapshot["controls"][0]["context"] == "Signed in as ■, ■"
+
 
 def test_a_snapshot_with_a_value_key_is_refused_before_anything_is_learned(
     client, agency_a, domain_a, membership_a, user_a, monkeypatch
@@ -500,6 +590,35 @@ def test_a_read_back_mismatch_escalates_a_portal_error(
         application.refresh_from_db()
         assert application.state == "BLOCKED_PORTAL_ERROR"
         assert RoadmapItem.objects.filter(student=membership_a).exists()
+
+
+def test_a_repeated_read_back_mismatch_does_not_re_escalate_an_open_item(
+    client, agency_a, domain_a, membership_a, user_a
+) -> None:
+    """A resumed panel re-reads the same page. While the PORTAL_ERROR item it
+    raised is still open, a second mismatch report adds a step, not a second
+    consultant task; once the item is done, a new mismatch escalates again."""
+    from apps.concierge.models import RoadmapItem
+    from apps.portals.models import ApplicationStep
+
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a, entries=ENTRIES)
+    token = _pair(client, agency_a, membership_a, domain_a)
+    mismatch = {"kind": "READ_BACK", "detail": {"mismatches": ["#name"]}}
+
+    _post_event(client, application, token, domain_a.host, mismatch)
+    _post_event(client, application, token, domain_a.host, mismatch)
+
+    with tenant_scope(agency_a.id):
+        assert RoadmapItem.objects.filter(student=membership_a).count() == 1
+        steps = ApplicationStep.objects.filter(application=application, kind="READ_BACK")
+        assert steps.count() == 2
+        RoadmapItem.objects.filter(student=membership_a).update(state=RoadmapItem.State.DONE)
+
+    _post_event(client, application, token, domain_a.host, mismatch)
+
+    with tenant_scope(agency_a.id):
+        assert RoadmapItem.objects.filter(student=membership_a).count() == 2
 
 
 def test_a_clean_read_back_escalates_nothing(
@@ -998,7 +1117,7 @@ def test_a_snapshot_offers_the_email_field_even_when_this_student_has_no_address
     """T5 (final review): the learned map is the agency's. If the first
     student to send a snapshot had no address, the map would never carry the
     email field for anyone, so it is always offered (as optional). This
-    student then gets missing_fact from the packet -- test_tags pins that."""
+    student then gets that box as their own red hint -- test_tags pins that."""
     from apps.portals import ext_api
     from apps.portals.models import FieldMap
 
@@ -1025,3 +1144,104 @@ def test_a_snapshot_offers_the_email_field_even_when_this_student_has_no_address
     assert response.status_code == 201
     assert seen["optional_fields"] == ("contact.email",)
     assert seen["forbidden_values"] == []
+
+
+def test_a_relearn_over_a_verified_map_puts_the_form_back_on_the_bench(
+    client, agency_a, domain_a, membership_a, user_a, monkeypatch
+) -> None:
+    from django.utils import timezone
+
+    from apps.portals import ext_api
+    from apps.portals.models import FieldMap, PortalForm
+
+    monkeypatch.setattr(ext_api, "verified_values", lambda student: {})
+    monkeypatch.setattr(
+        ext_api, "learn_from_snapshot",
+        lambda form, snapshot, **kwargs: FieldMap.objects.create(
+            portal_form=form, version=9, entries=[], learned_by_tenant_id=kwargs["tenant_id"]
+        ),
+    )
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a, entries=ENTRIES)
+    FieldMap.objects.filter(portal_form_id=application.portal_form_id).update(
+        verified_at=timezone.now()
+    )
+    token = _pair(client, agency_a, membership_a, domain_a)
+    response = client.post(
+        f"/ext/portal-forms/{application.portal_form_id}/snapshot",
+        data=json.dumps(SNAPSHOT_BODY), content_type="application/json",
+        HTTP_HOST=domain_a.host, HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert response.status_code == 201
+    assert PortalForm.objects.get(id=application.portal_form_id).needs_bench is True
+
+
+def test_overwriting_verified_identity_on_portal_form_alerts_counsellor(
+    agency_a, membership_a, counselor_membership
+) -> None:
+    from django.utils import timezone
+
+    from apps.concierge.models import Notification
+    from apps.documents.models import VerifiedFact
+    from apps.funding.models import AuditEvent
+    from apps.portals.answers import Answer, record_answers
+    from apps.portals.packets import mint_packet
+    from apps.tenancy.models import CounselorAssignment
+
+    entry = {
+        "profile_field": "identity.given_names",
+        "sure": True,
+        "action": {"selector": "#given_name", "method": "fill", "arguments": ["%value%"]},
+    }
+    with tenant_scope(agency_a.id):
+        CounselorAssignment.objects.create(
+            tenant=agency_a, counselor=counselor_membership, student=membership_a
+        )
+        VerifiedFact.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            created_by=membership_a,
+            confirmed_by=membership_a,
+            category=VerifiedFact.Category.IDENTITY,
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:passport-1",
+            confirmed_at=timezone.now(),
+            payload={"given_names": "Narmin", "surname": "Aliyeva", "full_name": "Narmin Aliyeva"},
+        )
+        application = _application(agency_a, membership_a, entries=[entry])
+        mint_packet(application)
+        record_answers(
+            application, [Answer(selector="#given_name", kind="changed", value="Kamran")]
+        )
+        assert AuditEvent.objects.filter(
+            event="portal.identity_mismatch_typed", object_id=application.id
+        ).exists()
+        assert Notification.objects.filter(
+            roadmap_item__student=membership_a,
+            recipient=counselor_membership,
+            roadmap_item__stage="PORTAL_EXCEPTION",
+        ).exists()
+
+
+def test_repeated_failed_pairing_codes_are_rate_limited_per_ip(client, domain_a) -> None:
+    from django.core.cache import cache
+
+    cache.clear()
+    for _ in range(10):
+        resp = client.post(
+            PAIR,
+            data=json.dumps({"code": "bad-guess", "installation_id": "install-1"}),
+            content_type="application/json",
+            HTTP_HOST=domain_a.host,
+            REMOTE_ADDR="198.51.100.77",
+        )
+        assert resp.status_code == 400
+    blocked = client.post(
+        PAIR,
+        data=json.dumps({"code": "bad-guess", "installation_id": "install-1"}),
+        content_type="application/json",
+        HTTP_HOST=domain_a.host,
+        REMOTE_ADDR="198.51.100.77",
+    )
+    assert blocked.status_code == 429
+    assert blocked.json() == {"error": "rate_limited"}

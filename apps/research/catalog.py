@@ -29,6 +29,8 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.funding.models import (
+    CostComponent,
+    CostComponentEvidenceClaim,
     FundingOpportunity,
     FundingOpportunityEvidenceClaim,
     FundingOpportunityProgram,
@@ -37,6 +39,7 @@ from apps.funding.models import (
     OfficialEvidenceClaim,
     OfficialSource,
     OfficialSourceSnapshot,
+    Period,
     Program,
     ProgramEvidenceClaim,
 )
@@ -50,6 +53,28 @@ from .provenance import record_program_evidence
 _MAX_TEACHING_LANGUAGES = 10
 _MAX_DURATION_MONTHS = 60
 _MAX_CLAIM_CHARS = 4_000
+
+_MASTERS_TITLE_RE = re.compile(
+    r"\b(?:master(?:'s|s)?|m\.?sc\.?|m\.?a\.?|m\.?eng\.?|m\.?b\.?a\.?|m\.?phil\.?|m\.?res\.?|"
+    r"ll\.?m\.?|magister\w*|magistr\w*|maîtrise|laurea\s+magistrale|yüksek\s+lisans|"
+    r"yuksek\s+lisans|магистр\w*|석사|修士)\b",
+    re.IGNORECASE,
+)
+_NON_MASTERS_TITLE_RE = re.compile(
+    r"\b(?:bachelor(?:'s|s)?|undergraduate|b\.?sc\.?|b\.?a\.?|b\.?eng\.?|b\.?b\.?a\.?|"
+    r"ll\.?b\.?|bakalavr\w*|бакалавр\w*|laurea\s+triennale|ph\.?d\.?|d\.?phil\.?|"
+    r"doctor(?:al|ate)|doctorat\b|doktor\w*|postdoc(?:toral)?|post-doc|"
+    r"аспирантур\w*|докторантур\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def is_non_masters_program_title(title: str) -> bool:
+    """True when ``title`` explicitly names a Bachelor's/undergraduate or PhD/doctoral
+    programme without naming a Master's degree."""
+    if not title or _MASTERS_TITLE_RE.search(title):
+        return False
+    return bool(_NON_MASTERS_TITLE_RE.search(title))
 
 
 @dataclass(frozen=True)
@@ -88,6 +113,9 @@ def resolve_program(lead: ResearchLead, claims: ExtractedClaims) -> ResolvedProg
     duration = claims.duration_months
     if not (institution_name and program_name and languages):
         return None
+    degree_level = (seed.degree_level if seed else "MASTER").strip().upper()
+    if degree_level != "MASTER" or is_non_masters_program_title(program_name):
+        return None
     if country_code not in ISO_3166_ALPHA2_CODES:
         return None
     if duration is None or not 1 <= duration <= _MAX_DURATION_MONTHS:
@@ -97,7 +125,7 @@ def resolve_program(lead: ResearchLead, claims: ExtractedClaims) -> ResolvedProg
         country_code=country_code,
         city=city,
         program_name=program_name,
-        degree_level=seed.degree_level if seed else "MASTER",
+        degree_level=degree_level,
         teaching_languages=languages[:_MAX_TEACHING_LANGUAGES],
         duration_months=duration,
     )
@@ -525,6 +553,7 @@ def write_catalog_entry(
     # with `backfill_evidence_domain` (ruling I2) so a programme written
     # before this existed gets the same answer as one written after.
     record_program_evidence(program, institution_name=program_facts.institution_name)
+    _write_cost_components(program, claims, written)
     # Claims beat seeds here too (module rule above): a page's own cited
     # FundingFamilyClaim outranks the seed adapter's assertion, because the
     # seed's family has no citation attached and family is a field students
@@ -537,6 +566,112 @@ def write_catalog_entry(
     return CatalogWriteResult(
         institution, program, tuple(written), opportunity, unreadable_dates
     )
+
+
+_COST_PERIODS: dict[str, str] = {
+    "annual": Period.ANNUAL,
+    "annually": Period.ANNUAL,
+    "year": Period.ANNUAL,
+    "yearly": Period.ANNUAL,
+    "per year": Period.ANNUAL,
+    "academic year": Period.ANNUAL,
+    "per academic year": Period.ANNUAL,
+    "monthly": Period.MONTHLY,
+    "month": Period.MONTHLY,
+    "per month": Period.MONTHLY,
+    "one_off": Period.ONE_OFF,
+    "one-off": Period.ONE_OFF,
+    "one off": Period.ONE_OFF,
+    "once": Period.ONE_OFF,
+    "single": Period.ONE_OFF,
+    "one time": Period.ONE_OFF,
+    "one-time": Period.ONE_OFF,
+    "application": Period.ONE_OFF,
+    "per application": Period.ONE_OFF,
+    "full_program": Period.FULL_PROGRAM,
+    "full_programme": Period.FULL_PROGRAM,
+    "full program": Period.FULL_PROGRAM,
+    "full programme": Period.FULL_PROGRAM,
+    "total": Period.FULL_PROGRAM,
+    "program": Period.FULL_PROGRAM,
+    "programme": Period.FULL_PROGRAM,
+    "entire program": Period.FULL_PROGRAM,
+    "entire programme": Period.FULL_PROGRAM,
+}
+
+
+def _cost_period(raw_period: str, *, is_application_fee: bool = False) -> str | None:
+    cleaned = " ".join(raw_period.strip().split())
+    if cleaned.upper() in Period.values:
+        return cleaned.upper()
+    mapped = _COST_PERIODS.get(cleaned.casefold())
+    if mapped is not None:
+        return mapped
+    return Period.ONE_OFF if is_application_fee else None
+
+
+def _cost_kind(label: str, *, is_application_fee: bool = False) -> str:
+    if is_application_fee:
+        return CostComponent.Kind.APPLICATION_FEE
+    lowered = label.casefold()
+    if "application fee" in lowered or "application charge" in lowered:
+        return CostComponent.Kind.APPLICATION_FEE
+    if "tuition" in lowered:
+        return CostComponent.Kind.TUITION
+    if any(word in lowered for word in ("housing", "accommodation", "rent", "dorm")):
+        return CostComponent.Kind.HOUSING
+    if any(word in lowered for word in ("food", "meal", "catering")):
+        return CostComponent.Kind.FOOD
+    if any(word in lowered for word in ("transport", "travel", "transit")):
+        return CostComponent.Kind.TRANSPORT
+    if "utilit" in lowered:
+        return CostComponent.Kind.UTILITIES
+    if any(word in lowered for word in ("insurance", "health")):
+        return CostComponent.Kind.INSURANCE
+    return CostComponent.Kind.OTHER
+
+
+def _write_cost_components(
+    program: Program,
+    claims: ExtractedClaims,
+    written: Sequence[OfficialEvidenceClaim],
+) -> tuple[CostComponent, ...]:
+    """Persist cited cost claims into `CostComponent` and `CostComponentEvidenceClaim`."""
+    claim_by_text = {
+        claim.claim: claim
+        for claim in written
+        if claim.claim_class == OfficialEvidenceClaim.ClaimClass.TUITION
+    }
+    charges = [
+        *((charge, False) for charge in (*claims.fees, *claims.costs)),
+        *([(claims.application_fee, True)] if claims.application_fee is not None else ()),
+    ]
+    components: list[CostComponent] = []
+    for charge, is_application_fee in charges:
+        text = _money(
+            charge.label, charge.amount, charge.currency, charge.period, charge.evidence
+        )
+        if text is None:
+            continue
+        period = _cost_period(charge.period, is_application_fee=is_application_fee)
+        if period is None:
+            continue
+        kind = _cost_kind(charge.label, is_application_fee=is_application_fee)
+        component, _created = CostComponent.objects.get_or_create(
+            program=program,
+            kind=kind,
+            amount=charge.amount,
+            currency=charge.currency,
+            period=period,
+        )
+        claim = claim_by_text.get(text[:_MAX_CLAIM_CHARS])
+        if claim is not None:
+            CostComponentEvidenceClaim.objects.get_or_create(
+                cost_component=component,
+                evidence_claim=claim,
+            )
+        components.append(component)
+    return tuple(components)
 
 
 def _write_opportunity(

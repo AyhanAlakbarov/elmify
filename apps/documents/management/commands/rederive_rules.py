@@ -50,6 +50,7 @@ from apps.documents.rule_sinks import (
     resolve_conflicts,
     to_constraint_rules,
     to_directives,
+    to_file_rules,
     to_notes,
     to_referee,
 )
@@ -127,6 +128,7 @@ class Command(BaseCommand):
             kept_referee = [
                 d for d in program.referee_requirements if d.get("rule_text") not in reread
             ]
+            kept_files = [d for d in program.file_rules if d.get("rule_text") not in reread]
             offset = _past_kept(kept_rules)
             candidates = tuple(
                 # `heading` is empty until plan 2 stores heading_path on the
@@ -163,9 +165,11 @@ class Command(BaseCommand):
                         to_directives(rules, source_url=source_url)
                     )
                     referee = kept_referee + list(to_referee(rules, source_url=source_url))
+                    files = kept_files + list(to_file_rules(rules, source_url=source_url))
                     if (payload == program.cv_constraints
                             and directives == program.cv_directives
-                            and referee == program.referee_requirements):
+                            and referee == program.referee_requirements
+                            and files == program.file_rules):
                         continue
                     changed += 1
                     self.stdout.write(
@@ -179,7 +183,8 @@ class Command(BaseCommand):
                     # _write_program, not a bare update(): under RLS a role
                     # without the grant updates zero rows and reports success.
                     _write_program(program.id, cv_constraints=payload,
-                                   cv_directives=directives, referee_requirements=referee)
+                                   cv_directives=directives, referee_requirements=referee,
+                                   file_rules=files)
             except DecisionBudgetExhausted as error:
                 self.stdout.write(f"stopping: decision budget reached ({error})")
                 stopped = True

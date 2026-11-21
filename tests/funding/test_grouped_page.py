@@ -22,13 +22,16 @@ def test_programmes_are_grouped_under_the_funding_that_pays_for_them(
     with reads_no_catalogue():
         response = client.get(PAGE, HTTP_HOST=domain_a.host)
     body = response.content.decode()
-    assert "<h1>Programmes &amp; scholarships</h1>" in body
+    assert "<h1>Programmes &amp; funding</h1>" in body
     heading = body.index("<h3>DAAD Study Scholarship</h3>")
     assert body.index("M.Sc. Informatics", heading) > heading
-    assert "Awarded by" in body and "DAAD" in body
+    assert "Offered by" in body and "Holder" not in body and "DAAD" in body
     assert "934 EUR a month" in body
     assert "Who can apply" in body
-    assert "Programmes without separate funding" not in body  # an empty group is not drawn
+    assert "(unstructured)" not in body
+    assert "not stated" not in body
+    assert "Not confirmed" not in body
+    assert "Programmes without separate funding" in body
 
 
 def test_add_to_my_applications_and_already_added(
@@ -41,7 +44,7 @@ def test_add_to_my_applications_and_already_added(
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     assert f'action="/student/applications/add/{programme.id}/"' in body
     assert f'action="/student/applications/add/{award.id}/"' not in body
-    assert "In your applications" in body
+    assert "In your applications." in body
 
 
 def test_funding_that_comes_with_admission_offers_no_add(
@@ -55,7 +58,7 @@ def test_funding_that_comes_with_admission_offers_no_add(
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     assert f'action="/student/applications/add/{award.id}/"' not in body
-    assert "Comes with admission" in body
+    assert "Comes with the admission" in body
 
 
 def test_a_javascript_source_url_is_never_a_link(
@@ -80,7 +83,7 @@ def test_a_checking_candidate_never_links_its_placeholder_source(
         RecommendationCandidate.objects.filter(id=programme.id).update(state="CHECKING")
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
-    assert "Being checked" in body
+    assert "Under review" in body
     assert source not in body
 
 
@@ -111,9 +114,9 @@ def test_an_open_award_heads_every_eligible_programme_in_its_country(
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     heading = body.index("<h3>DAAD Study Scholarship</h3>")
-    label = body.index("Eligible programmes in Germany", heading)
+    label = body.index("Eligible programmes in Germany:", heading)
     assert body.index("M.Sc. Informatics", label) > label
-    assert body.index("In Other options", label) < body.index("<h4>LMU M.Sc. Physics", label)
+    assert body.index("(in Other options)", label) < body.index("<h4>LMU M.Sc. Physics", label)
 
 
 def test_an_award_with_no_programme_renders_no_empty_list(
@@ -124,7 +127,7 @@ def test_an_award_with_no_programme_renders_no_empty_list(
         RecommendationCandidate.objects.filter(id=award.id).update(funds_program_ids=[])
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
-    assert "No programme in your list matches this scholarship yet." in body
+    assert "No programme in this list matches this funding." in body
     assert "Programmes it can pay for:" not in body
 
 
@@ -184,4 +187,86 @@ def test_a_rerun_after_the_pack_still_reloads_the_page(
     client.force_login(user_a)
     body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     assert '<meta http-equiv="refresh" content="15">' in body
-    assert '<h2 class="section-title">Your matches</h2>' in body
+    assert "<h2>Your pack</h2>" in body
+
+
+@pytest.mark.parametrize(
+    ("tuition", "living", "expected"),
+    [
+        ("UNSTATED", "FULL", "<dd>living: full</dd>"),
+        ("FULL", "UNSTATED", "<dd>tuition: full</dd>"),
+        ("FULL", "PARTIAL", "<dd>Tuition: full; living: partial</dd>"),
+    ],
+)
+def test_covers_prints_only_stated_levels(
+    client, agency_a, domain_a, user_a, membership_a, pack, tuition, living, expected
+) -> None:
+    _programme, award = pack
+    with tenant_scope(agency_a.id):
+        RecommendationCandidate.objects.filter(id=award.id).update(
+            funding_card={**award.funding_card, "tuition": tuition, "living": living},
+        )
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert expected.lower() in body.lower()
+    assert "unstated" not in body.lower()
+
+
+def test_covers_row_is_absent_when_nothing_is_stated(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    _programme, award = pack
+    with tenant_scope(agency_a.id):
+        RecommendationCandidate.objects.filter(id=award.id).update(
+            funding_card={"scope": "HOLDER", "tuition": "UNSTATED", "living": "UNSTATED"},
+        )
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    heading = body.index("<h3>DAAD Study Scholarship</h3>")
+    section = body[heading:body.index("</dl>", heading)]
+    assert "Covers" not in section and "unstated" not in body.lower()
+    assert "<dt>Deadline</dt>" not in section and "<dt>Amount</dt>" not in section
+
+
+def test_an_empty_pack_shows_its_reason_and_coverage_not_finish_your_profile(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    from apps.funding.models import PackVersion
+
+    run = make_run(agency_a, membership_a)
+    with tenant_scope(agency_a.id):
+        RecommendationRun.objects.filter(id=run.id).update(state="DRAFT_READY")
+        PackVersion.objects.create(
+            run=run,
+            version=1,
+            empty_reason="No programme or award in the catalogue matches Chemistry.",
+            coverage={"sentence": "0 found in your cells; verification not yet running."},
+        )
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert "No programme or award in the catalogue matches Chemistry." in body
+    assert "0 found in your cells; verification not yet running." in body
+    assert "Finish your" not in body
+
+
+def test_a_student_with_no_run_is_still_asked_to_finish_the_profile(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert "Finish your" in body
+
+
+def test_a_published_pack_shows_its_coverage_line(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    from apps.funding.models import PackVersion
+
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        PackVersion.objects.filter(run_id=programme.run_id).update(
+            coverage={"sentence": "3 found in your cells; 1 verified for your intake."}
+        )
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert "3 found in your cells; 1 verified for your intake." in body

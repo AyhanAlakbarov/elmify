@@ -1,4 +1,3 @@
-
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -12,7 +11,6 @@ CONSENT_TEXT = (
 )
 
 
-
 class SignupForm(forms.Form):
     full_name = forms.CharField(max_length=150, label="Name and surname")
     #: auth_user.username is varchar(150), and the address is the username.
@@ -20,6 +18,7 @@ class SignupForm(forms.Form):
     password = forms.CharField(
         widget=forms.PasswordInput, min_length=12, help_text="At least 12 characters."
     )
+    password_again = forms.CharField(widget=forms.PasswordInput, label="Repeat password")
     language = forms.ChoiceField(choices=[(code, code) for code in LANGUAGES], initial="en")
     consent = forms.BooleanField(required=True, label=CONSENT_TEXT)
 
@@ -31,10 +30,37 @@ class SignupForm(forms.Form):
         email = str(self.cleaned_data["email"]).strip().lower()
         taken = Q(username__iexact=email) | Q(email__iexact=email)
         if get_user_model().objects.filter(taken).exists():
-            raise forms.ValidationError("An account with this e-mail already exists.", code="taken")
+            raise forms.ValidationError(
+                "Unable to complete sign-up with these details. "
+                "If you already have an account, please log in.",
+                code="taken",
+            )
         return email
 
     def clean_password(self) -> str:
         password = str(self.cleaned_data["password"])
         validate_password(password)
         return password
+
+    def clean(self) -> dict[str, object]:
+        cleaned = super().clean() or {}
+        first, again = cleaned.get("password"), cleaned.get("password_again")
+        if first and again is not None and first != again:
+            self.add_error("password_again", "The two passwords are not the same.")
+        return cleaned
+
+
+class SignupCodeForm(forms.Form):
+    code = forms.CharField(
+        max_length=12,
+        label="6-digit code",
+        widget=forms.TextInput(
+            attrs={
+                "inputmode": "numeric",
+                "autocomplete": "one-time-code",
+                "pattern": "[0-9 ]*",
+                "autofocus": "autofocus",
+                "class": "code-input",
+            }
+        ),
+    )

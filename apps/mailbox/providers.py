@@ -18,6 +18,7 @@ import base64
 import email
 import email.policy
 import email.utils
+import html as html_lib
 import json
 import logging
 import re
@@ -532,10 +533,17 @@ def _plain_text(raw: bytes) -> tuple[str, str]:
         # A malformed message is not a body. Never re-raise the parser's error:
         # its message quotes the mail.
         return "", ""
-    if part is None:
+    if part is not None:
+        content = part.get_content()
+        return (content if isinstance(content, str) else ""), subject
+    try:
+        html_part = message.get_body(preferencelist=("html",))
+        html_content = html_part.get_content() if html_part is not None else ""
+    except Exception:
         return "", subject
-    content = part.get_content()
-    return (content if isinstance(content, str) else ""), subject
+    if isinstance(html_content, str) and html_content:
+        return _html_to_text_with_links(html_content), subject
+    return "", subject
 
 
 #: Microsoft's authserv-id, the first token of its own Authentication-Results
@@ -649,6 +657,12 @@ class MicrosoftMailbox:
         )
         body = detail.get("body", {})
         content = str(body.get("content", "")) if isinstance(body, dict) else ""
+        if (
+            isinstance(body, dict)
+            and str(body.get("contentType", "")).lower() == "html"
+            and content
+        ):
+            content = _html_to_text_with_links(content)
         subject = " ".join(str(detail.get("subject") or "").split())
         return MailBody(content[:MAX_BODY_CHARS], subject[:MAX_SUBJECT_CHARS])
 
@@ -708,6 +722,41 @@ def _graph_headers(listing: dict[str, object], *, junk: bool = False) -> list[Me
             )
         )
     return headers
+
+
+_HTML_DROP_RE = re.compile(
+    r"<!--.*?-->|<(?:script|style|head)\b[^>]*>.*?</(?:script|style|head)>",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_LINK_RE = re.compile(
+    r"""<a\b[^>]*?\bhref\s*=\s*["'](https?://[^"'\s>]+)["'][^>]*>(.*?)</a>""",
+    re.IGNORECASE | re.DOTALL,
+)
+_HTML_BLOCK_RE = re.compile(
+    r"<(?:br\s*/?|/(?:p|div|tr|li|h[1-6]))\b[^>]*>",
+    re.IGNORECASE,
+)
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _html_to_text_with_links(raw_html: str) -> str:
+    """Extract plain text and inline https/http anchor URLs from an HTML mail body."""
+    cleaned = _HTML_DROP_RE.sub(" ", raw_html)
+
+    def _replace_link(match: re.Match[str]) -> str:
+        href = html_lib.unescape(match.group(1)).strip()
+        inner = _HTML_TAG_RE.sub(" ", match.group(2))
+        label = " ".join(html_lib.unescape(inner).split())
+        if not label or label == href:
+            return f" {href} "
+        return f" {label} ({href}) "
+
+    cleaned = _HTML_LINK_RE.sub(_replace_link, cleaned)
+    cleaned = _HTML_BLOCK_RE.sub("\n", cleaned)
+    cleaned = _HTML_TAG_RE.sub(" ", cleaned)
+    unescaped = html_lib.unescape(cleaned)
+    lines = [" ".join(line.split()) for line in unescaped.splitlines()]
+    return "\n".join(line for line in lines if line)
 
 
 def _log_truncated(provider: str, pages: int) -> None:

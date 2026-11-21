@@ -19,14 +19,19 @@ on_last_failure/max_receives for the scan queue's dead-letter alarm.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any, Literal
 from uuid import UUID
 
+from django.conf import settings
+from django.db import transaction
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from apps.queue import SQSClient, enqueue
 from apps.queue import consume_once as _consume_once
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "SQSClient",
@@ -34,6 +39,7 @@ __all__ = [
     "DocumentWorkMessage",
     "ScanResultEvent",
     "enqueue_document_work",
+    "queue_evidence_refresh",
     "consume_once",
 ]
 
@@ -52,6 +58,9 @@ class DocumentWorkMessage(BaseModel):
     ``draft_id`` is set for ``render`` and absent for ``generate`` -- a
     generation has no draft yet, which is the whole reason it is being queued.
 
+    ``document_id`` (read_document) is optional on the same terms as ``programme_id``: a NEW
+    worker parses an OLD message, an OLD worker dead-letters this one, so the worker rolls first.
+
     ``programme_id`` is the one thing that makes a CV tailored rather than
     generic. An id, not a Program: it names a row in the SHARED catalog, which
     every tenant reads, so it is neither PII nor tenant-scoped and the worker
@@ -65,15 +74,24 @@ class DocumentWorkMessage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[1] = 1
-    action: Literal["generate", "render", "capture_requirements", "approve_letter"]
+    action: Literal[
+        "generate",
+        "render",
+        "capture_requirements",
+        "approve_letter",
+        "prepare_documents",
+        "read_document",
+        "refresh_evidence",
+    ]
     kind: str
     tenant_id: UUID
     student_id: UUID
     draft_id: UUID | None = None
     programme_id: UUID | None = None
-    #: capture_requirements, and a MOTIVATION_LETTER generate/approve_letter:
-    #: the Application the work is for.
+    #: capture_requirements only: the Application whose kit copy to write.
     application_id: UUID | None = None
+    #: read_document only: the DocumentVersion to read into facts (spec 2026-10-12 §7.1).
+    document_id: UUID | None = None
 
 
 class ScanResultEvent(BaseModel):
@@ -139,9 +157,38 @@ class ScanResultEvent(BaseModel):
 
 
 def enqueue_document_work(
-    message: DocumentWorkMessage, *, client: SQSClient | None = None, queue_url: str
+    message: DocumentWorkMessage,
+    *,
+    client: SQSClient | None = None,
+    queue_url: str,
+    delay_seconds: int = 0,
 ) -> None:
-    enqueue(message, client=client, queue_url=queue_url)
+    enqueue(message, client=client, queue_url=queue_url, delay_seconds=delay_seconds)
+
+
+def queue_evidence_refresh(tenant_id: UUID, student_id: UUID) -> None:
+    """Queue the student's evidence refresh after commit (CV evidence spec §12.1).
+
+    Never raises: the login or upload that triggered it must not fail because of it, and
+    a lost message only means the next trigger reads what this one would have. A new
+    action value, so the worker is rolled out before the web tier (scripts/deploy.sh).
+    """
+
+    def _send() -> None:
+        try:
+            enqueue_document_work(
+                DocumentWorkMessage(
+                    action="refresh_evidence",
+                    kind="EVIDENCE",
+                    tenant_id=tenant_id,
+                    student_id=student_id,
+                ),
+                queue_url=settings.DOCUMENT_QUEUE_URL,
+            )
+        except Exception as error:
+            logger.warning("could not queue refresh_evidence (%s)", type(error).__name__)
+
+    transaction.on_commit(_send)
 
 
 def consume_once[M: BaseModel](

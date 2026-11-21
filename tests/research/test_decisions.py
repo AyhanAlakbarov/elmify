@@ -406,3 +406,20 @@ def test_an_absent_typesafe_key_raises_on_typesafe_host(openrouter):
     with pytest.raises(DecisionsUnavailable, match="TYPESAFE_API_KEY") as raised:
         ask({"text": "x"}, {"q": Noul(question="is it?")}, decision="D6")
     assert raised.value.kind == "not_configured"
+
+
+def test_a_timeout_bounds_one_jev_call_retries_included(openrouter, sdk):
+    seen = sdk(_response({"q": {"type": "noul", "noul": 0.9}}))
+    ask({"text": "x"}, {"q": Noul(question="is it?")}, decision="D8", record=False,
+        timeout_s=4.0)
+    # little time: one attempt, no retry, the whole budget
+    retry = seen["call"]["retry"]
+    assert (seen["call"]["timeout"], retry.timeout, retry.max_retries) == (4.0, 4.0, 0)
+    # RetryPolicy.timeout only stops STARTING attempts (stop_before_delay): with retries, each
+    # half gets half, so the last attempt cannot run past the whole budget
+    ask({"text": "x"}, {"q": Noul(question="is it?")}, decision="D8", record=False,
+        timeout_s=20.0)
+    retry = seen["call"]["retry"]
+    assert (seen["call"]["timeout"], retry.timeout, retry.max_retries) == (10.0, 10.0, 2)
+    ask({"text": "x"}, {"q": Noul(question="is it?")}, decision="D8", record=False)
+    assert "timeout" not in seen["call"] and "retry" not in seen["call"]  # today's call

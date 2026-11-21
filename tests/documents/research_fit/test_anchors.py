@@ -9,8 +9,10 @@ from apps.documents.research_fit.anchors import (
     TopicPhrase,
     banned_terms,
     guard_phrase,
+    infer_fit_mode,
     pick_anchor,
     site_language,
+    student_profile_terms,
     topic_phrase,
 )
 
@@ -59,6 +61,41 @@ def test_the_strongest_anchor_is_research_then_experience_then_education():
     assert pick_anchor(_facts(research, experience, education), None).rung == 1
     assert pick_anchor(_facts(experience, education), None).rung == 2
     assert pick_anchor(_facts(education), None).rung == 3
+
+
+def test_experience_beats_bare_skill_and_thesis_education_beats_bare_education():
+    from apps.documents.evidence.readings import UsableBullet, UsableReading
+
+    skill = _fact("SKILL", {"name": "Python"})
+    experience = _fact(
+        "EXPERIENCE", {"role": "Engineer", "description": "distributed consensus systems"}
+    )
+    bare_edu = _fact("EDUCATION", {"field_of_study": "Computer Science"})
+    thesis_edu = _fact(
+        "EDUCATION",
+        {"field_of_study": "Computer Science", "thesis_title": "Stochastic Demand Forecasting"},
+    )
+    # Skill comes first in dict order, but experience must still win within rung 2.
+    chosen_rung2 = pick_anchor({skill.id: skill, experience.id: experience}, None)
+    assert chosen_rung2.fact_id == experience.id
+    # Bare education comes first in dict order, but thesis education wins within rung 3.
+    chosen_rung3 = pick_anchor({bare_edu.id: bare_edu, thesis_edu.id: thesis_edu}, None)
+    assert chosen_rung3.fact_id == thesis_edu.id
+    # UsableReading thesis beats bare education when no rung 1/2 fact exists.
+    reading = UsableReading(
+        source="upload",
+        url=None,
+        document_id=None,
+        summary="Thesis on graph neural networks.",
+        kind="thesis",
+        names=(),
+        first_commit=None,
+        last_commit=None,
+        bullets=(UsableBullet("Trained message-passing GNN.", ("GNN",), "supported"),),
+    )
+    chosen_reading = pick_anchor({bare_edu.id: bare_edu}, None, readings=(reading,))
+    assert chosen_reading.rung == 2
+    assert "graph neural networks" in chosen_reading.text.lower()
 
 
 def test_the_storyline_theme_is_the_last_rung():
@@ -184,3 +221,108 @@ def test_a_two_letter_surname_does_not_shred_the_query():
         "climate policy for coastal livelihoods"
     )
     assert "wei" not in guard_phrase("Wei Li studies lithium batteries", banned=banned)
+
+
+def test_with_the_model_down_no_capitalised_name_reaches_a_query():
+    """The fallback strips every capitalised run again (2026-10-14): a supervisor's
+    name is capitalised exactly like a title-case title, and banned_terms holds only
+    the student's own name and schools. A title-case title is therefore skipped while
+    the model is down -- never searched as "of" and never with a name in it."""
+    for title in ("Protein Folding with Ayse Yilmaz", "Monte Carlo Simulation of Protein Folding",
+                  "Prof Smith Lab at Harvard University", "Max Planck Institute"):
+        anchor = Anchor(rung=1, text=title, fact_id=uuid4())
+        assert topic_phrase(
+            anchor, parser=_RaisingParser(), student_id="s", banned=frozenset()
+        ) == "", title
+
+
+def test_a_phrase_needs_two_real_words_or_it_is_not_searched():
+    anchor = Anchor(rung=4, text="Gait at", fact_id=None)
+    assert topic_phrase(anchor, parser=_Parser(), student_id="s", banned=frozenset()) == ""
+    anchor = Anchor(rung=4, text="quadruped gait control", fact_id=None)
+    assert topic_phrase(anchor, parser=_Parser(), student_id="s", banned=frozenset()) == (
+        "quadruped gait control"
+    )
+
+
+def test_student_profile_terms_extracts_technical_vocabulary_and_drops_pii():
+    uid = uuid4()
+    identity = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.IDENTITY,
+        payload={"full_name": "Leyla Mammadova"},
+        confirmed_by_id=uid,
+    )
+    research = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.RESEARCH,
+        payload={
+            "title": "Lyapunov Quadruped Stabilization",
+            "methods": ["stochastic MPC", "kalman filtering"],
+            "institution": "Baku State University",
+        },
+        confirmed_by_id=uid,
+    )
+    storyline = Storyline(
+        theme="nonlinear control under delay",
+        theme_kind="MATCH",
+        anchors=(research.id,),
+        turn=research.id,
+        gap="distributed sensor fusion",
+        future="autonomous legged inspection",
+    )
+    terms = student_profile_terms({identity.id: identity, research.id: research}, storyline)
+    assert "lyapunov" in terms
+    assert "stochastic" in terms
+    assert "kalman" in terms
+    assert "distributed" in terms
+    assert "leyla" not in terms
+    assert "mammadova" not in terms
+
+
+def test_infer_fit_mode_classifies_direct_transfer_pivot_and_curriculum_bridge():
+    fid = uuid4()
+    assert (
+        infer_fit_mode(
+            anchor_rung=1,
+            anchor_text="quadruped locomotion control under actuator saturation",
+            sentence="Prof. Smith leads research on quadruped locomotion and torque control.",
+            kind="named_person",
+        )
+        == "direct"
+    )
+    assert (
+        infer_fit_mode(
+            anchor_rung=1,
+            anchor_text="stochastic differential equations for financial option pricing",
+            sentence="The group studies epidemiological disease transmission dynamics.",
+            kind="research_group",
+        )
+        == "method_transfer"
+    )
+    pivot_story = Storyline(
+        theme="computational neuroscience",
+        theme_kind="PIVOT",
+        anchors=(fid,),
+        future="neural decoding",
+    )
+    assert (
+        infer_fit_mode(
+            anchor_rung=4,
+            anchor_text="computational neuroscience",
+            sentence="The Neural Computation Lab studies spike train decoding.",
+            kind="research_group",
+            storyline=pivot_story,
+        )
+        == "pivot_bridge"
+    )
+    assert (
+        infer_fit_mode(
+            anchor_rung=3,
+            anchor_text="BSc in Mechanical Engineering",
+            sentence="The Autonomous Systems Track covers state estimation and motion planning.",
+            kind="module_or_track",
+        )
+        == "curriculum_bridge"
+    )
+

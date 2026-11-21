@@ -4,6 +4,7 @@ from apps.privacy import views
 
 urlpatterns = [
     path("signup/", views.signup, name="privacy-signup"),
+    path("signup/verify/", views.signup_verify, name="privacy-signup-verify"),
     path("privacy/accept/", views.accept, name="privacy-accept"),
     path("privacy/stopped/", views.stopped, name="privacy-stopped"),
     path("legal/<str:kind>/", views.legal_document, name="privacy-legal"),

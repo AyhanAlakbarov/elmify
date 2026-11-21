@@ -495,9 +495,9 @@ def parsed_or_none[T: BaseModel](response: object, model: type[T]) -> T | None:
 
     Three outcomes collapse to None: the model refused, it returned nothing to
     parse, or it returned a payload its own schema rejects. This is for the
-    callers that genuinely cannot act differently on them -- currently
-    extract_statements, propose_description and judge_remainder, which
-    each carried their own copy, two of them ordering the checks differently
+    callers that genuinely cannot act differently on them -- first written for
+    extract_statements, judge_remainder and the old evidence description call,
+    which each carried their own copy, two of them ordering the checks differently
     while doing the same thing.
 
     Most other structured callers in this codebase look similar on the first
@@ -526,7 +526,7 @@ def privacy_safe_identifier(identifier: str) -> str:
     76 and every call carrying it failed with 400 string_above_max_length.
     The algorithm belongs in this docstring, not in the value.
     """
-    value = f"tehsil-agent-safety-v1:{identifier}".encode()
+    value = f"elmify-safety-v1:{identifier}".encode()
     key = str(settings.SECRET_KEY).encode()
     return hmac.new(key, value, hashlib.sha256).hexdigest()
 
@@ -546,8 +546,10 @@ def claude_parsed_or_none[T: BaseModel](
     #: with None when the SDK's own parse() rejected an answer that came back
     #: (off-schema, or JSON cut off at max_tokens): billed, usage unknown.
     on_response: Callable[[object], None] | None = None,
+    #: Another Claude model than the judge's (the card reader's decider); default unchanged.
+    model: str | None = None,
 ) -> T | None:
-    """One ANTHROPIC_JUDGE_MODEL reading, or None if it learned nothing.
+    """One ANTHROPIC_JUDGE_MODEL reading (or `model`'s), or None if it learned nothing.
 
     Refused, stopped before end_turn, or off-schema all collapse to None, the
     same outcomes parsed_or_none flattens for OpenAI. A truncated answer is
@@ -557,7 +559,7 @@ def claude_parsed_or_none[T: BaseModel](
     """
     try:
         response = claude.parse(
-            model=settings.ANTHROPIC_JUDGE_MODEL,
+            model=model or settings.ANTHROPIC_JUDGE_MODEL,
             max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": data}],

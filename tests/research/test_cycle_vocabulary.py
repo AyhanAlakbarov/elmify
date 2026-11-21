@@ -4,6 +4,17 @@ import datetime as dt
 import pytest
 
 from apps.research import cycle_vocabulary as vocab
+from apps.research.angles import STEERING
+
+
+def test_every_steering_language_has_cycle_and_apply_terms():
+    vocab.terms.cache_clear()
+    all_terms = vocab.terms()
+    cycle_langs = {t.language for t in all_terms if t.role == "cycle"}
+    apply_langs = {t.language for t in all_terms if t.role == "apply"}
+    steering_langs = {s.language for s in STEERING.values()}
+    assert steering_langs <= cycle_langs
+    assert steering_langs <= apply_langs
 
 
 @pytest.fixture

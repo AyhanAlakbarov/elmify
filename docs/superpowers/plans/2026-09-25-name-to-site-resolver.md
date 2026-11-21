@@ -39,7 +39,7 @@ changing a threshold; each number here is cited to them.
 
 - **Branch and base.** Branch from `master` into a fresh worktree:
   `git worktree add -b claude/resolver ../resolver origin/master`. Test database for every
-  `pytest`/`manage.py` call: `POSTGRES_DB=tehsil_resolver`. Two sessions on one database produce
+  `pytest`/`manage.py` call: `POSTGRES_DB=elmify_resolver`. Two sessions on one database produce
   fake failures.
 - **Never hard-code the migration number.** `research` was at `0009_site_job_record_rls` on
   2026-09-25. Task 6 tells you how to find the real leaf; expect to need a merge migration if
@@ -76,8 +76,8 @@ changing a threshold; each number here is cited to them.
   an `UPDATE` on a shared table silently matches nothing, which is failure mode 1 of CLAUDE.md's
   RLS section in a new place.
 - **Validation after every task:** `uv run ruff check apps config tests scripts`,
-  `uv run mypy apps config`, the task's focused tests with `POSTGRES_DB=tehsil_resolver`,
-  `POSTGRES_DB=tehsil_resolver uv run python manage.py makemigrations --check --dry-run`, and
+  `uv run mypy apps config`, the task's focused tests with `POSTGRES_DB=elmify_resolver`,
+  `POSTGRES_DB=elmify_resolver uv run python manage.py makemigrations --check --dry-run`, and
   `uv run bandit -c pyproject.toml -r apps config`. Never `ruff format`. Read `${PIPESTATUS[0]}`,
   never a piped exit code.
 - **Commits:** one task per commit, `feat(research): …` / `test(research): …` / `docs: …`, ending
@@ -142,7 +142,7 @@ and that is the correct output.
 - [ ] **Step 1: Create the worktree from master and read the migration leaf**
 
 ```bash
-cd ~/tehsil_agent && git fetch origin master && git worktree add -b claude/resolver ../resolver origin/master
+cd ~/elmify && git fetch origin master && git worktree add -b claude/resolver ../resolver origin/master
 ls ../resolver/apps/research/migrations/ | sort | tail -3
 ls ../resolver/apps/research/wikidata.py 2>/dev/null || echo "no wikidata.py: Task 2 creates it"
 ```
@@ -153,7 +153,7 @@ Task 6 depends on it.
 - [ ] **Step 2: Prove the suite is green before touching anything**
 
 ```bash
-cd ../resolver && uv sync --frozen && POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_domains.py tests/research/test_vgm.py tests/research/test_organisation_register.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+cd ../resolver && uv sync --frozen && POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_domains.py tests/research/test_vgm.py tests/research/test_organisation_register.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 ```
 
 Expected: `… passed`, `EXIT=0`.
@@ -268,7 +268,7 @@ def test_a_name_with_one_token_and_no_kind_word_cannot_be_resolved_from_search()
 - [ ] **Step 3: Run to see them fail**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_names.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_names.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 ```
 
 Expected: collection error — `apps.research.names` and `apps.research.vocabulary` do not exist.
@@ -481,7 +481,7 @@ def profile(names: Sequence[str], vocab: Vocabulary) -> NameProfile:
 - [ ] **Step 6: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_names.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_names.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 ```
 
 Expected: `5 passed`. If `test_a_profile_separates…` fails on `"iekv"`, print
@@ -530,7 +530,7 @@ def test_a_json_api_may_name_another_json_media_type_and_only_then_is_it_read(pu
     ) == {"results": {"bindings": []}}
 ```
 
-Run: `POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_egress.py -q -k media_type` →
+Run: `POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_egress.py -q -k media_type` →
 fails with `TypeError: … unexpected keyword argument 'content_types'`.
 
 - [ ] **Step 2: Implement it in `apps/research/egress.py::fetch_json_api`**
@@ -754,7 +754,7 @@ def find_item(
     return matches[0] if len(matches) == 1 else None
 ```
 
-Run `POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_wikidata.py -q` → `4 passed`.
+Run `POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_wikidata.py -q` → `4 passed`.
 
 - [ ] **Step 5: Write the vocabulary-builder tests** (`tests/research/test_vocabulary.py`)
 
@@ -1048,7 +1048,7 @@ class Command(BaseCommand):
 - [ ] **Step 8: Build the files, live, and read the counts**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run python manage.py build_resolver_vocabulary --countries TR,DE,AZ,GE,KZ,UZ,VN,ID
+POSTGRES_DB=elmify_resolver uv run python manage.py build_resolver_vocabulary --countries TR,DE,AZ,GE,KZ,UZ,VN,ID
 ```
 
 Expected: eight country lines and one kinds line; kinds in the tens-to-hundreds of items (spec
@@ -1056,7 +1056,7 @@ expects ~50 kinds that *matter*; the file holds every labelled subclass, which i
 the query service times out on `DE`'s settlement query, re-run for `DE` alone once; a second
 timeout is a `CommandError` to report, not a query to hand-edit.
 
-Then run `POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_vocabulary.py -q`. If
+Then run `POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_vocabulary.py -q`. If
 `test_the_committed_kinds_name_every_kind_v5_lacked` fails, re-run the command with
 `--kind-depth 3` (embassy/consulate sit deeper under diplomatic mission) and re-test. Record the
 depth that passed in the commit message. If depth 3 still misses a word, stop and report which —
@@ -1168,7 +1168,7 @@ def test_the_union_of_variant_lists_keeps_each_domain_s_best_rank() -> None:
     assert [s for s in order if s.domain == "hrantdink.org"][0].rank == 0
 ```
 
-Run: `POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_resolver_scoring.py -q` →
+Run: `POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_resolver_scoring.py -q` →
 `ModuleNotFoundError: apps.research.resolver`.
 
 - [ ] **Step 2: Create `apps/research/resolver.py` — the scoring half**
@@ -1305,7 +1305,7 @@ Fix the import order so `re` sits with the standard-library imports (ruff will f
 - [ ] **Step 3: Run, then commit**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_resolver_scoring.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_resolver_scoring.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 git add apps/research/resolver.py tests/research/test_resolver_scoring.py
 git commit -m "feat(research): v4's lexical tiers with the directory rule and org-word-only promotion"
 ```
@@ -1413,7 +1413,7 @@ def title_agrees(p: NameProfile, titles: Sequence[str], vocab: Vocabulary) -> bo
 processed HTML still carries `<head><title>` has not been recorded. Probe three known homepages:
 
 ```bash
-FIRECRAWL_API_KEY=... POSTGRES_DB=tehsil_resolver DATABASE_ROLE=migration uv run python manage.py shell -c "
+FIRECRAWL_API_KEY=... POSTGRES_DB=elmify_resolver DATABASE_ROLE=migration uv run python manage.py shell -c "
 from apps.research.fetch import fetch_page
 from apps.research.resolver import page_titles
 for url in ('https://www.hrantdink.org/', 'https://www.tev.org.tr/', 'https://www.cusanuswerk.de/'):
@@ -1593,7 +1593,7 @@ grep -c token tests/research/fixtures/diffbot_enhance_gyla.json   # expect 0
 The fixture keeps the two keys the adapter reads, from the real response — not the full entity.
 If the live response has no `data[].entity.homepageUri` (the shape changed since 2026-09-18),
 change `homepage()`'s loop to the key the capture shows, and say so in the commit. Run
-`POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_diffbot.py -q` → `4 passed`.
+`POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_diffbot.py -q` → `4 passed`.
 
 - [ ] **Step 5: Commit** — `feat(research): Diffbot Enhance adapter -- a homepage URL and nothing else`
 
@@ -1735,11 +1735,11 @@ and in its `Meta.constraints` add:
 
 ```bash
 ls apps/research/migrations/ | sort | tail -2
-POSTGRES_DB=tehsil_resolver uv run python manage.py makemigrations research --name register_entry_resolution
+POSTGRES_DB=elmify_resolver uv run python manage.py makemigrations research --name register_entry_resolution
 ```
 
 If `makemigrations` reports conflicting leaves, run
-`POSTGRES_DB=tehsil_resolver uv run python manage.py makemigrations --merge research` first and
+`POSTGRES_DB=elmify_resolver uv run python manage.py makemigrations --merge research` first and
 commit the merge migration separately. Open the generated file and insert, **after the five
 `AddField`s and before the `AddConstraint`**:
 
@@ -1820,8 +1820,8 @@ is unchanged — `LadderReport.unresolved` stays "rung 0 did not resolve it", an
 - [ ] **Step 5: Run and commit**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_vgm.py tests/research/test_register_entry_resolution_rls.py tests/tenancy/test_database_isolation.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
-POSTGRES_DB=tehsil_resolver uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_vgm.py tests/research/test_register_entry_resolution_rls.py tests/tenancy/test_database_isolation.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run python manage.py makemigrations --check --dry-run
 git add apps/research/models.py apps/research/migrations apps/research/vgm.py tests/research/test_vgm.py tests/research/test_register_entry_resolution_rls.py
 git commit -m "feat(research): RegisterEntry carries the names store and why a name stayed unresolved"
 ```
@@ -2165,7 +2165,7 @@ construction: the per-host title cache is empty at that point, so the swapped fe
 - [ ] **Step 3: Run and commit**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_resolver.py tests/research/test_resolver_scoring.py tests/research/test_resolver_title.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_resolver.py tests/research/test_resolver_scoring.py tests/research/test_resolver_title.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 git add apps/research/resolver.py tests/research/test_resolver.py
 git commit -m "feat(research): the resolver ladder -- e-mail, Wikidata, search, title, Diffbot, reason"
 ```
@@ -2380,7 +2380,7 @@ failed identifier insert from poisoning the outer transaction either way.
 - [ ] **Step 3: Run and commit**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_resolve_entries.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_resolve_entries.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 git add apps/research/resolve_entries.py tests/research/test_resolve_entries.py
 git commit -m "feat(research): write a resolution as a CANDIDATE, or its reason, and never zero rows"
 ```
@@ -2598,7 +2598,7 @@ standard sweep ceiling (`FETCH_SWEEP_CREDITS`); a title fetch is one Firecrawl c
 - [ ] **Step 3: Run and commit**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_resolve_register_command.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_resolve_register_command.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 git add apps/research/management/commands/resolve_register.py tests/research/test_resolve_register_command.py
 git commit -m "feat(research): resolve_register -- dry-run by default, writes gated on the hold-out"
 ```
@@ -2607,9 +2607,9 @@ git commit -m "feat(research): resolve_register -- dry-run by default, writes ga
 
 ```bash
 TAVILY_API_KEY=... FIRECRAWL_API_KEY=... SCRAPEDO_API_KEY=... DATABASE_ROLE=migration \
-  POSTGRES_DB=tehsil_resolver uv run python manage.py read_register --register vgm --max-pages 1
+  POSTGRES_DB=elmify_resolver uv run python manage.py read_register --register vgm --max-pages 1
 TAVILY_API_KEY=... FIRECRAWL_API_KEY=... SCRAPEDO_API_KEY=... DATABASE_ROLE=migration \
-  POSTGRES_DB=tehsil_resolver uv run python manage.py resolve_register --register vgm_tr --limit 10
+  POSTGRES_DB=elmify_resolver uv run python manage.py resolve_register --register vgm_tr --limit 10
 ```
 
 (`read_register` takes the short slug `vgm`; its rows are stored under `vgm.REGISTER`, `vgm_tr`,
@@ -2646,7 +2646,7 @@ never used again (§6.5).
   agency `Q327333` 10, university `Q3918` 10, business `Q4830453` 5, diplomatic mission `Q7843791`
   5 — **50 names**. A stratum that cannot fill is topped up from organisation `Q43229`, marked
   `other`; the total stays 50.
-- Order: `ORDER BY MD5(CONCAT(STR(?item), "tehsil-resolver-holdout-vn-2026-09-25"))` — a salt
+- Order: `ORDER BY MD5(CONCAT(STR(?item), "elmify-resolver-holdout-vn-2026-09-25"))` — a salt
   committed in this plan before any draw, so the order is reproducible and chosen by nobody.
 - Names given to the resolver: the `vi` label, plus the `en` and `ru` labels where they exist —
   what Wikidata would supply under rule 4. Truth: the registrable domains of every `P856` value.
@@ -2721,7 +2721,7 @@ from typing import NamedTuple
 from .domains import is_catalogue
 from .hosts import registrable_domain
 
-SALT = "tehsil-resolver-holdout-vn-2026-09-25"
+SALT = "elmify-resolver-holdout-vn-2026-09-25"
 STRATA = (
     ("foundation", "Q157031", 10), ("nonprofit", "Q163740", 10),
     ("agency", "Q327333", 10), ("university", "Q3918", 10),
@@ -2877,10 +2877,10 @@ class Command(BaseCommand):
 - [ ] **Step 4: Run tests, commit the code, then draw — once**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_holdout.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_holdout.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 git add apps/research/holdout.py apps/research/management/commands/draw_resolver_holdout.py tests/research/test_holdout.py
 git commit -m "feat(research): the resolver's hold-out -- strata, salt, frozen digest, pass rule"
-POSTGRES_DB=tehsil_resolver uv run python manage.py draw_resolver_holdout --country VN --language vi
+POSTGRES_DB=elmify_resolver uv run python manage.py draw_resolver_holdout --country VN --language vi
 wc -l docs/research/resolver-holdout-vn.csv   # expect 51
 git add docs/research/resolver-holdout-vn.csv
 git commit -m "docs(research): the Vietnamese resolver hold-out, drawn blind"
@@ -3086,11 +3086,11 @@ you find one reading the CSV — say so explicitly.
 - [ ] **Step 3: Run the unit tests, commit, then run the gate once**
 
 ```bash
-POSTGRES_DB=tehsil_resolver uv run pytest tests/research/test_holdout.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_resolver uv run pytest tests/research/test_holdout.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 git add apps/research/holdout.py apps/research/management/commands/resolver_gate.py tests/research/test_holdout.py
 git commit -m "feat(research): resolver_gate -- two arms on the same responses, PASS or FAIL"
 TAVILY_API_KEY=... FIRECRAWL_API_KEY=... SCRAPEDO_API_KEY=... DIFFBOT_TOKEN=... DATABASE_ROLE=migration \
-  POSTGRES_DB=tehsil_resolver uv run python manage.py resolver_gate --country VN --diffbot
+  POSTGRES_DB=elmify_resolver uv run python manage.py resolver_gate --country VN --diffbot
 ```
 
 Committing `holdout.py` changes the digest? No — `holdout.py` is not in `_FROZEN`; only

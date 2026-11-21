@@ -1,10 +1,15 @@
 """A published pack with a programme and the award that funds it."""
 
+from datetime import date
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 
+from apps.accounts.models import StudentProfileVersion
+from apps.funding.fx import RateTable
 from apps.funding.models import FundingOpportunity, RecommendationCandidate
+from apps.portals.fees import fee_state_for
 from apps.portals.models import Application, PortalForm
 from apps.tenancy.context import tenant_scope
 from tests.funding.conftest import make_db_candidate, make_published_pack, make_run
@@ -50,6 +55,7 @@ def add_card(agency, student, candidate, *, portal=True, **fields) -> Applicatio
         if portal
         else None
     )
+    fields.setdefault("fee_state", fee_state_for(candidate))
     return Application.objects.create(
         tenant=agency,
         student=student,
@@ -58,3 +64,20 @@ def add_card(agency, student, candidate, *, portal=True, **fields) -> Applicatio
         portal_form=form,
         **fields,
     )
+
+
+#: 1 EUR = 2 AZN and 1 USD = 1.6 AZN: round figures to assert on. A day well in
+#: the past, so latest_table() finds it whatever today is.
+AZN_RATES = RateTable(
+    base="AZN",
+    rates={"AZN": Decimal("1"), "EUR": Decimal("0.5"), "USD": Decimal("0.625")},
+    source="CBAR",
+    retrieved_on=date(2026, 1, 8),
+)
+
+
+def set_profile(agency, student, **snapshot) -> None:
+    """A newer profile version holding only the keys board_for reads."""
+    with tenant_scope(agency.id):
+        version = StudentProfileVersion.objects.filter(student=student).count() + 1
+        StudentProfileVersion.objects.create(student=student, version=version, snapshot=snapshot)

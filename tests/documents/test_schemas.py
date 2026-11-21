@@ -690,3 +690,26 @@ def test_a_timeline_entry_refuses_a_statement_over_the_cap():
 
 def test_cv_content_has_no_timeline_by_default():
     assert _minimal_content().timeline == ()
+
+
+def test_a_cv_written_before_certifications_still_validates():
+    from apps.documents.schemas import CVContent
+
+    from .test_render import _content
+
+    dumped = _content().model_dump(mode="json")
+    dumped.pop("certifications", None)
+    assert CVContent.model_validate(dumped).certifications == ()
+
+
+def test_a_certification_needs_a_title():
+    import pytest
+    from pydantic import ValidationError
+
+    from apps.documents.schemas import CertificationEntry
+
+    with pytest.raises(ValidationError):
+        CertificationEntry(title="")
+    cert = CertificationEntry(title="First Aid", issuer="Red Crescent", date="2022-03")
+    assert cert.date.year == 2022
+

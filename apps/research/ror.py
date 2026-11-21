@@ -9,6 +9,7 @@ measures ROR's matching for item 8's resolver and nothing here uses it.
 from __future__ import annotations
 
 import csv
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +18,8 @@ from django.conf import settings
 
 from .egress import SourceBlocked, fetch_json_api
 from .hosts import registrable_domain
+
+logger = logging.getLogger(__name__)
 
 ENDPOINT = "https://api.ror.org/v2/organizations"
 _PASS_SHARE = 0.95
@@ -43,9 +46,8 @@ def _list(value: object) -> list[object]:
 
 
 def website_domain(record: dict[str, object]) -> str:
-    for link in _list(record.get("links")):
-        if isinstance(link, dict) and link.get("type") == "website" and link.get("value"):
-            return registrable_domain(str(link["value"]))
+    if domain := website_link_domain(record):
+        return domain
     domains = _list(record.get("domains"))
     return registrable_domain(str(domains[0])) if domains else ""
 
@@ -145,7 +147,13 @@ def ror_facts(domain: str, *, call: Call = fetch_json_api) -> RorFacts:
     (preflight m4) -- neither is fixed by this function."""
     try:
         records = by_domain(domain, call=call)
-    except (SourceBlocked, ValueError):
+    except (SourceBlocked, ValueError) as error:
+        logger.warning(
+            "ror_facts lookup degraded for %s (%s: %s)",
+            domain,
+            type(error).__name__,
+            error,
+        )
         return RorFacts(lookup_failed=True)
     for record in records:
         domains = {registrable_domain(str(value)) for value in _list(record.get("domains"))}

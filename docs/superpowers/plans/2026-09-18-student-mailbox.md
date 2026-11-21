@@ -24,7 +24,7 @@ names this plan as the producer it is waiting for.
 
 ## Global Constraints
 
-- **Run the suite against a private database: `POSTGRES_DB=tehsil_mailbox uv run pytest -q`.** `config/settings/database.py` defaults `POSTGRES_DB` to the constant `"tehsil"`, so every worktree and every concurrent session otherwise shares one `test_tehsil` database and a green run proves nothing. This is measured, not cautionary — see plan 1's identical constraint.
+- **Run the suite against a private database: `POSTGRES_DB=elmify_mailbox uv run pytest -q`.** `config/settings/database.py` defaults `POSTGRES_DB` to the constant `"elmify"`, so every worktree and every concurrent session otherwise shares one `test_elmify` database and a green run proves nothing. This is measured, not cautionary — see plan 1's identical constraint.
 - Every command runs through `uv run`. Never invoke `pytest`, `python`, `ruff` or `mypy` directly.
 - `pyproject.toml` sets `addopts = "-m 'not live'"`. **No test in this plan is marked `live`** — every provider and every model call is faked. Nothing here may reach Google, Microsoft or OpenAI in a default run.
 - **No new dependency.** `urllib3>=2.5,<3`, `boto3[crt]`, `pydantic>=2.13.5` and `openai>=3.8.0` are already direct dependencies and are all this plan needs. Do not add `google-auth`, `google-api-python-client`, `msal`, `requests` or `httpx`: the OAuth code path is two POSTs and a bearer header.
@@ -100,12 +100,12 @@ correspondence, kept forever, that no code reads. Dropped; add it when something
 | `apps/portals/models.py` (modify) | `PortalForm.sender_domains` |
 | `apps/portals/migrations/0013_portalform_sender_domains.py` (create, generated) | that column |
 | `apps/audit/redaction.py` (modify) | `REDACT`/`KEEP` for both new models |
-| `apps/audit/deletion.py` (modify) | destroy `tehsil/mailbox/*` on the `EXECUTED` path |
+| `apps/audit/deletion.py` (modify) | destroy `elmify/mailbox/*` on the `EXECUTED` path |
 | `apps/tenancy/models.py` (modify) | `application_email` docstring — the meaning changed, the column did not |
 | `apps/documents/generation.py`, `apps/documents/api.py` (modify) | the refusal wording that told the student to wait for provisioning |
 | `config/settings/base.py` (modify) | `INSTALLED_APPS` + five OAuth settings |
 | `config/urls.py` (modify) | include `apps.mailbox.urls` |
-| `infra/template.yaml` (modify) | `WorkerTaskRole` gains Secrets Manager rights on `tehsil/mailbox/*` |
+| `infra/template.yaml` (modify) | `WorkerTaskRole` gains Secrets Manager rights on `elmify/mailbox/*` |
 | `tests/mailbox/test_models.py` (create) | tenant isolation behind a `NOBYPASSRLS` role |
 | `tests/migrations/test_mailbox_tenant_guards.py` (create) | RLS and composite FKs exist in the database |
 | `tests/mailbox/test_secrets.py` (create) | token storage, reconstruction, erasure |
@@ -219,7 +219,7 @@ def test_the_policy_hides_the_other_tenant_from_the_base_manager(
 
 - [ ] **Step 2: Run it and watch it fail for the right reason**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_models.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_models.py -v`
 Expected: collection error — `ModuleNotFoundError: No module named 'apps.mailbox'`.
 
 - [ ] **Step 3: Create the app package**
@@ -372,7 +372,7 @@ The migration that *creates* that constraint is the earliest `portals` migration
 
 - [ ] **Step 6: Write the migration by hand**
 
-Generating it first is fine (`POSTGRES_DB=tehsil_mailbox uv run python manage.py makemigrations mailbox`), but the generated file carries **none** of the RLS or the composite FKs — a tenant table shipped without them is readable by every tenant and no test in this repository can see the difference, because the test role is `BYPASSRLS`. Add both blocks by hand.
+Generating it first is fine (`POSTGRES_DB=elmify_mailbox uv run python manage.py makemigrations mailbox`), but the generated file carries **none** of the RLS or the composite FKs — a tenant table shipped without them is readable by every tenant and no test in this repository can see the difference, because the test role is `BYPASSRLS`. Add both blocks by hand.
 
 `apps/mailbox/migrations/0001_initial.py`:
 
@@ -556,10 +556,10 @@ def test_the_composite_tenant_foreign_keys_exist(table: str) -> None:
 
 - [ ] **Step 8: Run everything that could see this change**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox tests/migrations tests/tenancy/test_database_isolation.py -q`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox tests/migrations tests/tenancy/test_database_isolation.py -q`
 Expected: PASS. `tests/tenancy/test_database_isolation.py::test_every_tenant_scoped_model_has_rls_enabled_and_forced` enrols the two new tables automatically — it derives its list from the app registry, so a missing `FORCE` fails there without anyone editing a list.
 
-Also run: `POSTGRES_DB=tehsil_mailbox uv run python manage.py makemigrations --check --dry-run`
+Also run: `POSTGRES_DB=elmify_mailbox uv run python manage.py makemigrations --check --dry-run`
 Expected: "No changes detected". If it wants to write a migration, the hand-written one disagrees with the models — fix the migration, not the models.
 
 - [ ] **Step 9: Commit**
@@ -591,7 +591,7 @@ EOF
 
 - [ ] **Step 1: Watch the gate fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/audit/test_redaction_classification.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/audit/test_redaction_classification.py -v`
 Expected: FAIL — `test_every_reachable_field_is_classified_exactly_once` lists every field of both new models under "unclassified fields". Both are reachable: `MailboxConnection` has a forward FK to `Membership`, and `MailSignal` has one to `MailboxConnection`.
 
 This failure is the whole point of doing this task second rather than folding it into Task 1: the walk found the models by itself, and it stops the build until erasure has an answer.
@@ -630,7 +630,7 @@ and to `KEEP`:
 
 - [ ] **Step 3: Run the gate again**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/audit -q`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/audit -q`
 Expected: PASS, including `test_classification_names_no_field_that_does_not_exist` (which catches a typo in either dict) and `test_every_redact_model_has_a_subject_path`.
 
 - [ ] **Step 4: Commit**
@@ -741,7 +741,7 @@ class FakeSecrets:
 
 
 def test_the_path_is_reconstructible_from_what_erasure_holds() -> None:
-    assert secret_id(TENANT, STUDENT, "GOOGLE") == f"tehsil/mailbox/{TENANT}/{STUDENT}/GOOGLE"
+    assert secret_id(TENANT, STUDENT, "GOOGLE") == f"elmify/mailbox/{TENANT}/{STUDENT}/GOOGLE"
 
 
 def test_a_token_round_trips() -> None:
@@ -782,7 +782,7 @@ def test_a_missing_token_is_none_and_the_log_carries_no_token(caplog) -> None:
         )
 
     assert str(STUDENT) not in caplog.text
-    assert "tehsil/mailbox" not in caplog.text
+    assert "elmify/mailbox" not in caplog.text
 
 
 def test_erasure_destroys_both_providers_and_never_lists() -> None:
@@ -818,7 +818,7 @@ def test_any_other_error_propagates_so_executed_is_not_written() -> None:
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_secrets.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_secrets.py -v`
 Expected: collection error — `ModuleNotFoundError: No module named 'apps.mailbox.secrets'`.
 
 - [ ] **Step 3: Write the module**
@@ -855,7 +855,7 @@ PROVIDERS = ("GOOGLE", "MICROSOFT")
 
 def secret_id(tenant_id: UUID, student_id: UUID, provider: str) -> str:
     """One secret per student per provider."""
-    return f"tehsil/mailbox/{tenant_id}/{student_id}/{provider}"
+    return f"elmify/mailbox/{tenant_id}/{student_id}/{provider}"
 
 
 def _client(client: object | None) -> object:
@@ -931,7 +931,7 @@ def delete_student_mailbox_tokens(
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_secrets.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_secrets.py -v`
 Expected: PASS (7 tests).
 
 - [ ] **Step 5: Wire it into erasure**
@@ -982,7 +982,7 @@ Then extend whichever existing test in `tests/audit/` drives `advance_deletion` 
 
 - [ ] **Step 7: Grant the role the rights, and pin the grant**
 
-In `infra/template.yaml`, find the `WorkerTaskRole` statement carrying `secretsmanager:DeleteSecret` on `tehsil/portal/*`. Add a sibling statement (do not widen the existing one — the portal grant goes when the portal tier does):
+In `infra/template.yaml`, find the `WorkerTaskRole` statement carrying `secretsmanager:DeleteSecret` on `elmify/portal/*`. Add a sibling statement (do not widen the existing one — the portal grant goes when the portal tier does):
 
 ```yaml
               - Effect: Allow
@@ -991,7 +991,7 @@ In `infra/template.yaml`, find the `WorkerTaskRole` statement carrying `secretsm
                   - secretsmanager:PutSecretValue
                   - secretsmanager:GetSecretValue
                   - secretsmanager:DeleteSecret
-                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/mailbox/*"
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/mailbox/*"
 ```
 
 Match the surrounding block's exact indentation and `Resource` style — copy the portal statement's shape rather than this snippet's if they differ.
@@ -1006,9 +1006,9 @@ def test_the_worker_may_manage_mailbox_grants_but_not_list_them() -> None:
     mailbox = [
         statement
         for statement in statements
-        if "tehsil/mailbox/*" in str(statement.get("Resource", ""))
+        if "elmify/mailbox/*" in str(statement.get("Resource", ""))
     ]
-    assert mailbox, "WorkerTaskRole has no statement for tehsil/mailbox/*"
+    assert mailbox, "WorkerTaskRole has no statement for elmify/mailbox/*"
     actions = {action for statement in mailbox for action in statement["Action"]}
     assert actions == {
         "secretsmanager:CreateSecret",
@@ -1023,7 +1023,7 @@ def test_the_worker_may_manage_mailbox_grants_but_not_list_them() -> None:
 
 - [ ] **Step 8: Run the affected suites**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox tests/audit tests/infra -q`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox tests/audit tests/infra -q`
 Expected: PASS.
 
 Run: `uv run bandit -c pyproject.toml -r apps config`
@@ -1145,7 +1145,7 @@ Write the three fixtures (`student_with_pack`, `second_student`, `student_with_n
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_filter.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_filter.py -v`
 Expected: collection error — no module `apps.mailbox.filter`.
 
 - [ ] **Step 3: Promote the pack lookup out of the view**
@@ -1162,7 +1162,7 @@ then rename its call sites in that file from `_current_pack(` to `current_pack(`
 
 - [ ] **Step 4: Run the funding suite before going further**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/funding -q`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/funding -q`
 Expected: PASS. A move is not a behaviour change; if anything fails here, the move was not verbatim.
 
 - [ ] **Step 5: Write the filter**
@@ -1308,7 +1308,7 @@ In `apps/portals/models.py`, on `PortalForm`, after `resolution_approved`:
     sender_domains = models.JSONField(default=list, blank=True)
 ```
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run python manage.py makemigrations portals -n portalform_sender_domains`
+Run: `POSTGRES_DB=elmify_mailbox uv run python manage.py makemigrations portals -n portalform_sender_domains`
 
 `PortalForm` is not tenant-scoped, so this migration needs no RLS block and no composite FK — read the generated file and confirm it is one `AddField` and nothing else.
 
@@ -1316,7 +1316,7 @@ Run: `POSTGRES_DB=tehsil_mailbox uv run python manage.py makemigrations portals 
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_filter.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_filter.py -v`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -1584,7 +1584,7 @@ def test_a_since_bound_is_applied_client_side_for_google() -> None:
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_providers.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_providers.py -v`
 Expected: collection error — no module `apps.mailbox.providers`.
 
 - [ ] **Step 3: Add the settings**
@@ -1875,7 +1875,7 @@ def _plain_text(raw: bytes) -> str:
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_providers.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_providers.py -v`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -1971,7 +1971,7 @@ def test_provider_for_refuses_anything_else() -> None:
 
 - [ ] **Step 2: Run and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_providers.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_providers.py -v`
 Expected: `ImportError: cannot import name 'MicrosoftMailbox'`.
 
 - [ ] **Step 3: Implement**
@@ -2068,7 +2068,7 @@ def provider_for(provider: str, *, http: object | None = None) -> MailboxProvide
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_providers.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_providers.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -2255,7 +2255,7 @@ Add a `connection` fixture to `tests/mailbox/conftest.py` returning a saved `Mai
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_oauth.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_oauth.py -v`
 Expected: collection error — no module `apps.mailbox.oauth`.
 
 - [ ] **Step 3: Write the module**
@@ -2451,7 +2451,7 @@ Note `refresh_token_for` swallows a `KeyError` from a fake client only if the fa
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_oauth.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_oauth.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -2720,7 +2720,7 @@ The `autouse` stub patches the name **as `sync.py` imported it**, so `test_a_los
 
 - [ ] **Step 2: Run them and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_sync.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_sync.py -v`
 Expected: collection error — no module `apps.mailbox.sync`.
 
 - [ ] **Step 3: Write the module**
@@ -2852,7 +2852,7 @@ def sync_connection(
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_sync.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_sync.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -2940,7 +2940,7 @@ def test_a_lost_grant_tells_the_student_to_reconnect(connection_with_pack, monke
 
 - [ ] **Step 2: Run and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_sync.py -k card -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_sync.py -k card -v`
 Expected: FAIL — `Notification.objects.count() == 0`.
 
 - [ ] **Step 3: Implement**
@@ -3011,7 +3011,7 @@ In `sync_connection`, inside the `if is_new:` branch add `announce(signal)` — 
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_sync.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_sync.py -v`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -3193,7 +3193,7 @@ def test_a_verdict_carries_at_most_one_action() -> None:
 
 - [ ] **Step 2: Run and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_classify.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_classify.py -v`
 Expected: collection error — no module `apps.mailbox.classify`.
 
 - [ ] **Step 3: Write the module**
@@ -3356,7 +3356,7 @@ In `apps/mailbox/sync.py`, after a signal is created and announced, on the conte
 
 - [ ] **Step 5: Run the suites**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox -q`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox -q`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -3663,7 +3663,7 @@ def test_the_label_is_recorded_on_the_signal(signal_on_application) -> None:
 
 - [ ] **Step 2: Run and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_actions.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_actions.py -v`
 Expected: collection error — no module `apps.mailbox.actions`.
 
 - [ ] **Step 3: Write the module**
@@ -3820,7 +3820,7 @@ In `apps/mailbox/sync.py`, import `apply_verdict` and replace the `# Task 11` br
 
 - [ ] **Step 5: Run everything**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox tests/portals -q`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox tests/portals -q`
 Expected: PASS. `tests/portals` is in the list because this task gives `queue_action` its first production caller and writes `Application.state`.
 
 - [ ] **Step 6: Commit**
@@ -4011,7 +4011,7 @@ Add `student_client`, `second_student_client`, `fake_exchange` (monkeypatches `a
 
 - [ ] **Step 3: Run and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_views.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_views.py -v`
 Expected: `NoReverseMatch: Reverse for 'mailbox-connect' not found`.
 
 - [ ] **Step 4: Write the views**
@@ -4223,7 +4223,7 @@ Find them with `grep -rn "platform-issued\|platform mailbox\|application_email" 
 
 - [ ] **Step 6: Run the affected suites**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox tests/documents tests/tenancy -q`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox tests/documents tests/tenancy -q`
 Expected: PASS. If a documents test asserts the old refusal string, update the assertion — the string is the product's words, and they were wrong.
 
 - [ ] **Step 7: Commit**
@@ -4334,7 +4334,7 @@ Reuse `_grant()` and the fixtures from `test_sync.py` by moving them into `tests
 
 - [ ] **Step 2: Run and watch them fail**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest tests/mailbox/test_command.py -v`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest tests/mailbox/test_command.py -v`
 Expected: `CommandError: Unknown command: 'sync_mailboxes'`.
 
 - [ ] **Step 3: Write the command**
@@ -4412,13 +4412,13 @@ In `docs/runbooks/deploy.md`, beside the existing note about `execute_due_erasur
 
 - [ ] **Step 5: Run the whole suite**
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run pytest -q`
+Run: `POSTGRES_DB=elmify_mailbox uv run pytest -q`
 Expected: everything passes. Compare the count against a run of this branch's merge-base so a silently skipped module is visible.
 
 Run: `uv run ruff check`, `uv run mypy`, `uv run bandit -c pyproject.toml -r apps config`
 Expected: clean.
 
-Run: `POSTGRES_DB=tehsil_mailbox uv run python manage.py makemigrations --check --dry-run`
+Run: `POSTGRES_DB=elmify_mailbox uv run python manage.py makemigrations --check --dry-run`
 Expected: "No changes detected".
 
 - [ ] **Step 6: Commit**

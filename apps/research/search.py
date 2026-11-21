@@ -14,6 +14,7 @@ research and cannot support a claim.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -40,6 +41,8 @@ from .domains import CATALOGUE_DOMAINS, is_catalogue, is_hoppable_catalogue
 from .egress import FetchResult, SourceBlocked, UnsafeTarget, fetch_data_file, fetch_json_api
 from .harvest import anchors
 from .providers import SearchMeter, SearchRequest
+
+logger = logging.getLogger(__name__)
 
 #: Tavily, chosen on terms and not on index quality: §3.2's use restrictions attach
 #: to "the Services", and the agreement states "the term 'Services' does not include
@@ -102,12 +105,29 @@ class SearchSource:
     def query_text(self, query: DiscoveryQuery) -> str:
         # Every ISO country, not a hand-kept corridor list: a code missing from
         # a short table went out as "NL" and quietly searched worse.
+        from apps.accounts.field_taxonomy import resolve_field_taxonomy
+
         country = country_name(query.country_code.upper())
         degree = DEGREE_WORDS.get(query.degree_level, query.degree_level.casefold())
+        resolution = resolve_field_taxonomy(query.field)
+        extra_titles = (
+            [
+                title
+                for title in resolution.canonical_degree_titles
+                if title.casefold() != query.field.strip().casefold()
+            ]
+            if resolution.is_ambiguous_or_interdisciplinary
+            else []
+        )
+        field_expr = (
+            f"{query.field} ({' / '.join(extra_titles[:4])})"
+            if extra_titles
+            else query.field
+        )
         # No language filter: a German-language page routinely describes an
         # English-taught programme (§2.2). Teaching language is gated on the
         # extracted, cited TeachingLanguageClaim instead.
-        return f"{query.field} {degree} {country} official funding scholarship"
+        return f"{field_expr} {degree} {country} official funding scholarship"
 
     def find(self, query: DiscoveryQuery) -> Iterator[ResearchLead]:
         # Delegates the actual call to the one metered Tavily client
@@ -133,8 +153,9 @@ class SearchSource:
             denylist=tuple(CATALOGUE_DOMAINS),
         )
         for url in provider.search(request, self.meter):
-            host = urlsplit(url).hostname or ""
-            if not url:
+            split = urlsplit(url)
+            host = split.hostname or ""
+            if not url or _is_phd_only_path(split.path):
                 continue
             if is_catalogue(host) and not is_hoppable_catalogue(host):
                 continue  # commercial aggregator: nothing behind it to hop to
@@ -152,7 +173,10 @@ class SearchSource:
                 continue  # not HTTPS: canonicalize_url refuses it
 
 
-#: Path fragments that mark an organisation's own funding/admissions pages.
+#: Path fragments that mark an organisation's own Master's funding/admissions pages.
+#: "doctoral" and "phd" are deliberately excluded (and filtered below unless "master"
+#: is also in the path): the platform serves Master's candidates only, and PhD-only
+#: links otherwise exhaust the per-page `limit=5` and `per_org=10` caps.
 FUNDING_PATH_TERMS = (
     "scholarship",
     "fellowship",
@@ -160,10 +184,51 @@ FUNDING_PATH_TERMS = (
     "stipend",
     "admission",
     "graduate",
-    "doctoral",
-    "phd",
+    "postgraduate",
+    "master",
+    "msc",
+    "tuition",
+    "waiver",
+    "bourses",
+    "stipendien",
+    "borse",
+    "burs",
 )
+_PHD_ONLY_PATH_TERMS = (
+    "/phd",
+    "-phd",
+    "phd-",
+    "_phd",
+    "/doctoral",
+    "-doctoral",
+    "doctoral-",
+    "/doctorat",
+    "/doktorat",
+    "/dottorato",
+    "/postdoc",
+    "-postdoc",
+    "postdoc-",
+    "/bachelor",
+    "-bachelor",
+    "bachelor-",
+    "_bachelor",
+    "/bsc",
+    "-bsc",
+    "bsc-",
+    "/undergraduate",
+    "-undergraduate",
+    "undergraduate-",
+    "/laurea-triennale",
+)
+_MASTER_PATH_MARKERS = ("master", "msc", "ma-", "-ma/", "magistr", "laurea-magistrale")
 _MAX_INDEX_CHILDREN = 3
+
+
+def _is_phd_only_path(path: str) -> bool:
+    folded = path.casefold()
+    if not any(term in folded for term in _PHD_ONLY_PATH_TERMS):
+        return False
+    return not any(marker in folded for marker in _MASTER_PATH_MARKERS)
 
 
 def funding_links(page: FetchResult, *, limit: int = 5) -> list[str]:
@@ -193,6 +258,8 @@ def funding_links(page: FetchResult, *, limit: int = 5) -> list[str]:
         target = urljoin(page.final_url, anchor.href)
         split = urlsplit(target)
         if (split.hostname or "") != host:
+            continue
+        if _is_phd_only_path(split.path):
             continue
         if not any(term in split.path.casefold() for term in FUNDING_PATH_TERMS):
             continue
@@ -273,12 +340,24 @@ def _sitemap(
 ) -> Iterator[str]:
     try:
         body = fetch(url).body
-    except (SourceBlocked, UnsafeTarget, OSError):
+    except (SourceBlocked, UnsafeTarget, OSError) as error:
+        logger.debug(
+            "sitemap fetch degraded for %s (%s: %s)",
+            url,
+            type(error).__name__,
+            error,
+        )
         return
     try:
         root = ElementTree.fromstring(body)
-    except (ParseError, ValueError):
+    except (ParseError, ValueError) as error:
         # defusedxml's own refusals (DefusedXmlException) subclass ValueError.
+        logger.debug(
+            "sitemap XML parse degraded for %s (%s: %s)",
+            url,
+            type(error).__name__,
+            error,
+        )
         return
     locations = _locs(root)
     if root.tag.rsplit("}", 1)[-1] == "sitemapindex" and depth > 0:
@@ -340,6 +419,8 @@ class EntityExpansionSource:
                 # own pages inherit the organisation's provenance, so a <loc>
                 # pointing off-host is dropped rather than promoted to DIRECT.
                 if (split.hostname or "") != host:
+                    continue
+                if _is_phd_only_path(split.path):
                     continue
                 if not any(term in split.path.casefold() for term in FUNDING_PATH_TERMS):
                     continue

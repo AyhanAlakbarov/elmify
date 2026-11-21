@@ -3,11 +3,18 @@
 // Set NEXT_PUBLIC_APP_URL to the app's address when deploying (for example
 // https://app.elmify.com); locally the app runs on port 8000.
 const APP_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:8000").replace(/\/$/, "");
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://elmify.com").replace(/\/$/, "");
 
 export const appLinks = {
   signup: `${APP_URL}/signup/`,
   login: `${APP_URL}/accounts/login/`,
   demo: `${APP_URL}/demo/`,
+  studentDemo: `${APP_URL}/demo/?audience=student`,
   terms: `${APP_URL}/legal/terms/`,
   privacy: `${APP_URL}/legal/privacy_notice_direct/`,
 };
+
+// A Google Calendar appointment schedule (20-minute slots with Google Meet):
+// the student picks a time and Google sends both sides the invite and Meet
+// link. Empty hides every "Book a call" button.
+export const BOOKING_URL = (process.env.NEXT_PUBLIC_BOOKING_URL ?? "").trim();

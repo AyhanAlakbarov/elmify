@@ -124,7 +124,7 @@ def test_a_cv_character_cap_without_spaces_has_its_own_key():
 def test_the_operations_are_the_closed_list_the_spec_names():
     assert set(OPERATIONS) == {
         "limit", "language", "format", "include", "order", "emphasise", "style",
-        "topic", "student_action", "form", "naming", "other",
+        "topic", "student_action", "form", "naming", "coverage", "other",
     }
 
 
@@ -207,7 +207,8 @@ def test_the_condition_kinds_are_what_the_student_ledger_can_answer():
 def test_units_and_sections_are_not_invented_here():
     from apps.documents import grammar
 
-    assert set(UNITS) == {"pages", "words", "characters", "megabytes"}
+    # `entries` added on purpose 2026-10-14 (spec §8, the planned cv_item_cap).
+    assert set(UNITS) == {"pages", "words", "characters", "megabytes", "entries"}
     # Fix round 1, finding 6: the original compared _SECTIONS to itself, a
     # tautology that would pass even if grammar.py shadowed the import with
     # its own list. Compare the module's OWN bound name instead.
@@ -253,13 +254,19 @@ def test_the_grammar_names_no_sink_outside_the_real_sets_and_sinks_is_exact():
         "include": tuple(_INCLUDE_TARGETS),
         "order": tuple((t, d) for t in _ORDER_TARGETS for d in _ORDER_DIRECTIONS),
         "emphasise": tuple(_SECTIONS),
-        # STYLE_VALUES already carries photo_required and single_file_bundle
-        # (fix round 1, finding 2): both are style values with no sink now.
+        # STYLE_VALUES carries photo_required (own sink since spec §8) and
+        # single_file_bundle (no sink: fix round 1, finding 2).
         "style": STYLE_VALUES,
         "topic": ("why this programme",),
         "student_action": ("sign it by hand",),
         "form": FORM_VALUES,
         "naming": NAMING_VALUES,
+        "coverage": (
+            ("complete", "", 0), ("relevant_only", "", 0), ("from_upper_secondary", "", 0),
+            ("from_first_degree", "", 0), ("last_n_years", "", 10),
+            ("section_cap", "publications", 5), ("section_cap", "education", 2),
+            ("none", "", 0),
+        ),
         "other": ("anything",),
     }
     assert set(per_operation_values) == set(OPERATIONS)
@@ -290,3 +297,36 @@ def test_the_plausibility_bands_moved_rather_than_forked():
 
     assert derive._IMPLAUSIBLE_CAP is grammar._IMPLAUSIBLE_CAP
     assert derive._IMPLAUSIBLE_MAX is grammar._IMPLAUSIBLE_MAX
+
+
+def test_coverage_values_map_to_their_keys():
+    from apps.documents.grammar import coverage_key, coverage_rule_value
+
+    assert coverage_key(("complete", "", 0)) == "cv_scope"
+    assert coverage_key(("from_upper_secondary", "", 0)) == "cv_start"
+    assert coverage_key(("last_n_years", "", 10)) == "cv_start"
+    assert coverage_key(("section_cap", "publications", 5)) == "cv_item_cap"
+    assert coverage_rule_value(("relevant_only", "", 0)) == "relevant_only"
+    assert coverage_rule_value(("from_first_degree", "", 0)) == {"start": "first_degree"}
+    assert coverage_rule_value(("last_n_years", "", 10)) == {"start": "last_n_years", "years": 10}
+    assert coverage_rule_value(("section_cap", "awards", 3)) == {"section": "awards", "max": 3}
+
+
+@pytest.mark.parametrize("value", [
+    ("section_cap", "education", 2),   # a cap never removes a degree (spec §8)
+    ("section_cap", "languages", 3),
+    ("section_cap", "publications", 0),
+    ("last_n_years", "", 0),
+    ("last_n_years", "", 500),         # a misread, not a window
+    ("none", "", 0),
+    "complete",                         # half a value
+])
+def test_a_coverage_value_nothing_can_carry_has_no_sink(value):
+    from apps.documents.grammar import coverage_key
+
+    assert coverage_key(value) == ""
+    assert sink_for("cv", "coverage", value) == ""
+
+
+def test_coverage_is_never_a_letter_rule():
+    assert sink_for("motivation_letter", "coverage", ("complete", "", 0)) == ""

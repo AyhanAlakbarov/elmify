@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Chat with {{ name }}{% endblock %}
+{% block content %}
+  <div class="page-head"><div><h1>{{ name }}</h1><p><a href="{% url 'staff-student' student.id %}">Profile and universities</a> · <a href="{% url 'staff-inbox' %}">Back to inbox</a></p></div></div>
+  <section class="panel" aria-labelledby="chat-heading">
+    <h2 id="chat-heading" class="sr-only">Messages</h2>
+    <div class="thread">
+      {% for m in messages_ %}
+        <p class="bubble{% if m.sender_id == m.student_id %} from-student{% else %} from-counsellor{% endif %}"><span class="who">{% if m.sender_id == m.student_id %}{{ name }}{% elif m.sender.role == "PLATFORM_ADMIN" %}{{ m.sender.display_name }} (Elmify){% else %}Counsellor{% endif %}, {{ m.created_at|date:"j M H:i" }}:</span> {{ m.body|linebreaksbr }}</p>
+      {% empty %}
+        <p class="empty">No messages yet.</p>
+      {% endfor %}
+    </div>
+  </section>
+  <form class="panel composer" method="post" action="{% url 'staff-reply' student.id %}">
+    {% csrf_token %}
+    {% if error %}<p role="alert" id="reply-error">{{ error }}</p>{% endif %}
+    <p>
+      <label for="reply-body">Reply to {{ name }}</label><br>
+      <textarea id="reply-body" name="body" rows="4" maxlength="4000"{% if error %} aria-describedby="reply-error"{% endif %}>{{ body }}</textarea>
+    </p>
+    <button type="submit">Send reply</button>
+    <p class="muted">The student gets an email that a reply is waiting. The text stays in the app.</p>
+  </form>
+{% endblock %}

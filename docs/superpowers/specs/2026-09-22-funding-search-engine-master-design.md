@@ -389,7 +389,13 @@ target page writes itself**, and a pass is a **set of angles**, not one query:
   reproducible, a dead angle is visible in the per-angle tally, and an operator can read what was
   asked. The generator is one schema-constrained call per (country, family) — `rate_limited`,
   `extra="forbid"`, capped — and carries no student attribute; the programme-angle set per cell is
-  the same shape keyed `(field, level, language, angle)`.
+  the same shape keyed `(field, level, language, angle)`. **Who writes it is decided and closed
+  (2026-10-13):** DeepSeek V4.1 Flash (`SWEEP_ANGLE_MODEL`), with years in digits and **no study level
+  named** (the level was named from 2026-10-13 and removed 2026-10-14: it hid real master's funders;
+  the level must be read on the page, which no reader does yet: shown only when it says master's,
+  staff-reviewed when it is silent, owner 2026-10-14), after a measured comparison against templates, bare words,
+  translation and copied page lines (`docs/superpowers/research/2026-10-13-sweep-sentence-writing-comparison.md`,
+  which lists the only triggers for reopening it).
 
 **The engineered query — the recipe, so "max success" is a specification and not a hope.** For an
 embedding index the query is a *paraphrase of the page we want to land on*, written the way that
@@ -410,7 +416,10 @@ vendor-stated:
    per country: `STEERING`'s single `language` column was right for Türkiye and wrong for
    Kazakhstan, Uzbekistan (Latin, Cyrillic, Russian), Georgia, India, Pakistan, Indonesia, Belgium
    and Switzerland — most of the corridor. The per-language yield in the tally decides which
-   languages keep running per (country, family). Field and kind words come from the per-language
+   languages keep running per (country, family). **Amended 2026-10-13: the source is Unicode CLDR (Babel), not Wikidata P37** —
+   Wikidata deprecates English for the US and lists only territorial languages there; CLDR's official
+   and de-facto official languages, each spoken by at least 5% of residents, replace it
+   (`languages.CldrLanguages`). Field and kind words come from the per-language
    vocabulary (§6.5's Wikidata rule), never translated by the generator.
 4. **One angle per query, one or two sentences.** A long query is a blend of pages and returns the
    average; the application page, the eligibility page, the announcement, the about-page, the FAQ
@@ -613,7 +622,10 @@ full discovery run wrote **zero catalog rows** — no single page carries a whol
 
 Per registered institution, in order, stopping when a route yields the programme index:
 
-1. **A national programme register where the country publishes one** (§6.2) — complete for that
+1. **A national programme register where the country publishes one** (§6.2; found per country by
+   `manage.py find_national_databases` since 2026-10-13 -- the EC's Study in Europe profiles, then a
+   search for whatever a profile does not link -- into `docs/research/national-study-databases.csv`,
+   candidates a person confirms) — complete for that
    country, and the only route with an exact denominator. A registry row is an `AGGREGATOR`: it seeds
    identity and routes to the institution's own page, and liveness is confirmed at the origin, never
    from the row (Korea's file carries 49% abolished departments that look exactly as live).
@@ -641,7 +653,8 @@ Per registered institution, in order, stopping when a route yields the programme
    stated destinations may appear as words** (§10.5 step 2 — the student chose them; that is what
    D.6's allow-list meant by "destination countries"), never as a provider `country` parameter.
    Field enters in the page's language — ISCED-F labels per language from Wikidata (*Chemistry /
-   Chemie / Kimya / Chimie*), the way §6.5 takes kind words — and the intake year is an angle of
+   Chemie / Kimya / Chimie*), the way §6.5 takes kind words (**amended 2026-10-14**: the student's
+   confirmed subjects' Wikidata names, `2026-10-14-field-ladder-design.md` §3) — and the intake year is an angle of
    its own (*"Bewerbung für das Wintersemester 2027/28"*), because Exa encodes dates semantically
    and a programme page names its intake. It runs twice: as the tap's stage-1 field-aimed query
    (per student, deduped against the register before any fetch) and as a **cell-level pass** whose
@@ -693,7 +706,8 @@ one.
 admission page, cost-of-living page, one linked PDF brochure — with `require_same_origin` on every
 page in the set and extraction run over the *set*, not one page (`pipeline._HeldPage` already holds
 pages across a run). Identity comes from the register, else the programme URL. **Field is a tag, not
-a query**: one cached read per programme at ingestion writes ISCED-F-derived `tags`, the profile gets
+a query** (**amended 2026-10-14**: the tags are the programme's own-word labels with their links,
+`2026-10-14-field-ladder-design.md` §4; ISCED-F folds niche fields away): one cached read per programme at ingestion writes ISCED-F-derived `tags`, the profile gets
 the same tags, and matching is tag overlap plus the existing fit dimensions — the case-folded
 substring test on `Program.name` becomes one signal, never the gate (gate: 50 programme names
 hand-mapped, ≥ 90% agreement). **Coverage is reported per destination × discipline as
@@ -1333,6 +1347,19 @@ wording — "nothing is searched per student", then "for now, search anyway" —
 one day flip one.** Nobody would have: neither a fill threshold nor a "catalog is ready" flag was ever
 defined, and defining one means picking a number nothing measures. The convergence is mechanical
 instead, in step 2 below.
+
+> **Amended 2026-10-14 (owner): one big first search, then small follow-ups, $100 per student.**
+> A student's first search runs automatically when the intake is finished, in the background, and
+> may spend up to the cycle wallet (**$100**, less a $10 follow-up reserve). It runs in stages of
+> value -- full coverage of every template x country x interest, then each destination's own
+> language, then deep results on the queries that found most -- and stops when a batch of queries
+> finds almost nothing new (the sweep's plateau rule) or the money runs out. Afterwards a profile
+> change is classified by the three bins below: an output-filter change (IELTS, GPA, a new job, the
+> budget) re-checks the catalogue and searches nothing ($0); a query-word change (a new country,
+> interest, field or teaching language) runs a small follow-up search for **only the new part**,
+> capped at `TAP_MAX_QUERIES`. A query any student ran within `TAP_QUERY_REUSE_DAYS` is not run
+> again: its hosts are already in the catalogue. Plan:
+> `docs/superpowers/plans/2026-10-14-programme-angles-and-the-tap.md`.
 
 **The tap, in order** (amended 2026-09-23):
 

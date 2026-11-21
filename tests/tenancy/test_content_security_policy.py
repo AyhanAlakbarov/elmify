@@ -81,7 +81,16 @@ def test_the_mailbox_connect_redirect_is_an_allowed_form_target(
         "'self'",
         "https://accounts.google.com",
         "https://login.microsoftonline.com",
+        settings.MARKETING_SITE_URL,
     ]
+
+
+def test_logout_can_redirect_to_the_marketing_site(client, domain_a, user_a, membership_a):
+    """Log out POSTs and redirects to the website; Chrome checks that redirect
+    against form-action, so without the website's origin the logout looked dead."""
+    client.force_login(user_a)
+    policy = _directives(client.get("/student/", HTTP_HOST=domain_a.host))
+    assert settings.MARKETING_SITE_URL in policy["form-action"]
 
 
 def test_a_json_response_is_left_alone(client, domain_a):

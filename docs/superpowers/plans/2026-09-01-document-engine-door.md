@@ -21,14 +21,14 @@
 - **Refusals on id-addressed endpoints are 404, never 403** — matching `apps/documents/storage.py:100`'s convention that a 403 confirms the object exists. (403 is reserved for "you are not a student here", which reveals nothing about any object.)
 - Rate limiting uses `apps.ratelimit.rate_limited` — the existing fixed-window limiter. Do not write a second one. Its known ceiling (`LocMemCache`, per-process) is pre-existing and explicitly **not** fixed here.
 - Commit convention: conventional commits, subject in the imperative, body explains *why*.
-- Worktree: `/home/orkhan/Desktop/tehsil-door`, branch `claude/document-engine-door` (head `f0e19fe`). Commit with `git -C /home/orkhan/Desktop/tehsil-door` — a bare `git` from the parent directory lands on the wrong branch.
+- Worktree: `/home/orkhan/Desktop/elmify-door`, branch `claude/document-engine-door` (head `f0e19fe`). Commit with `git -C /home/orkhan/Desktop/elmify-door` — a bare `git` from the parent directory lands on the wrong branch.
 - Validation gate, all of which must pass before the branch is done:
-  - `POSTGRES_DB=tehsil_door uv run pytest`
+  - `POSTGRES_DB=elmify_door uv run pytest`
   - `uv run ruff check .` (**there is no `ruff format` in this repo — do not run it**)
   - `uv run mypy apps config`
   - `uv run bandit -c pyproject.toml -r apps config`
   - `uv run python manage.py makemigrations --check --dry-run`
-- The test database name is per-worktree. Always prefix pytest with `POSTGRES_DB=tehsil_door`; the shared `test_tehsil` wedges across parallel sessions.
+- The test database name is per-worktree. Always prefix pytest with `POSTGRES_DB=elmify_door`; the shared `test_elmify` wedges across parallel sessions.
 
 ## File Structure
 
@@ -84,7 +84,7 @@ Add `resolve_variant` to the `apps.documents.render` import block at the top of 
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_render.py -k resolve_variant -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_render.py -k resolve_variant -v`
 Expected: FAIL — `ImportError: cannot import name 'resolve_variant'`
 
 - [ ] **Step 3: Extract the function**
@@ -124,14 +124,14 @@ Leave the comment block below it untouched — it explains the rate-limit guard,
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_render.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_render.py -v`
 Expected: PASS (the whole module — `render_draft`'s existing tests prove the extraction changed no behaviour)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/render.py tests/documents/test_render.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "refactor(documents): name the variant the worker has to agree on
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/render.py tests/documents/test_render.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "refactor(documents): name the variant the worker has to agree on
 
 The document worker picks a queue from the effective render variant, and
 render_draft computed it inline. Two copies of the expression is how the
@@ -274,7 +274,7 @@ def test_every_confirmation_is_audited(agency_a, membership_a):
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_confirmation.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_confirmation.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.documents.confirmation'`
 
 - [ ] **Step 3: Write the implementation**
@@ -353,14 +353,14 @@ def confirm_facts(*, student: Membership, fact_ids: Iterable[UUID], actor: Membe
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_confirmation.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_confirmation.py -v`
 Expected: PASS (6 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/confirmation.py tests/documents/test_confirmation.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): the click that turns a candidate into a fact
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/confirmation.py tests/documents/test_confirmation.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): the click that turns a candidate into a fact
 
 Every writer records confirmed_by=None and generatable_facts filters on
 confirmed_by IS NOT NULL, so nothing in apps/ could ever make a fact
@@ -475,7 +475,7 @@ def test_an_unknown_scan_status_lands_in_review_instead_of_raising(agency_a, mem
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/concierge/test_documents.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/concierge/test_documents.py -v`
 Expected: FAIL — `ImportError: cannot import name 'presigned_upload'` on the first three, `KeyError: 'SOMETHING_NEW'` on the fourth.
 
 - [ ] **Step 3: Write the implementation**
@@ -567,14 +567,14 @@ def presigned_upload(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/concierge/ tests/documents/ -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/concierge/ tests/documents/ -v`
 Expected: PASS. (Run both directories: the `_SCAN_STATES` rename is module-private, so nothing outside should break — this proves it.)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/concierge/documents.py tests/concierge/test_documents.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(concierge): sign an upload for one key, and stop an unknown verdict wedging the queue
+git -C /home/orkhan/Desktop/elmify-door add apps/concierge/documents.py tests/concierge/test_documents.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(concierge): sign an upload for one key, and stop an unknown verdict wedging the queue
 
 register() already documented that a view would issue a presigned POST
 scoped to the key it derived; presigned_upload is that, with the key
@@ -828,7 +828,7 @@ def test_an_event_missing_the_object_details_is_rejected():
 
 - [ ] **Step 3: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_document_queue.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_document_queue.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.documents.document_queue'`
 
 - [ ] **Step 4: Write the implementation**
@@ -988,14 +988,14 @@ def consume_once(
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_document_queue.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_document_queue.py -v`
 Expected: PASS (14 tests, five of them the parametrized status cases)
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/document_queue.py tests/documents/test_document_queue.py tests/documents/fixtures/guardduty_scan_result.json
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): the two message shapes the document worker drains
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/document_queue.py tests/documents/test_document_queue.py tests/documents/fixtures/guardduty_scan_result.json
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): the two message shapes the document worker drains
 
 Work messages carry identifiers only -- a queue is a durable store with
 its own retention, so a student's history must not get a second copy
@@ -1170,7 +1170,7 @@ def test_an_unknown_status_lands_in_review_and_does_not_ingest(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_document_worker.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_document_worker.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.documents.document_worker'`
 
 - [ ] **Step 3: Write the implementation**
@@ -1274,14 +1274,14 @@ def handle_scan_result(event: ScanResultEvent) -> None:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_document_worker.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_document_worker.py -v`
 Expected: PASS (11 tests, five of them the parametrized statuses)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/document_worker.py tests/documents/test_document_worker.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): act on a scan verdict, trusting only the key we minted
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/document_worker.py tests/documents/test_document_worker.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): act on a scan verdict, trusting only the key we minted
 
 The row is found by object_key and the tenant scope comes out of that
 key's own shape, so nothing else in the EventBridge envelope chooses
@@ -1465,7 +1465,7 @@ def test_a_variant_with_no_worker_render_path_fails_loudly(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_document_worker.py -k "generate or render or variant" -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_document_worker.py -k "generate or render or variant" -v`
 Expected: FAIL — `AttributeError: module 'apps.documents.document_worker' has no attribute 'handle_document_work'`
 
 - [ ] **Step 3: Write the implementation**
@@ -1581,14 +1581,14 @@ def _render(message: DocumentWorkMessage) -> None:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_document_worker.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_document_worker.py -v`
 Expected: PASS (15 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/document_worker.py tests/documents/test_document_worker.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): run a generation, and route a render by its resolved variant
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/document_worker.py tests/documents/test_document_worker.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): run a generation, and route a render by its resolved variant
 
 A EUROPASS_API draft is handed to the pinned Europass worker rather than
 rendered here: that queue is where the circuit breaker and the courtesy
@@ -1682,7 +1682,7 @@ def test_an_unexpected_error_is_not_swallowed(monkeypatch):
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_run_document_worker.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_run_document_worker.py -v`
 Expected: FAIL — `ImportError: cannot import name 'run_document_worker'`
 
 - [ ] **Step 3: Add the settings**
@@ -1768,14 +1768,14 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_run_document_worker.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_run_document_worker.py -v`
 Expected: PASS (4 tests)
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/management/commands/run_document_worker.py config/settings/base.py config/settings/production.py tests/documents/test_run_document_worker.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): one worker, both document queues
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/management/commands/run_document_worker.py config/settings/base.py config/settings/production.py tests/documents/test_run_document_worker.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): one worker, both document queues
 
 Scan verdicts and document work share a lifecycle and a task. A
 rate-limited message is deferred rather than crashed: killing the task
@@ -1959,7 +1959,7 @@ def test_logout_refuses_a_get(client, domain_a, user_a, membership_a):
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_api.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_api.py -v`
 Expected: FAIL — every test 404s, there is no `/api/auth/login` route.
 
 - [ ] **Step 3: Write the module**
@@ -2144,14 +2144,14 @@ urlpatterns = [
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_api.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_api.py -v`
 Expected: PASS (9 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/api.py apps/documents/urls.py tests/documents/test_api.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): a way in, and the shape every endpoint behind it shares
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/api.py apps/documents/urls.py tests/documents/test_api.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): a way in, and the shape every endpoint behind it shares
 
 Nothing in this repo included django.contrib.auth.urls or called login(),
 so session authentication had no way to begin. GET issues the CSRF cookie
@@ -2282,7 +2282,7 @@ def test_another_tenants_upload_is_404(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_api.py -k upload -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_api.py -k upload -v`
 Expected: FAIL — 404 from the URL resolver on every one.
 
 - [ ] **Step 3: Write the views**
@@ -2368,14 +2368,14 @@ Add the routes to `apps/documents/urls.py`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_api.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_api.py -v`
 Expected: PASS (16 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/api.py apps/documents/urls.py tests/documents/test_api.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): issue an upload, and let the student see the verdict
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/api.py apps/documents/urls.py tests/documents/test_api.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): issue an upload, and let the student see the verdict
 
 The poll endpoint is not optional: ingest_uploaded_cv returns () both
 when a file was blocked and when nothing extracted, so without it a
@@ -2511,7 +2511,7 @@ def test_an_oversized_batch_is_refused_before_the_query(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_api.py -k "candidate or confirm or fact" -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_api.py -k "candidate or confirm or fact" -v`
 Expected: FAIL — 404 from the URL resolver.
 
 - [ ] **Step 3: Write the views**
@@ -2599,14 +2599,14 @@ Add the routes:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_api.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_api.py -v`
 Expected: PASS (23 tests)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/api.py apps/documents/urls.py tests/documents/test_api.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): show a student their candidates and take the click
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/api.py apps/documents/urls.py tests/documents/test_api.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): show a student their candidates and take the click
 
 An id belonging to another student is 404, resolved through student=,
 because a 403 would confirm the fact exists."
@@ -2739,7 +2739,7 @@ def test_an_unsupported_kind_is_400(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_api.py -k generate -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_api.py -k generate -v`
 Expected: FAIL — 404 from the URL resolver.
 
 - [ ] **Step 3: Rename the limiter and write the view**
@@ -2819,14 +2819,14 @@ Add `from .verification import generatable_facts, unsuperseded_facts` (widening 
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/ -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/ -v`
 Expected: PASS — the whole documents suite, which is what proves the `_rate_limited` rename broke nothing.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/api.py apps/documents/generation.py apps/documents/urls.py tests/documents/test_api.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): queue a generation behind the checks that can answer now
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/api.py apps/documents/generation.py apps/documents/urls.py tests/documents/test_api.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): queue a generation behind the checks that can answer now
 
 The pre-flight is what replaces a job-state table: generate_cv's first
 three checks are an indexed read, a field read and a cache read, so
@@ -2989,7 +2989,7 @@ def test_approving_another_students_draft_is_404(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/test_api.py -k draft -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/test_api.py -k draft -v`
 Expected: FAIL — 404 from the URL resolver.
 
 - [ ] **Step 3: Write the views**
@@ -3124,14 +3124,14 @@ Add the routes:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/documents/ -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/documents/ -v`
 Expected: PASS (the whole documents suite, 29 tests in `test_api.py`)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add apps/documents/api.py apps/documents/urls.py tests/documents/test_api.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(documents): read a draft with its verdicts, and approve it into a render
+git -C /home/orkhan/Desktop/elmify-door add apps/documents/api.py apps/documents/urls.py tests/documents/test_api.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(documents): read a draft with its verdicts, and approve it into a render
 
 The draft list is how a client learns a generation finished -- there is
 no job row by design. A blocked approval returns the blocking verdicts
@@ -3330,7 +3330,7 @@ _PRODUCTION_REQUIRED_ENV_VARS = frozenset(
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/infra/test_template.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/infra/test_template.py -v`
 Expected: FAIL — `DocumentQueue is not defined in infra/template.yaml`, plus the five env-var parametrizations and the two narrowed role tests.
 
 - [ ] **Step 3: Add the queues, the rule and its policy**
@@ -3535,7 +3535,7 @@ Add the log group next to `EuropassWorkerLogGroup` (line 1185):
   DocumentWorkerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/document-worker"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/document-worker"
       RetentionInDays: 30
 ```
 
@@ -3586,7 +3586,7 @@ Add the task definition and service after `EuropassWorkerService` (ends line 126
             - Name: DATABASE_ROLE
               Value: runtime
             - Name: POSTGRES_RUNTIME_USER
-              Value: tehsil_runtime
+              Value: elmify_runtime
           Secrets:
             - Name: POSTGRES_RUNTIME_PASSWORD
               ValueFrom: !Ref RuntimeDatabaseSecret
@@ -3631,7 +3631,7 @@ Add beside the other metric filters (near line 1557):
       LogGroupName: !Ref DocumentWorkerLogGroup
       FilterPattern: '"Traceback (most recent call last)"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Documents
+        - MetricNamespace: Elmify/Documents
           MetricName: DocumentWorkerCrashes
           MetricValue: "1"
           DefaultValue: 0
@@ -3645,7 +3645,7 @@ Add beside the other metric filters (near line 1557):
       LogGroupName: !Ref DocumentWorkerLogGroup
       FilterPattern: '"DocumentScanUnknownStatus"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Documents
+        - MetricNamespace: Elmify/Documents
           MetricName: DocumentScanUnknownStatuses
           MetricValue: "1"
           DefaultValue: 0
@@ -3653,7 +3653,7 @@ Add beside the other metric filters (near line 1557):
   DocumentWorkerCrashAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/Documents
+      Namespace: Elmify/Documents
       MetricName: DocumentWorkerCrashes
       Statistic: Sum
       Period: 300
@@ -3665,7 +3665,7 @@ Add beside the other metric filters (near line 1557):
   DocumentScanUnknownStatusAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/Documents
+      Namespace: Elmify/Documents
       MetricName: DocumentScanUnknownStatuses
       Statistic: Sum
       Period: 300
@@ -3699,14 +3699,14 @@ Finally add both queue URLs to the `Environment` list of `WebTaskDefinition`, `W
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_door uv run pytest tests/infra/test_template.py -v`
+Run: `POSTGRES_DB=elmify_door uv run pytest tests/infra/test_template.py -v`
 Expected: PASS (every test in the module, including the two narrowed ones)
 
 - [ ] **Step 7: Run the full validation gate**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil-door
-POSTGRES_DB=tehsil_door uv run pytest
+cd /home/orkhan/Desktop/elmify-door
+POSTGRES_DB=elmify_door uv run pytest
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config
@@ -3718,8 +3718,8 @@ Expected: all pass; `makemigrations` reports no changes (this plan adds no model
 - [ ] **Step 8: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil-door add infra/template.yaml tests/infra/test_template.py
-git -C /home/orkhan/Desktop/tehsil-door commit -m "feat(infra): two document queues, a scan rule, and one worker to drain them
+git -C /home/orkhan/Desktop/elmify-door add infra/template.yaml tests/infra/test_template.py
+git -C /home/orkhan/Desktop/elmify-door commit -m "feat(infra): two document queues, a scan rule, and one worker to drain them
 
 The web role gains PutObject on quarantine/ and nothing else: a
 presigned POST is signed with the caller's own credentials, so the

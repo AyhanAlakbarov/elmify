@@ -157,6 +157,17 @@ _OPERATION_CRITERIA = {
         "examples": ["The CV must be signed and dated by hand.",
                      "Upload as a single PDF named SURNAME_CV.pdf"],
     },
+    "coverage": {"what": "How much of the applicant's history the CV must cover: "
+                         "everything, only what is relevant to the programme, from which "
+                         "point in time it starts, or at most how many entries one "
+                         "section lists.",
+                 "examples": ["List all your academic and professional activities.",
+                              "Only include experience relevant to the programme.",
+                              "Begin with your upper secondary school graduation.",
+                              "Covering the last 10 years.",
+                              "List no more than 5 publications."],
+                 "not_for": "The order entries appear in (that is order), or the length "
+                            "in pages or words (that is limit)."},
     "other": {"what": "A real requirement about this document that none of the "
                       "other answers describes."},
 }

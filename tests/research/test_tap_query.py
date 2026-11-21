@@ -9,11 +9,10 @@ from apps.research.tap_query import (
     NEVER,
     OUTPUT_FILTERS,
     QUERY_WORDS,
-    TapQueryInputs,
     inputs_from,
     render_tap_queries,
 )
-from apps.research.tap_seams import AngleRow
+from apps.research.tap_seams import AngleRow, TapQueryInputs
 
 _ANGLE = AngleRow(
     id="p1", language="en",
@@ -82,18 +81,18 @@ def test_nationality_residence_and_notes_never_reach_a_rendered_query(profile_sn
 
 
 def test_an_excluded_country_is_never_a_destination(profile_snapshot) -> None:
-    profile = profile_snapshot(allowed_countries=("DE", "FR"))
-    assert inputs_from(profile).destinations == ("Germany", "France")
+    profile = profile_snapshot(allowed_countries=("DE", "FR"), excluded_countries=("IT",))
+    assert inputs_from(profile).destinations == ("DE", "FR")
 
 
-def test_rendering_is_deterministic_bounded_and_tagged(profile_snapshot) -> None:
+def test_rendering_is_deterministic_complete_and_tagged(profile_snapshot) -> None:
     angles = tuple(
         AngleRow(id=f"a{i}", language="en" if i % 2 else "tr", template="{field} {intake}")
         for i in range(60)
     )
     first = render_tap_queries(inputs_from(profile_snapshot()), angles)
     assert first == render_tap_queries(inputs_from(profile_snapshot()), angles)
-    assert len(first) == 20
+    assert len(first) == 60
     assert all(10 <= request.max_results <= 15 for _, request in first)
     assert [angle_id for angle_id, _ in first[:2]] == ["a0", "a1"]
     assert first[0][1].phrasing == "local" and first[1][1].phrasing == "english"
@@ -152,3 +151,120 @@ def test_the_area_sweep_side_never_imports_the_tap_query() -> None:
             node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
         }
         assert not any("tap_query" in name for name in imported), module
+
+
+# 2026-10-14 fixes: a field led by a word that also names bodies, C++, every
+# interest, and one destination per query.
+
+def test_a_field_that_starts_with_a_body_word_survives(profile_snapshot) -> None:
+    """"Hospital Management" was wiped whole: the run carries "hospital"."""
+    for typed, expected in (
+        ("Hospital Management", "hospital management"),
+        ("Laboratory Medicine", "laboratory medicine"),
+        ("School Psychology", "school psychology"),
+        ("Company Law", "company law"),
+    ):
+        assert inputs_from(profile_snapshot(target_field=typed)).field_words == (expected,)
+
+
+def test_a_body_named_with_a_shared_word_is_still_stripped(profile_snapshot) -> None:
+    for typed in ("Nursing at Charité Hospital", "Finance at Bank of America",
+                  "Data science with Max Planck Lab", "Harvard Medical School pathology"):
+        words = inputs_from(profile_snapshot(target_field=typed)).field_words
+        text = " ".join(words)
+        for name in ("charité", "bank", "planck", "harvard"):
+            assert name not in text, (typed, text)
+
+
+def test_programming_language_names_keep_their_symbols(profile_snapshot) -> None:
+    inputs = inputs_from(profile_snapshot(
+        target_field="C++ and C# programming", research_interests=("F# compilers",),
+    ))
+    assert inputs.field_words == ("c++ and c# programming",)
+    assert inputs.interest_words == ("f# compilers",)
+
+
+def test_every_research_interest_is_asked(profile_snapshot) -> None:
+    angle = (AngleRow(id="i", language="en", template="{field} {interest}"),)
+    profile = profile_snapshot(research_interests=("catalysis", "polymers", "spectroscopy"))
+    queries = [r.query for _, r in render_tap_queries(inputs_from(profile), angle)]
+    assert queries == ["computer science catalysis", "computer science polymers",
+                       "computer science spectroscopy"]
+
+
+def test_each_destination_gets_its_own_query(profile_snapshot) -> None:
+    angle = (AngleRow(id="d", language="en", template="{field} in {destination}"),)
+    profile = profile_snapshot(allowed_countries=("DE", "NL", "SE"))
+    queries = [r.query for _, r in render_tap_queries(inputs_from(profile), angle)]
+    # Measured 2026-10-12: one query naming three countries returned 5 universities, all
+    # German; one query per country returned 16 across the three.
+    assert queries == ["computer science in Germany", "computer science in Netherlands",
+                       "computer science in Sweden"]
+
+
+def test_every_country_is_asked_before_any_country_repeats(profile_snapshot) -> None:
+    """Measured 2026-10-14 on c093e77a: 15 templates x 3 countries under the cap
+    gave Germany 15 queries, the Netherlands 5 and Sweden none."""
+    angles = tuple(
+        AngleRow(id=f"a{i}", language="en", template=f"v{i} {{field}} {{destination}}")
+        for i in range(15)
+    )
+    profile = profile_snapshot(allowed_countries=("DE", "NL", "SE"))
+    queries = [r.query for _, r in render_tap_queries(inputs_from(profile), angles)]
+    assert len(queries) == 45
+    assert [q.split()[-1] for q in queries[:3]] == ["Germany", "Netherlands", "Sweden"]
+    names = ("Germany", "Netherlands", "Sweden")
+    counts = [sum(country in q for q in queries) for country in names]
+    assert counts == [15, 15, 15]
+
+
+def test_every_interest_is_reached_early_when_countries_are_many(profile_snapshot) -> None:
+    angle = (AngleRow(id="i", language="en", template="{interest} M.Sc. in {destination}"),)
+    profile = profile_snapshot(
+        research_interests=("catalysis", "polymers", "spectroscopy"),
+        allowed_countries=tuple("DE NL SE FR IT ES PT BE AT CH".split()),
+    )
+    queries = [r.query for _, r in render_tap_queries(inputs_from(profile), angle)]
+    assert {q.split()[0] for q in queries[:6]} == {"catalysis", "polymers", "spectroscopy"}
+
+
+def test_a_country_is_named_in_the_templates_language(profile_snapshot) -> None:
+    angles = (
+        AngleRow(id="de", language="de", template="Masterstudiengang {field} in {destination}"),
+        AngleRow(id="en", language="en", template="M.Sc. in {field} in {destination}"),
+    )
+    queries = [r.query for _, r in render_tap_queries(
+        inputs_from(profile_snapshot(allowed_countries=("DE",))), angles)]
+    assert queries == ["Masterstudiengang computer science in Deutschland",
+                       "M.Sc. in computer science in Germany"]
+
+
+def test_every_render_is_returned_uncapped_and_each_country_gets_its_own_query(
+    profile_snapshot,
+) -> None:
+    codes = tuple("DE NL SE FR IT ES PT".split())
+    angle = (AngleRow(id="d", language="en", template="M.Sc. in {field} in {destination}"),)
+    many = tuple(AngleRow(id=f"a{i}", language="en", template=f"v{i} {{field}}") for i in range(60))
+    profile = profile_snapshot(allowed_countries=codes)
+    assert len(render_tap_queries(inputs_from(profile), many)) == 60
+    queries = [r.query for _, r in render_tap_queries(inputs_from(profile), angle)]
+    assert len(queries) == 7 and all("," not in q for q in queries)
+
+
+def test_unconstrained_self_funded_student_omits_money_words_and_money_angles(
+    profile_snapshot,
+) -> None:
+    angles = (
+        AngleRow(id="plain", language="en", template="{field} in {destination}"),
+        AngleRow(id="money", language="en", template="{field} {money} in {destination}"),
+    )
+    profile = profile_snapshot(
+        funding_dependency="OPTIONAL",
+        self_funding_capacity=None,
+        allowed_countries=("GB",),
+    )
+    inputs = inputs_from(profile)
+    assert inputs.money_words == ()
+    rendered = render_tap_queries(inputs, angles)
+    assert [angle_id for angle_id, _ in rendered] == ["plain"]
+

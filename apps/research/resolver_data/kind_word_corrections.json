@@ -1,0 +1,225 @@
+{
+ "note": "Words Wikidata lacks or has wrong, kept by hand (owner decision 2026-10-12). `add`: a word an official page or a standard dictionary of the language uses in that sense -- `source` is that page, `checked_on` the day it was read; base forms are given where the page prints an inflected one. Added words lead their language's list. `drop`: a word that is wrong, with why. manage.py build_kind_words applies both and stops on a drop that no longer matches anything. Searched and left empty because no such page confirmed a word: religious bodies in Maltese, Tamil and Nynorsk; a foundation, a company and a religious body in Hawaiian, Samoan and Chamorro as far as not listed; an association in Romansh (its `associaziun` is a cooperative); everything in Carolinian. Party foundations are left to the plain word for a foundation, which runs in the same pass.",
+ "add": [
+  {
+   "kind": "PRIVATE_FOUNDATION",
+   "language": "az",
+   "word": "fond",
+   "source": "https://e-qanun.az/framework/511",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "PRIVATE_FOUNDATION",
+   "language": "et",
+   "word": "sihtasutus",
+   "source": "https://www.riigiteataja.ee/akt/28455",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "PRIVATE_FOUNDATION",
+   "language": "is",
+   "word": "sjóður",
+   "source": "https://www.althingi.is/lagas/nuna/1988019.html",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "PRIVATE_FOUNDATION",
+   "language": "is",
+   "word": "sjálfseignarstofnun",
+   "source": "https://www.althingi.is/altext/lagasofn/130b/1988019.html",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "DIASPORA_AFFINITY",
+   "language": "az",
+   "word": "ictimai birlik",
+   "source": "https://e-qanun.az/framework/511",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "DIASPORA_AFFINITY",
+   "language": "tr",
+   "word": "dernek",
+   "source": "https://www.siviltoplum.gov.tr/kutahya/5253-dernekler-kanunu",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "RELIGIOUS",
+   "language": "az",
+   "word": "dini qurum",
+   "source": "https://frameworks.e-qanun.az/7/c_f_7649.html",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "RELIGIOUS",
+   "language": "hr",
+   "word": "vjerska zajednica",
+   "source": "https://www.zakon.hr/z/284/zakon-o-pravnom-polozaju-vjerskih-zajednica",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "RELIGIOUS",
+   "language": "lt",
+   "word": "religinė bendruomenė",
+   "source": "https://www.e-tar.lt/portal/lt/legalAct/TAR.B4DBBD7C388A",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "NATIONAL_GOVERNMENT",
+   "language": "mt",
+   "word": "ministeru",
+   "source": "https://www.gov.mt/mt/Pages/home.aspx",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "NATIONAL_GOVERNMENT",
+   "language": "nb",
+   "word": "departement",
+   "source": "https://www.regjeringen.no/no/dep/id933/",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "NATIONAL_GOVERNMENT",
+   "language": "sv",
+   "word": "departement",
+   "source": "https://www.regeringen.se/sveriges-regering/",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "PRIVATE_FOUNDATION",
+   "language": "rm",
+   "word": "fundaziun",
+   "source": "https://www.gr.ch/DE/Medien/Mitteilungen/MMStaka/2021/Documents/Cunvegna%20da%20prestaziun%20FMR%202021-24.pdf",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "EMPLOYER",
+   "language": "rm",
+   "word": "interpresa",
+   "source": "https://www.gr.ch/RM/instituziuns/administraziun/dvs/giha/register_da_commerzi/Seiten/handelsregister.aspx",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "NATIONAL_GOVERNMENT",
+   "language": "rm",
+   "word": "departament",
+   "source": "https://www.admin.ch/rm/administraziun-federale-departaments",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "RELIGIOUS",
+   "language": "rm",
+   "word": "cuminanza religiusa",
+   "source": "https://www.gr.ch/DE/Medien/Mitteilungen/MMStaka/Dokumente2013/Beilage_RM_Kirchensteuer_rg.pdf",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "PRIVATE_FOUNDATION",
+   "language": "mi",
+   "word": "tūāpapa",
+   "source": "https://maoridictionary.co.nz/search?keywords=foundation",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "EMPLOYER",
+   "language": "mi",
+   "word": "kamupene",
+   "source": "https://maoridictionary.co.nz/search?keywords=kamupene",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "DIASPORA_AFFINITY",
+   "language": "mi",
+   "word": "rōpū",
+   "source": "https://maoridictionary.co.nz/search?keywords=r%C5%8Dp%C5%AB",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "NATIONAL_GOVERNMENT",
+   "language": "mi",
+   "word": "manatū",
+   "source": "https://maoridictionary.co.nz/search?keywords=manat%C5%AB",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "RELIGIOUS",
+   "language": "mi",
+   "word": "hāhi",
+   "source": "https://maoridictionary.co.nz/search?keywords=h%C4%81hi",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "EMPLOYER",
+   "language": "haw",
+   "word": "hui",
+   "source": "https://wehe.hilo.hawaii.edu/?q=hui",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "DIASPORA_AFFINITY",
+   "language": "haw",
+   "word": "hui",
+   "source": "https://wehe.hilo.hawaii.edu/?q=hui",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "NATIONAL_GOVERNMENT",
+   "language": "haw",
+   "word": "ʻoihana",
+   "source": "https://wehe.hilo.hawaii.edu/?q=%CA%BBoihana",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "DIASPORA_AFFINITY",
+   "language": "sm",
+   "word": "fa'alapotopotoga",
+   "source": "https://www.samoagovt.ws/2022/06/pepa-o-faamatalaga-press-release/",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "NATIONAL_GOVERNMENT",
+   "language": "sm",
+   "word": "matāgaluega",
+   "source": "https://www.samoagovt.ws/2022/06/pepa-o-faamatalaga-press-release/",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "RELIGIOUS",
+   "language": "sm",
+   "word": "ekalesia",
+   "source": "https://www.samoagovt.ws/2024/06/sunoaga-autu-a-le-afioga-i-le-minisita-o-le-soifua-maloloina-i-le-sauniga-o-le-tuuina-atu-aloaia-o-le-pusa-container-o-nofoa-faataavalevale-ma-tootoo-ele-ekalesia-a-iesu-keriso-o-le-au-paia/",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "DIASPORA_AFFINITY",
+   "language": "ch",
+   "word": "otganisasión",
+   "source": "https://kumisionchamoru.guam.gov/mapan-otganisasion-organizational-chart/",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "NATIONAL_GOVERNMENT",
+   "language": "ch",
+   "word": "dipåttamento",
+   "source": "https://kumisionchamoru.guam.gov/mapan-otganisasion-organizational-chart/",
+   "checked_on": "2026-10-12"
+  },
+  {
+   "kind": "RELIGIOUS",
+   "language": "lb",
+   "word": "Reliounsgemeinschaft",
+   "source": "https://lod.lu/artikel/RELIOUNSGEMEINSCHAFT1",
+   "checked_on": "2026-10-12"
+  }
+ ],
+ "drop": [
+  {
+   "kind": "PRIVATE_FOUNDATION",
+   "language": "kk",
+   "word": "Айырбас",
+   "why": "It means exchange or barter (Wikidata's own barter item Q484830 is labelled 'Айырбас шарты'). The Kazakh law on non-commercial organisations calls a foundation 'қор'.",
+   "source": "https://www.adilet.zan.kz/kaz/docs/Z010000142_",
+   "checked_on": "2026-10-12"
+  }
+ ]
+}

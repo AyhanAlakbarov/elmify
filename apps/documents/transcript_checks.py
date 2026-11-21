@@ -18,7 +18,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from .credits import CreditUnit
+from .credits import _YEAR_LOAD, CreditUnit
 from .transcript import Highlight, Reading, Row, number
 
 #: ponytail: one range for every credit system -- a 30-credit thesis is the largest single
@@ -94,9 +94,15 @@ def _ranges(reading: Reading) -> Iterator[Highlight]:
     scale = number(reading.content.grading_scale or "")
     if grade is not None and scale is not None and grade > scale:
         yield Highlight(kind="grade_above_scale", scope="field", ref="overall_grade")
+    year_load = _YEAR_LOAD.get(reading.content.credit_unit)
+    max_course_credits = (
+        max(_MAX_COURSE_CREDITS, year_load / Decimal(2))
+        if year_load is not None
+        else _MAX_COURSE_CREDITS
+    )
     for row in reading.rows:
         credits = number(row.credits) if row.kind == "course" else None
-        if credits is not None and not Decimal(0) <= credits <= _MAX_COURSE_CREDITS:
+        if credits is not None and not Decimal(0) <= credits <= max_course_credits:
             yield Highlight(kind="credit_out_of_range", scope="row", ref=str(row.index))
 
 

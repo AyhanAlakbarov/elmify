@@ -374,3 +374,40 @@ def test_an_autumn_call_with_an_autumn_deadline_projects_before_its_intake():
         (dt.date(2024, 10, 1), dt.date(2024, 11, 30)),
     )
     assert project_window(past, target_year=2027) == (dt.date(2026, 10, 1), dt.date(2026, 11, 30))
+
+
+def test_intake_start_years_and_multi_or_open_ended_contrary_intake():
+    from apps.funding.validity import intake_matches_target, intake_start_years
+
+    assert intake_start_years("2027-2029") == (2027,)
+    assert intake_start_years("2026 and 2027") == (2026, 2027)
+    assert intake_start_years("2026-2028, 2027-2029") == (2026, 2027)
+    assert intake_matches_target("from 2027 onwards", "2028") is True
+    assert intake_matches_target("from 2027 onwards", "2026") is False
+
+    multi = Evidence(offered="NO", contrary_intake="2026 and 2027")
+    assert _state(multi, "2026") == "SUSPENDED"
+    assert _state(multi, "2027-2029") == "SUSPENDED"
+    assert _state(multi, "2028") == "UNVERIFIED"
+
+    open_ended = Evidence(offered="NO", contrary_intake="from 2027 onwards")
+    assert _state(open_ended, "2027") == "SUSPENDED"
+    assert _state(open_ended, "2028") == "SUSPENDED"
+    assert _state(open_ended, "2026") == "UNVERIFIED"
+
+
+def test_dual_track_scholarship_deadline_vs_self_funded_deadline():
+    from apps.funding.cycle_evidence import deadline_student
+
+    evidence = Evidence(
+        offered="YES",
+        deadlines=(
+            (dt.date(2027, 1, 15), "FUNDING:SCHOLARSHIP"),
+            (dt.date(2027, 5, 15), "FUNDING:SELF_FUNDED"),
+        ),
+    )
+    chosen = select_deadline(evidence, student=deadline_student("AZ", "AZ"))
+    assert chosen is not None
+    assert chosen.date == dt.date(2027, 1, 15)
+    assert chosen.condition == "FUNDING:SCHOLARSHIP"
+

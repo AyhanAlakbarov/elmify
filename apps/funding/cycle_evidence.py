@@ -28,7 +28,12 @@ from collections.abc import Iterable, Sequence
 from typing import Any, TypedDict
 
 from apps.funding.regions import REGIONS
-from apps.funding.validity import ASSUMED_INTAKE_START, Evidence, RegisterCadence
+from apps.funding.validity import (
+    ASSUMED_INTAKE_START,
+    Evidence,
+    RegisterCadence,
+    intake_matches_target,
+)
 
 
 class EvidenceEntry(TypedDict):
@@ -66,14 +71,18 @@ def _date(value: str | None) -> dt.date | None:
         return None
 
 
-def intake_start(year: int) -> dt.date:
-    month, day = ASSUMED_INTAKE_START
+def intake_start(
+    year: int, *, month_day: tuple[int, int] = ASSUMED_INTAKE_START
+) -> dt.date:
+    month, day = month_day
     return dt.date(year, month, day)
 
 
-def intake_of(date: dt.date) -> int:
+def intake_of(
+    date: dt.date, *, month_day: tuple[int, int] = ASSUMED_INTAKE_START
+) -> int:
     """The intake whose window (previous start, start] contains `date`."""
-    return date.year if date <= intake_start(date.year) else date.year + 1
+    return date.year if date <= intake_start(date.year, month_day=month_day) else date.year + 1
 
 
 def observations(
@@ -143,11 +152,20 @@ def past_calls(
     return tuple(by_year[year] for year in sorted(by_year, reverse=True))
 
 
+def _names_target(entry: EvidenceEntry, target: int) -> bool:
+    if entry["intake_year"] == target:
+        return True
+    applies = str(entry.get("applies_to") or "").strip()
+    if applies and applies != "UNSTATED":
+        return intake_matches_target(applies, target)
+    return False
+
+
 def _rank(entry: EvidenceEntry, target: int) -> tuple[bool, bool, dt.date]:
     # Ranked on the parsed date: an unparseable `stated_on` is undated, and
     # must not outrank an undated NO.
     stated = _date(entry["stated_on"])
-    return (entry["intake_year"] == target, stated is not None, stated or dt.date.min)
+    return (_names_target(entry, target), stated is not None, stated or dt.date.min)
 
 
 def to_evidence(
@@ -157,11 +175,12 @@ def to_evidence(
     cadence: RegisterCadence | None,
     page_removed: bool,
     lapsed: bool,
+    intake_starts_on: dt.date | None = None,
 ) -> Evidence:
     relevant = [
         e for e in entries
         if _agreed(e)
-        and (e["intake_year"] == target_year or (e["intake_year"] is None and not e["archived"]))
+        and (_names_target(e, target_year) or (e["intake_year"] is None and not e["archived"]))
     ]
     yes = [e for e in relevant if e["offered"] == "YES"]
     no = [e for e in relevant if e["offered"] == "NO"]
@@ -180,18 +199,31 @@ def to_evidence(
         offered, best = "NO", best_of(no)
     elif yes:
         best = best_of(yes)
+    month_day = (
+        (intake_starts_on.month, intake_starts_on.day)
+        if intake_starts_on is not None
+        else ASSUMED_INTAKE_START
+    )
     deadlines = tuple(
         dict.fromkeys(
             (date, condition)
             for e in yes
             for iso, _raw, condition in e["deadlines"]
-            if (date := _date(iso)) is not None and intake_of(date) == target_year
+            if (date := _date(iso)) is not None
+            and (
+                intake_of(date, month_day=month_day) == target_year
+                or (
+                    _names_target(e, target_year)
+                    and date.year == target_year
+                    and date.month <= 10
+                )
+            )
         )
     )
     observed = observations(entries)
     return Evidence(
         offered=offered,
-        applies_to=str(target_year) if best and best["intake_year"] == target_year else "UNSTATED",
+        applies_to=str(target_year) if best and _names_target(best, target_year) else "UNSTATED",
         stated_on=_date(best["stated_on"]) if best else None,
         deadlines=deadlines,
         past_calls=() if lapsed else past_calls(observed, before=target_year),
@@ -201,18 +233,34 @@ def to_evidence(
     )
 
 
-def deadline_student(nationality: str, country_of_residence: str) -> dict[str, object]:
+def deadline_student(
+    nationality: str,
+    country_of_residence: str,
+    *,
+    funding: str = "SCHOLARSHIP",
+) -> dict[str, object]:
     """The student keys `validity.select_deadline` reads, from a profile's own answers.
 
-    `applicant_class` is derived from the sourced EU membership in `REGIONS`,
+    `applicant_class` is derived from the sourced EU/EEA membership in `REGIONS`,
     because a page's "non-EU applicants" deadline is otherwise matched by
     nobody (plan, decision-side findings). Blank when nationality is unknown --
     an unknown class matches no class, which is right.
+    `funding` defaults to `"SCHOLARSHIP"` when evaluating an award/scholarship's
+    deadline so a dual-track page (`FUNDING:SCHOLARSHIP` vs `FUNDING:SELF_FUNDED`)
+    always checks the scholarship deadline rather than the self-funded deadline.
     """
     code = (nationality or "").upper()
-    klass = "" if not code else ("EU" if code in REGIONS["EU"].countries else "NON_EU")
+    is_eu_eea = bool(
+        code
+        and (
+            code in REGIONS["EU"].countries
+            or ("EEA" in REGIONS and code in REGIONS["EEA"].countries)
+        )
+    )
+    klass = "" if not code else ("EU" if is_eu_eea else "NON_EU")
     return {
         "nationality": code,
         "country_of_residence": (country_of_residence or "").upper(),
         "applicant_class": klass,
+        "funding": funding,
     }

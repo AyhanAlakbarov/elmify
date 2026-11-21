@@ -1,10 +1,19 @@
 {% extends "base.html" %}
-{% block title %}Not allowed{% endblock %}
+{% block title %}{% if "multi-factor" in exception|stringformat:"s" %}Verify your account{% else %}Not allowed{% endif %}{% endblock %}
 {% block content %}
-  <h1>Not allowed</h1>
-  <p role="alert">{{ exception }}</p>
   {% if "multi-factor" in exception|stringformat:"s" %}
-    <p>Staff accounts need the six-digit code from your authenticator app for each session.</p>
-    <p><a class="btn" href="/mfa/setup/">Enter your code</a></p>
+    <div class="page-head">
+      <div>
+        <h1>Verify your account</h1>
+        <p>Staff accounts need the six-digit code from your authenticator app for each session.</p>
+      </div>
+    </div>
+    <section class="panel">
+      <p role="alert" class="mfa-notice">{{ exception }}</p>
+      <p class="row-actions"><a class="btn" href="/mfa/setup/">Enter your code</a></p>
+    </section>
+  {% else %}
+    <div class="page-head"><div><h1>Not allowed</h1></div></div>
+    <p role="alert">{{ exception }}</p>
   {% endif %}
 {% endblock %}

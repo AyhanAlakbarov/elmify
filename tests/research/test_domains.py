@@ -140,3 +140,55 @@ def test_an_official_national_catalogue_is_a_hoppable_catalogue() -> None:
         assert is_hoppable_catalogue(host), host
     assert is_catalogue("www.ucas.com")
     assert not is_hoppable_catalogue("www.ucas.com")
+
+
+def test_dual_role_national_agencies_for_scholarships_vs_programmes() -> None:
+    from apps.research.discovery import ResearchLead
+    from apps.research.domains import is_dual_role_agency
+
+    for host in (
+        "www.daad.de",
+        "www.campusfrance.org",
+        "www.studyinkorea.go.kr",
+        "www.studyinjapan.go.jp",
+        "eacea.ec.europa.eu",
+        "studyinhungary.hu",
+        "study.gov.pl",
+        "studyinitaly.esteri.it",
+    ):
+        assert is_dual_role_agency(host), host
+        assert is_catalogue(host, for_scholarship=False) is True, host
+        assert is_catalogue(host, for_scholarship=True) is False, host
+
+    # Commercial aggregators remain blocked even when `for_scholarship=True`
+    for commercial in ("www.mastersportal.com", "www.scholars4dev.com", "scholarshipportal.com"):
+        assert is_dual_role_agency(commercial) is False
+        assert is_catalogue(commercial, for_scholarship=True) is True
+
+    funder_lead = ResearchLead.from_url(
+        "https://www.daad.de/en/studying-in-germany/scholarships/daad-scholarships/",
+        source_type="FUNDER",
+        funding_family="GOVERNMENT_SCHOLARSHIP",
+    )
+    assert funder_lead.source_type == "FUNDER"
+    assert funder_lead.can_support_claim is True
+
+    prog_lead = ResearchLead.from_url(
+        "https://www.daad.de/en/studying-in-germany/universities/all-degree-programmes/",
+        source_type="PROGRAM",
+        funding_family="UNIVERSITY_WIDE",
+    )
+    assert prog_lead.source_type == "AGGREGATOR"
+    assert prog_lead.can_support_claim is False
+
+
+def test_steering_covers_every_target_country_in_destinations() -> None:
+    from apps.research.destinations import TARGET_COUNTRIES
+
+    missing = set(TARGET_COUNTRIES) - set(STEERING)
+    assert not missing, f"Missing STEERING entries for target countries: {sorted(missing)}"
+    for code in TARGET_COUNTRIES:
+        row = STEERING[code]
+        assert row.language.strip(), code
+        assert row.funder_query.strip(), code
+        assert row.country_name.strip(), code

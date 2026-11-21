@@ -1,5 +1,7 @@
 from django.urls import path
 
+from apps.dashboard.views import student_programme
+
 from .plan import plan_page
 from .views import (
     acknowledge_notification_view,
@@ -13,7 +15,6 @@ from .views import (
     settings_page,
     student_applications,
     student_dashboard,
-    student_option,
 )
 
 urlpatterns = [
@@ -32,7 +33,7 @@ urlpatterns = [
     path("student/", student_dashboard, name="concierge-student-dashboard"),
     path("student/applications/", student_applications, name="student-applications"),
     path(
-        "student/applications/<uuid:application_id>/", student_option, name="student-option"
+        "student/applications/<uuid:application_id>/", student_programme, name="student-option"
     ),
     path(
         "student/notifications/<uuid:notification_id>/acknowledge/",

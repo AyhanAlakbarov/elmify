@@ -23,7 +23,7 @@
 - No fingerprint evasion, stealth, spoofed navigator properties, or rotating/residential proxies. Enforced by test in Task 8.
 - `line-length = 100`, `target-version = "py312"`. Run `uv run ruff check`, never `ruff format` — it churns unrelated files.
 - Tests run under `DJANGO_SETTINGS_MODULE=config.settings.test`; no `DATABASE_ROLE` needed locally.
-- Work happens in the worktree. Every git command uses `git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec` — a bare `git commit` lands on the wrong branch.
+- Work happens in the worktree. Every git command uses `git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec` — a bare `git commit` lands on the wrong branch.
 
 ---
 
@@ -178,8 +178,8 @@ Expected: exit 0, "No changes detected".
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec add apps/portals tests/portals config/settings/base.py pyproject.toml uv.lock
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec commit -m "feat(portals): add shared PortalForm and FieldMap models"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec add apps/portals tests/portals config/settings/base.py pyproject.toml uv.lock
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec commit -m "feat(portals): add shared PortalForm and FieldMap models"
 ```
 
 ---
@@ -364,8 +364,8 @@ Expected: exit 0.
 - [ ] **Step 7: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec add apps/portals tests/portals
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec commit -m "feat(portals): add tenant-scoped Application models with RLS guards"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec add apps/portals tests/portals
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec commit -m "feat(portals): add tenant-scoped Application models with RLS guards"
 ```
 
 ---
@@ -435,8 +435,8 @@ Expected: PASS, no regressions. This is the guard that the refactor did not chan
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec add apps/research/egress.py tests/research/test_egress_limits.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec commit -m "refactor(research): make egress proxy tunnel and size limits configurable"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec add apps/research/egress.py tests/research/test_egress_limits.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec commit -m "refactor(research): make egress proxy tunnel and size limits configurable"
 ```
 
 ---
@@ -564,8 +564,8 @@ Expected: PASS, 3 tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec add apps/portals/session.py tests/portals/fakes.py tests/portals/test_session_protocol.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec commit -m "feat(portals): add PortalSession protocol and FieldAction schema"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec add apps/portals/session.py tests/portals/fakes.py tests/portals/test_session_protocol.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec commit -m "feat(portals): add PortalSession protocol and FieldAction schema"
 ```
 
 ---
@@ -748,8 +748,8 @@ Expected: PASS, 4 tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec add apps/portals/learn.py tests/portals/test_learn.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec commit -m "feat(portals): add rate-limited learn pass with PII guard"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec add apps/portals/learn.py tests/portals/test_learn.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec commit -m "feat(portals): add rate-limited learn pass with PII guard"
 ```
 
 ---
@@ -866,8 +866,8 @@ Expected: PASS, 2 tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec add apps/portals/fill.py tests/portals/test_fill.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec commit -m "feat(portals): add zero-LLM replay fill from stored field maps"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec add apps/portals/fill.py tests/portals/test_fill.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec commit -m "feat(portals): add zero-LLM replay fill from stored field maps"
 ```
 
 ---
@@ -983,8 +983,8 @@ Expected: PASS, 2 tests.
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec add apps/portals/fill.py tests/portals/test_read_back.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec commit -m "feat(portals): validate filled fields against the rendered page"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec add apps/portals/fill.py tests/portals/test_read_back.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec commit -m "feat(portals): validate filled fields against the rendered page"
 ```
 
 ---
@@ -1315,8 +1315,8 @@ Expected: no new CVEs introduced by the `stagehand` dependency. If `stagehand` p
 - [ ] **Step 9: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec add apps/portals/engine.py tests/portals/test_boundary.py tests/portals/test_engine_browser.py pyproject.toml
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-portal-exec commit -m "feat(portals): add Stagehand session engine and evasion boundary test"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec add apps/portals/engine.py tests/portals/test_boundary.py tests/portals/test_engine_browser.py pyproject.toml
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-portal-exec commit -m "feat(portals): add Stagehand session engine and evasion boundary test"
 ```
 
 ---

@@ -13,14 +13,14 @@
 ## Global Constraints
 
 - **Branch from `claude/fetch-engine-core` (worktree `/home/orkhan/Desktop/fetch-engine-core`, HEAD `36871bb` on 2026-09-24), not from `master`.** That branch is build item 5 — the fetch engine — complete and unmerged in another session, and it owns research migrations `0004`–`0006`, a new `fetch_page` contract (refusals are *returned* as a `FetchedPage` with `outcome != FETCHED`, never raised), `HostProfile`/`FetchAttempt`, and the rewritten `_SHARED_TABLES`. Building on master would collide on the migration number — the failure CLAUDE.md records under "Migrations". When its PR merges, rebase this branch onto master; nothing here edits a file it changed. Never switch the main checkout's branch; `git -C <worktree>` for every git command (the shell cwd resets between calls).
-- **Test database per worktree:** every `pytest` and `manage.py` call carries `POSTGRES_DB=tehsil_ladder_tr`. Two pytest sessions against one database produce fake failures. Read `${PIPESTATUS[0]}`, never a piped exit code.
+- **Test database per worktree:** every `pytest` and `manage.py` call carries `POSTGRES_DB=elmify_ladder_tr`. Two pytest sessions against one database produce fake failures. Read `${PIPESTATUS[0]}`, never a piped exit code.
 - **Do not edit** `apps/research/register.py`, `apps/research/funding_reader.py`, `apps/research/services.py`, `apps/research/spine.py`, `apps/research/pipeline.py`, or anything under `apps/funding/` — PRs #123, #124 and #125 are editing them. Call `record_organisation`; do not change it.
 - **Shared-catalog rule:** `RegisterEntry` is read by every tenant and written only by `runtime_engine` (was `catalog_ingestion`, dropped by funding/0049); it carries nothing about a person. The register's e-mail address is **not stored** — only the registrable domain derived from it.
 - **A committed fixture is storage too.** A captured register page goes into the repo only after every personal e-mail local part, street address and phone number outside the one asserted row is replaced by a synthetic value that keeps the domain and the markup (caught in Task 3's review; the commit was amended before anything was pushed). Grep the fixture for `@` before committing it.
 - **Provider discipline:** nothing from a vendor response is persisted except a URL we then fetch; the register page's own bytes are the register's, not a search provider's, and are parsed and discarded.
 - **Every LLM call:** untrusted content labelled `DATA`, Pydantic schema with `extra="forbid"`, `max_output_tokens` capped, `store=False`, `safety_identifier=privacy_safe_identifier(...)`, and `rate_limited(...)` on the run.
 - **Budgets, stated up front:** reading VGM is ~82 Firecrawl credits at 50 rows a page or ~340 at the default 12 (Task 3 measures which). Classifying every resolved host is one fetch each — roughly 2,700, **more than one free tier (1,000/month)**. So `classify_organisations` takes `--limit` and a credit cap, is idempotent on `classified_at`, and is re-run across months or once the Firecrawl plan is bought (spec §13). Frontier model cost ≈ $0.002 a host, ≈ $5 for the register.
-- **Validation before every commit:** `uv run ruff check apps config tests`, `uv run mypy apps config`, the focused tests, and `POSTGRES_DB=tehsil_ladder_tr uv run python manage.py makemigrations --check`.
+- **Validation before every commit:** `uv run ruff check apps config tests`, `uv run mypy apps config`, the focused tests, and `POSTGRES_DB=elmify_ladder_tr uv run python manage.py makemigrations --check`.
 - **Commit convention:** `feat(research): …` / `test(research): …`, one task per commit, ending with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 
 ---
@@ -52,7 +52,7 @@
 - [ ] **Step 1: Create the worktree from `claude/fetch-engine-core`**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent && git worktree add -b claude/funding-ladder-tr .worktrees/ladder-tr claude/fetch-engine-core
+cd /home/orkhan/Desktop/elmify && git worktree add -b claude/funding-ladder-tr .worktrees/ladder-tr claude/fetch-engine-core
 git -C .worktrees/ladder-tr log --oneline -1   # expect 36871bb or a later commit on that branch
 ls .worktrees/ladder-tr/apps/research/migrations/ | tail -2   # expect 0006_hostprofile_host_lowercase.py
 ```
@@ -62,8 +62,8 @@ If that branch has moved past `0006`, the migration in Task 2 takes the next fre
 - [ ] **Step 2: Copy this plan in, so the branch carries it**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/ladder-tr checkout claude/funding-tap-rule -- docs/superpowers/plans/2026-09-24-funding-ladder-tr.md docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md docs/superpowers/research/2026-09-24-query-design-and-enumeration.md
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/ladder-tr commit -q -m "docs: carry the ladder plan and the 2026-09-24 spec amendments onto the build branch
+git -C /home/orkhan/Desktop/elmify/.worktrees/ladder-tr checkout claude/funding-tap-rule -- docs/superpowers/plans/2026-09-24-funding-ladder-tr.md docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md docs/superpowers/research/2026-09-24-query-design-and-enumeration.md
+git -C /home/orkhan/Desktop/elmify/.worktrees/ladder-tr commit -q -m "docs: carry the ladder plan and the 2026-09-24 spec amendments onto the build branch
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -71,7 +71,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 3: Sync the environment and prove the suite is green before touching anything**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/ladder-tr && uv sync --frozen && POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_domains.py tests/research/test_sweep.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+cd /home/orkhan/Desktop/elmify/.worktrees/ladder-tr && uv sync --frozen && POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_domains.py tests/research/test_sweep.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 ```
 
 Expected: `… passed`, `EXIT=0`.
@@ -118,7 +118,7 @@ def test_email_domain_refuses_free_mail_and_garbage() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_domains.py -q -k email_domain 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_domains.py -q -k email_domain 2>&1 | tail -3`
 Expected: FAIL with `ImportError: cannot import name 'email_domain'`.
 
 - [ ] **Step 3: Implement**
@@ -161,7 +161,7 @@ If `hosts.py` imports from `domains.py` (check: `grep -n "domains" apps/research
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_domains.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_domains.py -q 2>&1 | tail -3`
 Expected: all pass.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -233,7 +233,7 @@ def test_an_organisation_starts_unclassified() -> None:
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_vgm.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_vgm.py -q 2>&1 | tail -3`
 Expected: FAIL with `ImportError: cannot import name 'RegisterEntry'`.
 
 - [ ] **Step 3: Add the fields and the model**
@@ -387,7 +387,7 @@ class Migration(migrations.Migration):
 
 Then confirm Django agrees the migration matches the models:
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run python manage.py makemigrations --check --dry-run 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run python manage.py makemigrations --check --dry-run 2>&1 | tail -3`
 Expected: `No changes detected`. If it proposes a change, adjust the migration to what it proposes (choice labels are the usual culprit), never the model.
 
 - [ ] **Step 5: Add the table to the shared-catalog list**
@@ -402,7 +402,7 @@ In `tests/tenancy/test_database_isolation.py`, in `_SHARED_TABLES`, after `"rese
 
 - [ ] **Step 6: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_vgm.py tests/tenancy/test_database_isolation.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_vgm.py tests/tenancy/test_database_isolation.py -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"`
 Expected: pass, `EXIT=0`. (`test_database_isolation` runs the RLS regression guard against the real policy; a missing policy fails here and nowhere else.)
 
 - [ ] **Step 7: Lint, type-check, commit**
@@ -431,8 +431,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 1: Capture the fixture (live — the one step in this task that spends)**
 
 ```bash
-set -a; . ~/.config/tehsil_agent/firecrawl.env; set +a
-POSTGRES_DB=tehsil_ladder_tr uv run python -c "
+set -a; . ~/.config/elmify/firecrawl.env; set +a
+POSTGRES_DB=elmify_ladder_tr uv run python -c "
 from apps.research.fetch import fetch_page
 p = fetch_page('https://www.vgm.gov.tr/vakif-sorgulama/vakif-sorgulama?Page=1&IsGrant=true&PageSize=50', purpose='read', tag='vgm')
 print(p.outcome, p.reason, p.final_url, len(p.body), p.fetched_via, p.cost_credits)
@@ -483,7 +483,7 @@ def test_vgm_page_url_carries_the_scholarship_filter() -> None:
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_vgm.py -q -k "parse_vgm or vgm_total or page_url" 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_vgm.py -q -k "parse_vgm or vgm_total or page_url" 2>&1 | tail -3`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.vgm'`.
 
 - [ ] **Step 4: Implement the parser half**
@@ -573,7 +573,7 @@ If Step 1 showed the total in a different phrasing, change `_TOTAL` to match the
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_vgm.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_vgm.py -q 2>&1 | tail -3`
 Expected: all pass.
 
 - [ ] **Step 6: Lint, type-check, commit**
@@ -705,7 +705,7 @@ def test_register_coverage_is_arithmetic_over_the_entries() -> None:
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_vgm.py -q -k "read_vgm or record_vgm or coverage" 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_vgm.py -q -k "read_vgm or record_vgm or coverage" 2>&1 | tail -3`
 Expected: FAIL with `ImportError: cannot import name 'read_vgm'`.
 
 - [ ] **Step 3: Implement**
@@ -840,7 +840,7 @@ Check what `record_organisation` does with `status` on a row that already exists
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_vgm.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_vgm.py -q 2>&1 | tail -3`
 Expected: all pass.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -1044,7 +1044,7 @@ def test_the_frontier_prompt_labels_the_page_as_data_and_caps_output() -> None:
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_classify.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_classify.py -q 2>&1 | tail -3`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.classify'`.
 
 - [ ] **Step 4: Implement**
@@ -1272,7 +1272,7 @@ Check the `Outcome` members against the branch you are on: `grep -n "^class Outc
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_classify.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_classify.py -q 2>&1 | tail -3`
 Expected: all pass. `test_a_shell_page_is_unreadable_not_a_non_funder` relies on `readable_text` returning under 1,500 characters for the short body; if `readable_text` degrades a page with no `<main>` sections to the whole page, that is still under the floor.
 
 - [ ] **Step 6: Lint, type-check, commit**
@@ -1365,7 +1365,7 @@ def test_classify_organisations_dry_run_touches_nothing(monkeypatch: pytest.Monk
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_ladder_commands.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_ladder_commands.py -q 2>&1 | tail -3`
 Expected: FAIL with `CommandError: Unknown command: 'read_register'`.
 
 - [ ] **Step 3: Implement `read_register`**
@@ -1494,7 +1494,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_ladder_commands.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_ladder_commands.py -q 2>&1 | tail -3`
 Expected: all pass.
 
 - [ ] **Step 6: Lint, type-check, commit**
@@ -1596,7 +1596,7 @@ def test_classifier_gate_scores_kind_and_funds_students_and_abstains(monkeypatch
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_ladder_commands.py -q -k gate 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_ladder_commands.py -q -k gate 2>&1 | tail -3`
 Expected: FAIL with `Unknown command: 'classifier_gate'`.
 
 - [ ] **Step 4: Implement**
@@ -1681,14 +1681,14 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests, then the gate for real (live, ~100 Firecrawl credits + ~$0.30 of model)**
 
-Run: `POSTGRES_DB=tehsil_ladder_tr uv run pytest tests/research/test_ladder_commands.py -q 2>&1 | tail -3`
+Run: `POSTGRES_DB=elmify_ladder_tr uv run pytest tests/research/test_ladder_commands.py -q 2>&1 | tail -3`
 Expected: all pass.
 
 Then, with `FIRECRAWL_API_KEY` and `OPENAI_API_KEY` in the environment:
 
 ```bash
-set -a; . ~/.config/tehsil_agent/firecrawl.env; . ~/.config/tehsil_agent/openai.env; set +a
-POSTGRES_DB=tehsil_ladder_tr uv run python manage.py classifier_gate --labels docs/research/host-kind-labels.csv | tee /tmp/claude-1000/gate-run-1.txt
+set -a; . ~/.config/elmify/firecrawl.env; . ~/.config/elmify/openai.env; set +a
+POSTGRES_DB=elmify_ladder_tr uv run python manage.py classifier_gate --labels docs/research/host-kind-labels.csv | tee /tmp/claude-1000/gate-run-1.txt
 ```
 
 Record the four numbers (kind accuracy, funds_students accuracy, abstain rate, unreadable) in the commit message. **Below 95% on either is not a failed task — it is the measurement the spec asked for**; report it, do not tune the prompt in the same commit.
@@ -1712,8 +1712,8 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 1: Read the register (live; ~82 or ~340 Firecrawl credits depending on Task 3's page-size finding)**
 
 ```bash
-set -a; . ~/.config/tehsil_agent/firecrawl.env; set +a
-POSTGRES_DB=tehsil_ladder_tr uv run python manage.py read_register --register vgm --page-size 50 --firecrawl-credits 400 | tail -8
+set -a; . ~/.config/elmify/firecrawl.env; set +a
+POSTGRES_DB=elmify_ladder_tr uv run python manage.py read_register --register vgm --page-size 50 --firecrawl-credits 400 | tail -8
 ```
 
 Expected: `listed: 4076` (±2%), `resolved` around two-thirds, `bodies known ÷ listed` equal to `resolved`, `classified: 0`.
@@ -1723,9 +1723,9 @@ If `listed` stops short of the total with credits to spare, a page came back emp
 - [ ] **Step 2: Classify the first batch under the free tier (live; ≤ 300 Firecrawl credits, ≈ $0.60 of model)**
 
 ```bash
-set -a; . ~/.config/tehsil_agent/firecrawl.env; . ~/.config/tehsil_agent/openai.env; set +a
-POSTGRES_DB=tehsil_ladder_tr uv run python manage.py classify_organisations --found-via R1_REGISTER:vgm --limit 300 --firecrawl-credits 300
-POSTGRES_DB=tehsil_ladder_tr uv run python manage.py read_register --register vgm --max-pages 0 2>/dev/null || true
+set -a; . ~/.config/elmify/firecrawl.env; . ~/.config/elmify/openai.env; set +a
+POSTGRES_DB=elmify_ladder_tr uv run python manage.py classify_organisations --found-via R1_REGISTER:vgm --limit 300 --firecrawl-credits 300
+POSTGRES_DB=elmify_ladder_tr uv run python manage.py read_register --register vgm --max-pages 0 2>/dev/null || true
 ```
 
 (`--max-pages 0` reads zero pages — `read_vgm`'s loop is `page <= max_pages` from page 1 — so this prints the coverage line without a fetch; verified in Task 6's review.)
@@ -1748,9 +1748,9 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - [ ] **Step 1: The whole suite, once, on this database**
 
 ```bash
-POSTGRES_DB=tehsil_ladder_tr uv run pytest -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
+POSTGRES_DB=elmify_ladder_tr uv run pytest -q 2>&1 | tail -3; echo "EXIT=${PIPESTATUS[0]}"
 uv run ruff check apps config tests && uv run mypy apps config | tail -1
-POSTGRES_DB=tehsil_ladder_tr uv run python manage.py makemigrations --check --dry-run | tail -1
+POSTGRES_DB=elmify_ladder_tr uv run python manage.py makemigrations --check --dry-run | tail -1
 uv run bandit -c pyproject.toml -q -r apps config | tail -2
 ```
 
@@ -1777,7 +1777,7 @@ Build item 6a of the master spec (§16): the register ladder end to end for Tür
 - gate: kind X/Y, funds_students X/Y, abstained N, unreadable N — Latin script only; the second script is owed before Jev takes the gate.
 
 ## Verification
-- full suite on `POSTGRES_DB=tehsil_ladder_tr`: N passed, exit 0; ruff, mypy, bandit, `makemigrations --check` clean.
+- full suite on `POSTGRES_DB=elmify_ladder_tr`: N passed, exit 0; ruff, mypy, bandit, `makemigrations --check` clean.
 - CI is failing repo-wide on GitHub Actions billing; expect no green check.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

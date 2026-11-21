@@ -1,7 +1,7 @@
 # Discovery shadow run 2 — the first run against an open route
 
-Run 2026-08-30 from the dev host: local Postgres (`tehsil`), the real evidence bucket
-`tehsil-evidence-367842306577` in eu-central-1, real OpenAI key, **`SEARCH_API_KEY` deliberately
+Run 2026-08-30 from the dev host: local Postgres (`elmify`), the real evidence bucket
+`elmify-evidence-367842306577` in eu-central-1, real OpenAI key, **`SEARCH_API_KEY` deliberately
 unset** so only the seed catalogue ran and nothing touched the live-search path.
 
 ```

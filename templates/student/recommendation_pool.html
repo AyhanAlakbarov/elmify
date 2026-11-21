@@ -1,27 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Programmes &amp; scholarships{% endblock %}
+{% block title %}Programmes &amp; funding{% endblock %}
 {% block head %}{% if research_pending %}<meta http-equiv="refresh" content="15">{% endif %}{% endblock %}
 {% block content %}
   <div class="page-head">
     <div>
-      <h1>Programmes &amp; scholarships</h1>
+      <h1>Programmes &amp; funding</h1>
       <p>Programmes our AI matched to your profile, grouped by the scholarship that can pay for them. Every fact links to the official page it came from.</p>
     </div>
   </div>
   {% if research_pending %}
     <div class="researching" aria-busy="true">
-      <p role="status">Our AI is reading official programme and scholarship pages for you. This page refreshes every 15 seconds.</p>
+      <p role="status">We are still researching your programmes. This page reloads itself every 15 seconds.</p>
       <div class="match-grid" aria-hidden="true">
         <div class="skeleton"><span></span><span></span><span></span><span></span></div>
         <div class="skeleton"><span></span><span></span><span></span><span></span></div>
         <div class="skeleton"><span></span><span></span><span></span><span></span></div>
       </div>
     </div>
+  {% elif empty_pack %}
+    <div class="empty-state">
+      <p role="status">{{ empty_pack.empty_reason|default:"We found nothing we can recommend yet. Your counsellor has been told." }}</p>
+      {% if empty_pack.coverage.sentence %}<p>{{ empty_pack.coverage.sentence }}</p>{% endif %}
+    </div>
   {% elif not pack %}
     <div class="empty-state">
-      <h3>No matches yet</h3>
-      <p>Finish your profile and our AI starts looking for programmes and scholarships that fit you.</p>
-      <a class="btn" href="/student/profile/">Finish your profile</a>
+      <h3>No recommendations yet</h3>
+      <p>No recommendations yet. Finish your <a href="/student/profile/">profile</a> to start.</p>
     </div>
   {% endif %}
   {% include "student/_pack.html" %}

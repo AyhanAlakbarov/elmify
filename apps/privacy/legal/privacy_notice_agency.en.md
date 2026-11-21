@@ -2,9 +2,9 @@
 
 ## Who we are
 
-Tehsil runs a service that helps students find, prepare and submit applications to universities and funders abroad. Your agency, {{ agency }}, is the owner (controller) of your personal data. Tehsil is its operator (processor) and handles your data only on the agency's instructions.
+Elmify runs a service that helps students find, prepare and submit applications to universities and funders abroad. Your agency, {{ agency }}, is the owner (controller) of your personal data. Elmify is its operator (processor) and handles your data only on the agency's instructions.
 
-Contact for this service: privacy@tehsil.example. For questions about the agency's own use of your data, ask {{ agency }}.
+Contact for this service: privacy@elmify.example. For questions about the agency's own use of your data, ask {{ agency }}.
 
 Company name and address: to be completed before launch
 
@@ -14,6 +14,7 @@ Company name and address: to be completed before launch
 - Contact details: your e-mail address, phone number and country.
 - Education history, transcripts and grades.
 - Your CV, your motivation letters and the facts they are built from.
+- Public information from your GitHub account and the repositories you contributed to, when you give us your GitHub username or your CV links it.
 - Programme and funding choices.
 - Application status and outcomes.
 - Messages you choose to connect through the mailbox feature.
@@ -48,7 +49,7 @@ We keep personal data for as long as your account is active plus 12 months, then
 
 ## Your rights
 
-You may ask for access to your data, correction, deletion, to stop us processing it, and you may object to processing without giving reasons. You may withdraw your consent at any time. Write to us by e-mail to privacy@tehsil.example; we reply within 7 working days. We answer requests sent from the e-mail address of your account; if you write from another address we will ask you to write from your own. If we need more time we tell you and take up to 7 more working days. If we refuse, we tell you why within 5 working days.
+You may ask for access to your data, correction, deletion, to stop us processing it, and you may object to processing without giving reasons. You may withdraw your consent at any time. Write to us by e-mail to privacy@elmify.example; we reply within 7 working days. We answer requests sent from the e-mail address of your account; if you write from another address we will ask you to write from your own. If we need more time we tell you and take up to 7 more working days. If we refuse, we tell you why within 5 working days.
 
 When you withdraw your consent or object to processing, we stop processing your data at once. This pauses your account until you ask us to resume.
 

@@ -19,8 +19,8 @@
 ## Global Constraints
 
 - Work in `/home/orkhan/Desktop/mailbox-port`, branch `claude/mailbox-port`. Always `git -C /home/orkhan/Desktop/mailbox-port …`; the shell's cwd resets to the main repo and a bare `git commit` lands on the wrong branch.
-- Test DB: prefix every pytest/manage.py command with `POSTGRES_DB=tehsil_mailbox_port`.
-- Lint `uv run ruff check .` only — **never `ruff format`**. Types `uv run mypy apps config`. Security `uv run bandit -q -c pyproject.toml -r apps config`. Migrations `POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations --check --dry-run`. Line length 100.
+- Test DB: prefix every pytest/manage.py command with `POSTGRES_DB=elmify_mailbox_port`.
+- Lint `uv run ruff check .` only — **never `ruff format`**. Types `uv run mypy apps config`. Security `uv run bandit -q -c pyproject.toml -r apps config`. Migrations `POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations --check --dry-run`. Line length 100.
 - Every tenant-scoped query outside a request runs inside `tenant_scope` **and** `tenant_transaction`. A test under `rls_enforced_orm` with `@pytest.mark.django_db(transaction=True)` is the only proof a path works as the production NOBYPASSRLS role.
 - Every new tenant table: `ENABLE` + `FORCE ROW LEVEL SECURITY`, the `tenant_isolation` policy, and a composite `(tenant_id, <fk>_id)` foreign key to each tenant-scoped parent, in its migration. Pattern: `apps/watch/migrations/0001_initial.py`.
 - Every field of a model FK-reachable from `Membership` is classified in `apps/audit/redaction.py`.
@@ -71,8 +71,8 @@ In the renamed file set its `dependencies` to `[("concierge", "0007_documentvers
 
 Run:
 ```bash
-POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations --check --dry-run
-POSTGRES_DB=tehsil_mailbox_port uv run pytest -q
+POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_mailbox_port uv run pytest -q
 uv run ruff check . && uv run mypy apps config
 ```
 Expected: "No changes detected"; the full suite passes (baseline on this branch 4014 passed plus whatever master added); lint and types clean. If `makemigrations --check` reports a conflict in another app, add a Django merge migration (`makemigrations --merge`) and say so in the report.
@@ -137,7 +137,7 @@ Change the existing expectation in `test_the_allowlist_is_the_student_s_own_pack
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox/test_filter.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox/test_filter.py -q`
 Expected: FAIL — `ImportError: cannot import name '_key'`.
 
 - [ ] **Step 3: Implement**
@@ -179,7 +179,7 @@ Update the `student_with_pack` docstring in `tests/mailbox/conftest.py` to say t
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox -q`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
@@ -322,7 +322,7 @@ def test_the_kit_shows_the_tagged_address(agency_a, membership_a, with_address, 
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_tags.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_tags.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.tags'`.
 
 - [ ] **Step 3: Add the models**
@@ -380,7 +380,7 @@ class PortalAccount(TenantScopedModel):
 
 - [ ] **Step 4: Migration with the SQL Django cannot write**
 
-Run `POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations portals --name portal_accounts`. Then add, following `apps/watch/migrations/0001_initial.py`: `ENABLE` + `FORCE ROW LEVEL SECURITY` and the `tenant_isolation` policy on `portals_portalaccount`, and
+Run `POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations portals --name portal_accounts`. Then add, following `apps/watch/migrations/0001_initial.py`: `ENABLE` + `FORCE ROW LEVEL SECURITY` and the `tenant_isolation` policy on `portals_portalaccount`, and
 
 ```sql
 ALTER TABLE portals_portalaccount
@@ -478,7 +478,7 @@ and to `KEEP` `"portals.PortalAccount": ("portal_host", "created_at"),`.
 
 - [ ] **Step 8: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals tests/audit tests/tenancy/test_database_isolation.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals tests/audit tests/tenancy/test_database_isolation.py -q`
 Expected: all PASS (including `test_nothing_in_the_app_can_submit` — `tags.py` never names that state).
 
 - [ ] **Step 9: Commit**
@@ -547,7 +547,7 @@ def test_microsoft_also_lists_junk_and_marks_it():
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox/test_providers.py -q -k "recipients or junk"`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox/test_providers.py -q -k "recipients or junk"`
 Expected: FAIL (`recipients` is not a field; Junk is not requested).
 
 - [ ] **Step 3: Implement**
@@ -573,7 +573,7 @@ Update the existing Microsoft tests' fake maps so the Junk URL answers `{"value"
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox -q`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
@@ -755,7 +755,7 @@ def test_signals_stay_one_per_message(tagged_account):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox/test_tagged.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox/test_tagged.py -q`
 Expected: FAIL — `ImportError: cannot import name 'LearnedSender'`.
 
 - [ ] **Step 3: Models and migration**
@@ -945,7 +945,7 @@ and in `apps/mailbox/urls.py` add `path("mailbox/senders/<uuid:sender_id>/confir
 
 - [ ] **Step 7: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox tests/audit tests/tenancy/test_database_isolation.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox tests/audit tests/tenancy/test_database_isolation.py -q`
 Expected: all PASS.
 
 - [ ] **Step 8: Commit**
@@ -1017,7 +1017,7 @@ def test_an_unknown_inbox_kind_is_refused(settings, student_client):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox/test_sync.py tests/mailbox/test_views.py -q -k "application_inbox or pilot or kind"`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox/test_sync.py tests/mailbox/test_views.py -q -k "application_inbox or pilot or kind"`
 Expected: FAIL.
 
 - [ ] **Step 3: Implement**
@@ -1066,7 +1066,7 @@ Existing tests connect with `GOOGLE`: add to `tests/mailbox/conftest.py` an auto
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox tests/audit -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox tests/audit -q`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
@@ -1171,7 +1171,7 @@ def test_a_failed_classification_is_retried_and_then_shown(connection_with_pack,
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox/test_label_alerts.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox/test_label_alerts.py -q`
 Expected: FAIL — `ImportError: cannot import name 'MAX_CLASSIFY_ATTEMPTS'`.
 
 - [ ] **Step 3: Implement**
@@ -1221,7 +1221,7 @@ def _alert_student(signal: MailSignal, label: str) -> None:
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/mailbox tests/audit -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/mailbox tests/audit -q`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
@@ -1293,7 +1293,7 @@ def test_no_token_is_refused(client, domain_a):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals/test_ext_mailbox_check.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals/test_ext_mailbox_check.py -q`
 Expected: FAIL — 404.
 
 - [ ] **Step 3: Implement**
@@ -1334,7 +1334,7 @@ def mailbox_check(request: HttpRequest, pairing: ExtensionPairing) -> HttpRespon
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/portals -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/portals -q`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
@@ -1421,7 +1421,7 @@ def test_no_alerts_while_the_sweep_itself_is_not_running(agency_a, membership_a)
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_mailbox_health.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_mailbox_health.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.watch.mailbox_health'`.
 
 - [ ] **Step 3: Implement**
@@ -1512,7 +1512,7 @@ def alert_stale_mailboxes_for_tenant(tenant_id: UUID, *, now: datetime | None = 
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch tests/mailbox tests/audit -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch tests/mailbox tests/audit -q`
 Expected: all PASS.
 
 - [ ] **Step 5: Commit**
@@ -1535,8 +1535,8 @@ cd /home/orkhan/Desktop/mailbox-port
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -q -c pyproject.toml -r apps config
-POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations --check --dry-run
-POSTGRES_DB=tehsil_mailbox_port uv run pytest -q
+POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_mailbox_port uv run pytest -q
 ```
 
 Expected: all clean, the suite passing with no new failures.

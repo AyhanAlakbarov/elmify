@@ -19,7 +19,6 @@ from apps.research.storage import S3ObjectStore
 from apps.tenancy.context import current_tenant_id
 from apps.tenancy.db import set_local_tenant
 
-from .constraints import directives_from_program
 from .europass import (
     EuropassProvenanceMissing,
     EuropassThrottled,
@@ -27,7 +26,16 @@ from .europass import (
     europass_payload,
 )
 from .models import DocumentDraft, EuropassCircuit, EuropassRenderCache
-from .render import RenderRateLimited, europass_content, render_draft
+from .render import (
+    RenderRateLimited,
+    content_warnings,
+    draft_directives,
+    draft_rules,
+    europass_content,
+    render_draft,
+    resolve_variant,
+    warning_record,
+)
 from .schemas import CVContent
 from .storage import document_key, store_document
 
@@ -99,25 +107,23 @@ def render_and_store(
     today only because the sole caller, process_europass_message, closes its
     own atomic block before calling this function.
     """
-    if draft.render_variant != "EUROPASS_API":
+    variant = resolve_variant(draft)
+    if variant != "EUROPASS_API":
         # The choke point: every other variant (STANDARD, EUROPASS,
         # GERMAN_TABULAR, or the blank default) must never reach the
         # Europass hash, cache, or store below -- there is no fallback, and
         # a future trigger spec that does not exist yet cannot be relied on
         # to re-derive this guard.
-        #
-        # This reads the RAW field. render_draft (render.py) now resolves the
-        # effective variant from programme/funder instead of trusting
-        # render_variant as stored, so a blank-variant draft that WOULD
-        # resolve to EUROPASS_API never reaches this function at all today.
-        # The two must be reconciled once draft creation learns about
-        # funders and starts persisting the resolved variant.
         raise EuropassUnavailable(
-            f"draft render_variant is {draft.render_variant!r}, not EUROPASS_API"
+            f"draft resolved render variant is {variant!r}, not EUROPASS_API"
         )
     content = CVContent.model_validate(draft.content)
-    directives = directives_from_program(draft.programme) if draft.programme is not None else ()
-    digest = payload_hash(*europass_content(content, directives))
+    directives = draft_directives(draft)
+    # The same rules render_draft resolves, so the key hashes the content
+    # without_banned_content leaves -- what is actually sent.
+    constraints = draft_rules(draft, content)
+    clean, oldest_first = europass_content(content, directives, constraints=constraints)
+    digest = payload_hash(clean, oldest_first=oldest_first)
     tenant_id = current_tenant_id()
 
     with transaction.atomic():
@@ -142,6 +148,13 @@ def render_and_store(
                 set_local_tenant(tenant_id)
                 cached.delete()
         else:
+            # Content-only rules still run on a cache hit: the PDF bytes are
+            # shared, not the warnings, and the two drafts may belong to
+            # different programmes.
+            warnings = [
+                warning_record(w)
+                for w in content_warnings(clean, constraints, variant="EUROPASS_API")
+            ]
             this_draft_key = document_key(
                 tenant_id=tenant_id,
                 student_id=draft.student_id,
@@ -149,6 +162,9 @@ def render_and_store(
                 filename=_ARTEFACT_FILENAME,
             )
             if cached.object_key == this_draft_key:
+                with transaction.atomic():
+                    set_local_tenant(tenant_id)
+                    DocumentDraft.objects.filter(id=draft.id).update(render_warnings=warnings)
                 return RenderOutcome(object_key=cached.object_key, called_remote=False)
             # Cross-draft hit: same payload, different draft. download_document
             # re-derives its key from draft_id (apps/documents/storage.py), so
@@ -156,9 +172,12 @@ def render_and_store(
             # for this draft. Re-store the bytes we just fetched under THIS
             # draft's key -- the cache exists to protect europa.eu, not S3,
             # so an extra GET+PUT here is the right trade.
-            new_key = store_document(
-                draft=draft, filename=_ARTEFACT_FILENAME, content=cached_pdf, store=store_obj
-            )
+            with transaction.atomic():
+                set_local_tenant(tenant_id)
+                new_key = store_document(
+                    draft=draft, filename=_ARTEFACT_FILENAME, content=cached_pdf, store=store_obj
+                )
+                DocumentDraft.objects.filter(id=draft.id).update(render_warnings=warnings)
             return RenderOutcome(object_key=new_key, called_remote=False)
 
     circuit = EuropassCircuit.load()
@@ -209,4 +228,7 @@ def render_and_store(
             draft=draft, filename=_ARTEFACT_FILENAME, content=pdf, store=store
         )
         EuropassRenderCache.objects.create(payload_hash=digest, object_key=object_key)
+        DocumentDraft.objects.filter(id=draft.id).update(
+            render_warnings=[warning_record(w) for w in getattr(artifact, "warnings", ())]
+        )
     return RenderOutcome(object_key=object_key, called_remote=True)

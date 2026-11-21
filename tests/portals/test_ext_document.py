@@ -73,6 +73,7 @@ def test_a_named_promoted_upload_is_streamed_as_an_inert_attachment(
     assert response["Content-Disposition"] == f'attachment; filename="passport-{document.id}.pdf"'
     assert response["X-Content-Type-Options"] == "nosniff"
     assert response["Content-Security-Policy"] == "sandbox; default-src 'none'"
+    assert response["Cache-Control"] == "no-store"
 
 
 def test_a_document_named_by_the_latest_packet_is_served(
@@ -270,3 +271,18 @@ def test_every_draft_refusal_is_a_404(
                 expires_at=timezone.now() + timedelta(minutes=15),
             )
     assert _get(client, domain_a, token, draft.id).status_code == 404
+
+
+def test_a_retired_upload_is_never_served_even_when_an_action_names_it(
+    client, agency_a, domain_a, membership_a, bucket
+) -> None:
+    """Plan 4b Task 6 fix M3: a replaced upload named by an earlier action or packet."""
+    from django.utils import timezone
+
+    token = _pair(client, agency_a, membership_a, domain_a)
+    with tenant_scope(agency_a.id):
+        document = _promoted(agency_a, membership_a, bucket)
+        _named(agency_a, membership_a, document)
+        assert _get(client, domain_a, token, document.id).status_code == 200
+        DocumentVersion.objects.filter(id=document.id).update(retired_at=timezone.now())
+    assert _get(client, domain_a, token, document.id).status_code == 404

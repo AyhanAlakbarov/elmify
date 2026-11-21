@@ -1,7 +1,7 @@
 # Discovery increment 1 — first shadow run against the live network
 
 Run 2026-08-28 from the dev environment (local Postgres, real S3 bucket
-`tehsil-evidence-367842306577` in eu-central-1, real OpenAI key, no search key).
+`elmify-evidence-367842306577` in eu-central-1, real OpenAI key, no search key).
 Command: `manage.py discover --field robotics --country DE --tenant <agency> --max-leads 5`,
 then a second run at `--max-leads 2`.
 
@@ -117,7 +117,7 @@ real but incidental; even a perfect renderer does not get this data.
 **The mechanism of the correction is worth keeping.** Plain retrieval, sending
 no `User-Agent`, received HTTP 200 and 172 KB of meaningless shell — an
 ambiguous non-answer that read as a technical limitation. The renderer, sending
-`tehsil-discovery/1.0 (+https://tehsil.app/bot; funding research)`, received a
+`elmify-discovery/1.0 (+https://elmify.app/bot; funding research)`, received a
 clear refusal naming its reason. Identifying honestly is what produced a usable
 answer; anonymity produced noise that pointed at the wrong conclusion.
 

@@ -409,3 +409,68 @@ def test_populated_summary_without_a_matching_fact_blocks(agency_a, django_user_
             mark_ready(document=draft, accepted_by=student)
         draft.refresh_from_db()
         assert draft.status == DocumentDraft.Status.DRAFT
+
+
+def test_approving_queues_preparation_for_the_students_applications(
+    agency_a, django_user_model, monkeypatch, django_capture_on_commit_callbacks
+):
+    from apps.portals import prepare
+
+    sent = []
+    monkeypatch.setattr(
+        prepare, "enqueue_document_work", lambda message, **_kw: sent.append(message)
+    )
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "prep1")
+        draft = create_draft(
+            student=student, kind=DocumentDraft.Kind.CV, content=_content(),
+            facts=[_supporting_fact(student)],
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            mark_ready(document=draft, accepted_by=student)
+    assert [(m.action, m.student_id) for m in sent] == [("prepare_documents", student.id)]
+
+
+def test_approval_stands_when_preparation_cannot_be_queued(
+    agency_a, django_user_model, monkeypatch, django_capture_on_commit_callbacks
+):
+    from apps.portals import prepare
+
+    def _down(message, **_kw):
+        raise RuntimeError("queue down")
+
+    monkeypatch.setattr(prepare, "enqueue_document_work", _down)
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "prep2")
+        draft = create_draft(
+            student=student, kind=DocumentDraft.Kind.CV, content=_content(),
+            facts=[_supporting_fact(student)],
+        )
+        with django_capture_on_commit_callbacks(execute=True):
+            approved = mark_ready(document=draft, accepted_by=student)
+        approved.refresh_from_db()
+        assert approved.status == DocumentDraft.Status.APPROVED
+
+
+def test_mark_ready_refuses_a_letter_draft_called_directly(agency_a, django_user_model):
+    """Letter drafts must go through mark_letter_ready so gate violations,
+    counselor flags, and immigration UNCERTAIN rules cannot be bypassed."""
+    from apps.documents.letter_schemas import LetterContent, LetterUnit
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "letter-direct")
+        letter_content = LetterContent(
+            language="en",
+            units=(LetterUnit(archetype="WHY_PROGRAMME", text="I studied in Berlin."),),
+        )
+        draft = DocumentDraft.objects.create(
+            student=student,
+            kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            version=1,
+            content=letter_content.model_dump(mode="json"),
+            status=DocumentDraft.Status.DRAFT,
+        )
+        with pytest.raises(ApprovalBlocked, match="mark_letter_ready"):
+            mark_ready(document=draft, accepted_by=student)
+        draft.refresh_from_db()
+        assert draft.status == DocumentDraft.Status.DRAFT

@@ -340,7 +340,7 @@ recorded as `SourceBlocked: source returned HTTP 403`:
 |---|---|
 | no `User-Agent` (what `egress.py` sent) | **403** |
 | `python-urllib3/2.0` | **403** |
-| `TehsilAgent/1.0 (+https://…)` | **200** |
+| `Elmify/1.0 (+https://…)` | **200** |
 | browser mimic | 200 |
 | curl, any header set | 200 |
 

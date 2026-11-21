@@ -40,7 +40,7 @@ Initial coverage run after Tasks 1–4 was RED: `19 passed` but combined coverag
 The final command and observed output were:
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest \
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest \
   tests/research/test_controlled_egress_validation.py \
   tests/research/test_fairness_validation.py \
   --cov=scripts.validate_controlled_egress \
@@ -62,7 +62,7 @@ Observed result: `28 passed in 0.34s`; the coverage gate reported
 ## Complete local verification
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest -m "not aws" -q
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest -m "not aws" -q
 ```
 
 Observed result: `68 passed, 2 deselected in 3.87s`. `uv` also reported that the active
@@ -70,7 +70,7 @@ Observed result: `68 passed, 2 deselected in 3.87s`. `uv` also reported that the
 was available at `127.0.0.1:5432`; no AWS-marked test ran and no AWS request occurred.
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run pytest \
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run pytest \
   tests/integration/test_controlled_egress.py \
   tests/integration/test_sqs_fair_queue.py \
   -q
@@ -80,25 +80,25 @@ Observed result: `2 skipped in 0.09s`. With both live environment variables abse
 the `aws`-marked tests skipped before making an AWS request.
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run ruff check .
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run ruff check .
 ```
 
 Observed result: `All checks passed!`
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run mypy apps config
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run mypy apps config
 ```
 
 Observed result: `Success: no issues found in 54 source files`.
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run python manage.py check
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run python manage.py check
 ```
 
 Observed result: `System check identified no issues (0 silenced).`
 
 ```text
-UV_CACHE_DIR=/tmp/tehsil-agent-uv-cache uv run python manage.py makemigrations --check --dry-run
+UV_CACHE_DIR=/tmp/elmify-uv-cache uv run python manage.py makemigrations --check --dry-run
 ```
 
 Observed result: `No changes detected`. Django emitted a runtime warning while checking

@@ -39,14 +39,6 @@ COMMON_CURRENCIES = (
     ("KRW", "KRW — South Korean won"),
 )
 
-EVIDENCE_TYPES = (
-    ("", "Choose…"),
-    ("TEST", "Test score (IELTS, TOEFL, TestDaF…)"),
-    ("DEGREE", "A degree taught in this language"),
-    ("ATTESTED", "Letter from my university"),
-    ("OTHER", "Other"),
-)
-
 #: Readable names for the closed answers, shared with the review screen.
 CHOICE_LABELS: Mapping[str, Mapping[str, str]] = {
     "funding_dependency": {
@@ -57,7 +49,7 @@ CHOICE_LABELS: Mapping[str, Mapping[str, str]] = {
     "career_intent": {
         "WORK_ABROAD": "Work in that country",
         "RETURN_HOME": "Return home",
-        "PHD": "Continue to a PhD",
+        "PHD": "Go into academic research",
         "UNDECIDED": "Not sure yet",
     },
 }
@@ -96,17 +88,12 @@ def country_code(text: str) -> str | None:
     return _BY_NAME.get(cleaned.casefold())
 
 
-_OPTIONAL = mark_safe(' <span class="muted">(optional)</span>')  # nosec B703 B308 - constant
-
-
 @dataclass(frozen=True)
 class Part:
     name: str
     label: str
     kind: str = "text"  # text | number | date | select
     choices: Sequence[tuple[str, str]] = ()
-    hint: str = ""
-    optional: bool = False
 
 
 def _input(part: Part, input_id: str, input_name: str, value: str) -> SafeString:
@@ -132,84 +119,47 @@ def _input(part: Part, input_id: str, input_name: str, value: str) -> SafeString
 
 
 class StructuredWidget(forms.Widget):
-    """Renders `rows` copies of `parts`; returns their values as one JSON string.
-
-    `shape` turns the list of filled-in rows into the answer: a single object,
-    or a list of objects. A row with every part blank is not an answer.
-    """
+    """Renders structured sub-inputs for a single composite question."""
 
     is_composite = True
 
-    def __init__(self, parts: Sequence[Part], *, rows: int = 1, many: bool = False) -> None:
+    def __init__(self, parts: Sequence[Part]) -> None:
         super().__init__()
         self.parts = tuple(parts)
-        self.rows = rows
-        self.many = many
 
-    def _field_name(self, name: str, row: int, part: Part) -> str:
-        return f"{name}_{row}_{part.name}" if self.rows > 1 else f"{name}_{part.name}"
-
-    def value_from_datadict(self, data: Any, files: Any, name: str) -> Any:
-        if name in data:  # a JSON value posted directly
-            return data.get(name)
-        rows = []
-        for row in range(self.rows):
-            values = {
-                part.name: str(data.get(self._field_name(name, row, part), "")).strip()
-                for part in self.parts
-            }
-            if any(values.values()):
-                rows.append({key: value for key, value in values.items() if value})
-        if not rows:
-            return ""
-        return json.dumps(rows if self.many else rows[0])
-
-    def _rows_from(self, value: Any) -> list[dict[str, Any]]:
+    def _row_from(self, value: Any) -> dict[str, Any]:
         if isinstance(value, str):
             try:
                 value = json.loads(value) if value else None
             except ValueError:
-                return []
+                return {}
         if isinstance(value, dict):
-            return [value]
-        if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-        return []
+            return value
+        if isinstance(value, list) and value and isinstance(value[0], dict):
+            return value[0]
+        return {}
 
     def render(
         self, name: str, value: Any, attrs: dict[str, Any] | None = None, renderer: Any = None
     ) -> SafeString:
-        filled = self._rows_from(value)
-        groups = []
-        for row in range(self.rows):
-            current = filled[row] if row < len(filled) else {}
-            cells = []
-            for part in self.parts:
-                input_name = self._field_name(name, row, part)
-                input_id = f"id_{input_name}"
-                raw = current.get(part.name, "")
-                hint = (
-                    format_html('<small class="muted">{}</small>', part.hint) if part.hint else ""
+        current = self._row_from(value)
+        cells = []
+        for part in self.parts:
+            input_name = f"{name}_{part.name}"
+            input_id = f"id_{input_name}"
+            raw = current.get(part.name, "")
+            cells.append(
+                format_html(
+                    '<p class="q-part"><label for="{}">{}</label>{}</p>',
+                    input_id,
+                    part.label,
+                    _input(part, input_id, input_name, "" if raw is None else str(raw)),
                 )
-                cells.append(
-                    format_html(
-                        '<p class="q-part"><label for="{}">{}{}</label>{}{}</p>',
-                        input_id,
-                        part.label,
-                        _OPTIONAL if part.optional else "",
-                        _input(part, input_id, input_name, "" if raw is None else str(raw)),
-                        hint,
-                    )
-                )
-            heading = (
-                format_html('<p class="q-row-head">{} {}</p>', "Certificate", row + 1)
-                if self.rows > 1
-                else ""
             )
-            groups.append(
-                format_html('<div class="q-row">{}{}</div>', heading, mark_safe("".join(cells)))  # nosec B703 B308 - built from format_html
-            )
-        return format_html('<div class="q-structured">{}</div>', mark_safe("".join(groups)))  # nosec B703 B308 - built from format_html
+        return format_html(
+            '<div class="q-structured"><div class="q-row">{}</div></div>',
+            mark_safe("".join(cells)),  # nosec B703 B308 - built from format_html
+        )
 
 
 def money_widget() -> StructuredWidget:
@@ -218,40 +168,4 @@ def money_widget() -> StructuredWidget:
             Part("amount", "Amount", "number"),
             Part("currency", "Currency", "select", choices=COMMON_CURRENCIES),
         )
-    )
-
-
-def language_evidence_widget() -> StructuredWidget:
-    return StructuredWidget(
-        (
-            Part("language", "Language", hint="For example English or German."),
-            Part("level", "Score or level", hint="For example IELTS 7.0 or C1."),
-            Part("evidence_type", "What it is", "select", choices=EVIDENCE_TYPES),
-            Part("available_by", "Date you have it (or will)", "date"),
-        ),
-        rows=2,
-        many=True,
-    )
-
-
-def academic_history_widget() -> StructuredWidget:
-    return StructuredWidget(
-        (
-            Part("institution", "University"),
-            Part("country_code", "Country", "select", choices=country_choices()),
-            Part("qualification", "Degree", hint="For example BSc or Bachelor of Arts."),
-            Part("field", "Subject"),
-            Part(
-                "grade", "Your grade or GPA", hint="As written on your transcript, e.g. 3.6 or 85."
-            ),
-            Part("grading_scale", "Out of", hint="The top of the scale, e.g. 4.0 or 100."),
-            Part(
-                "completed_on",
-                "Graduation date",
-                "date",
-                hint="Leave empty if you are still studying.",
-                optional=True,
-            ),
-        ),
-        many=True,
     )

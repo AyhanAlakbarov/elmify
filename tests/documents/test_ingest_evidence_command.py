@@ -1,115 +1,115 @@
-"""The evidence-intake command's one gate: whose repository is this?
-
-``repo.authorship()`` reduces to ``contributors.get(owner_login, 0) > 0``, so
-an owner_login nobody verified turns the gate off and a stranger's repository
-becomes the student's skills. There is no verified GitHub account link on a
-profile yet; the command uses a CONFIRMED identity fact instead.
-"""
+"""manage.py ingest_evidence: a DOI through --source; repositories never one at a time."""
 
 import uuid
+from io import StringIO
 
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.utils import timezone
 
-from apps.documents.management.commands.ingest_evidence import confirmed_github_login
-from apps.documents.models import VerifiedFact
+from apps.documents.evidence import facts
+from apps.documents.evidence.refresh import RefreshReport
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.models import Membership
 
 pytestmark = pytest.mark.django_db
 
 
-def _student(agency, django_user_model, *, handle=None, url=None, confirmed=True):
+def _student(agency, django_user_model):
     user = django_user_model.objects.create(username=f"u{uuid.uuid4().hex[:12]}")
-    student = Membership.objects.create(
-        tenant=agency, user=user, role=Membership.Role.STUDENT, active=True
-    )
-    payload = {"full_name": "Jane Doe"}
-    if handle:
-        payload["github_username"] = handle
-    if url:
-        payload["github_url"] = url
-    VerifiedFact.objects.create(
-        student=student,
-        category=VerifiedFact.Category.IDENTITY,
-        payload=payload,
-        source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
-        source_ref="upload:test",
-        confirmed_by=student if confirmed else None,
-        confirmed_at=timezone.now() if confirmed else None,
-        created_by=student,
-    )
-    return student
-
-
-def test_a_confirmed_handle_is_found_by_name_or_by_url(agency_a, django_user_model):
-    with tenant_scope(agency_a.id):
-        by_name = _student(agency_a, django_user_model, handle="0rkhann")
-        by_url = _student(agency_a, django_user_model, url="https://github.com/0rkhann")
-        assert confirmed_github_login(by_name) == "0rkhann"
-        assert confirmed_github_login(by_url) == "0rkhann"
-
-
-def test_an_unconfirmed_handle_is_not_a_handle(agency_a, django_user_model):
-    """Ingestion writes every fact confirmed_by=None; a human accepting it is
-    what turns the CV's printed handle into something we may act on."""
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, handle="0rkhann", confirmed=False)
-        assert confirmed_github_login(student) == ""
-
-
-def test_the_command_refuses_a_repository_the_student_has_not_claimed(
-    agency_a, django_user_model
-):
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, handle="0rkhann")
-    with pytest.raises(CommandError, match="confirmed GitHub handle"):
-        call_command(
-            "ingest_evidence",
-            tenant=str(agency_a.id),
-            student=str(student.id),
-            source="https://github.com/torvalds/linux",
+    with tenant_scope(agency.id):
+        return Membership.objects.create(
+            tenant=agency, user=user, role=Membership.Role.STUDENT, active=True
         )
 
 
 def test_the_command_refuses_a_source_it_cannot_classify(agency_a, django_user_model):
-    with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, handle="0rkhann")
+    student = _student(agency_a, django_user_model)
     with pytest.raises(CommandError, match="unusable source"):
-        call_command(
-            "ingest_evidence",
-            tenant=str(agency_a.id),
-            student=str(student.id),
-            source="https://example.com/whatever",
-        )
+        call_command("ingest_evidence", tenant=str(agency_a.id), student=str(student.id),
+                     source="https://example.com/whatever")
 
 
-@pytest.mark.parametrize(
-    "url",
-    [
-        "https://evil.example/?r=github.com/torvalds",
-        "https://github.com.evil.example/torvalds",
-        "https://not-github.com/torvalds",
-    ],
-)
-def test_a_handle_is_only_taken_from_github_itself(agency_a, django_user_model, url):
-    """The handle decides authorship -- repo.authorship() reduces to
-    `contributors.get(owner_login, 0) > 0` -- so the host it came from is part
-    of the claim. Substring matching on "github.com/" reads all three of these
-    as GitHub; schemas._anchor_text already got this right for the same field
-    ("github.com.evil.example is not GitHub")."""
+def test_the_command_refuses_a_repository_source(agency_a, django_user_model):
+    student = _student(agency_a, django_user_model)
+    with pytest.raises(CommandError, match="--source takes a DOI"):
+        call_command("ingest_evidence", tenant=str(agency_a.id), student=str(student.id),
+                     source="https://github.com/torvalds/linux")
+
+
+def test_without_a_source_the_command_refreshes_and_prints_the_readings(
+    agency_a, django_user_model, monkeypatch
+):
+    student = _student(agency_a, django_user_model)
     with tenant_scope(agency_a.id):
-        student = _student(agency_a, django_user_model, url=url)
-        assert confirmed_github_login(student) == ""
-
-
-def test_a_repository_url_is_not_a_profile(agency_a, django_user_model):
-    """A CV linking a project it merely used would otherwise claim that
-    project's owner as the applicant's handle."""
-    with tenant_scope(agency_a.id):
-        student = _student(
-            agency_a, django_user_model, url="https://github.com/tensorflow/models"
+        facts.save_reading(
+            student, source_kind="github", repo="0rkhann/MicroKatc", changed_at=timezone.now(),
+            reader_version=1, skills=(),
+            reading={"summary": "A solver.", "kind": "project",
+                     "url": "https://github.com/0rkhann/MicroKatc",
+                     "bullets": [{"text": "Built a solver.", "evidence": ["solver"],
+                                  "verdict": "supported"}]},
         )
-        assert confirmed_github_login(student) == ""
+    seen = []
+
+    def _refresh(member, **kwargs):
+        seen.append(kwargs)
+        return RefreshReport(read=["0rkhann/MicroKatc"], model_calls=1, tokens=900,
+                             message="We couldn't find GitHub user x.")
+
+    monkeypatch.setattr(
+        "apps.documents.management.commands.ingest_evidence.refresh_evidence", _refresh
+    )
+    out = StringIO()
+    call_command("ingest_evidence", tenant=str(agency_a.id), student=str(student.id), stdout=out)
+    printed = out.getvalue()
+    assert seen == [{"force": True}]
+    assert "read=1" in printed and "tokens=900" in printed
+    assert "We couldn't find GitHub user x." in printed
+    assert "[github] https://github.com/0rkhann/MicroKatc project: A solver." in printed
+    assert "  - (supported) Built a solver." in printed
+
+
+def _never_refresh(monkeypatch):
+    def _boom(*args, **kwargs):
+        raise AssertionError("refresh_evidence must not run")
+
+    monkeypatch.setattr(
+        "apps.documents.management.commands.ingest_evidence.refresh_evidence", _boom
+    )
+
+
+def test_bad_student_input_is_a_command_error_and_never_refreshes(
+    agency_a, agency_b, django_user_model, monkeypatch
+):
+    _never_refresh(monkeypatch)
+    mine = _student(agency_a, django_user_model)
+    inactive = _student(agency_a, django_user_model)
+    with tenant_scope(agency_a.id):
+        Membership.objects.filter(id=inactive.id).update(active=False)
+    other = _student(agency_b, django_user_model)
+    for tenant, student in (
+        (str(agency_a.id), str(uuid.uuid4())),
+        (str(agency_a.id), str(other.id)),
+        (str(agency_a.id), str(inactive.id)),
+        (str(agency_a.id), "not-a-uuid"),
+        ("not-a-uuid", str(mine.id)),
+    ):
+        with pytest.raises(CommandError):
+            call_command("ingest_evidence", tenant=tenant, student=student)
+
+
+def test_final_3_a_student_being_erased_is_a_command_error_and_never_refreshes(
+    agency_a, django_user_model, monkeypatch
+):
+    from apps.audit.models import DeletionRequest
+
+    _never_refresh(monkeypatch)
+    student = _student(agency_a, django_user_model)
+    with tenant_scope(agency_a.id):
+        DeletionRequest.objects.create(tenant=agency_a, student=student, state="APPROVED")
+    for source in ("", "10.1000/xyz123"):
+        with pytest.raises(CommandError, match="being erased"):
+            call_command("ingest_evidence", tenant=str(agency_a.id), student=str(student.id),
+                         source=source)

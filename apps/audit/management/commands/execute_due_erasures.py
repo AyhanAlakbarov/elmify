@@ -1,28 +1,27 @@
 """Erase every deletion request whose thirty-day window has run out.
 
-THE SCHEDULE IS DEFERRED AND THIS IS A DEPLOYMENT GATE. Nothing invokes this
-on a schedule yet; until the EventBridge rule exists (model it on
-EuropassCanaryRule in infra/template.yaml -- ECS RunTask against
-WorkerTaskDefinition, rate(1 day)), erasures happen by running this by hand.
-A deployment that never invokes it leaves every student who asked to be erased
-locked out indefinitely and never erased, with every screen saying the right
-thing. See CLAUDE.md, "Erasure: the schedule is deferred".
+Invoked daily by `ExecuteDueErasuresRule` in `infra/template.yaml` (ECS
+`RunTask` against `WorkerTaskDefinition`, `rate(1 day)`, `State: ENABLED`),
+which runs under `DATABASE_ROLE=runtime_engine` and `WorkerTaskRole`.
 
 Design: docs/superpowers/specs/2026-09-10-erasure-console-design.md
 """
 
+import logging
 from uuid import UUID
 
 from botocore.exceptions import ClientError  # type: ignore[import-untyped]
 from django.core.management.base import BaseCommand
-from django.db import transaction
 from django.utils import timezone
 
 from apps.audit.deletion import DeletionBlocked, advance_deletion
 from apps.audit.models import DeletionRequest
+from apps.portals.credentials import aws_code
 from apps.tenancy.context import tenant_scope
-from apps.tenancy.db import set_local_tenant
+from apps.tenancy.db import tenant_transaction
 from apps.tenancy.models import Agency
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -38,12 +37,10 @@ class Command(BaseCommand):
                 self._erase_due_for(agency.id)
 
     def _erase_due_for(self, tenant_id: UUID) -> None:
-        with transaction.atomic():
-            # set_local_tenant issues SET LOCAL, so it belongs inside every
-            # transaction and not once per agency. Without it this scan is
-            # legal SQL that returns zero rows under RLS: the command finds
-            # nothing, exits 0, and no erasure ever happens.
-            set_local_tenant(tenant_id)
+        with tenant_transaction(tenant_id):
+            # tenant_transaction issues SET LOCAL inside the transaction.
+            # Without it this scan is legal SQL that returns zero rows under
+            # RLS: the command finds nothing, exits 0, and no erasure ever happens.
             due_ids = list(
                 DeletionRequest.objects.filter(
                     state="APPROVED", execute_after__lte=timezone.now()
@@ -58,8 +55,7 @@ class Command(BaseCommand):
         # between the database says they were never erased.
         for request_id in due_ids:
             try:
-                with transaction.atomic():
-                    set_local_tenant(tenant_id)
+                with tenant_transaction(tenant_id):
                     # select_for_update plus the re-check is what honours a
                     # restore that wins the race: advance_deletion reads state
                     # off the in-memory object, so a request scanned as
@@ -73,5 +69,17 @@ class Command(BaseCommand):
             except (DeletionBlocked, ClientError) as error:
                 # Per request, so one stuck row does not strand the batch. Each
                 # request owns its transaction, so a caught failure leaves
-                # every other erasure committed.
-                self.stderr.write(f"{request_id}: {error}")
+                # every other erasure committed. Never an AWS message: it names
+                # the SecretId, which names the student. DeletionBlocked's are
+                # our own fixed reasons and tell the operator which case it is.
+                if isinstance(error, DeletionBlocked):
+                    reason = str(error)
+                else:
+                    reason = aws_code(error)
+                logger.warning(
+                    "ErasureExecutionFailed request=%s party=%s reason=%s",
+                    request_id,
+                    type(error).__name__,
+                    reason,
+                )
+                self.stderr.write(f"{request_id}: {reason}")

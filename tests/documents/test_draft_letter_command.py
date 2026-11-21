@@ -180,6 +180,33 @@ def test_the_head_and_foot_of_a_formal_letter_are_filled(
     assert "place_and_date" not in kwargs
 
 
+def test_a_later_passport_identity_row_does_not_blank_the_signature(
+    agency_a, django_user_model, tmp_path
+) -> None:
+    from django.utils import timezone
+
+    from apps.documents.models import VerifiedFact
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "draft8")
+        make_identity_fact(student, full_name="Jane Doe")
+        VerifiedFact.objects.create(
+            student=student, category=VerifiedFact.Category.IDENTITY,
+            payload={"date_of_birth": "1999-04-12"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:test", confirmed_by=student,
+            confirmed_at=timezone.now(), created_by=student,
+        )
+        programme = make_program(country_code="DE")
+        _prompt(programme)
+        with patch(
+            "apps.documents.management.commands.draft_letter.render_letter"
+        ) as render:
+            render.return_value = MagicMock(pdf_bytes=b"%PDF", byte_size=4, variant="LETTER_PDF")
+            _run(agency_a, student, programme, render=str(tmp_path / "letter.pdf"))
+    assert render.call_args.kwargs["applicant_name"] == "Jane Doe"
+
+
 def _blocked(programme) -> None:
     from apps.funding.models import Program
     from tests.research.provenance_helpers import make_body, recognise
@@ -208,3 +235,301 @@ def test_the_verdict_is_printed(agency_a, django_user_model) -> None:
         programme = make_program()
         _prompt(programme)
         assert "provenance: UNCONFIRMED (evidence_off_domain)" in _run(agency_a, student, programme)
+
+
+def test_draft_letter_forwards_usable_readings_into_generate_letter(
+    agency_a, django_user_model
+) -> None:
+    from apps.documents.evidence.readings import UsableBullet, UsableReading
+
+    sample = (
+        UsableReading(
+            source="upload",
+            url=None,
+            document_id=None,
+            summary="Bachelor thesis on demand modelling.",
+            kind="thesis",
+            names=("Jane Doe",),
+            first_commit=None,
+            last_commit=None,
+            bullets=(
+                UsableBullet(
+                    text="Built a stochastic demand model.",
+                    evidence=("stochastic demand",),
+                    verdict="supported",
+                ),
+            ),
+        ),
+    )
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "draft-readings")
+        programme = make_program()
+        _prompt(programme)
+        with (
+            patch(
+                "apps.documents.management.commands.draft_letter.usable_readings",
+                return_value=sample,
+            ),
+            patch(
+                "apps.documents.management.commands.draft_letter.generate_letter"
+            ) as gen_mock,
+        ):
+            gen_mock.return_value = MagicMock(
+                content=_content(),
+                retried=False,
+                claim_verdicts=(),
+                gate_violations=(),
+            )
+            call_command(
+                "draft_letter",
+                tenant=str(agency_a.id),
+                student=str(student.id),
+                programme=str(programme.id),
+                cycle="2027",
+                stdout=StringIO(),
+            )
+    assert gen_mock.call_args.kwargs["readings"] == sample
+
+
+def test_draft_letter_plans_storyline_and_discovers_research_fit_when_facts_exist(
+    agency_a, django_user_model
+) -> None:
+    from django.utils import timezone
+
+    from apps.documents.letter_schemas import Storyline
+    from apps.documents.models import NarrativeInput, VerifiedFact
+    from apps.documents.research_fit.service import ResearchFitOutcome
+    from apps.documents.storyline import StorylineCandidates
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "draft-full-pipeline")
+        programme = make_program(country_code="DE")
+        _prompt(programme)
+        now = timezone.now()
+        f1 = VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={"degree_as_awarded": "BSc Computer Science"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="doc:1",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        f2 = VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.RESEARCH,
+            payload={"title": "Distributed Consensus under Packet Loss"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="doc:2",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        f3 = VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EXPERIENCE,
+            payload={"role": "Systems Intern"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="doc:3",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        chosen = Storyline(
+            theme="from empirical packet-loss failure to formal consensus verification",
+            theme_kind="MATCH",
+            anchors=(f1.id, f2.id, f3.id),
+            turn=f2.id,
+            gap="formal model checking for asynchronous networks",
+            assumptions=("because the simulation could not bound worst-case latency",),
+            future="build verified distributed storage systems",
+        )
+        fit_row = NarrativeInput.objects.create(
+            student=student,
+            kind=NarrativeInput.Kind.RESEARCH_FIT,
+            text="The Chair of Distributed Systems teaches formal protocol verification.",
+            proposed_by=NarrativeInput.ProposedBy.ENGINE,
+            confirmed_at=now,
+            provenance={
+                "program_id": str(programme.id),
+                "sentence": (
+                    "The Chair of Distributed Systems teaches formal protocol verification."
+                ),
+                "entity": "Chair of Distributed Systems",
+                "source_url": "https://tum.de/distributed",
+                "page_digest": "a" * 64,
+                "kind": "research_group",
+                "rung": 1,
+                "anchor_fact_id": str(f2.id),
+                "judgement": "strong",
+                "topic_hash": "h",
+                "cost_usd": 0.0,
+                "provider": "exa",
+            },
+        )
+        # Hide fit_row from the initial DB load so _ensure_research_fit has to run
+        # propose_research_fit and merge fit_row into inputs.
+        initial_inputs = list(NarrativeInput.objects.none())
+        with (
+            patch(
+                "apps.documents.management.commands.draft_letter.NarrativeInput.objects.filter",
+                return_value=initial_inputs,
+            ),
+            patch(
+                "apps.documents.management.commands.draft_letter.propose_storylines",
+                return_value=StorylineCandidates(candidates=(chosen,)),
+            ) as prop_story,
+            patch(
+                "apps.documents.management.commands.draft_letter.propose_research_fit",
+                return_value=ResearchFitOutcome(
+                    status="matched",
+                    rung=1,
+                    narrative_input=fit_row,
+                    cost_usd=0.0,
+                    model_calls=2,
+                ),
+            ) as prop_fit,
+            patch(
+                "apps.documents.management.commands.draft_letter.generate_letter",
+            ) as gen_mock,
+        ):
+            gen_mock.return_value = MagicMock(
+                content=_content(),
+                retried=False,
+                claim_verdicts=(),
+                gate_violations=(),
+            )
+            call_command(
+                "draft_letter",
+                tenant=str(agency_a.id),
+                student=str(student.id),
+                programme=str(programme.id),
+                cycle="2027",
+                stdout=StringIO(),
+            )
+        assert prop_story.called
+        assert prop_fit.called
+        assert prop_fit.call_args.kwargs["storyline"] == chosen
+        assert gen_mock.call_args.kwargs["storyline"] == chosen
+        assert fit_row.id in gen_mock.call_args.kwargs["inputs"]
+
+
+def test_draft_letter_logs_and_continues_when_storyline_proposal_fails(
+    agency_a, django_user_model
+) -> None:
+    from django.utils import timezone
+
+    from apps.documents.models import VerifiedFact
+    from apps.documents.research_fit.service import ResearchFitOutcome
+    from apps.documents.storyline import StorylineProposalFailure
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "draft-degraded-storyline")
+        programme = make_program(country_code="DE")
+        _prompt(programme)
+        now = timezone.now()
+        for idx, cat in enumerate(
+            (
+                VerifiedFact.Category.EDUCATION,
+                VerifiedFact.Category.RESEARCH,
+                VerifiedFact.Category.EXPERIENCE,
+            )
+        ):
+            VerifiedFact.objects.create(
+                student=student,
+                category=cat,
+                payload={"title": f"fact-{idx}"},
+                source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+                source_ref=f"doc:{idx}",
+                confirmed_by=student,
+                confirmed_at=now,
+                created_by=student,
+            )
+        out = StringIO()
+        with (
+            patch(
+                "apps.documents.management.commands.draft_letter.propose_storylines",
+                side_effect=StorylineProposalFailure("upstream timeout"),
+            ),
+            patch(
+                "apps.documents.management.commands.draft_letter.propose_research_fit",
+                return_value=ResearchFitOutcome(
+                    status="no_match", rung=None, narrative_input=None, cost_usd=0.0, model_calls=0
+                ),
+            ),
+            patch(
+                "apps.documents.management.commands.draft_letter.generate_letter",
+            ) as gen_mock,
+        ):
+            gen_mock.return_value = MagicMock(
+                content=_content(),
+                retried=False,
+                claim_verdicts=(),
+                gate_violations=(),
+            )
+            call_command(
+                "draft_letter",
+                tenant=str(agency_a.id),
+                student=str(student.id),
+                programme=str(programme.id),
+                cycle="2027",
+                stdout=out,
+            )
+        assert "storyline skipped (StorylineProposalFailure): upstream timeout" in out.getvalue()
+        assert gen_mock.call_args.kwargs["storyline"] is None
+
+
+def test_other_draft_programmes_auto_populate_forbidden_institution_names(
+    agency_a, django_user_model
+) -> None:
+    from apps.documents.models import DocumentDraft
+    from apps.documents.research_fit.service import ResearchFitOutcome
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "draft-auto-forbid")
+        target_prog = make_program(country_code="DE")
+        target_prog.institution.name = "TU Munich"
+        target_prog.institution.save(update_fields=["name"])
+        other_prog = make_program(country_code="CH")
+        other_prog.institution.name = "ETH Zurich"
+        other_prog.institution.save(update_fields=["name"])
+        _prompt(target_prog)
+        DocumentDraft.objects.create(
+            student=student,
+            programme=other_prog,
+            kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            version=1,
+            content={},
+        )
+        out = StringIO()
+        with (
+            patch(
+                "apps.documents.management.commands.draft_letter.propose_research_fit",
+                return_value=ResearchFitOutcome(
+                    status="no_match", rung=None, narrative_input=None, cost_usd=0.0, model_calls=0
+                ),
+            ),
+            patch(
+                "apps.documents.management.commands.draft_letter.generate_letter",
+            ) as gen_mock,
+        ):
+            gen_mock.return_value = MagicMock(
+                content=_content(),
+                retried=False,
+                claim_verdicts=(),
+                gate_violations=(),
+            )
+            call_command(
+                "draft_letter",
+                tenant=str(agency_a.id),
+                student=str(student.id),
+                programme=str(target_prog.id),
+                cycle="2027",
+                stdout=out,
+            )
+        forbidden = gen_mock.call_args.kwargs["forbidden_institution_names"]
+        assert "ETH Zurich" in forbidden
+        assert "TU Munich" not in forbidden
+
+

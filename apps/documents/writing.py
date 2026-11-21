@@ -45,7 +45,7 @@ from .approval import ApprovalBlocked, verdicts_for
 from .document_queue import DocumentWorkMessage, enqueue_document_work
 from .models import DocumentDraft, TranscriptPage, VerifiedFact
 from .templatetags.cv_countries import country_name
-from .verification import fact_label, generatable_facts, unsuperseded_facts
+from .verification import fact_label, generatable_facts
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,13 @@ class LetterRow:
         if latest is None or not isinstance(latest.content, dict):
             return ""
         return str(latest.content.get("header_block") or "")
+
+    @property
+    def letter_requirements(self) -> tuple[str, ...]:
+        from .workspace import requirements_for
+
+        reqs = requirements_for(self.application)
+        return reqs.letter or reqs.other
 
 
 @dataclass(frozen=True)
@@ -198,20 +205,53 @@ def _transcript(student: Membership) -> dict[str, object] | None:
     }
 
 
+CV_VARIANT_LABELS = {
+    "GERMAN_TABULAR": "German Tabular CV",
+    "EUROPASS": "Europass CV",
+    "EUROPASS_API": "Europass CV",
+    "FUNDER_TEMPLATE": "Funder Template CV",
+    "FIELD_MAPPED": "Portal Field-Mapped CV",
+    "STANDARD": "Standard Academic CV",
+}
+
+
 def _writable(application: Application) -> bool:
     candidate = application.candidate
     return candidate is not None and candidate.program_id == application.program_id
 
 
-def page_context(student: Membership) -> dict[str, object]:
-    facts = list(unsuperseded_facts(student).filter(confirmed_by__isnull=True))
+def page_context(student: Membership, selected_cv_id: str = "") -> dict[str, object]:
+    from . import reupload
+    from .verification import confirm_candidates, has_full_name
+
+    pending_ids = {c.fact.id for c in reupload.pending_changes(student)}
+    facts = [
+        fact
+        for fact in confirm_candidates(student)
+        if not fact.source_ref.startswith("document:") and fact.id not in pending_ids
+    ]
     confirmed = generatable_facts(student)
     cv_drafts = list(
         DocumentDraft.objects.filter(student=student, kind=DocumentDraft.Kind.CV).order_by(
             "-version"
         )
     )
-    latest_cv = cv_drafts[0] if cv_drafts else None
+    for d in cv_drafts:
+        d.variant_label = CV_VARIANT_LABELS.get(  # type: ignore[attr-defined]
+            d.render_variant or "STANDARD", "Standard Academic CV"
+        )
+        fallback_title = (
+            "General Master CV"
+            if d.is_general or not d.programme_id
+            else "Tailored Programme CV"
+        )
+        d.target_title = (  # type: ignore[attr-defined]
+            d.destination_label.strip() if d.destination_label else fallback_title
+        )
+    latest_cv = (
+        next((d for d in cv_drafts if str(d.id) == selected_cv_id), None)
+        or (cv_drafts[0] if cv_drafts else None)
+    )
 
     applications = list(
         Application.objects.filter(student=student)
@@ -223,25 +263,29 @@ def page_context(student: Membership) -> dict[str, object]:
     for draft in DocumentDraft.objects.filter(
         student=student, kind=DocumentDraft.Kind.MOTIVATION_LETTER
     ).order_by("-version"):
-        if draft.programme_id is not None:
-            letters.setdefault(draft.programme_id, []).append(draft)
+        target_id = draft.programme_id or draft.funding_opportunity_id
+        if target_id is not None:
+            letters.setdefault(target_id, []).append(draft)
     rows = [
         LetterRow(
             application=application,
-            drafts=letters.get(application.program_id, []),
+            drafts=letters.get(
+                application.program_id
+                or (application.candidate.opportunity_id if application.candidate else None),  # type: ignore[arg-type]
+                [],
+            ),
             note=LETTER_NOTES.get(application.letter_note, ""),
             writable=_writable(application),
         )
         for application in applications
     ]
+    rows.sort(key=lambda r: (0 if r.writable else 1))
     return {
         "facts": facts,
         "fact_views": [_fact_view(fact) for fact in facts],
         "confirm_body": json.dumps({"fact_ids": [str(fact.id) for fact in facts]}),
         "confirmed_count": confirmed.count(),
-        "identity_confirmed": confirmed.filter(
-            category=VerifiedFact.Category.IDENTITY
-        ).exists(),
+        "identity_confirmed": has_full_name(confirmed).exists(),
         "has_email": bool(student.application_email),
         "cv_drafts": cv_drafts,
         "latest_cv": latest_cv,
@@ -255,7 +299,8 @@ def page_context(student: Membership) -> dict[str, object]:
 @login_required
 def writing_page(request: HttpRequest) -> HttpResponse:
     student = current_membership(request, Membership.Role.STUDENT)
-    return render(request, "student/writing.html", page_context(student))
+    selected_cv_id = request.GET.get("cv", "")
+    return render(request, "student/writing.html", page_context(student, selected_cv_id))
 
 
 #: Where a letter action may send the student back to: the letter workspace
@@ -341,6 +386,13 @@ def letter_approve(request: HttpRequest, draft_id: UUID) -> HttpResponse:
     )
     if application is None:
         messages.error(request, "This letter's application was removed.")
+        return _back(request)
+    if application.letter_state in ("QUEUED", "CHECKING"):
+        return _back(request)
+    if rate_limited(
+        "letter-approve", student.id, limit=_LETTER_REQUESTS_PER_HOUR, window_seconds=3600
+    ):
+        messages.error(request, LETTER_NOTES["rate_limited"])
         return _back(request)
     if not _enqueue(
         DocumentWorkMessage(

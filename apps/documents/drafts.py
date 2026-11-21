@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING
 
 from django.db import models, transaction
 
-from apps.funding.models import Program
+from apps.funding.models import FundingOpportunity, Program
 from apps.tenancy.models import Membership
 
 from .audit import record_event
 from .models import DocumentDraft, DocumentDraftFact, VerifiedFact
+from .requirement_list import RequirementList
 from .schemas import CVContent
+
+if TYPE_CHECKING:
+    from apps.portals.models import Application
 
 
 def attach_source_facts(*, document: DocumentDraft, facts: Iterable[VerifiedFact]) -> None:
@@ -30,7 +35,13 @@ def create_draft(
     content: CVContent,
     facts: Iterable[VerifiedFact] = (),
     programme: Program | None = None,
+    funding_opportunity: FundingOpportunity | None = None,
+    application: Application | None = None,
+    requirements: RequirementList | None = None,
+    destination_label: str = "",
+    is_general: bool = False,
     render_variant: str = "",
+    applied_fixes: Sequence[Mapping[str, object]] = (),
     actor: Membership | None = None,
 ) -> DocumentDraft:
     """Append a new draft version. Same locking shape as create_profile_version.
@@ -52,7 +63,14 @@ def create_draft(
         version=latest + 1,
         content=content.model_dump(mode="json"),
         programme=programme,
+        funding_opportunity=funding_opportunity,
+        application=application,
+        requirements=requirements.model_dump(mode="json") if requirements is not None else None,
+        requirements_digest=requirements.digest() if requirements is not None else "",
+        destination_label=destination_label,
+        is_general=is_general,
         render_variant=render_variant,
+        applied_fixes=[dict(fix) for fix in applied_fixes],
         status=DocumentDraft.Status.DRAFT,
     )
     attach_source_facts(document=draft, facts=facts)

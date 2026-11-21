@@ -12,7 +12,8 @@ from apps.privacy import requests
 from apps.privacy.models import PrivacyRequest
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.db import tenant_transaction
-from apps.tenancy.models import Membership, TenantDomain
+from apps.tenancy.models import Membership
+from apps.tenancy.services import TenantHostInvalid, resolve_verified_domain
 
 
 class Command(BaseCommand):
@@ -35,13 +36,16 @@ class Command(BaseCommand):
         received: str | None = None,
         **options: object,
     ) -> None:
-        domain = TenantDomain.objects.filter(host=host, verified_at__isnull=False).first()
-        if domain is None:
-            raise CommandError(f"no verified tenant host {host!r}")
+        try:
+            domain = resolve_verified_domain(host)
+        except TenantHostInvalid as exc:
+            raise CommandError(f"no verified tenant host {host!r}") from exc
         try:
             moment = parse_datetime(received) if received else timezone.now()
-        except ValueError:
-            moment = None
+        except ValueError as exc:
+            raise CommandError(
+                f"--received must be an ISO 8601 datetime with a timezone ({exc})"
+            ) from exc
         if moment is None or timezone.is_naive(moment):
             raise CommandError("--received must be an ISO 8601 datetime with a timezone")
         # A command is not a request path: nothing has set the manager's scope or the

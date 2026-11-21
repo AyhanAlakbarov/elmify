@@ -28,11 +28,13 @@ class VerifiedFact(TenantScopedModel):
         #: confirmable (and contradictable) on its own before their name and
         #: address reach a funder.
         REFERENCE = "REFERENCE"
-        #: Who the CV is about. Payload is {"full_name": ...} and nothing
-        #: else -- the contact address is the address the student applies
-        #: with (see Membership.application_email: the connected mailbox's
-        #: address, or one the student declared and confirmed), not a fact
-        #: anyone confirms.
+        #: Who the CV is about. A CV's row carries full_name and its
+        #: contact keys; a passport read writes one row per person key
+        #: (date_of_birth, citizenship, ...), so a reader looking for the name
+        #: filters on `full_name` (verification.has_full_name). The contact address
+        #: is the address the student applies with (see
+        #: Membership.application_email: the connected mailbox's address, or
+        #: one the student declared and confirmed), not a fact anyone confirms.
         IDENTITY = "IDENTITY"
         #: A span of time no education or experience entry covers, and the one
         #: line that accounts for it. Its own category because neither
@@ -42,6 +44,16 @@ class VerifiedFact(TenantScopedModel):
         #: job-hunting") has neither. Required by ETH, TUM (no gap over three
         #: months), DAAD PRIME (R-011), uni-assist (R-020) and Harvard GSD.
         TIMELINE = "TIMELINE"
+        #: A course certificate or professional licence (CVContent.certifications).
+        #: Its own category: an award is an honour granted on merit, this is a
+        #: thing completed, and the CV prints them under different headings.
+        CERTIFICATION = "CERTIFICATION"
+        #: One identity document the student holds -- a passport, an ID card or a
+        #: residence permit (spec 2026-10-12 §4.2). A row per document, keyed by
+        #: source_ref "document:<DocumentVersion id>", because a dual national
+        #: holds two and a renewal leaves the old one behind. Never reaches
+        #: generation (verification.generatable_facts drops it).
+        ID_DOCUMENT = "ID_DOCUMENT"
 
     class SourceTier(models.TextChoices):
         AUTHORITATIVE_DOCUMENT = "AUTHORITATIVE_DOCUMENT"
@@ -100,6 +112,8 @@ class VerifiedFact(TenantScopedModel):
                         "IDENTITY",
                         "REFERENCE",
                         "TIMELINE",
+                        "CERTIFICATION",
+                        "ID_DOCUMENT",
                     )
                 ),
                 name="verifiedfact_category_valid",
@@ -187,6 +201,24 @@ class DocumentDraft(TenantScopedModel):
             blank=True,
         )
     )
+    #: The application this CV was made for. SET_NULL: removing the card must
+    #: not be blocked by, or take, the draft the student already has.
+    application = models.ForeignKey(
+        "portals.Application",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="cv_drafts",
+    )
+    #: The RequirementList this CV was built against (model_dump, json mode).
+    #: Null: made before step 4.2 or without a list.
+    requirements = models.JSONField(null=True, blank=True)
+    #: {item id: {"state": ItemState, "reason": str}}; reasons can name student
+    #: entries, so this column is redacted on erasure.
+    requirement_states = models.JSONField(default=dict, blank=True)
+    requirements_digest = models.CharField(max_length=64, blank=True, default="")
+    destination_label = models.CharField(max_length=300, blank=True, default="")
+    is_general = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     approved_by = models.ForeignKey(
         Membership, null=True, blank=True, on_delete=models.PROTECT, related_name="+"
@@ -211,6 +243,15 @@ class DocumentDraft(TenantScopedModel):
     approval_mode = models.CharField(
         max_length=20, choices=ApprovalMode.choices, default=ApprovalMode.PER_DOCUMENT
     )
+    #: Spec §5.5: every automatic fix generation applied (or skipped because the
+    #: student undid it), each with the student's original text beside it, as
+    #: cv_fixes.AppliedFix.as_json() rows. Student text, so REDACTED on erasure.
+    #: Defaults to [] so drafts written before Stage 3 need no data migration.
+    applied_fixes = models.JSONField(default=list, blank=True)
+    #: Non-binding constraint violations from the release render (spec §8.5):
+    #: list of {"rule_id", "key", "enforcement", "rule_text", "detail"}.
+    #: REDACTED on erasure: a detail can name a gap year or an item count.
+    render_warnings = models.JSONField(default=list, blank=True)
 
     class Meta:
         constraints = [
@@ -484,6 +525,18 @@ class TranscriptReading(TenantScopedModel):
     #: transcript.Row dumps, every row the reader cut, in reading order: what a highlight's
     #: row or semester `ref` names -- `record` keeps courses only and carries no index.
     rows = models.JSONField(default=list)
+    #: "<row index>:<cell>" -> the object key of a PNG of that cell on the original page, for
+    #: the cells the student is asked about (storage.crop_key). A cell with no position on its
+    #: page (a text-layer page, a blank cell, a reading from before plan 3a) has no entry.
+    crops = models.JSONField(default=dict)
+    #: The student's answer to each doubtful cell of the transcript check (plan 3b):
+    #: "<item ref>" -> {"choice": "matches" | "fix" | "cant_read", "value": "...", "at": iso}.
+    #: Kept beside the reader's values, which are never overwritten (spec §6.2, §6.6).
+    answers = models.JSONField(default=dict)
+    #: "Something's wrong", or a cell the student could not read: someone looks. Never blocks
+    #: accepting the reading.
+    review_requested_at = models.DateTimeField(null=True, blank=True)
+    review_reason = models.CharField(max_length=500, blank=True)
     accepted = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -492,6 +545,54 @@ class TranscriptReading(TenantScopedModel):
             models.UniqueConstraint(
                 fields=("tenant", "id"), name="transcriptreading_tenant_id_uniq"
             )
+        ]
+
+
+class DocumentReading(TenantScopedModel):
+    """One read of one passport, ID card, diploma or certificate (spec 2026-10-12 §6.1).
+
+    `values` holds what was read and how it was proven -- the normalised value, the
+    printed snippet it came from (at most 200 characters) and a closed `why` code --
+    never Azure's raw answer or a model's. One row per (document, reader_version):
+    a new reader version re-reads, the same one never does.
+    """
+
+    class State(models.TextChoices):
+        QUEUED = "QUEUED"
+        READING = "READING"
+        DELAYED = "DELAYED"
+        READ = "READ"
+        FAILED = "FAILED"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    document = models.ForeignKey(
+        "concierge.DocumentVersion", on_delete=models.PROTECT, related_name="readings"
+    )
+    kind = models.CharField(max_length=30)
+    state = models.CharField(max_length=8, choices=State.choices, default=State.QUEUED)
+    failure = models.CharField(max_length=30, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(null=True, blank=True)
+    reader_version = models.CharField(max_length=20)
+    file_sha256 = models.CharField(max_length=64, blank=True)
+    azure_pages = models.PositiveSmallIntegerField(default=0)
+    #: When pages were last added to azure_pages: the daily ceiling counts by this,
+    #: never by updated_at, which any later save (a passport choice) moves.
+    azure_billed_at = models.DateTimeField(null=True, blank=True)
+    values = models.JSONField(default=list)
+    facts_written = models.BooleanField(default=False)
+    #: The student chose this ID document for portals (spec §4.2); latest wins.
+    primary_chosen_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("tenant", "id"), name="documentreading_tenant_id_uniq"),
+            models.UniqueConstraint(
+                fields=("document", "reader_version"), name="documentreading_once_per_version"
+            ),
         ]
 
 
@@ -595,3 +696,272 @@ class TranscriptPage(TenantScopedModel):
                 name="transcriptpage_one_live_page_per_slot",
             ),
         ]
+
+
+class Referee(TenantScopedModel):
+    """One professor the student asked for letters (lanes spec §3.2, §11.2).
+
+    Third-party personal data, kept minimal: what the request package and the plan
+    need, nothing more. Redacted with the student (apps/audit/redaction.py); nothing
+    else in the system reads it, and Elmify staff never see it.
+    """
+
+    class Kind(models.TextChoices):
+        ACADEMIC = "ACADEMIC", "Academic"
+        PROFESSIONAL = "PROFESSIONAL", "Professional"
+
+    class Status(models.TextChoices):
+        #: Planned with.
+        ACTIVE = "ACTIVE", "Writing for you"
+        #: Said no: never proposed again until the student says otherwise.
+        DECLINED = "DECLINED", "Declined"
+        #: Stopped answering: treated as declined by the plan, kept apart because the
+        #: student may still hear back.
+        SILENT = "SILENT", "Not answering"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="referees")
+    name = models.CharField(max_length=200)
+    #: "Prof.", "Dr." -- as the student addresses them.
+    title = models.CharField(max_length=60, blank=True)
+    institution = models.CharField(max_length=300, blank=True)
+    email = models.EmailField(max_length=320, blank=True)
+    #: The student says the address is the university's own, not a personal one.
+    institutional_email = models.BooleanField(default=False)
+    #: Not in spec §3.2's list: a programme's `kind` (ACADEMIC/PROFESSIONAL) can be
+    #: met only if the referee's is known.
+    kind = models.CharField(max_length=12, choices=Kind.choices, default=Kind.ACADEMIC)
+    #: The student's own words: courses, grades and projects with this professor.
+    relationship = models.TextField(max_length=1000, blank=True)
+    #: How many portal requests (PORTAL_INVITE, REFEREE_SENDS) they agreed to.
+    agreed_requests = models.PositiveSmallIntegerField(default=0)
+    gives_generic_letter = models.BooleanField(default=False)
+    status = models.CharField(max_length=8, choices=Status.choices, default=Status.ACTIVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def label(self) -> str:
+        """How the student names them: "Prof. Rauf Aliyev"."""
+        return f"{self.title} {self.name}".strip()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("tenant", "id"), name="referee_tenant_id_uniq"),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=("ACADEMIC", "PROFESSIONAL")),
+                name="referee_kind_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(status__in=("ACTIVE", "DECLINED", "SILENT")),
+                name="referee_status_valid",
+            ),
+        ]
+
+
+class RefereeRequest(TenantScopedModel):
+    """One professor asked for one application's letter (lanes spec §3.2, §11.2)."""
+
+    class Mode(models.TextChoices):
+        #: grammar.REFEREE_FIELDS["mode"], copied from the card's requirement.
+        UPLOAD_GENERIC = "UPLOAD_GENERIC", "A general letter you upload"
+        UPLOAD_ADDRESSED = "UPLOAD_ADDRESSED", "A letter addressed to the programme, you upload"
+        PORTAL_INVITE = "PORTAL_INVITE", "The portal emails them an invitation"
+        REFEREE_SENDS = "REFEREE_SENDS", "They send it themselves"
+        NOT_STATED = "NOT_STATED", "Not stated — check the page"
+
+    class State(models.TextChoices):
+        PROPOSED = "PROPOSED", "Proposed"
+        ASKED = "ASKED", "Asked"
+        AGREED = "AGREED", "Agreed"
+        DECLINED = "DECLINED", "Declined"
+        SUBMITTED = "SUBMITTED", "Submitted"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    #: PROTECT: a professor is marked, never deleted (Decisions, above).
+    referee = models.ForeignKey(Referee, on_delete=models.PROTECT, related_name="requests")
+    application = models.ForeignKey(
+        "portals.Application", on_delete=models.CASCADE, related_name="referee_requests"
+    )
+    mode = models.CharField(max_length=20, choices=Mode.choices, default=Mode.NOT_STATED)
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PROPOSED)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("tenant", "id"), name="refereerequest_tenant_id_uniq"),
+            models.UniqueConstraint(
+                fields=("referee", "application"), name="refereerequest_one_per_application"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    mode__in=(
+                        "UPLOAD_GENERIC", "UPLOAD_ADDRESSED", "PORTAL_INVITE", "REFEREE_SENDS",
+                        "NOT_STATED",
+                    )
+                ),
+                name="refereerequest_mode_valid",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    state__in=("PROPOSED", "ASKED", "AGREED", "DECLINED", "SUBMITTED")
+                ),
+                name="refereerequest_state_valid",
+            ),
+        ]
+
+
+class EvidenceReading(TenantScopedModel):
+    """One checked reading of one GitHub repository or one uploaded thesis or report
+    (CV evidence spec §9). `reading` is the checked RepoReading, each bullet's support
+    verdict, the dates and where the repo came from (checks.Checked.to_json plus
+    refresh.py's additions).
+
+    Read and written only by apps/documents/evidence/facts.py. Nothing else reads it,
+    which keeps readings out of the confirm list, confirmation, skill tailoring, the
+    portal profile and generatable_facts. Operational data, not a training-derived
+    table, so it points at Membership, not Pseudonym; erasure deletes the rows
+    (audit/deletion.py) after redacting them (audit/redaction.py).
+    """
+
+    class SourceKind(models.TextChoices):
+        GITHUB = "github", "GitHub"
+        PDF = "pdf", "PDF"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    source_kind = models.CharField(max_length=6, choices=SourceKind.choices)
+    #: GitHub's own "owner/name" spelling; "" for a pdf, and after an erasure's redaction.
+    repo = models.CharField(max_length=201, blank=True)
+    document = models.ForeignKey(
+        "concierge.DocumentVersion",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    #: The repo's pushed_at, or the upload's created_at: the re-read rule compares it.
+    changed_at = models.DateTimeField()
+    reader_version = models.PositiveSmallIntegerField()
+    read_at = models.DateTimeField()
+    reading = models.JSONField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant", "id"), name="evidencereading_tenant_id_uniq"
+            ),
+            # `repo != ""`: erasure redacts repo to "" before deleting the rows, and two
+            # redacted readings of one student must not collide on the way out.
+            models.UniqueConstraint(
+                fields=("student", "repo"),
+                condition=models.Q(source_kind="github") & ~models.Q(repo=""),
+                name="evidencereading_one_per_repo",
+            ),
+            models.UniqueConstraint(
+                fields=("student", "document"),
+                condition=models.Q(source_kind="pdf"),
+                name="evidencereading_one_per_document",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(source_kind="github", document__isnull=True)
+                | models.Q(source_kind="pdf", document__isnull=False, repo=""),
+                name="evidencereading_source_shape",
+            ),
+        ]
+
+
+class CvFixRevert(TenantScopedModel):
+    """The student undid an automatic CV fix, or said a short name is printed
+    exactly so (spec §5.5). The row's presence is the decision.
+
+    `subject` is cv_fixes.subject_of(fix, text): a SHA-256 of the fix name and
+    the student's text, never the text. Keyed on the text rather than a fact
+    id, so the decision survives a re-upload of the same CV and an unrelated
+    answer on the same fact; changed text is a new subject and is fixed again.
+    advance_deletion deletes these rows before redaction: redacting every
+    subject to "" would collide on the unique constraint.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    fix = models.CharField(max_length=30)
+    subject = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("tenant", "id"), name="cvfixrevert_tenant_id_uniq"),
+            models.UniqueConstraint(
+                fields=("tenant", "student", "fix", "subject"),
+                name="cvfixrevert_one_per_subject",
+            ),
+        ]
+
+
+class CVRelevanceAnswer(TenantScopedModel):
+    """One relevance answer for one optional CV item against one programme's
+    requirements (relevance.py). A cache, kept for repeatability: the same
+    item against the same requirements gets the same answer on regeneration.
+
+    Digests only -- never the item's text or the requirement sentences. Per
+    student, not shared, so an erasure reaches every row: advance_deletion
+    deletes them outright, and the digest is REDACT as a second line.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    requirements_digest = models.CharField(max_length=64)
+    item_digest = models.CharField(max_length=64)
+    question_version = models.CharField(max_length=40)
+    answer = models.CharField(max_length=20)
+    #: The probability of `answer`.
+    chance = models.FloatField()
+    #: P(unrelated), whatever the answer: what the bar is measured on.
+    unrelated = models.FloatField(default=0.0)
+    model = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("tenant", "id"), name="cvrelevanceanswer_tenant_id_uniq"
+            ),
+            models.UniqueConstraint(
+                fields=(
+                    "tenant",
+                    "student",
+                    "requirements_digest",
+                    "item_digest",
+                    "question_version",
+                ),
+                name="cvrelevanceanswer_one_per_question",
+            ),
+        ]
+
+
+class CVItemChoice(TenantScopedModel):
+    """An item the student put back after the engine left it out of a CV for
+    one programme (spec §7.2: "not asked again"). Read at the next generation.
+
+    program_id, not a ForeignKey: the web tier writes this row and holds no
+    grant on the shared catalogue (Application.program_id has the same shape).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    program_id = models.UUIDField()
+    section = models.CharField(max_length=20)
+    item_digest = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("tenant", "id"), name="cvitemchoice_tenant_id_uniq"),
+            models.UniqueConstraint(
+                fields=("tenant", "student", "program_id", "item_digest"),
+                name="cvitemchoice_once_per_item",
+            ),
+        ]
+

@@ -514,3 +514,469 @@ def test_capture_for_a_removed_application_is_dropped(agency_a, membership_a, mo
             student_id=membership_a.id, application_id=uuid4(),
         )
     )
+
+
+@pytest.fixture
+def prepared(monkeypatch):
+    """What the worker asked prepare_documents to prepare, by application id."""
+    from apps.portals import prepare
+
+    calls = []
+    monkeypatch.setattr(
+        prepare, "prepare_documents", lambda application, **_kw: calls.append(application.id)
+    )
+    return calls
+
+
+def _open_and_withdrawn(agency, student):
+    from uuid import uuid4
+
+    from apps.portals.models import Application
+
+    with tenant_scope(agency.id):
+        open_ = Application.objects.create(tenant=agency, student=student, program_id=uuid4())
+        Application.objects.create(
+            tenant=agency, student=student, program_id=uuid4(), outcome="WITHDRAWN"
+        )
+    return open_
+
+
+def test_a_prepare_message_prepares_each_open_application(agency_a, membership_a, prepared):
+    open_ = _open_and_withdrawn(agency_a, membership_a)
+
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="prepare_documents", kind="PREPARE", tenant_id=agency_a.id,
+            student_id=membership_a.id,
+        )
+    )
+
+    assert prepared == [open_.id]
+
+
+def test_a_preparation_that_fails_is_logged_never_raised(
+    agency_a, membership_a, monkeypatch, caplog
+):
+    from apps.portals import prepare
+
+    def _boom(application, **_kw):
+        raise RuntimeError("bug")
+
+    monkeypatch.setattr(prepare, "prepare_documents", _boom)
+    _open_and_withdrawn(agency_a, membership_a)
+
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="prepare_documents", kind="PREPARE", tenant_id=agency_a.id,
+            student_id=membership_a.id,
+        )
+    )
+
+    assert "PrepareFailed" in caplog.text
+
+
+def test_capture_prepares_the_application_after_the_copy(
+    agency_a, membership_a, monkeypatch, prepared
+):
+    from uuid import uuid4
+
+    from apps.portals import packets
+    from apps.portals.models import Application
+
+    order = []
+    monkeypatch.setattr(
+        packets, "capture_requirements", lambda application: order.append(("copy", prepared[:]))
+    )
+    with tenant_scope(agency_a.id):
+        application = Application.objects.create(
+            tenant=agency_a, student=membership_a, program_id=uuid4()
+        )
+
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="capture_requirements", kind="KIT", tenant_id=agency_a.id,
+            student_id=membership_a.id, application_id=application.id,
+        )
+    )
+
+    assert order == [("copy", [])] and prepared == [application.id]
+
+
+def test_a_render_prepares_the_students_applications(
+    agency_a, membership_a, monkeypatch, fake_store, prepared
+):
+    """Approval queues preparation, but the render it waits on may finish later:
+    a CV is preparable only once rendered, so the render prepares too."""
+    monkeypatch.setattr(
+        document_worker,
+        "render_draft",
+        lambda **kw: RenderedArtifact(
+            variant="STANDARD", pdf_bytes=b"%PDF-1.7", field_mapped=None, page_count=1,
+            byte_size=8,
+        ),
+    )
+    monkeypatch.setattr(document_worker, "_object_store", lambda: fake_store)
+    draft = _approved_draft(agency_a, membership_a, variant="STANDARD")
+    open_ = _open_and_withdrawn(agency_a, membership_a)
+
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="render", kind=DocumentDraft.Kind.CV, tenant_id=agency_a.id,
+            student_id=membership_a.id, draft_id=draft.id,
+        )
+    )
+
+    assert prepared == [open_.id]
+
+
+def test_a_down_parser_stops_the_run_for_every_application(
+    agency_a, membership_a, monkeypatch, caplog
+):
+    from uuid import uuid4
+
+    from apps.documents.ocr_errors import OcrUnavailable
+    from apps.portals import prepare
+    from apps.portals.models import Application
+
+    calls = []
+
+    def _down(application, **_kw):
+        calls.append(application.id)
+        raise OcrUnavailable("down")
+
+    monkeypatch.setattr(prepare, "prepare_documents", _down)
+    with tenant_scope(agency_a.id):
+        for _ in range(2):
+            Application.objects.create(tenant=agency_a, student=membership_a, program_id=uuid4())
+
+    document_worker._prepare(agency_a.id, membership_a.id)
+
+    assert len(calls) == 1
+    assert "PrepareFailed" not in caplog.text
+
+
+def test_one_time_budget_covers_every_application_in_a_run(agency_a, membership_a, monkeypatch):
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from apps.portals import prepare
+    from apps.portals.models import Application
+
+    clock = [0.0]
+    monkeypatch.setattr(document_worker, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    calls = []
+
+    def _slow(application, *, budget, **_kw):
+        calls.append(budget)
+        clock[0] += 10  # the first application spends the run's budget
+        return []
+
+    monkeypatch.setattr(prepare, "prepare_documents", _slow)
+    monkeypatch.setattr(prepare, "PREPARE_BUDGET_SECONDS", 5.0)
+    with tenant_scope(agency_a.id):
+        for _ in range(2):
+            Application.objects.create(tenant=agency_a, student=membership_a, program_id=uuid4())
+
+    document_worker._prepare(agency_a.id, membership_a.id)
+
+    assert calls == [5.0]
+
+
+@pytest.mark.parametrize(("elapsed", "budget"), [(820.0, None), (100.0, 240.0), (700.0, 110.0)])
+def test_preparation_after_a_scan_fits_inside_the_scan_queues_visibility_timeout(
+    agency_a, membership_a, monkeypatch, elapsed, budget
+):
+    """900 s visibility, 90 s for one parser call plus margin: what the scan's own
+    work (a transcript read can take minutes) leaves, capped at 240 s, or nothing."""
+    from types import SimpleNamespace
+
+    clock = [0.0]
+    monkeypatch.setattr(document_worker, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+
+    def _slow_ingest(**_kw):
+        clock[0] += elapsed
+        return ()
+
+    monkeypatch.setattr(document_worker, "ingest_uploaded_cv", _slow_ingest)
+    budgets = []
+    monkeypatch.setattr(
+        document_worker, "_prepare",
+        lambda tenant_id, student_id, **kw: budgets.append(kw.get("budget")),
+    )
+    document = register(agency_a.id, membership_a.id, kind="CV")
+
+    document_worker.handle_scan_result(_event(document))
+
+    assert budgets == ([] if budget is None else [budget])
+
+
+@pytest.fixture
+def queued(monkeypatch):
+    sent = []
+    monkeypatch.setattr(
+        "apps.documents.document_queue.enqueue_document_work",
+        lambda message, **kwargs: sent.append(message),
+    )
+    return sent
+
+
+@pytest.mark.parametrize(
+    "kind,queues", [("CV", True), ("THESIS_OR_REPORT", True), ("PASSPORT", False)]
+)
+def test_a_promoted_cv_or_thesis_queues_an_evidence_refresh(
+    agency_a, membership_a, ingested, queued, django_capture_on_commit_callbacks, kind, queues
+):
+    document = register(agency_a.id, membership_a.id, kind=kind)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        document_worker.handle_scan_result(_event(document))
+
+    refreshes = [m.student_id for m in queued if m.action == "refresh_evidence"]
+    assert refreshes == ([membership_a.id] if queues else [])
+
+
+def test_the_refresh_job_runs_for_an_active_student_only(agency_a, membership_a, monkeypatch):
+    from apps.tenancy.models import Membership
+
+    calls = []
+    monkeypatch.setattr(
+        document_worker.evidence_refresh,
+        "refresh_evidence",
+        lambda student, **kwargs: calls.append(student.id),
+    )
+    message = DocumentWorkMessage(
+        action="refresh_evidence",
+        kind="EVIDENCE",
+        tenant_id=agency_a.id,
+        student_id=membership_a.id,
+    )
+
+    document_worker.handle_document_work(message)
+    with tenant_scope(agency_a.id):
+        Membership.objects.filter(id=membership_a.id).update(active=False)
+    document_worker.handle_document_work(message)
+
+    assert calls == [membership_a.id]
+
+
+def test_final_3_the_refresh_job_never_runs_for_a_student_being_erased(
+    agency_a, membership_a, monkeypatch
+):
+    from apps.audit.models import DeletionRequest
+
+    calls = []
+    monkeypatch.setattr(
+        document_worker.evidence_refresh,
+        "refresh_evidence",
+        lambda student, **kwargs: calls.append(student.id),
+    )
+    with tenant_scope(agency_a.id):
+        DeletionRequest.objects.create(tenant=agency_a, student=membership_a, state="APPROVED")
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="refresh_evidence",
+            kind="EVIDENCE",
+            tenant_id=agency_a.id,
+            student_id=membership_a.id,
+        )
+    )
+    assert calls == []
+
+
+@pytest.mark.django_db(transaction=True)
+def test_no_transaction_is_open_while_the_refresh_runs(agency_a, membership_a, monkeypatch):
+    from django.db import connection
+
+    seen = []
+    monkeypatch.setattr(
+        document_worker.evidence_refresh,
+        "refresh_evidence",
+        lambda student, **kwargs: seen.append(connection.in_atomic_block),
+    )
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="refresh_evidence",
+            kind="EVIDENCE",
+            tenant_id=agency_a.id,
+            student_id=membership_a.id,
+        )
+    )
+    assert seen == [False]
+
+
+def test_funder_template_variant_renders_and_stores_when_opportunity_has_template(
+    agency_a, membership_a, monkeypatch, fake_store
+):
+    from apps.documents.drafts import create_draft
+    from apps.funding.models import FundingFamily, FundingOpportunity, OpportunityScope
+
+    monkeypatch.setattr(document_worker, "_object_store", lambda: fake_store)
+    sisgp = FundingOpportunity.objects.create(
+        canonical_key="sisgp",
+        name="Swedish Institute Scholarship for Global Professionals",
+        family=FundingFamily.PRIVATE_FOUNDATION,
+        scope_type=OpportunityScope.GLOBAL,
+    )
+    with tenant_scope(agency_a.id):
+        draft = create_draft(
+            student=membership_a,
+            kind=DocumentDraft.Kind.CV,
+            content=_content(),
+            funding_opportunity=sisgp,
+            render_variant="FUNDER_TEMPLATE",
+        )
+        DocumentDraft.objects.filter(id=draft.id).update(
+            status=DocumentDraft.Status.APPROVED
+        )
+
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="render",
+            kind=DocumentDraft.Kind.CV,
+            tenant_id=agency_a.id,
+            student_id=membership_a.id,
+            draft_id=draft.id,
+        )
+    )
+    key = (
+        f"tenants/{agency_a.id}/students/{membership_a.id}"
+        f"/documents/{draft.id}/cv-funder-template.pdf"
+    )
+    assert fake_store.get(key).startswith(b"%PDF")
+
+
+def test_a_generate_job_meeting_pending_changes_is_dropped(
+    agency_a, membership_a, monkeypatch, caplog
+):
+    from apps.documents.generation import ChangesPending
+
+    def _pending(**kwargs):
+        raise ChangesPending("settle the changes from the newer CV first")
+
+    monkeypatch.setattr(document_worker, "generate_cv", _pending)
+    with tenant_scope(agency_a.id):
+        make_identity_fact(membership_a)
+
+    with caplog.at_level("WARNING", logger="apps.documents.document_worker"):
+        document_worker.handle_document_work(
+            DocumentWorkMessage(
+                action="generate",
+                kind=DocumentDraft.Kind.CV,
+                tenant_id=agency_a.id,
+                student_id=membership_a.id,
+            )
+        )
+
+    assert "DocumentGenerateChangesPending" in caplog.text
+    with tenant_scope(agency_a.id):
+        assert not DocumentDraft.objects.filter(student=membership_a).exists()
+
+
+def test_a_generate_message_stores_the_applied_fixes(agency_a, membership_a, monkeypatch):
+    from apps.documents.cv_fixes import AppliedFix
+
+    fix = AppliedFix("soft_skill", "e" * 64, "skills", "Teamwork", "")
+    monkeypatch.setattr(
+        document_worker,
+        "generate_cv",
+        lambda **kwargs: GenerationResult(
+            content=_content(), verdicts=(), retried=False, applied_fixes=(fix,)
+        ),
+    )
+    with tenant_scope(agency_a.id):
+        make_identity_fact(membership_a)
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="generate",
+            kind=DocumentDraft.Kind.CV,
+            tenant_id=agency_a.id,
+            student_id=membership_a.id,
+        )
+    )
+    with tenant_scope(agency_a.id):
+        draft = DocumentDraft.objects.get(student=membership_a)
+    assert draft.applied_fixes == [fix.as_json()]
+
+
+def test_a_render_message_persists_the_artifacts_warnings_on_the_draft(
+    agency_a, membership_a, monkeypatch, fake_store
+):
+    from apps.documents.constraints import ConstraintRule, Enforcement
+    from apps.documents.drafts import create_draft
+    from apps.documents.render import ConstraintViolation
+
+    violation = ConstraintViolation(
+        rule=ConstraintRule(
+            rule_id="R-031",
+            key="signature_required",
+            value=True,
+            enforcement=Enforcement.ADVISORY_HIGH_RISK,
+            rule_text="Sign the last page.",
+        ),
+        detail="a signature is required",
+    )
+    monkeypatch.setattr(document_worker, "_object_store", lambda: fake_store)
+    monkeypatch.setattr(
+        document_worker,
+        "render_draft",
+        lambda **kwargs: RenderedArtifact(
+            variant="STANDARD",
+            pdf_bytes=b"%PDF-1.4\n",
+            field_mapped=None,
+            page_count=1,
+            byte_size=9,
+            warnings=(violation,),
+        ),
+    )
+    with tenant_scope(agency_a.id):
+        draft = create_draft(
+            student=membership_a, kind=DocumentDraft.Kind.CV, content=_content()
+        )
+        DocumentDraft.objects.filter(id=draft.id).update(status=DocumentDraft.Status.APPROVED)
+
+    document_worker.handle_document_work(
+        DocumentWorkMessage(
+            action="render",
+            kind=DocumentDraft.Kind.CV,
+            tenant_id=agency_a.id,
+            student_id=membership_a.id,
+            draft_id=draft.id,
+        )
+    )
+    with tenant_scope(agency_a.id):
+        draft.refresh_from_db()
+    assert draft.render_warnings == [
+        {
+            "rule_id": "R-031",
+            "key": "signature_required",
+            "scope": "",
+            "detail": "a signature is required",
+            "source_url": "",
+        }
+    ]
+
+
+def test_left_out_items_reach_the_drafts_change_list(agency_a, membership_a, monkeypatch):
+    from apps.documents.selection import LeftOut
+
+    left = LeftOut(section="awards", text="Old prize (2009)", digest="d" * 64,
+                   reason="before the period the programme asks for")
+
+    def _generate(**kwargs):
+        return GenerationResult(content=_content(), verdicts=(), retried=False, left_out=(left,))
+
+    monkeypatch.setattr(document_worker, "generate_cv", _generate)
+    with tenant_scope(agency_a.id):
+        make_identity_fact(membership_a)
+    document_worker.handle_document_work(DocumentWorkMessage(
+        action="generate", kind=DocumentDraft.Kind.CV, tenant_id=agency_a.id,
+        student_id=membership_a.id,
+    ))
+    with tenant_scope(agency_a.id):
+        draft = DocumentDraft.objects.get(student=membership_a)
+    assert {"kind": "left_out", "section": "awards", "item": "Old prize (2009)",
+            "item_digest": "d" * 64,
+            "reason": "before the period the programme asks for"} in draft.applied_fixes
+
+
+

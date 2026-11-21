@@ -608,3 +608,28 @@ def test_a_gap_statement_is_in_the_tailoring_pool(student):
     pool = fact_pool(student)
 
     assert sorted(f.name for f in pool) == ["DFT", "Full-time carer for a family member."]
+
+
+def test_tailor_skills_with_use_cache_reuses_judged_matches_without_calling_model_twice(
+    student,
+):
+    _skill_fact(student, name="DFT", kind="technique", confirmed=True)
+    wanted = _competency(label="quantum chemistry", requirement="REQUIRED")
+    dft = next(s for s in fact_pool(student) if s.name == "DFT")
+    parser = _parser_returning(
+        ProposedMatches(
+            matches=(ProposedMatch(fact_id=str(dft.fact_id), competency_id=str(wanted.id)),)
+        )
+    )
+
+    first = tailor_skills(
+        student, competencies=[wanted], parser=parser, use_cache=True
+    )
+    second = tailor_skills(
+        student, competencies=[wanted], parser=parser, use_cache=True
+    )
+
+    assert [f.name for f in first.printed] == ["DFT"]
+    assert [f.name for f in second.printed] == ["DFT"]
+    assert len(parser.calls) == 1
+

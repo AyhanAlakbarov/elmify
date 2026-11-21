@@ -1,0 +1,35 @@
+{
+  "name": "Elmify Master's & Scholarship FAQ (Azerbaijan, Europe & UK)",
+  "updatedAt": "2026-11-01",
+  "availableLanguages": ["en", "az", "ru"],
+  "faqs": [
+    {
+      "question": "Is Elmify available in Azerbaijan, and is it free for students?",
+      "answer": "Yes. Elmify is launching first in Azerbaijan in English, Azerbaijani, and Russian, with local application-fee budgeting in AZN, EUR, GBP, and USD. Creating an account, uploading your transcript and CV, and getting your matched postgraduate programmes and scholarships is free during early access."
+    },
+    {
+      "question": "Which countries, scholarships, and degrees do you cover?",
+      "answer": "We cover English-taught and local-language postgraduate degrees across Europe and the UK, paired with Azerbaijan's State Program (Dövlət Proqramı 2022–2028), Intergovernmental Scholarship Programs (HTP / Stipendium Hungaricum), Erasmus Mundus Joint Masters, DAAD, Swedish Institute (SISGP), Chevening, Türkiye Bursları, and NL Scholarship."
+    },
+    {
+      "question": "Does Elmify cover Bachelor's or PhD programmes?",
+      "answer": "Master's degrees (MSc, MA, LLM, MRes) and second-cycle scholarships are live today, and Bachelor's degree support will be done soon. Doctoral (PhD) and postdoctoral calls are not covered so every credit rule, deadline, and funding check stays accurate for your degree level."
+    },
+    {
+      "question": "Does the AI make things up?",
+      "answer": "Every admission or scholarship requirement links directly to the exact sentence on the official university or funder webpage it was read from. Your CV, motivation letters, and essays use only facts you have confirmed from your transcript and profile. When an official page does not state a rule, Elmify flags it as unstated instead of guessing."
+    },
+    {
+      "question": "How does Elmify prepare my CV, motivation letter, and reference briefs?",
+      "answer": "Once you confirm your academic facts, Elmify builds a tailored academic CV, a programme-specific motivation letter, scholarship essays, and distinct talking-point briefs for each of your referees so two recommenders never repeat the same story."
+    },
+    {
+      "question": "Do you submit applications for me?",
+      "answer": "No. You stay in your own browser and press submit yourself on the official university or scholarship portal. Elmify prepares your tailored documents, portal answers, and fee-waiver checks side by side and tracks every deadline."
+    },
+    {
+      "question": "What happens to my data?",
+      "answer": "Your transcripts, CV, and profile answers are used solely to match postgraduate programmes and prepare your application documents. You can export your documents or permanently delete your account and files from Settings at any time."
+    }
+  ]
+}

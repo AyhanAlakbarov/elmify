@@ -737,3 +737,37 @@ def test_the_ledger_carries_every_field_the_audit_added():
         category=VerifiedFact.Category.REFERENCE,
     )
     assert referee["do_not_contact"] is True
+
+
+@pytest.mark.django_db
+def test_a_certification_is_verified_against_its_fact(agency_a, membership_a):
+    from django.utils import timezone
+
+    from apps.documents.models import VerifiedFact
+    from apps.documents.schemas import CertificationEntry
+    from apps.documents.verification import Verdict, fact_payload, verify_against_facts
+    from apps.tenancy.context import tenant_scope
+
+    from .test_render import _content
+
+    cert = CertificationEntry(title="AWS Cloud Practitioner", issuer="Amazon", date="2024-05-01")
+    with tenant_scope(agency_a.id):
+        fact = VerifiedFact.objects.create(
+            student=membership_a, category=VerifiedFact.Category.CERTIFICATION,
+            payload=fact_payload(cert, category=VerifiedFact.Category.CERTIFICATION),
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT, source_ref="upload:test",
+            confirmed_by=membership_a, confirmed_at=timezone.now(), created_by=membership_a,
+        )
+    content = _content().model_copy(update={"certifications": (cert,)})
+    (verdict,) = [v for v in verify_against_facts(content, [fact])
+                  if v.claim_path.startswith("certifications")]
+    assert verdict.verdict == Verdict.SUPPORTED
+    assert fact.payload == {"title": "AWS Cloud Practitioner", "date": "2024-05-01",
+                            "issuer": "Amazon"}
+
+    wrong_year = cert.model_copy(update={"date": cert.date.replace(year=2019)})
+    content = content.model_copy(update={"certifications": (wrong_year,)})
+    (verdict,) = [v for v in verify_against_facts(content, [fact])
+                  if v.claim_path.startswith("certifications")]
+    assert verdict.verdict == Verdict.CONFLICTING
+

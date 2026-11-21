@@ -2,29 +2,70 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Tehsil co-pilot</title>
+    <title>Elmify co-pilot</title>
+    <style>
+      /* Slim while filling: only the progress line and the next step. */
+      main.slim > section:not(#registration) { display: none; }
+    </style>
   </head>
   <body>
     <!-- SHOULD BE DONE BY AYKHAN: this markup is a functional placeholder.
          Every element the dock needs is present and named; the design is his. -->
     <main id="dock">
+      <label><span data-i18n="b_language"></span>
+        <select id="language">
+          <option value="az">Azərbaycanca</option>
+          <option value="tr">Türkçe</option>
+          <option value="ru">Русский</option>
+          <option value="en">English</option>
+        </select>
+      </label>
       <p id="status"></p>
       <p id="message"></p>
       <p id="application-id"></p>
-      <section><h2>Filled</h2><ul id="filled"></ul></section>
-      <section><h2>Your turn</h2><ul id="your-turn"></ul></section>
-      <section><h2>Check these</h2><ul id="mismatches"></ul></section>
+      <p id="progress"></p>
+      <p id="next"></p>
+      <button id="start" type="button" data-i18n="b_start"></button>
+      <button id="stop" type="button" data-i18n="b_stop"></button>
+      <section id="fields"></section>
+      <section><h2 data-i18n="h_documents"></h2><ul id="documents"></ul></section>
+      <section id="choices" hidden><ul id="choice-list"></ul></section>
+      <section id="review" hidden>
+        <h2 data-i18n="h_review"></h2>
+        <ul id="review-todo"></ul>
+        <p data-i18n="review_text"></p>
+        <button id="reviewed" type="button" data-i18n="b_reviewed"></button>
+      </section>
       <section id="registration" hidden>
         <h2 id="registration-question"></h2>
-        <p>Open the email and look at the address it was sent to.</p>
+        <p data-i18n="reg_instruction"></p>
         <button id="arrived-tagged" type="button"></button>
-        <label for="sender">Who sent it?</label>
+        <label for="sender" data-i18n="reg_sender"></label>
         <input id="sender" type="email" placeholder="noreply@example.org" />
-        <button id="arrived-plain" type="button">It went to my address without the + part</button>
-        <button id="arrived-none" type="button">No email came</button>
+        <button id="arrived-plain" type="button" data-i18n="reg_plain"></button>
+        <button id="arrived-none" type="button" data-i18n="reg_none"></button>
       </section>
-      <button id="use-plain" type="button">Use my plain address</button>
-      <button id="unpair" type="button">Disconnect this browser</button>
+      <section id="code" hidden aria-live="polite">
+        <p id="code-text"></p>
+      </section>
+      <button id="use-plain" type="button" data-i18n="b_use_plain"></button>
+      <!-- Bench mode (plan 6): shown only when the server lists forms for this
+           device, i.e. for a platform operator. -->
+      <section id="bench" hidden>
+        <h2 data-i18n="h_bench"></h2>
+        <label><span data-i18n="bench_form"></span> <select id="bench-form"></select></label>
+        <label><span data-i18n="bench_kind"></span>
+          <select id="bench-kind">
+            <option>FORM</option><option>LOGIN</option><option>SIGNUP</option>
+            <option>CONFIRMATION</option><option>OTHER</option>
+          </select>
+        </label>
+        <label id="bench-rules-label" hidden><span data-i18n="bench_password_rules"></span>
+          <textarea id="bench-rules" maxlength="2000"></textarea></label>
+        <button id="bench-record" type="button" data-i18n="bench_record"></button>
+        <p id="bench-last"></p>
+      </section>
+      <button id="unpair" type="button" data-i18n="b_unpair"></button>
     </main>
     <script src="panel.js"></script>
   </body>

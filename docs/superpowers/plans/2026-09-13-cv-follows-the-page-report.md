@@ -34,7 +34,7 @@ deleted. `docs/research/cv-format-eval.csv` (48 sentences) is a live gate pinned
 
 ## Gates at head
 
-- `POSTGRES_DB=tehsil_master uv run pytest -q` → **2439 passed, 45 skipped, 16 deselected**
+- `POSTGRES_DB=elmify_master uv run pytest -q` → **2439 passed, 45 skipped, 16 deselected**
 - `uv run ruff check .` clean · `uv run mypy apps config` clean (291 files) · `uv run bandit -c pyproject.toml -r apps config` 0 findings
 
 Live gate (`test_the_eval_corpus_has_no_wrong_action_and_few_abstentions`, `gpt-5.6-luna`), every run:

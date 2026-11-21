@@ -1,4 +1,7 @@
+import json
 import sys
+
+import pytest
 
 from apps.documents.evidence.signals import (
     MANIFEST_FILES,
@@ -9,6 +12,7 @@ from apps.documents.evidence.signals import (
     manifest_libraries,
     notebook_signals,
     python_signals,
+    strip_markup,
 )
 
 MODULE = '''"""Calculates apparent activation energy from the slope."""
@@ -121,6 +125,14 @@ def test_interesting_paths_respects_its_limit():
     assert len(interesting_paths(paths, limit=12)) == 12
 
 
+def test_files_without_a_parser_do_not_take_a_fetch_slot():
+    paths = tuple(f"a{i}.js" for i in range(8)) + tuple(f"b{i}.go" for i in range(8))
+    paths += ("x.py", "y.py", "z.py")
+    chosen = interesting_paths(paths, limit=5)
+    assert {"x.py", "y.py", "z.py"} <= set(chosen)
+    assert not [p for p in chosen if p.endswith((".js", ".go"))]
+
+
 def test_directory_names_are_a_signal():
     """'GaussOutputFiles/' says what a repository is about."""
     paths = ("GaussOutputFiles/CO.out", "src/model.py", ".github/ci.yml", "top.py")
@@ -222,3 +234,116 @@ def test_an_unrecognised_filename_is_not_a_manifest():
 def test_python_imports_are_unaffected():
     signals = file_signals("run.py", "import numpy\nfrom scipy import optimize\n")
     assert signals.imports == ("numpy", "scipy")
+
+
+def test_strip_markup_drops_tags_and_badges_and_keeps_link_and_alt_text():
+    readme = (
+        '<h1 align="center">MicroKatc</h1>\n'
+        '<p><img src="https://img.shields.io/badge/build-passing-green" alt="build passing"> '
+        '<a href="https://example.org/docs">Docs</a></p>\n'
+        '<img src="fig/energy.png" alt="Energy profile">\n'
+        "<!-- hidden -->\n"
+        "# Usage\n- run `python main.py`\n"
+        "[![CI](https://github.com/a/b/actions/workflows/ci.yml/badge.svg)](https://github.com/a/b)\n"
+        "See [the paper](https://doi.org/10.1/x)."
+    )
+    text = strip_markup(readme)
+    assert "MicroKatc" in text and "Docs" in text and "Energy profile" in text
+    assert "# Usage" in text and "- run `python main.py`" in text
+    assert "See the paper." in text
+    for gone in ("<", "shields", "badge", "build passing", "hidden", "https://"):
+        assert gone not in text
+
+
+def test_final_2_strip_markup_survives_its_own_placeholder_characters():
+    assert strip_markup("Notes \ue0009\ue001 here `x`") == "Notes 9 here `x`"
+
+
+def test_strip_markup_leaves_plain_markdown_alone_and_survives_nothing():
+    assert strip_markup("# Title\n- item") == "# Title\n- item"
+    assert strip_markup("") == ""
+
+
+def _notebook(cells):
+    return json.dumps({"cells": cells, "nbformat": 4})
+
+
+def test_a_241_kb_notebook_is_read_whole_and_an_image_only_output_is_skipped():
+    """The old 200,000-character cut came BEFORE json.loads, so a notebook this
+    size failed to parse and contributed nothing."""
+    image = {"output_type": "display_data", "data": {"image/png": "iVBOR" + "A" * 241_000}}
+    cells = [
+        {"cell_type": "markdown", "source": ["# Gaussian process surrogates\n", "Benchmark."]},
+        {"cell_type": "code", "source": "import numpy as np\nfit()",
+         "outputs": [image, {"output_type": "stream", "text": ["RMSE 0.42\n"]},
+                     {"output_type": "execute_result", "data": {"text/plain": "array([1, 2])"}},
+                     {"output_type": "error", "ename": "X"}]},
+    ]
+    text = _notebook(cells)
+    assert len(text) > 241_000
+    signals = notebook_signals("nb.ipynb", text)
+    assert signals.markdown == ("# Gaussian process surrogates\nBenchmark.",)
+    assert signals.outputs == ("RMSE 0.42", "array([1, 2])")
+    assert signals.imports == ("numpy",)
+
+
+@pytest.mark.parametrize(
+    "path,read",
+    [
+        ("latest_model.py", True),
+        ("contest_solver.py", True),
+        ("src/attestation.py", True),
+        ("tests/test_model.py", False),
+        ("test/helpers.py", False),
+        ("test_model.py", False),
+        ("src/model_test.py", False),
+        ("requirements.txt", False),
+        ("requirements-dev.txt", False),
+        ("LICENSE.md", False),
+        ("CODE_OF_CONDUCT.md", False),
+        ("CONTRIBUTING.rst", False),
+        ("CLAUDE.md", False),
+        ("docs/AGENTS.md", False),
+        ("data/readings.txt", False),
+        ("docs/notes.txt", True),
+        ("docs/huge.txt", False),
+        ("docs/unsized.txt", False),
+        ("license_check.py", True),
+    ],
+)
+def test_the_file_selection_rules(path, read):
+    sizes = {"docs/notes.txt": 800, "docs/huge.txt": 60_000, "data/readings.txt": 900}
+    assert (path in interesting_paths((path,), limit=5, sizes=sizes)) is read
+
+
+def test_strip_markup_separates_block_text_and_line_breaks():
+    assert strip_markup("<h1>Title</h1><p>Body text</p><ul><li>a</li><li>b</li></ul>").split() == [
+        "Title", "Body", "text", "a", "b",
+    ]
+    lines = strip_markup("<h1>Title</h1><p>Body text</p><ul><li>a</li><li>b</li></ul>").splitlines()
+    assert [line for line in lines if line] == ["Title", "Body text", "a", "b"]
+    assert strip_markup("line one<br>line two<br/>three").splitlines() == [
+        "line one", "line two", "three",
+    ]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "uses `List<int>` here",
+        "```cpp\n#include <vector>\nstd::vector<int> v;\n```",
+        "a vector<string> x of names",
+    ],
+)
+def test_strip_markup_keeps_angle_brackets_that_are_not_html(source):
+    assert strip_markup(source) == source
+
+
+def test_strip_markup_drops_badges_but_keeps_a_fenced_cpp_block():
+    readme = (
+        '<p><img src="https://img.shields.io/badge/a-b-green" alt="x"></p>\n'
+        "```cpp\n#include <vector>\nstd::vector<int> v;\n```\n"
+    )
+    text = strip_markup(readme)
+    assert "#include <vector>" in text and "std::vector<int> v;" in text
+    assert "shields" not in text and "<img" not in text

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Request package{% endblock %}
+{% block content %}
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-referees' %}">Referees</a></nav>
+  <div class="page-head">
+    <div>
+      <h1>What to send {{ referee.label }}</h1>
+      <p>You send this yourself, from your own email. We never write to your referees.</p>
+    </div>
+  </div>
+  <section class="panel" aria-labelledby="applications-heading">
+    <h2 id="applications-heading">Applications</h2>
+    {% for line in lines %}
+      <article class="ref-card" id="req-{{ line.request.id }}">
+        <div class="ref-card-head">
+          <div class="ref-card-title">
+            <h3>{{ line.title }}</h3>
+            <span class="badge {% if line.request.state == 'AGREED' or line.request.state == 'SUBMITTED' %}badge-ok{% elif line.request.state == 'ASKED' %}badge-brand{% else %}badge{% endif %}">{{ line.request.get_state_display }}</span>
+          </div>
+          <form method="post" action="{% url 'student-referee-request-state' line.request.id %}" class="inline-form ref-status-form">
+            {% csrf_token %}
+            <label for="state-{{ line.request.id }}">Status ({{ line.request.get_state_display|lower }})</label>
+            <select id="state-{{ line.request.id }}" name="state">
+              {% if line.request.state == "PROPOSED" %}<option value="" disabled selected>Proposed — choose…</option>{% endif %}
+              {% for value, label in marks %}<option value="{{ value }}"{% if value == line.request.state %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn-quiet btn-small">Save</button>
+            {% if saved_request_id == line.request.id|stringformat:"s" %}
+              <span class="badge badge-ok">&#10003; Saved</span>
+            {% endif %}
+          </form>
+        </div>
+        <dl class="kv">
+          {% if line.deadline %}<div><dt>Deadline</dt><dd>{{ line.deadline }}</dd></div>{% endif %}
+          <div><dt>How the letter goes</dt><dd>{{ line.request.get_mode_display }}</dd></div>
+          {% if line.portals %}<div><dt>Portal</dt><dd>{{ line.portals|join:", " }}</dd></div>{% endif %}
+          {% if line.senders %}<div><dt>Expect an email from</dt><dd>{{ line.senders|join:", " }}</dd></div>{% endif %}
+          {% if line.co_referees %}<div><dt>Also writing for this application</dt><dd>{{ line.co_referees|join:"; " }}</dd></div>{% endif %}
+          {% if line.looks_for %}<div class="kv-full"><dt>What the programme looks for</dt><dd><ul>{% for text in line.looks_for %}<li>{{ text }}</li>{% endfor %}</ul></dd></div>{% endif %}
+        </dl>
+      </article>
+    {% empty %}
+      <p class="quiet-line">No applications for {{ referee.label }} yet. <a href="{% url 'student-referee-plan' %}">Plan who writes for which application</a>.</p>
+    {% endfor %}
+  </section>
+  <section class="panel" aria-labelledby="cv-heading">
+    <h2 id="cv-heading">Your CV</h2>
+    {% if cv %}{% if cv.url %}<p><a class="btn btn-quiet btn-small" href="{{ cv.url }}">{{ cv.label }}</a></p>{% else %}<p>{{ cv.label }}: attach it to your message.</p>{% endif %}{% else %}<p class="quiet-line">No CV yet. <a href="{% url 'student-documents' %}#drafts">Write or upload one</a>.</p>{% endif %}
+  </section>
+  <section class="panel" aria-labelledby="facts-sheet-heading">
+    <h2 id="facts-sheet-heading">Facts sheet</h2>
+    {% if referee.relationship %}<p>{{ referee.relationship }}</p>{% endif %}
+    {% if angle %}<p class="note"><strong>Recommended focus:</strong> {{ angle }}</p>{% endif %}
+    {% if shared_work %}
+      <h3>What we worked on together</h3>
+      <ul class="item-list">
+        {% for item in shared_work %}
+          <li>
+            <div>
+              <strong>{{ item.summary }}</strong>
+              {% if item.bullets %}
+                <ul>{% for bullet in item.bullets %}<li>{{ bullet }}</li>{% endfor %}</ul>
+              {% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    <ul class="item-list">{% for line in facts %}<li>{{ line }}</li>{% endfor %}</ul>
+  </section>
+  <section class="panel" aria-labelledby="message-heading">
+    <div class="panel-head">
+      <h2 id="message-heading">Your message</h2>
+      <p class="row-actions"><button type="button" class="btn-quiet btn-small" data-copy="package-message">Copy message</button> <span role="status" aria-live="polite"></span></p>
+    </div>
+    <p>
+      <label for="package-message">Copy this into your email</label>
+      <textarea id="package-message" rows="16" readonly>{{ message }}</textarea>
+    </p>
+  </section>
+{% endblock %}

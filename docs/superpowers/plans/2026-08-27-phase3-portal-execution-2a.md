@@ -28,8 +28,8 @@
 - Cost model assumes **no prompt caching** — settled by measurement, see the spec's Cost section. The learn pass is `N x observe`: ~141,800 prompt tokens and $0.76 per 36-field form version, $0.00 per replay.
 - `line-length = 100`, `target-version = "py312"`. Run `uv run ruff check`, never `ruff format` — it churns 26 unrelated files.
 - Tests run under `DJANGO_SETTINGS_MODULE=config.settings.test`.
-- **Isolate the test database.** Nine worktrees share one `test_tehsil` and `config/settings/database.py` reads `POSTGRES_DB` with no per-worktree suffix, which has produced 292- and 108-error cascades. Run every suite as `POSTGRES_DB=tehsil_plan2a uv run pytest ...`. Before diagnosing any suite failure, check for a parallel run with `ps -eo args --no-headers | grep '/pytest ' | grep -v 'bash -c'` — do **not** use `pgrep -f '...pytest'`, it matches its own command line and hangs.
-- Work happens in the worktree. Every git command uses `git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2` on branch `claude/phase3-plan2` — a bare `git commit` lands on the wrong branch.
+- **Isolate the test database.** Nine worktrees share one `test_elmify` and `config/settings/database.py` reads `POSTGRES_DB` with no per-worktree suffix, which has produced 292- and 108-error cascades. Run every suite as `POSTGRES_DB=elmify_plan2a uv run pytest ...`. Before diagnosing any suite failure, check for a parallel run with `ps -eo args --no-headers | grep '/pytest ' | grep -v 'bash -c'` — do **not** use `pgrep -f '...pytest'`, it matches its own command line and hangs.
+- Work happens in the worktree. Every git command uses `git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2` on branch `claude/phase3-plan2` — a bare `git commit` lands on the wrong branch.
 
 ## File structure
 
@@ -193,8 +193,8 @@ was measured. Both outcomes are one paragraph:
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add scripts/spike_extract_node_refs.py tests/portals/fixtures/form36.html docs/superpowers/specs/2026-08-27-phase3-portal-execution-design.md
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "spike(portals): answer whether extract node refs resolve to selectors"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add scripts/spike_extract_node_refs.py tests/portals/fixtures/form36.html docs/superpowers/specs/2026-08-27-phase3-portal-execution-design.md
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "spike(portals): answer whether extract node refs resolve to selectors"
 ```
 
 ---
@@ -289,7 +289,7 @@ def test_consume_counts_what_it_processed_not_what_it_received():
 
 - [ ] **Step 2: Run it to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/test_queue_transport.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/test_queue_transport.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.queue'`.
 
 - [ ] **Step 3: Write the shared transport**
@@ -429,7 +429,7 @@ and add `message_type=EuropassRenderMessage`. In `tests/research/test_queue.py` 
 
 - [ ] **Step 6: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/test_queue_transport.py tests/research tests/documents -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/test_queue_transport.py tests/research tests/documents -q`
 Expected: PASS. The research and Europass suites are the guard on this refactor; a behaviour change
 shows up there, not in the new file.
 
@@ -439,8 +439,8 @@ shows up there, not in the new file.
 uv run ruff check apps tests
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/queue.py apps/research/queue.py apps/documents/europass_queue.py apps/research/management apps/documents/management tests/test_queue_transport.py tests/research/test_queue.py tests/documents/test_europass_queue.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "refactor(queue): one SQS transport parameterised over the message type"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/queue.py apps/research/queue.py apps/documents/europass_queue.py apps/research/management apps/documents/management tests/test_queue_transport.py tests/research/test_queue.py tests/documents/test_europass_queue.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "refactor(queue): one SQS transport parameterised over the message type"
 ```
 
 ---
@@ -614,7 +614,7 @@ def test_the_first_application_on_a_new_portal_asks_for_review_without_blocking(
 
 - [ ] **Step 2: Run it to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_escalation.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_escalation.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.escalation'`.
 
 - [ ] **Step 3: Add the transaction helper every writer below this line uses**
@@ -692,7 +692,7 @@ def tenant_transaction(tenant_id: UUID) -> Iterator[None]:
         return (last or 0) + 1
 ```
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run python manage.py makemigrations portals --name escalation`
+Run: `POSTGRES_DB=elmify_plan2a uv run python manage.py makemigrations portals --name escalation`
 Expected: `0004_escalation.py` adding three fields.
 
 Then hand-edit that migration to add the composite tenant guard, the same shape
@@ -893,7 +893,7 @@ def _request_first_portal_review(application: Application) -> RoadmapItem:
 
 - [ ] **Step 6: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals tests/tenancy -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals tests/tenancy -q`
 Expected: PASS, including plan 1's existing portal tests.
 
 - [ ] **Step 7: Gates and commit**
@@ -902,9 +902,9 @@ Expected: PASS, including plan 1's existing portal tests.
 uv run ruff check apps tests
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps
-POSTGRES_DB=tehsil_plan2a uv run python manage.py makemigrations --check --dry-run
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/tenancy/db.py apps/portals/escalation.py apps/portals/models.py apps/portals/migrations/0004_escalation.py tests/portals/test_escalation.py tests/tenancy/test_db.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): the six-trigger escalation surface"
+POSTGRES_DB=elmify_plan2a uv run python manage.py makemigrations --check --dry-run
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/tenancy/db.py apps/portals/escalation.py apps/portals/models.py apps/portals/migrations/0004_escalation.py tests/portals/test_escalation.py tests/tenancy/test_db.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): the six-trigger escalation surface"
 ```
 
 ---
@@ -1043,7 +1043,7 @@ def test_sweep_ignores_anything_not_shaped_like_a_profile(settings, tmp_path):
 
 - [ ] **Step 2: Run it to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_profiles.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_profiles.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.profiles'`.
 
 - [ ] **Step 3: Add the settings**
@@ -1053,7 +1053,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.profiles'
 PORTAL_QUEUE_URL = os.getenv("PORTAL_QUEUE_URL", "test-portal-queue")
 #: Where Chrome profiles for portal sessions live. A path on the portal task's
 #: own encrypted volume -- never a shared filesystem, see apps/portals/profiles.py.
-PORTAL_PROFILE_ROOT = Path(os.getenv("PORTAL_PROFILE_ROOT", "/tmp/tehsil-portal-profiles"))  # noqa: S108
+PORTAL_PROFILE_ROOT = Path(os.getenv("PORTAL_PROFILE_ROOT", "/tmp/elmify-portal-profiles"))  # noqa: S108
 PORTAL_PROFILE_TTL_HOURS = int(os.getenv("PORTAL_PROFILE_TTL_HOURS", "24"))
 ```
 
@@ -1194,7 +1194,7 @@ def open_portal_session(application: Application) -> Iterator[StagehandPortalSes
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_profiles.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_profiles.py -q`
 Expected: PASS.
 
 - [ ] **Step 6: Gates and commit**
@@ -1203,8 +1203,8 @@ Expected: PASS.
 uv run ruff check apps config tests
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals/profiles.py config/settings/base.py config/settings/production.py tests/portals/test_profiles.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): tenant-isolated browser profiles with a TTL sweep"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals/profiles.py config/settings/base.py config/settings/production.py tests/portals/test_profiles.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): tenant-isolated browser profiles with a TTL sweep"
 ```
 
 ---
@@ -1329,7 +1329,7 @@ def test_non_string_payload_members_are_left_out(agency_a, membership_a):
 
 - [ ] **Step 2: Run it to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_profile_values.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_profile_values.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.profile'`.
 
 - [ ] **Step 3: Write the value bridge**
@@ -1562,7 +1562,7 @@ def test_the_audit_trail_records_the_versions_used(agency_a, membership_a, monke
 
 - [ ] **Step 5: Run it to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_services.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_services.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.services'`.
 
 - [ ] **Step 6: Write the spine**
@@ -1929,7 +1929,7 @@ Create the two empty `__init__.py` files under `apps/portals/management/` and
 
 - [ ] **Step 9: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals -q`
 Expected: PASS.
 
 - [ ] **Step 10: Gates and commit**
@@ -1938,8 +1938,8 @@ Expected: PASS.
 uv run ruff check apps tests
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals tests/portals
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): prepare-application spine, portal queue and worker"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals tests/portals
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): prepare-application spine, portal queue and worker"
 ```
 
 ---
@@ -2027,7 +2027,7 @@ def test_nothing_in_the_app_can_submit():
 
 - [ ] **Step 2: Run them to make sure they fail**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_session_protocol.py tests/portals/test_boundary.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_session_protocol.py tests/portals/test_boundary.py -q`
 Expected: FAIL — `TypeError: FakePortalSession.__init__() got an unexpected keyword argument 'elements'`
 and a missing `apps/portals/auth.py`. The auth assertions pass once Task 8 lands; until then, keep
 that half of `test_press_enter_is_unreachable_from_a_stored_field_map` commented with the task number,
@@ -2124,7 +2124,7 @@ class FakePortalSession:
 
 - [ ] **Step 6: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals -q`
 Expected: PASS.
 
 - [ ] **Step 7: Verify the three primitives against real Chrome**
@@ -2151,7 +2151,7 @@ def test_the_query_primitives_answer_against_real_chrome(tmp_path):
 Write `tests/portals/fixtures/login.html` as a minimal login form: a `#username` text input, a
 `#password` password input inside a `<form>`, and nothing else.
 
-Run: `xvfb-run -a --server-args="-screen 0 1280x1024x24" env -u CI POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_engine_browser.py -m portal_browser -q`
+Run: `xvfb-run -a --server-args="-screen 0 1280x1024x24" env -u CI POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_engine_browser.py -m portal_browser -q`
 Expected: PASS. If `Locator.count` or `Page.evaluate` turns out not to be awaitable in this SDK
 version, drop the `self._loop.run(...)` wrapper for that one call — do not change the sandbox, the
 model, or the domain policy to make it pass.
@@ -2162,8 +2162,8 @@ model, or the domain policy to make it pass.
 uv run ruff check apps tests
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals/session.py apps/portals/engine.py tests/portals
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): exists, query_attribute and press_enter on the session protocol"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals/session.py apps/portals/engine.py tests/portals
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): exists, query_attribute and press_enter on the session protocol"
 ```
 
 ---
@@ -2418,7 +2418,7 @@ above if that module already builds a real `FieldMap`; the assertions are what m
 
 - [ ] **Step 2: Run to make sure they fail**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_recovery.py tests/portals/test_fill.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_recovery.py tests/portals/test_fill.py -q`
 Expected: FAIL — no `apps.portals.recovery`, no `FillInterrupted`.
 
 - [ ] **Step 3: Add the RecoveryEvent model**
@@ -2458,7 +2458,7 @@ class RecoveryEvent(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 ```
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run python manage.py makemigrations portals --name recovery_event`
+Run: `POSTGRES_DB=elmify_plan2a uv run python manage.py makemigrations portals --name recovery_event`
 Expected: `0005_recovery_event.py`.
 
 - [ ] **Step 4: Teach fill.py to report where it got to**
@@ -2671,7 +2671,7 @@ above does not cover, so add it to the same `except` tuple.
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals -q`
 Expected: PASS.
 
 - [ ] **Step 8: Gates and commit**
@@ -2680,9 +2680,9 @@ Expected: PASS.
 uv run ruff check apps tests
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps
-POSTGRES_DB=tehsil_plan2a uv run python manage.py makemigrations --check --dry-run
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals tests/portals
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): scoped re-learn with a recorded RecoveryEvent"
+POSTGRES_DB=elmify_plan2a uv run python manage.py makemigrations --check --dry-run
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals tests/portals
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): scoped re-learn with a recorded RecoveryEvent"
 ```
 
 ---
@@ -2919,7 +2919,7 @@ def test_a_login_that_does_not_take_is_a_portal_error(agency_a, membership_a):
 
 - [ ] **Step 2: Run to make sure they fail**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_auth.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_auth.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.auth'`.
 
 - [ ] **Step 3: Add the marker fields**
@@ -2935,7 +2935,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'apps.portals.auth'`.
     mfa_marker = models.CharField(max_length=200, blank=True)
 ```
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run python manage.py makemigrations portals --name login_markers`
+Run: `POSTGRES_DB=elmify_plan2a uv run python manage.py makemigrations portals --name login_markers`
 
 - [ ] **Step 4: Write the auth module**
 
@@ -2990,7 +2990,7 @@ def secret_id(tenant_id: UUID, student_id: UUID, portal_host: str) -> str:
     account. The path shape is also what makes erasure possible without
     ListSecrets -- see delete_student_portal_credentials.
     """
-    return f"tehsil/portal/{tenant_id}/{student_id}/{portal_host}"
+    return f"elmify/portal/{tenant_id}/{student_id}/{portal_host}"
 
 
 class SecretsManagerCredentials:
@@ -3218,7 +3218,7 @@ from apps.portals.auth import delete_student_portal_credentials
             )
 ```
 
-Add `secretsmanager:DeleteSecret` on `arn:aws:secretsmanager:...:secret:tehsil/portal/*` to
+Add `secretsmanager:DeleteSecret` on `arn:aws:secretsmanager:...:secret:elmify/portal/*` to
 `WorkerTaskRole` in Task 14 — that is the role `test_only_worker_task_role_may_erase_tenant_objects`
 already pins as the one that erases tenant data. `advance_deletion` has no in-app caller yet, so if a
 view calls it later, the grant follows the caller.
@@ -3247,12 +3247,12 @@ need AWS credentials.
 - [ ] **Step 8: Run the tests and gates, then commit**
 
 ```bash
-POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals tests/audit -q
+POSTGRES_DB=elmify_plan2a uv run pytest tests/portals tests/audit -q
 uv run ruff check apps tests
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals apps/audit/deletion.py tests/portals tests/audit
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): reauthenticate an expired session, and erase credentials with the student"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals apps/audit/deletion.py tests/portals tests/audit
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): reauthenticate an expired session, and erase credentials with the student"
 ```
 
 Expected: PASS on all four. Bandit will flag the broad `except Exception` in
@@ -3343,7 +3343,7 @@ def test_repeated_failures_with_no_marker_are_an_unknown_challenge():
 
 - [ ] **Step 2: Run to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_challenge.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_challenge.py -q`
 Expected: FAIL — no `apps.portals.challenge`.
 
 - [ ] **Step 3: Write the module**
@@ -3415,10 +3415,10 @@ def detect_challenge(
 - [ ] **Step 4: Run the tests, gates, commit**
 
 ```bash
-POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals -q
+POSTGRES_DB=elmify_plan2a uv run pytest tests/portals -q
 uv run ruff check apps tests && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals/challenge.py tests/portals/test_challenge.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): deterministic challenge detection with a stall heuristic"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals/challenge.py tests/portals/test_challenge.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): deterministic challenge detection with a stall heuristic"
 ```
 
 ---
@@ -3600,7 +3600,7 @@ def test_configured_adapter_is_none_without_a_credential(settings, monkeypatch):
 
 - [ ] **Step 2: Run to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_resolve_service.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_resolve_service.py -q`
 Expected: FAIL — no `apps.portals.resolve`.
 
 - [ ] **Step 3: The per-portal approval field**
@@ -3616,7 +3616,7 @@ Expected: FAIL — no `apps.portals.resolve`.
     resolution_approved = models.BooleanField(default=False)
 ```
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run python manage.py makemigrations portals --name resolution_approval`
+Run: `POSTGRES_DB=elmify_plan2a uv run python manage.py makemigrations portals --name resolution_approval`
 
 - [ ] **Step 4: Settings**
 
@@ -3783,11 +3783,11 @@ def apply_token(session: PortalSession, challenge: Challenge, token: str) -> Non
 - [ ] **Step 6: Run tests, gates, commit**
 
 ```bash
-POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals -q
+POSTGRES_DB=elmify_plan2a uv run pytest tests/portals -q
 uv run ruff check apps config tests && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config
-POSTGRES_DB=tehsil_plan2a uv run python manage.py makemigrations --check --dry-run
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals config/settings/base.py tests/portals/test_resolve_service.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): bounded challenge resolution behind one provider adapter"
+POSTGRES_DB=elmify_plan2a uv run python manage.py makemigrations --check --dry-run
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals config/settings/base.py tests/portals/test_resolve_service.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): bounded challenge resolution behind one provider adapter"
 ```
 
 Bandit will look at the broad `except Exception` in `_attempt` (B110 only fires on `pass`; this logs)
@@ -3979,7 +3979,7 @@ def test_an_open_consultant_task_is_left_alone(agency_a, membership_a):
 
 - [ ] **Step 2: Run to make sure they fail**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_resolve_consultant.py tests/portals/test_dispatch.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_resolve_consultant.py tests/portals/test_dispatch.py -q`
 Expected: FAIL — no `ConsultantResolver`, no `apps.portals.dispatch`.
 
 - [ ] **Step 3: Append the consultant path to `resolve.py`**
@@ -4148,7 +4148,7 @@ def test_a_profile_survives_the_session_that_created_it(tmp_path):
         assert "resumed=yes" in str(session._loop.run(session.page.evaluate("document.cookie")))
 ```
 
-Run: `xvfb-run -a --server-args="-screen 0 1280x1024x24" env -u CI POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_engine_browser.py -m portal_browser -q`
+Run: `xvfb-run -a --server-args="-screen 0 1280x1024x24" env -u CI POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_engine_browser.py -m portal_browser -q`
 Expected: PASS. A `file://` page may refuse `document.cookie`; if it does, serve the fixture from a
 `http.server` on localhost inside the test rather than weakening the assertion. **If the profile does
 not survive, stop and report it** — the resume design in this task rests on it, and the fallback
@@ -4157,10 +4157,10 @@ not survive, stop and report it** — the resume design in this task rests on it
 - [ ] **Step 7: Run tests, gates, commit**
 
 ```bash
-POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals tests/concierge -q
+POSTGRES_DB=elmify_plan2a uv run pytest tests/portals tests/concierge -q
 uv run ruff check apps tests && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals tests/portals
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): consultant fallback and poll-based resume"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals tests/portals
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): consultant fallback and poll-based resume"
 ```
 
 `tests/concierge` is in the run deliberately: this task's design claim is that nothing in the
@@ -4251,7 +4251,7 @@ def test_a_portal_with_no_applications_reports_a_zero_rate_not_a_crash(agency_a)
 
 - [ ] **Step 2: Run to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_reporting.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_reporting.py -q`
 Expected: FAIL — no `apps.portals.reporting`.
 
 - [ ] **Step 3: Write the report**
@@ -4355,10 +4355,10 @@ class Command(BaseCommand):
 - [ ] **Step 4: Run tests, gates, commit**
 
 ```bash
-POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals -q
+POSTGRES_DB=elmify_plan2a uv run pytest tests/portals -q
 uv run ruff check apps tests && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals tests/portals
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "feat(portals): per-portal intervention rate report"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals tests/portals
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "feat(portals): per-portal intervention rate report"
 ```
 
 ---
@@ -4413,7 +4413,7 @@ def test_a_missing_chrome_is_a_loud_failure(monkeypatch, tmp_path):
 
 - [ ] **Step 2: Run it to make sure it fails**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals/test_boundary.py -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/portals/test_boundary.py -q`
 Expected: FAIL — `ImportError: cannot import name 'chrome_binary'`.
 
 - [ ] **Step 3: Replace the constant with a resolver**
@@ -4479,8 +4479,8 @@ RUN apt-get update && apt-get install --no-install-recommends -y \
     xvfb fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 RUN playwright install --with-deps chromium && chmod -R a+rX /ms-playwright
-ENV PORTAL_PROFILE_ROOT=/var/lib/tehsil/portal-profiles
-RUN mkdir -p /var/lib/tehsil/portal-profiles && chown app /var/lib/tehsil/portal-profiles
+ENV PORTAL_PROFILE_ROOT=/var/lib/elmify/portal-profiles
+RUN mkdir -p /var/lib/elmify/portal-profiles && chown app /var/lib/elmify/portal-profiles
 USER app
 CMD ["xvfb-run", "-a", "--server-args=-screen 0 1280x1024x24", \
      "python", "manage.py", "run_portal_worker"]
@@ -4490,8 +4490,8 @@ CMD ["xvfb-run", "-a", "--server-args=-screen 0 1280x1024x24", \
 
 Run:
 ```bash
-docker build --target portal -t tehsil-portal:local .
-docker run --rm tehsil-portal:local \
+docker build --target portal -t elmify-portal:local .
+docker run --rm elmify-portal:local \
     xvfb-run -a --server-args="-screen 0 1280x1024x24" \
     python scripts/validate_portal_sandbox.py
 ```
@@ -4512,7 +4512,7 @@ one outcome that is not acceptable is a green check that measured an unsandboxed
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: docker build --target portal -t tehsil-portal:ci .
+      - run: docker build --target portal -t elmify-portal:ci .
       # The runner sets CI=true, and stagehand appends --no-sandbox whenever it
       # sees that (browser.py:589,682) -- which is the opposite of what this
       # job measures. docker run does not pass the runner's environment into
@@ -4520,7 +4520,7 @@ one outcome that is not acceptable is a green check that measured an unsandboxed
       # `-e CI` here: the script would SKIP and the job would go green having
       # measured nothing.
       - run: |
-          docker run --rm --security-opt seccomp=unconfined tehsil-portal:ci \
+          docker run --rm --security-opt seccomp=unconfined elmify-portal:ci \
             xvfb-run -a --server-args="-screen 0 1280x1024x24" \
             python scripts/validate_portal_sandbox.py
 ```
@@ -4528,10 +4528,10 @@ one outcome that is not acceptable is a green check that measured an unsandboxed
 - [ ] **Step 7: Run the tests, gates and commit**
 
 ```bash
-POSTGRES_DB=tehsil_plan2a uv run pytest tests/portals -q
+POSTGRES_DB=elmify_plan2a uv run pytest tests/portals -q
 uv run ruff check apps scripts tests && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add apps/portals/engine.py scripts/validate_portal_sandbox.py Dockerfile .github/workflows/ci.yml tests/portals/test_boundary.py
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "build(portals): portal image with Xvfb, and a CI job that proves the sandbox"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add apps/portals/engine.py scripts/validate_portal_sandbox.py Dockerfile .github/workflows/ci.yml tests/portals/test_boundary.py
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "build(portals): portal image with Xvfb, and a CI job that proves the sandbox"
 ```
 
 ---
@@ -4634,7 +4634,7 @@ Extend the existing `task_definition_id` parametrization with `"PortalTaskDefini
 
 - [ ] **Step 2: Run to make sure they fail**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/infra -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/infra -q`
 Expected: FAIL — `PortalTaskDefinition is not defined in infra/template.yaml`, plus the four existing
 task definitions failing the env-var assertion once `PORTAL_QUEUE_URL` is in the required set.
 
@@ -4715,7 +4715,7 @@ Security group and role:
               # secrets that live beside it.
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/portal/*"
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/portal/*"
 ```
 
 And add the erasure half to `WorkerTaskRole`'s existing policy — the role
@@ -4725,7 +4725,7 @@ data, now that `advance_deletion` destroys portal credentials (Task 8):
 ```yaml
               - Effect: Allow
                 Action: secretsmanager:DeleteSecret
-                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/portal/*"
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/portal/*"
 ```
 
 EC2 capacity, and the instance role the ECS agent needs:
@@ -4834,7 +4834,7 @@ Log group, task definition, service:
   PortalLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/portal"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/portal"
       RetentionInDays: 30
 
   PortalTaskDefinition:
@@ -4875,7 +4875,7 @@ Log group, task definition, service:
             - Name: DATABASE_ROLE
               Value: runtime
             - Name: POSTGRES_RUNTIME_USER
-              Value: tehsil_runtime
+              Value: elmify_runtime
           Secrets:
             - Name: POSTGRES_RUNTIME_PASSWORD
               ValueFrom: !Ref RuntimeDatabaseSecret
@@ -4913,7 +4913,7 @@ Log group, task definition, service:
       LogGroupName: !Ref PortalLogGroup
       FilterPattern: '"PortalEscalation"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Portals
+        - MetricNamespace: Elmify/Portals
           MetricName: PortalEscalations
           MetricValue: "1"
 
@@ -4923,7 +4923,7 @@ Log group, task definition, service:
       # A rate, not a count: escalations are expected -- §5.4 budgets under 10%
       # consultant intervention -- and an alarm on any escalation would page on
       # the system working. A spike means a portal changed shape.
-      Namespace: Tehsil/Portals
+      Namespace: Elmify/Portals
       MetricName: PortalEscalations
       Statistic: Sum
       Period: 3600
@@ -4954,7 +4954,7 @@ Add `PortalImage`, `PortalDesiredCount` and `LlmApiKeySecretArn` to both files u
 
 - [ ] **Step 4: Run the infra tests**
 
-Run: `POSTGRES_DB=tehsil_plan2a uv run pytest tests/infra -q`
+Run: `POSTGRES_DB=elmify_plan2a uv run pytest tests/infra -q`
 Expected: PASS.
 
 - [ ] **Step 5: Validate the template against CloudFormation's own parser**
@@ -4968,8 +4968,8 @@ say so in the task report rather than skipping silently — the static tests do 
 
 ```bash
 uv run ruff check tests
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 add infra tests/infra
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "infra(portals): sandboxed portal worker on EC2 capacity, shipped stopped"
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 add infra tests/infra
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 commit -m "infra(portals): sandboxed portal worker on EC2 capacity, shipped stopped"
 ```
 
 ---
@@ -4979,7 +4979,7 @@ git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 commit -m "infr
 - [ ] **Step 1: Run everything**
 
 ```bash
-POSTGRES_DB=tehsil_plan2a uv run pytest -q
+POSTGRES_DB=elmify_plan2a uv run pytest -q
 ```
 Expected: the plan-1 baseline (1238 passed, 3 skipped) plus this plan's tests, no failures. If a
 suite unrelated to portals fails, first check for a parallel run — `ps -eo args --no-headers | grep
@@ -4994,8 +4994,8 @@ uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config
 uv run pip-audit --ignore-vuln PYSEC-2026-2034 --ignore-vuln PYSEC-2026-3412
-POSTGRES_DB=tehsil_plan2a uv run python manage.py check
-POSTGRES_DB=tehsil_plan2a uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_plan2a uv run python manage.py check
+POSTGRES_DB=elmify_plan2a uv run python manage.py makemigrations --check --dry-run
 ```
 Expected: clean on all six. No new dependency was added by this plan, so `pip-audit` should report
 exactly what it reported before it.
@@ -5004,7 +5004,7 @@ exactly what it reported before it.
 
 ```bash
 xvfb-run -a --server-args="-screen 0 1280x1024x24" env -u CI \
-    POSTGRES_DB=tehsil_plan2a uv run pytest -m portal_browser -q
+    POSTGRES_DB=elmify_plan2a uv run pytest -m portal_browser -q
 xvfb-run -a --server-args="-screen 0 1280x1024x24" env -u CI \
     uv run python scripts/validate_portal_sandbox.py
 ```
@@ -5014,7 +5014,7 @@ an LLM credential; if either is absent, report that rather than reporting a pass
 - [ ] **Step 4: Open the PR**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/phase3-plan2 push -u origin claude/phase3-plan2
+git -C /home/orkhan/Desktop/elmify/.worktrees/phase3-plan2 push -u origin claude/phase3-plan2
 gh pr create --base master --head claude/phase3-plan2 \
   --title "Phase 3 portal execution (plan 2a): worker, recovery, escalation" \
   --body "Implements docs/superpowers/plans/2026-08-27-phase3-portal-execution-2a.md. Nothing here can submit an application; submission is plan 2b and gated on the portal-terms blocker in §10."

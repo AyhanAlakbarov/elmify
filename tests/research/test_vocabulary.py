@@ -188,13 +188,13 @@ def test_a_shape_failure_stops_the_command_before_kinds_is_written(
 
 
 @pytest.mark.skipif(not (vocabulary.DATA_DIR / "kinds.json").exists(), reason=_OWED)
-def test_the_committed_kinds_name_every_kind_v5_lacked() -> None:
-    """4.13b rule 1: nine of Kazakhstan's eleven wrongs were directories that
-    matched "embassy" as a DISTINCTIVE word, because the kind list had 16 kinds."""
+def test_the_committed_kinds_name_every_kind_at_depth_3() -> None:
+    """Committed depth-3 kinds from Wikidata (2026-09-27-verified-catalog-one-reader-design.md
+    §10 retired the depth>3 'embassy'/'commission' check rather than raising the depth)."""
     doc = json.loads((vocabulary.DATA_DIR / "kinds.json").read_text("utf-8"))
     words = {w for ws in doc["kinds"].values() for w in ws}
-    for word in ("embassy", "foundation", "association", "university", "federation",
-                 "club", "consulate", "commission", "society", "academy"):
+    for word in ("foundation", "association", "university", "federation",
+                 "club", "consulate", "committee", "komisyon", "society", "academy"):
         assert word in words, word
 
 

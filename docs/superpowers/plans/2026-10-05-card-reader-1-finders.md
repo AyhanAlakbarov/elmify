@@ -48,7 +48,7 @@ concern; this slice calls no model.
 
 - Lint only, never `ruff format`: `uv run ruff check .` (CLAUDE.md).
 - Types: `uv run mypy apps config`.
-- Tests: `POSTGRES_DB=tehsil_card_reader uv run pytest -q` (per-branch DB name, CLAUDE.md).
+- Tests: `POSTGRES_DB=elmify_card_reader uv run pytest -q` (per-branch DB name, CLAUDE.md).
 - Never hand-edit `uv.lock`; dependencies change only through `uv add` (CLAUDE.md, Python rules).
 - "Code counts, code computes, code parses. Jev decides only what needs a judgment." (§5.1)
 - "A span with no day is a month, never given one" — "February 2027" is never "February 20". (§5 step 4)
@@ -220,7 +220,7 @@ def test_a_short_name_takes_only_a_case_ending():
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/test_locale_names.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/test_locale_names.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.locale_names'`
 
 - [ ] **Step 4: Implement**
@@ -418,7 +418,7 @@ def lookup[V](token: str, forms: tuple[tuple[str, str, V], ...]) -> V | None:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/test_locale_names.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/test_locale_names.py -q`
 Expected: 7 passed. If a CLDR spelling differs from a test (for example a Korean country name), print
 `country_names("ko")` and fix the test to CLDR's spelling, never the data.
 
@@ -596,7 +596,7 @@ def test_the_reader_uses_the_table():
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/test_funding_terms.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/test_funding_terms.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.funding_terms'`
 
 - [ ] **Step 4: Implement**
@@ -654,7 +654,7 @@ _FUNDING_TERMS = funding_terms()
 
 - [ ] **Step 5: Run the tests, then the callers' tests**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/test_funding_terms.py tests/research/test_funding_reader.py tests/research/test_discovery_pipeline.py tests/research/test_pipeline_funding.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/test_funding_terms.py tests/research/test_funding_reader.py tests/research/test_discovery_pipeline.py tests/research/test_pipeline_funding.py -q`
 Expected: all pass. A caller test that pinned an English-only selection and now keeps an extra
 section is a correct change in behaviour; update its expectation and say so in the commit.
 
@@ -795,7 +795,7 @@ def test_long_runs_of_digits_stay_linear():
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_amounts.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_amounts.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.candidates'`
 
 - [ ] **Step 4: Implement**
@@ -1066,7 +1066,7 @@ Implementer notes, which are part of the task:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_amounts.py tests/research/test_card_fields.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_amounts.py tests/research/test_card_fields.py -q`
 Expected: all pass (11 in `test_amounts.py`).
 
 - [ ] **Step 6: Commit**
@@ -1177,7 +1177,7 @@ def test_a_numeric_month_day_in_cjk_without_year():
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_dates.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_dates.py -q`
 Expected: FAIL with `ModuleNotFoundError` or `ImportError: cannot import name 'find_dates'`
 
 - [ ] **Step 3: Implement**
@@ -1388,7 +1388,7 @@ Implementer notes, which are part of the task:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_dates.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_dates.py -q`
 Expected: 10 passed.
 
 - [ ] **Step 5: Commit**
@@ -1449,7 +1449,7 @@ def test_the_turkic_anchor_is_the_noun_phrase_before_the_ablative():
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_relative_dates.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_relative_dates.py -q`
 Expected: FAIL with `ImportError: cannot import name 'find_relative_dates'`
 
 - [ ] **Step 3: Implement**
@@ -1541,7 +1541,7 @@ step 4).
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_relative_dates.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_relative_dates.py -q`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
@@ -1608,7 +1608,7 @@ def test_intakes():
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_spans.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_spans.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.candidates.spans'`
 
 - [ ] **Step 3: Implement**
@@ -1712,7 +1712,7 @@ def find_intakes(line: str) -> list[Intake]:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_spans.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_spans.py -q`
 Expected: 4 passed.
 
 - [ ] **Step 5: Commit**
@@ -2064,7 +2064,7 @@ def test_every_alias_row_names_an_alpha_2_code():
 
 - [ ] **Step 4: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_who.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_who.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.candidates.who'`
 
 - [ ] **Step 5: Implement**
@@ -2312,7 +2312,7 @@ condition, not the award's level (owner gold): the candidate is still a `Level`;
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_who.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_who.py -q`
 Expected: 12 passed.
 
 - [ ] **Step 7: Commit**
@@ -2381,7 +2381,7 @@ def test_a_relative_date_is_never_also_a_duration():
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_find_all.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_find_all.py -q`
 Expected: FAIL with `ImportError: cannot import name 'find_all'`
 
 - [ ] **Step 3: Implement**
@@ -2556,7 +2556,7 @@ def evidence(question_id: str, text: str) -> bool:
 
 - [ ] **Step 4: Run the new and the harness tests**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates tests/research/engine_eval -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates tests/research/engine_eval -q`
 Expected: all pass (`test_evidence.py`, `test_jev_reader.py`, `test_score.py`, `test_key.py`,
 `test_questions.py` and `test_items.py` passed against these finders on 2026-10-05). A harness test
 that pinned the old regex's exact output is reported in the task report with the line, and the
@@ -2694,7 +2694,7 @@ def test_a_cell_is_read_with_its_column_header():
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_headers.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_headers.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.research.candidates.headers'`
 
 - [ ] **Step 4: Implement**
@@ -2754,7 +2754,7 @@ def header_cue(text: str) -> str | None:
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_headers.py -q`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_headers.py -q`
 Expected: 13 passed.
 
 - [ ] **Step 6: Commit**
@@ -2814,7 +2814,7 @@ def test_report_money_lines_without_an_amount():
 
 - [ ] **Step 2: Run it**
 
-Run: `POSTGRES_DB=tehsil_card_reader uv run pytest tests/research/candidates/test_round1_lines.py -q -rA`
+Run: `POSTGRES_DB=elmify_card_reader uv run pytest tests/research/candidates/test_round1_lines.py -q -rA`
 Expected: both pass. Measured 2026-10-05: 14 of 14 correct deadline lines have a candidate; 20 of
 29 correct money lines carry no amount (they state coverage in words: "all expenses are covered",
 "бесплатное обучение"), hence the ratchet at 20. If the run prints fewer, lower the number.
@@ -2822,7 +2822,7 @@ A deadline line with no candidate is a finder bug: fix the finder in Task 4 or 5
 
 - [ ] **Step 3: Full gates and commit**
 
-Run: `uv run ruff check . && uv run mypy apps config && POSTGRES_DB=tehsil_card_reader uv run pytest -q`
+Run: `uv run ruff check . && uv run mypy apps config && POSTGRES_DB=elmify_card_reader uv run pytest -q`
 Expected: all pass.
 
 ```bash

@@ -75,3 +75,19 @@ def test_single_counts_still_read():
 @pytest.mark.parametrize("line", ["2 to 3 years", "2 - 3 years", "2—3 years"])
 def test_spaced_and_worded_count_ranges_are_no_duration(line):
     assert find_durations(line) == []
+
+
+def test_multilingual_durations_and_programme_spans():
+    (d1,) = find_durations("مدة المنحة 24 شهراً")
+    assert (d1.unit, d1.months) == ("months", 24)
+    (d2,) = find_durations("Durata: 2 anni")
+    assert (d2.unit, d2.months) == ("years", 24)
+    (d3,) = find_durations("Duración: 18 meses")
+    assert (d3.unit, d3.months) == ("months", 18)
+    (d4,) = find_durations("Durasi beasiswa: 4 semester")
+    assert (d4.count, d4.unit, d4.months) == (4, "semesters", None)
+    (d5,) = find_durations("Thời gian đào tạo: 2 năm")
+    assert (d5.unit, d5.months) == ("years", 24)
+    (d6,) = find_durations("تغطي المنحة الرسوم طوال فترة الدراسة")
+    assert d6.unit == "programme"
+

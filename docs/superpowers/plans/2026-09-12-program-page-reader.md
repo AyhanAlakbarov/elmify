@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Test database per checkout: `POSTGRES_DB=tehsil_master uv run pytest ...` (memory: the shared `test_tehsil` wedges across parallel sessions).
+- Test database per checkout: `POSTGRES_DB=elmify_master uv run pytest ...` (memory: the shared `test_elmify` wedges across parallel sessions).
 - Every commit must leave `uv run ruff check .`, `uv run mypy apps config` (strict) and the full suite green. **Never `ruff format`** (memory: it churns 26 unrelated files).
 - Every model call: DATA labelled as data in the developer message, `text_format=` a Pydantic model with `extra="forbid"`, `max_output_tokens` capped, `store=False`, `safety_identifier=privacy_safe_identifier(...)`.
 - `read_program_page` takes an `OfficialSource` row, never a URL; the `retrieve=` seam is bound only from code or a test double (Decision B, carried over verbatim from `refresh.py`'s module docstring).
@@ -96,7 +96,7 @@ def test_a_statement_kind_must_be_a_known_kind(statement_rows) -> None:
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/funding/test_catalog_models.py -q -k statement`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/funding/test_catalog_models.py -q -k statement`
 Expected: FAIL — `AttributeError: module has no attribute 'ProgramStatement'`
 
 - [ ] **Step 3: Rename the model**
@@ -247,7 +247,7 @@ class Migration(migrations.Migration):
 
 Then check Django agrees nothing is missing:
 
-Run: `POSTGRES_DB=tehsil_master uv run python manage.py makemigrations --check --dry-run funding`
+Run: `POSTGRES_DB=elmify_master uv run python manage.py makemigrations --check --dry-run funding`
 Expected: `No changes detected in app 'funding'`. If it lists changes, fold them into 0029 — do not let it generate a 0030.
 
 - [ ] **Step 5: Rename every reference**
@@ -279,7 +279,7 @@ Comment-only mentions (`apps/research/registers.py:9`, `apps/funding/migrations/
 
 - [ ] **Step 6: Run the full suite, lint and types**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_master uv run pytest -q && uv run ruff check . && uv run mypy apps config`
 Expected: all pass. If `grep -rn "ProgramCompetency" apps tests --include=*.py | grep -v migrations/0020` prints anything, you missed one.
 
 - [ ] **Step 7: Commit**
@@ -405,7 +405,7 @@ class FakeResponses:
 
 In the moved test `test_an_oversized_selection_is_cut_between_blocks_and_logged`, the `caplog.at_level("WARNING", logger="apps.research.refresh")` becomes `logger="apps.research.reader"`. Remove `_MAX_PAGE_TEXT_CHARS` and `readable_text` from `test_refresh.py`'s imports.
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/research -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/research -q`
 Expected: all pass (same tests, new home).
 
 - [ ] **Step 2: Write the failing `extract_statements` tests**
@@ -461,7 +461,7 @@ def test_page_text_over_the_cap_is_cut_in_the_sent_message():
 
 - [ ] **Step 3: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/research/test_reader.py -q -k "statement or labelled or refusal or cap"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/research/test_reader.py -q -k "statement or labelled or refusal or cap"`
 Expected: FAIL — `ImportError: cannot import name 'Statement'`
 
 - [ ] **Step 4: Implement the schema and the call**
@@ -553,7 +553,7 @@ def extract_statements(
 
 - [ ] **Step 5: Run the reader tests, lint, types**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/research -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/research -q && uv run ruff check . && uv run mypy apps config`
 Expected: all pass.
 
 - [ ] **Step 6: Commit**
@@ -852,7 +852,7 @@ def test_an_off_site_redirect_is_refused_before_anything_is_written(program):
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/research/test_reader.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/research/test_reader.py -q`
 Expected: FAIL — `ImportError: cannot import name 'read_program_page'`
 
 - [ ] **Step 3: Implement the reader**
@@ -1001,7 +1001,7 @@ def read_program_page(
 
 - [ ] **Step 4: Run the reader tests, lint, types**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/research/test_reader.py -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/research/test_reader.py -q && uv run ruff check . && uv run mypy apps config`
 Expected: all pass. If `test_chrome_only_changes_count_as_unchanged` fails, check that `content_digest` in `apps/research/harvest.py` prefers `main` chunks — the test's footer sits outside `<main>` on purpose.
 
 - [ ] **Step 5: Commit**
@@ -1124,7 +1124,7 @@ def test_required_beats_preferred_when_the_page_says_both(program_factory):
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.documents.derive'`
 
 - [ ] **Step 3: Implement**
@@ -1201,7 +1201,7 @@ def derive_cv_format(program: Program) -> str | None:
 
 - [ ] **Step 4: Run the tests, lint, types**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q && uv run ruff check . && uv run mypy apps config`
 Expected: all pass.
 
 - [ ] **Step 5: Commit**
@@ -1349,7 +1349,7 @@ def test_a_derived_key_outside_the_allowed_set_is_refused_by_the_schema():
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q -k "derived or derivation or cv_sentences or index or stale"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q -k "derived or derivation or cv_sentences or index or stale"`
 Expected: FAIL — `ImportError: cannot import name 'Derivations'`
 
 - [ ] **Step 3: Implement**
@@ -1480,7 +1480,7 @@ def derive_cv_constraints(program: Program, *, parser: ResponsesAPI) -> tuple[Co
 
 - [ ] **Step 4: Run the tests, lint, types**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q && uv run ruff check . && uv run mypy apps config`
 Expected: all pass. If mypy rejects `value: int | bool | str` ordering, keep it — Pydantic's smart union handles `bool` before `int` in "left to right" mode only if `bool` is listed first; if `Derived(value=True)` comes back as `1`, reorder to `bool | int | str` and re-run.
 
 - [ ] **Step 5: Commit**
@@ -1633,7 +1633,7 @@ def test_the_page_rule_reaches_a_render_as_an_advisory_violation_with_the_senten
 
 - [ ] **Step 2: Run them to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q -k "one_read or unchanged_page or reaches_a_render"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q -k "one_read or unchanged_page or reaches_a_render"`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.documents.program_rules'`
 
 - [ ] **Step 3: Implement**
@@ -1697,7 +1697,7 @@ def read_and_derive(
 
 - [ ] **Step 4: Run the tests, lint, types**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q && uv run ruff check . && uv run mypy apps config`
 Expected: all pass. If the render test's `page_count` is 1, raise the experience count to 24 (the S-022 test in `test_render.py` measured 12 as the first count that spills; 14 is safe, 24 fills two pages).
 
 - [ ] **Step 5: Commit**
@@ -1756,7 +1756,7 @@ def test_a_same_origin_redirect_is_still_read(program, final_url):
 
 - [ ] **Step 3: Full suite, lint, types, bandit**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest -q && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest -q && uv run ruff check . && uv run mypy apps config && uv run bandit -c pyproject.toml -r apps config -q`
 Expected: all pass; `grep -rn "format_resolution\|record_program_profile\|extract_program_profile\|refresh_program_profile\|ProgramProfile\|WantedCompetency" apps tests --include=*.py` prints nothing.
 
 - [ ] **Step 4: Commit**
@@ -1865,15 +1865,15 @@ def test_three_live_reads_of_a_real_page_agree(program, capsys):
 - [ ] **Step 3: Run the live check**
 
 ```bash
-set -a; . ~/.config/tehsil_agent/openai.env; set +a
-POSTGRES_DB=tehsil_master uv run pytest tests/research/test_reader.py -q -m live -k three_live_reads -s
+set -a; . ~/.config/elmify/openai.env; set +a
+POSTGRES_DB=elmify_master uv run pytest tests/research/test_reader.py -q -m live -k three_live_reads -s
 ```
 
 Expected: PASS with three identical sets. **If it fails on disagreement, do not loosen the assertion.** Print the symmetric difference and read it: if the differing quotes are all on the page (dropped_quotes is 0 and the difference is *which* sentences were quoted), the residual variance is in selection, not fabrication, and the spec's named follow-up — a union-of-N-reads step — is the fix, as a separate change. Report the numbers either way.
 
 - [ ] **Step 4: Full gate and commit**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest -q && uv run ruff check . && uv run mypy apps config`
+Run: `POSTGRES_DB=elmify_master uv run pytest -q && uv run ruff check . && uv run mypy apps config`
 Expected: all pass (the live test is deselected by `addopts`).
 
 ```bash

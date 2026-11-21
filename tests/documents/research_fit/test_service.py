@@ -81,7 +81,7 @@ def _search(urls=("https://www.university.example.test/robotics",), cost=0.007, 
 # can assert exactly one search per anchor. D12 is covered in test_anchors.
 
 
-def _fetch(url):
+def _fetch(url, **_):
     return FetchResult(url, (), "text/html", _HTML)
 
 
@@ -249,6 +249,46 @@ def test_no_query_ever_carries_the_student(agency_a, membership_a, program_facto
         for query, _domain in search.sent:
             assert "aysel" not in query and "mammadova" not in query
             assert "baku" not in query and "2024" not in query
+
+
+class _DownParser:
+    """The topic-phrase model is down: every call raises, as an SDK transport error does."""
+
+    def __init__(self):
+        self.calls = []
+
+    def parse(self, **kwargs):
+        self.calls.append(kwargs)
+        raise RuntimeError("model down")
+
+
+def test_with_the_model_down_no_third_party_name_reaches_a_query(
+    agency_a, membership_a, program_factory
+):
+    """banned_terms holds the student's own name and schools, not a supervisor's;
+    the fallback must strip the name on its own (2026-10-14)."""
+    with tenant_scope(agency_a.id):
+        program = program_factory(country_code="GB")
+        prompt = _prompt(program)
+        make_fact(membership_a, "IDENTITY", {"full_name": "Aysel Mammadova"})
+        fact = make_fact(
+            membership_a, "RESEARCH",
+            {"thesis_title": "Protein folding kinetics with Ayse Yilmaz",
+             "institution": "Baku State University"},
+        )
+        fact.confirmed_by = membership_a
+        fact.confirmed_at = timezone.now()
+        fact.save(update_fields=["confirmed_by", "confirmed_at"])
+        search = _search(urls=())
+        facts = {f.id: f for f in VerifiedFact.objects.filter(student=membership_a)}
+        propose_research_fit(
+            student=membership_a, program=program, prompt=prompt, facts=facts, storyline=None,
+            parser=_DownParser(), claude=None, classifier=_Classifier(), search=search,
+            fallback_search=None, fetch=_fetch,
+        )
+        for query, _domain in search.sent:
+            assert "ayse" not in query and "yilmaz" not in query
+
 
 
 def test_the_theme_is_the_last_rung_and_needs_no_model_call_for_the_phrase(
@@ -558,7 +598,7 @@ def test_an_unreadable_only_page_set_is_unreadable(agency_a, membership_a, progr
             classifier=_Classifier(),
             search=_search(),
             fallback_search=None,
-            fetch=lambda url: FetchResult(url, (), "text/html", shell),
+            fetch=lambda url, **_: FetchResult(url, (), "text/html", shell),
         )
         assert out.status == "unreadable"
 
@@ -695,7 +735,7 @@ def test_recheck_flags_a_page_that_dropped_the_entity(agency_a, membership_a):
         row = _fit_input(membership_a, _ROBOTICS_SENTENCE, "Chair of Robotics", digest="0" * 64)
         gone = b"<html><body><main><p>This chair has been dissolved.</p></main></body></html>"
         assert recheck_research_fit(
-            {row.id: row}, fetch=lambda url: FetchResult(url, (), "text/html", gone)
+            {row.id: row}, fetch=lambda url, **_: FetchResult(url, (), "text/html", gone)
         ) == (row.id,)
 
 
@@ -721,7 +761,7 @@ def test_recheck_flags_an_off_domain_redirect_as_stale(agency_a, membership_a):
         row = _fit_input(membership_a, "s", "Chair of Robotics", digest="0" * 64)
         assert recheck_research_fit(
             {row.id: row},
-            fetch=lambda url: FetchResult(
+            fetch=lambda url, **_: FetchResult(
                 "https://www.evil.example.test/robotics", (), "text/html", _HTML
             ),
         ) == (row.id,)
@@ -734,7 +774,7 @@ def test_recheck_flags_a_genuinely_unreadable_page_as_stale(agency_a, membership
             b"<html><body><div id='app'></div>" + b"<script>x</script>" * 2000 + b"</body></html>"
         )
         assert recheck_research_fit(
-            {row.id: row}, fetch=lambda url: FetchResult(url, (), "text/html", shell)
+            {row.id: row}, fetch=lambda url, **_: FetchResult(url, (), "text/html", shell)
         ) == (row.id,)
 
 
@@ -789,7 +829,7 @@ def test_recheck_reads_the_page_again_even_when_the_cache_still_holds_it(
         gone = b"<html><body><main><p>The chair is currently vacant.</p></main></body></html>"
         calls: list[str] = []
 
-        def _second_fetch(url: str) -> FetchResult:
+        def _second_fetch(url: str, **_: object) -> FetchResult:
             calls.append(url)
             return FetchResult(url, (), "text/html", gone)
 
@@ -901,6 +941,60 @@ def test_one_proposal_cannot_spend_more_than_the_model_call_cap(
     assert out.model_calls <= MAX_MODEL_CALLS
 
 
+def test_the_fetch_budget_stops_a_proposal_and_is_charged_to_the_tenant(
+    agency_a, membership_a, program_factory, settings
+):
+    """D15: every page read is a billable vendor credit, and the daily ceiling
+    used to meter SEARCH spend only.
+
+    `MAX_PAGES_CLASSIFIED` does not bound this half -- it counts pages
+    successfully READ, so a run whose fetches all fail or all get refused
+    walks the whole 2 x domains x 2 x TOP_PAGES search space paying for every
+    attempt. The budget is what bounds it, and its dollars go into the same
+    per-tenant ceiling as the search dollars.
+    """
+    settings.RESEARCH_FIT_FETCH_CREDITS = {"FIRECRAWL": 2, "SCRAPE_DO": 0}
+    spent: list[str] = []
+
+    def _charging_fetch(url, **kwargs):
+        # Check then spend, in that order, because that is what the vendor
+        # modules do (SweepBudget's own docstring: the cap is checked after the
+        # cost is known, and `check` refuses the NEXT rung). Two credits
+        # against a cap of two, so the second page is refused before its
+        # request is made rather than after it is paid for.
+        kwargs["budget"].check("FIRECRAWL")
+        spent.append(url)
+        kwargs["budget"].spend("FIRECRAWL", 2)
+        return FetchResult(url, (), "text/html", _HTML)
+
+    with tenant_scope(agency_a.id):
+        program = program_factory(country_code="GB")
+        fact = _research_fact(membership_a)
+        from apps.documents.research_fit.anchors import TopicPhrase
+
+        out = propose_research_fit(
+            student=membership_a,
+            program=program,
+            prompt=_prompt(program),
+            facts={fact.id: fact},
+            storyline=None,
+            parser=_Parser(TopicPhrase(phrase="legged locomotion control")),
+            claude=None,
+            classifier=_Classifier(),
+            search=_search(urls=("https://www.university.example.test/a",
+                                "https://www.university.example.test/b",
+                                "https://www.university.example.test/c")),
+            fallback_search=None,
+            fetch=_charging_fetch,
+        )
+
+    assert out.status == "ceiling"
+    # One page paid for, the next refused before its request -- not all three.
+    assert len(spent) == 1
+    # 2 Firecrawl credits at the 2026-09-19 plan price, reported in dollars.
+    assert out.cost_usd == pytest.approx(0.007 + 2 * (83 / 100_000))
+
+
 def test_a_sentence_quoted_from_a_capture_says_when_the_page_was_captured(
     agency_a, membership_a, program_factory
 ):
@@ -912,7 +1006,7 @@ def test_a_sentence_quoted_from_a_capture_says_when_the_page_was_captured(
     from apps.documents.research_fit.anchors import TopicPhrase
     from apps.research.fetch.types import FetchedPage, Outcome
 
-    def _archived_fetch(url):
+    def _archived_fetch(url, **_):
         return FetchedPage(
             final_url=url, redirects=(), content_type="text/html", body=_HTML,
             fetched_via="ARCHIVE", outcome=Outcome.ARCHIVED, rung=6, captured_at="2026-06-25",
@@ -969,3 +1063,281 @@ def test_a_sentence_quoted_from_a_live_page_carries_no_capture_date(
         )
         assert out.status == "matched"
         assert out.narrative_input.provenance["captured_at"] == ""
+
+
+def test_forbidden_naming_skips_people_and_groups_and_keeps_modules(
+    agency_a, membership_a, program_factory
+):
+    from apps.documents.research_fit.anchors import TopicPhrase
+
+    html = (
+        b"<html><body><main>"
+        b"<p>Prof. Jane Smith leads the Chair of Robotics on legged locomotion.</p>"
+        b"<p>The Autonomous Locomotion Track covers model predictive gait control.</p>"
+        b"</main></body></html>"
+    )
+    with tenant_scope(agency_a.id):
+        program = program_factory(country_code="US")
+        prompt = _prompt(
+            program,
+            funder_kind=ApplicationPrompt.FunderKind.DEVELOPMENT_FOUNDATION,
+            letter_naming="FORBIDDEN",
+        )
+        fact = _research_fact(membership_a)
+        out = propose_research_fit(
+            student=membership_a,
+            program=program,
+            prompt=prompt,
+            facts={fact.id: fact},
+            storyline=None,
+            parser=_Parser(TopicPhrase(phrase="legged locomotion control"), _strong(), _strong()),
+            claude=None,
+            classifier=_Classifier(
+                ClassifiedSentence(0, 0.98, "named_person", "Prof. Jane Smith"),
+                ClassifiedSentence(0, 0.95, "research_group", "Chair of Robotics"),
+                ClassifiedSentence(1, 0.80, "module_or_track", "Autonomous Locomotion Track"),
+            ),
+            search=_search(),
+            fallback_search=None,
+            fetch=lambda url, **_: FetchResult(url, (), "text/html", html),
+        )
+        assert out.status == "matched"
+        assert out.narrative_input.provenance["kind"] == "module_or_track"
+        assert out.narrative_input.provenance["entity"] == "Autonomous Locomotion Track"
+
+
+def test_named_person_match_attaches_verified_paper_provenance(
+    agency_a, membership_a, program_factory
+):
+    from apps.documents.research_fit.anchors import TopicPhrase
+    from apps.documents.research_fit.papers import PaperMatch
+
+    html = (
+        b"<html><body><main>"
+        b"<p>Prof. Jane Smith leads research on legged locomotion control.</p>"
+        b"</main></body></html>"
+    )
+    with tenant_scope(agency_a.id):
+        program = program_factory(country_code="GB")
+        prompt = _prompt(program)
+        fact = _research_fact(membership_a)
+        out = propose_research_fit(
+            student=membership_a,
+            program=program,
+            prompt=prompt,
+            facts={fact.id: fact},
+            storyline=None,
+            parser=_Parser(TopicPhrase(phrase="legged locomotion control"), _strong(), _strong()),
+            claude=None,
+            classifier=_Classifier(
+                ClassifiedSentence(0, 0.95, "named_person", "Prof. Jane Smith"),
+            ),
+            search=_search(),
+            fallback_search=None,
+            fetch=lambda url, **_: FetchResult(url, (), "text/html", html),
+            paper_lookup=lambda **_: PaperMatch(
+                title="Torque-Controlled Quadruped Trotting",
+                year=2025,
+                url="https://doi.org/10.1000/quad.2025",
+                finding="Demonstrated stable trotting on 25-degree inclines.",
+            ),
+        )
+        assert out.status == "matched"
+        prov = out.narrative_input.provenance
+        assert prov["kind"] == "named_person"
+        assert prov["entity"] == "Prof. Jane Smith"
+        assert prov["paper_title"] == "Torque-Controlled Quadruped Trotting"
+        assert prov["paper_year"] == 2025
+        assert prov["paper_url"] == "https://doi.org/10.1000/quad.2025"
+        assert prov["paper_finding"] == "Demonstrated stable trotting on 25-degree inclines."
+        assert prov["paper_author_role"] == "lead"
+
+
+def test_duplicate_urls_across_queries_are_classified_only_once(
+    agency_a, membership_a, program_factory
+):
+    from apps.documents.research_fit.anchors import TopicPhrase
+
+    with tenant_scope(agency_a.id):
+        # DE programme triggers English query first, then lazy German translation after English
+        # does not produce a strong match.
+        program = program_factory(country_code="DE")
+        prompt = _prompt(program)
+        fact = _research_fact(membership_a)
+        weak = AlignmentReading(strength="weak", excerpt="x")
+        parser = _Parser(
+            TopicPhrase(phrase="legged locomotion control"),
+            weak,
+            weak,
+            TopicPhrase(phrase="laufroboter regelung"),
+        )
+        classifier = _Classifier(
+            ClassifiedSentence(0, 0.9, "research_group", "Chair of Robotics")
+        )
+        # Both queries return the exact same URL; it must be classified and judged once.
+        out = propose_research_fit(
+            student=membership_a,
+            program=program,
+            prompt=prompt,
+            facts={fact.id: fact},
+            storyline=None,
+            parser=parser,
+            claude=None,
+            classifier=classifier,
+            search=_search(urls=("https://www.university.example.test/robotics",)),
+            fallback_search=None,
+            fetch=_fetch,
+        )
+        assert out.status == "no_match"
+        assert len(classifier.calls) == 1
+
+
+def test_lazy_translation_skips_translate_phrase_when_english_query_matches(
+    agency_a, membership_a, program_factory
+):
+    from apps.documents.research_fit.anchors import TopicPhrase
+
+    with tenant_scope(agency_a.id):
+        program = program_factory(country_code="DE")
+        prompt = _prompt(program)
+        fact = _research_fact(membership_a)
+        # Only topic_phrase + 2 judge readings; if translate_phrase were called eagerly,
+        # _Parser would pop the wrong response type and fail.
+        parser = _Parser(
+            TopicPhrase(phrase="legged locomotion control"),
+            _strong(),
+            _strong(),
+        )
+        classifier = _Classifier(
+            ClassifiedSentence(0, 0.9, "research_group", "Chair of Robotics")
+        )
+        search = _search(urls=("https://www.university.example.test/robotics",))
+        out = propose_research_fit(
+            student=membership_a,
+            program=program,
+            prompt=prompt,
+            facts={fact.id: fact},
+            storyline=None,
+            parser=parser,
+            claude=None,
+            classifier=classifier,
+            search=search,
+            fallback_search=None,
+            fetch=_fetch,
+        )
+        assert out.status == "matched"
+        assert search.sent == [("legged locomotion control", "university.example.test")]
+        assert len(parser.calls) == 3
+
+
+def test_research_group_match_resolves_same_page_pi_paper_and_fit_mode(
+    agency_a, membership_a, program_factory
+):
+    from apps.documents.research_fit.anchors import TopicPhrase
+    from apps.documents.research_fit.papers import PaperMatch
+
+    html = (
+        b"<html><body><main>"
+        b"<p>The Chair of Autonomous Systems investigates legged locomotion control.</p>"
+        b"<p>The chair is headed by Prof. Jane Smith.</p>"
+        b"</main></body></html>"
+    )
+    with tenant_scope(agency_a.id):
+        program = program_factory(country_code="GB")
+        prompt = _prompt(program)
+        fact = _research_fact(membership_a)
+        out = propose_research_fit(
+            student=membership_a,
+            program=program,
+            prompt=prompt,
+            facts={fact.id: fact},
+            storyline=None,
+            parser=_Parser(TopicPhrase(phrase="legged locomotion control"), _strong(), _strong()),
+            claude=None,
+            classifier=_Classifier(
+                ClassifiedSentence(0, 0.92, "research_group", "Chair of Autonomous Systems"),
+                ClassifiedSentence(1, 0.75, "named_person", "Prof. Jane Smith"),
+            ),
+            search=_search(),
+            fallback_search=None,
+            fetch=lambda url, **_: FetchResult(url, (), "text/html", html),
+            paper_lookup=lambda **kwargs: PaperMatch(
+                title="Closed-Loop Gait Control on Rough Terrain",
+                year=2025,
+                url="https://doi.org/10.1000/chair.2025",
+                finding="We prove stability bounds under terrain uncertainty.",
+            )
+            if kwargs.get("entity") == "Prof. Jane Smith"
+            else None,
+        )
+        assert out.status == "matched"
+        prov = out.narrative_input.provenance
+        assert prov["kind"] == "research_group"
+        assert prov["entity"] == "Chair of Autonomous Systems"
+        assert prov["paper_title"] == "Closed-Loop Gait Control on Rough Terrain"
+        assert prov["fit_mode"] == "direct"
+
+
+def test_partner_domain_match_passes_partner_institution_name_to_paper_lookup(
+    agency_a, membership_a, program_factory, institution_factory
+):
+    from apps.documents.research_fit.anchors import TopicPhrase
+    from apps.documents.research_fit.papers import PaperMatch
+
+    html = (
+        b"<html><body><main>"
+        b"<p>Prof. Elena Rossi leads the Partner Robotics Lab on legged locomotion.</p>"
+        b"</main></body></html>"
+    )
+    with tenant_scope(agency_a.id):
+        program = program_factory(country_code="GB")
+        partner = institution_factory(
+            name="Politecnico di Milano",
+            official_website="https://www.polimi.example.test/",
+        )
+        program.awarding_institutions.add(partner)
+        prompt = _prompt(program)
+        fact = _research_fact(membership_a)
+        captured_kwargs: dict[str, object] = {}
+
+        def _lookup(**kwargs):
+            captured_kwargs.update(kwargs)
+            return PaperMatch(
+                title="Partner Quadruped Control",
+                year=2025,
+                url="https://doi.org/10.1000/polimi.2025",
+                finding="Demonstrated partner lab gait stability.",
+            )
+
+        def _partner_search(*, query, domain):
+            if domain == "polimi.example.test":
+                return SiteSearchResult(
+                    urls=("https://www.polimi.example.test/robotics",),
+                    cost_usd=0.007,
+                    provider="exa",
+                )
+            return SiteSearchResult(urls=(), cost_usd=0.007, provider="exa")
+
+        out = propose_research_fit(
+            student=membership_a,
+            program=program,
+            prompt=prompt,
+            facts={fact.id: fact},
+            storyline=None,
+            parser=_Parser(TopicPhrase(phrase="legged locomotion control"), _strong(), _strong()),
+            claude=None,
+            classifier=_Classifier(
+                ClassifiedSentence(0, 0.95, "named_person", "Prof. Elena Rossi")
+            ),
+            search=_partner_search,
+            fallback_search=None,
+            fetch=lambda url, **_: FetchResult(url, (), "text/html", html),
+            paper_lookup=_lookup,
+        )
+        assert out.status == "matched"
+        assert captured_kwargs["institution_name"] == "Politecnico di Milano"
+        assert captured_kwargs["domains"][0] == "polimi.example.test"
+
+
+
+

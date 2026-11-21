@@ -54,6 +54,7 @@ reconciled; the ladder cannot switch on `Outcome` alone.
 
 from __future__ import annotations
 
+import time
 import zlib
 from collections.abc import Callable
 from dataclasses import replace
@@ -78,7 +79,6 @@ from . import scrapedo as scrapedo_module
 from .types import (
     SERVED,
     Attempt,
-    ChargedFailure,
     FetchBudgetExhausted,
     FetchedPage,
     Outcome,
@@ -86,11 +86,11 @@ from .types import (
 )
 
 __all__ = [
+    "CARRIES_BYTES",
     "CATALOG_ROLE_NOTE",
     "RUNTIME_ENGINE_WRITE_REFUSED",
     "USD_PER_CREDIT",
     "VENDOR_UNAVAILABLE",
-    "ChargedFailure",
     "FetchBudgetExhausted",
     "FetchedPage",
     "SweepBudget",
@@ -141,7 +141,7 @@ _TERMINAL = SERVED | {Outcome.UNCHANGED, Outcome.DEAD, Outcome.INVALID, Outcome.
 #: all. "No new bytes are trusted" is false for this implementation, and
 #: `page.ok` being False is the CALLER's discipline, not this function's
 #: guarantee: a caller that asked for provenance gets provenance.
-_CARRIES_BYTES = SERVED | {Outcome.UNCHANGED}
+CARRIES_BYTES = SERVED | {Outcome.UNCHANGED}
 
 #: A block's cool-off doubles from six hours and stops at a week. A host that
 #: means it is not persuaded by a fourth attempt an hour later.
@@ -151,6 +151,15 @@ _BLOCK_CAP = timedelta(days=7)
 #: Which vendor's cap a rung spends against. Rung 6 fetches its capture through
 #: scrape.do (archive.py), so it spends there too.
 _VENDOR_BY_RUNG = {1: "FIRECRAWL", 2: "FIRECRAWL", 3: "SCRAPE_DO", 4: "SCRAPE_DO", 6: "SCRAPE_DO"}
+
+#: Under a caller's deadline (`fetch_page(timeout_s=)`), no rung starts with less time
+#: left than this: a vendor call could not finish in it anyway.
+MIN_RUNG_S = 2.0
+#: scrape.do's own floor under a deadline: its `timeout` "must be between 5000 ms and 120000
+#: ms" (https://scrape.do/documentation/api-response/timeout/, read 2026-10-14), and it bills a
+#: 400 as a successful request, so no scrape.do rung starts with less than this left
+#: (`scrapedo.scrape` clamps the value it sends to the same range).
+MIN_SCRAPEDO_S = 5.0
 
 
 class SweepBudget:
@@ -283,18 +292,21 @@ def _call(
     tag: str | None,
     profile: Any,
     providers: dict[str, Callable[..., FetchedPage]],
+    timeout_s: float | None = None,
 ) -> FetchedPage:
     """Exactly one vendor call. The walk records every one of them, so a rung
     that escalates within a vendor (1 -> 2) is a second trip round the loop, not
-    a second call hidden in here."""
+    a second call hidden in here. `timeout_s` is handed on only when given, so a
+    provider written before it is called exactly as it was."""
+    bound = {} if timeout_s is None else {"timeout_s": timeout_s}
     if rung in {1, 2}:
         return providers["firecrawl"](
             url, api_key=settings.FIRECRAWL_API_KEY, tag=tag, actions=rung == 2,
-            profile=profile, request_id=str(uuid4()),
+            profile=profile, request_id=str(uuid4()), **bound,
         )
     return providers["scrapedo"](
         url, api_key=settings.SCRAPEDO_API_KEY, rung=rung, profile=profile,
-        session_id=_session_id(url),
+        session_id=_session_id(url), **bound,
     )
 
 
@@ -388,7 +400,7 @@ def remember(host: str, page: FetchedPage) -> Any:
     the column's contracted 1-4 range and a lie, since the archive answering
     says nothing about whether rung 3 or 4 would have.
 
-    The start_rung branch keys on `_CARRIES_BYTES`
+    The start_rung branch keys on `CARRIES_BYTES`
     (SERVED | UNCHANGED), not on strict `SERVED`: `UNCHANGED` is the host
     answering in full -- firecrawl.py builds it from the same `common` as a
     FETCHED page, body and all -- and `_rung_plan`'s re-probe re-stamps
@@ -406,7 +418,7 @@ def remember(host: str, page: FetchedPage) -> Any:
     enough that leaving the memory stale until the next re-probe costs little.
 
     A BLOCKED outcome sets a doubling cool-off capped at a week, and the
-    cool-off clears on `_CARRIES_BYTES` -- the same split, for the same reason:
+    cool-off clears on `CARRIES_BYTES` -- the same split, for the same reason:
     UNCHANGED is the host answering in full, so a cool-off it survives is
     stale. That was harmless while `blocked_until` had no reader; Task 10's
     retry runner is the reader, and now a stale one delays every queued retry
@@ -454,7 +466,7 @@ def remember(host: str, page: FetchedPage) -> Any:
         window = min(_BLOCK_BASE * (2 ** min(profile.consecutive_blocks - 1, 5)), _BLOCK_CAP)
         profile.blocked_until = now + window
 
-    if page.outcome in _CARRIES_BYTES:
+    if page.outcome in CARRIES_BYTES:
         profile.blocked_until = None
         profile.consecutive_blocks = 0
         if page.rung in (1, 2):
@@ -475,6 +487,7 @@ def fetch_page(
     budget: SweepBudget | None = None,
     profile: Any = None,
     providers: dict[str, Callable[..., FetchedPage]] | None = None,
+    timeout_s: float | None = None,
 ) -> FetchedPage:
     """Walk the ladder and return the first usable document, or a named refusal.
 
@@ -482,9 +495,23 @@ def fetch_page(
     page CARRYING BYTES whose final URL left that ORIGIN is refused with
     `OFF_SITE` and its bytes are dropped -- off-site bytes must reach neither the
     model nor the evidence bucket (CLAUDE.md, "Decision B vouches for the SOURCE
-    ROW, not the BYTES"). `UNCHANGED` is one of those pages (`_CARRIES_BYTES`),
+    ROW, not the BYTES"). `UNCHANGED` is one of those pages (`CARRIES_BYTES`),
     not an exemption. Origin, never the whole URL: official pages redirect `/x`
     to `/x/` as housekeeping.
+
+    `timeout_s` is for a caller someone waits on (the single-page funding read,
+    owner 2026-10-13: 30 s for the whole read). Each vendor call is handed the
+    time left, and no rung starts with less than `MIN_RUNG_S` left (`MIN_SCRAPEDO_S` for a
+    scrape.do rung): the ladder
+    stops BLOCKED (a rung already was) or UNREACHABLE with reason "deadline" --
+    the ONLY way that reason arises -- recorded as an attempt and never taught
+    to the HostProfile, because the host was not slow, the caller could not
+    wait. When rungs 1-4 all fail with time still left, the ladder stops there
+    with its real outcome and reason ("blocked" / "unreachable"), as rung 5
+    would: no retry is scheduled, because `retry_due_fetches` persists nothing
+    and hands the page to nobody, and the archive rung (a probe and a fetch of
+    its own) is not tried (Ruling P2). None, the default, is the ladder as it
+    was.
 
     Engine-only: every call writes FetchAttempt/HostProfile, catalogue tables
     the web role (`runtime_web`) holds no grant on. A student-facing action
@@ -495,6 +522,7 @@ def fetch_page(
 
     providers = providers or _default_providers()
     budget = budget or default_budget()
+    deadline = None if timeout_s is None else time.monotonic() + timeout_s
     host = (urlsplit(url).hostname or "").lower()
     trail: list[Attempt] = []
 
@@ -551,6 +579,11 @@ def fetch_page(
             # the 25-credit tier. Rung 5 answers "not now" instead.
             break
         vendor = _VENDOR_BY_RUNG[rung]
+        left = None if deadline is None else deadline - time.monotonic()
+        floor = MIN_SCRAPEDO_S if vendor == "SCRAPE_DO" else MIN_RUNG_S
+        if left is not None and left < floor:
+            blocked = any(attempt.outcome is Outcome.BLOCKED for attempt in trail)
+            return stop(Outcome.BLOCKED if blocked else Outcome.UNREACHABLE, "deadline", rung)
         try:
             budget.check(vendor)
         except FetchBudgetExhausted as error:
@@ -559,7 +592,8 @@ def fetch_page(
                         + timedelta(hours=settings.FETCH_BUDGET_RETRY_HOURS))
 
         try:
-            page = _call(rung, url, tag=tag, profile=profile, providers=providers)
+            page = _call(rung, url, tag=tag, profile=profile, providers=providers,
+                         timeout_s=left)
         except VendorUnavailable as error:
             # THEIR API failed, not the site. Recording this as a block would
             # teach the host profile a lie and send every later fetch to rung 4.
@@ -574,7 +608,7 @@ def fetch_page(
 
         bill(page, rung)
 
-        if page.outcome in _CARRIES_BYTES and require_origin is not None:
+        if page.outcome in CARRIES_BYTES and require_origin is not None:
             try:
                 require_same_origin(require_origin, page)
             except OffSiteRedirect as error:
@@ -598,6 +632,12 @@ def fetch_page(
             queue = [pending for pending in queue if pending != 3]
 
     blocked = any(attempt.outcome is Outcome.BLOCKED for attempt in trail)
+    if deadline is not None:
+        # Ruling P2 (2026-10-13): the caller is waiting, so neither the retry queue nor
+        # the archive answers it. Rung 5 is the rung declined; no RETRY_SCHEDULED row.
+        # The time did not run out (that returned above), so the reason is the ladder's own.
+        return stop(Outcome.BLOCKED if blocked else Outcome.UNREACHABLE,
+                    "blocked" if blocked else "unreachable", 5)
 
     # Rung 5 before rung 6: a host that is merely down must not be answered from
     # a year-old capture on the first failure.

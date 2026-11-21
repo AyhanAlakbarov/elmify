@@ -30,13 +30,18 @@ the command says so out loud rather than implying a check it did not make.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import cast
 from uuid import UUID
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
+from apps.documents.evidence.readings import UsableReading, usable_readings
+from apps.documents.letter_ai_policy import resolve_prompt_ai_policy
+from apps.documents.letter_defaults import defaults_for
 from apps.documents.letter_render import render_letter
+from apps.documents.letter_schemas import Storyline
 from apps.documents.letter_shape import NotGeneratable, constraints_from_shape, shape_from_prompt
 from apps.documents.letters import (
     LetterGenerationError,
@@ -45,11 +50,33 @@ from apps.documents.letters import (
     is_letter_blocked,
 )
 from apps.documents.models import DocumentDraft, NarrativeInput, VerifiedFact
+from apps.documents.research_fit.home_context import propose_home_country_context
+from apps.documents.research_fit.service import propose_research_fit
+from apps.documents.storyline import (
+    StorylineProposalFailure,
+    StorylineRateLimited,
+    choose_storyline,
+    propose_storylines,
+    recent_programme_sentences,
+    recent_theme_texts,
+    theme_kind_for,
+)
 from apps.documents.verification import generatable_facts
 from apps.funding.models import ApplicationPrompt
 from apps.research.provenance import WORDING, Verdict, programme_verdict
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.models import Membership
+
+logger = logging.getLogger(__name__)
+
+_GENERATABLE_STRUCTURES = frozenset(
+    {
+        ApplicationPrompt.Structure.SHORT_ANSWER_SET,
+        ApplicationPrompt.Structure.CONTINUOUS_LETTER,
+        ApplicationPrompt.Structure.TWO_STATEMENTS,
+        ApplicationPrompt.Structure.PRESCRIBED_RESEARCH_FORM,
+    }
+)
 
 
 class Command(BaseCommand):
@@ -85,11 +112,28 @@ class Command(BaseCommand):
             inputs = {
                 entry.id: entry for entry in NarrativeInput.objects.filter(student=student)
             }
-            forbidden = frozenset(str(name) for name in cast(list[str], options["forbid"]))
+            readings = usable_readings(student)
+            forbidden = self._forbidden_institutions(
+                student,
+                prompt,
+                explicit=cast(list[str], options["forbid"]),
+            )
             if not forbidden:
                 self.stdout.write(
                     "no --forbid names given: the wrong-institution gate checks nothing"
                 )
+            storyline: Storyline | None = None
+            if (
+                prompt.structure in _GENERATABLE_STRUCTURES
+                and prompt.programme.letter_required != "not_requested"
+                and not prompt.letter_handwritten
+            ):
+                storyline = self._storyline_for(student, prompt, facts, inputs, readings=readings)
+                self._ensure_research_fit(student, prompt, facts, inputs, storyline, readings)
+                self._ensure_home_country_context(student, prompt, facts, inputs, storyline)
+            cohort_sentences = recent_programme_sentences(
+                programme_id=prompt.programme_id, student=student
+            )
             try:
                 result = generate_letter(
                     student=student,
@@ -97,6 +141,9 @@ class Command(BaseCommand):
                     facts=facts,
                     inputs=inputs,
                     forbidden_institution_names=forbidden,
+                    storyline=storyline,
+                    readings=readings,
+                    cohort_sentences=cohort_sentences,
                 )
             except (NotGeneratable, LetterGenerationError) as error:
                 # Refusals are the engine working, not the command failing:
@@ -123,6 +170,141 @@ class Command(BaseCommand):
                     applicant_name=_applicant_name(facts),
                 )
 
+    def _forbidden_institutions(
+        self,
+        student: Membership,
+        prompt: ApplicationPrompt,
+        *,
+        explicit: list[str],
+    ) -> frozenset[str]:
+        own_names: set[str] = set()
+        if prompt.programme.institution and prompt.programme.institution.name:
+            own_names.add(prompt.programme.institution.name)
+        for partner in prompt.programme.awarding_institutions.all():
+            if partner.name:
+                own_names.add(partner.name)
+        names = {str(name) for name in explicit if str(name)}
+        other_drafts = (
+            DocumentDraft.objects.filter(student=student, programme__isnull=False)
+            .exclude(programme_id=prompt.programme_id)
+            .select_related("programme__institution")
+        )
+        for draft in other_drafts:
+            inst = draft.programme.institution if draft.programme else None
+            if inst and inst.name and inst.name not in own_names:
+                names.add(inst.name)
+        return frozenset(names - own_names)
+
+    def _storyline_for(
+        self,
+        student: Membership,
+        prompt: ApplicationPrompt,
+        facts: dict[UUID, VerifiedFact],
+        inputs: dict[UUID, NarrativeInput],
+        readings: tuple[UsableReading, ...] = (),
+    ) -> Storyline | None:
+        non_identity = [
+            fact for fact in facts.values() if fact.category != VerifiedFact.Category.IDENTITY
+        ]
+        has_enough_facts = (
+            len(non_identity) >= 3 and len({fact.category for fact in non_identity}) >= 2
+        ) or (len(non_identity) >= 2 and bool(readings))
+        if not has_enough_facts:
+            return None
+        row = defaults_for(
+            country_code=prompt.programme.country_code,
+            track=prompt.programme.academic_track,
+            portfolio_led=prompt.programme.portfolio_led,
+            funder_kind=prompt.funder_kind,
+        )
+        archetypes = tuple(prompt.archetypes) or row.archetypes
+        theme_kind = theme_kind_for(prompt.funder_kind, archetypes)
+        if theme_kind is None:
+            return None
+        try:
+            candidates = propose_storylines(
+                student=student,
+                facts=facts,
+                inputs=inputs,
+                theme_kind=theme_kind,
+                readings=readings,
+            )
+        except (StorylineProposalFailure, StorylineRateLimited) as error:
+            logger.warning(
+                "storyline proposal degraded for student %s (%s): %s",
+                student.id,
+                type(error).__name__,
+                error,
+            )
+            self.stdout.write(f"storyline skipped ({type(error).__name__}): {error}")
+            return None
+        return choose_storyline(
+            candidates,
+            facts=facts,
+            recent_themes=recent_theme_texts(
+                student=student, programme_id=prompt.programme_id
+            ),
+        )
+
+    def _ensure_research_fit(
+        self,
+        student: Membership,
+        prompt: ApplicationPrompt,
+        facts: dict[UUID, VerifiedFact],
+        inputs: dict[UUID, NarrativeInput],
+        storyline: Storyline | None,
+        readings: tuple[UsableReading, ...] = (),
+    ) -> None:
+        if any(
+            entry.kind == NarrativeInput.Kind.RESEARCH_FIT
+            and isinstance(entry.provenance, dict)
+            and str(entry.provenance.get("program_id")) == str(prompt.programme_id)
+            for entry in inputs.values()
+        ):
+            return
+        outcome = propose_research_fit(
+            student=student,
+            program=prompt.programme,
+            prompt=prompt,
+            facts=facts,
+            storyline=storyline,
+            readings=readings,
+        )
+        if outcome.narrative_input is not None:
+            inputs[outcome.narrative_input.id] = outcome.narrative_input
+
+    def _ensure_home_country_context(
+        self,
+        student: Membership,
+        prompt: ApplicationPrompt,
+        facts: dict[UUID, VerifiedFact],
+        inputs: dict[UUID, NarrativeInput],
+        storyline: Storyline | None,
+    ) -> None:
+        if prompt.immigration:
+            return
+        row = defaults_for(
+            country_code=prompt.programme.country_code,
+            track=prompt.programme.academic_track,
+            portfolio_led=prompt.programme.portfolio_led,
+            funder_kind=prompt.funder_kind,
+        )
+        archetypes = tuple(prompt.archetypes) or row.archetypes
+        if "HOME_COUNTRY_CONTRIBUTION" not in archetypes and prompt.funder_kind not in (
+            ApplicationPrompt.FunderKind.GOVERNMENT_SCHOLARSHIP,
+            ApplicationPrompt.FunderKind.DEVELOPMENT_FOUNDATION,
+        ):
+            return
+        entry = propose_home_country_context(
+            student=student,
+            facts=facts,
+            target_country_code=prompt.programme.country_code,
+            programme_name=prompt.programme.name,
+            storyline_theme=storyline.theme if storyline is not None else "",
+        )
+        if entry is not None:
+            inputs[entry.id] = entry
+
     def _student(self, student_id: UUID) -> Membership:
         student = Membership.objects.filter(id=student_id).first()
         if student is None:
@@ -141,12 +323,17 @@ class Command(BaseCommand):
         return prompt
 
     def _next_version(self, student: Membership, prompt: ApplicationPrompt) -> int:
-        previous = DocumentDraft.objects.filter(
-            student=student,
-            kind=DocumentDraft.Kind.MOTIVATION_LETTER,
-            programme=prompt.programme,
-        ).count()
-        return previous + 1
+        del prompt
+        latest = (
+            DocumentDraft.objects.filter(
+                student=student,
+                kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            )
+            .order_by("-version")
+            .values_list("version", flat=True)
+            .first()
+        )
+        return (latest or 0) + 1
 
     def _report(
         self, result: LetterGenerationResult, draft: DocumentDraft, prompt: ApplicationPrompt
@@ -161,8 +348,11 @@ class Command(BaseCommand):
             f"gate violations: {len(result.gate_violations)}"
         )
         for violation in result.gate_violations:
-            self.stdout.write(f"    {violation.code} ({violation.unit_archetype})")
+            kind = "blocking" if violation.blocking else "warning"
+            self.stdout.write(f"    {violation.code} ({violation.unit_archetype}) [{kind}]")
         self.stdout.write(f"  blocked: {blocked}")
+        ai_policy = resolve_prompt_ai_policy(prompt)
+        self.stdout.write(f"  ai policy: {ai_policy.policy_class} ({ai_policy.note_text})")
         self.stdout.write("  nothing is approved: a person does that, not this command")
 
     def _render(
@@ -217,12 +407,14 @@ def _applicant_name(facts: dict[UUID, VerifiedFact]) -> str:
     """The name that signs the letter, from the confirmed ledger only.
 
     `facts` is already `generatable_facts`, so a name a model proposed and
-    nobody accepted cannot reach the signature. The last IDENTITY fact wins,
-    matching `gaps.missing_contact`; no confirmed one means no signature line,
-    which the template treats as absent rather than blank.
+    nobody accepted cannot reach the signature. The last IDENTITY fact that
+    carries a full_name wins, matching `gaps.missing_contact`; no confirmed one means
+    no signature line, which the template treats as absent rather than blank.
     """
     for fact in reversed(facts.values()):
         if fact.category == VerifiedFact.Category.IDENTITY:
             payload = fact.payload if isinstance(fact.payload, dict) else {}
-            return str(payload.get("full_name") or "")
+            # A passport read writes IDENTITY rows with no name (date_of_birth, ...).
+            if name := str(payload.get("full_name") or ""):
+                return name
     return ""

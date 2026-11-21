@@ -32,15 +32,13 @@ from apps.research.languages import (
     _ISO2,
     _LANG,
     MAX_LANGUAGE_LEN,
-    WikidataLanguages,
+    CldrLanguages,
     home_language,
     ordered_languages,
     pass_languages,
 )
 from apps.research.models import Organisation, SweepDiscovery
-from apps.research.providers import SearchProvider
-from apps.research.providers.brave import BraveProvider
-from apps.research.providers.exa import ExaProvider
+from apps.research.providers import default_providers
 
 
 class Command(BaseCommand):
@@ -64,6 +62,9 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         # Refused before any query: both end up in angle and run keys.
         country, family = options["country"].upper(), options["family"]
+        # Every PASS_SHAPES family is a funder sweep.
+        if not settings.FUNDER_SWEEP_LEVEL_CHECK_LIVE:
+            raise CommandError("funder level check not live (card reader slice 3)")
         if not _ISO2.match(country):
             raise CommandError(f"not an ISO 3166-1 alpha-2 code: {options['country']!r}")
         options["language"] = [code.lower() for code in options["language"]]
@@ -76,13 +77,9 @@ class Command(BaseCommand):
         except ValueError as error:
             raise CommandError(str(error)) from error
 
-        providers: list[SearchProvider] = []
-        if settings.EXA_API_KEY:
-            providers.append(ExaProvider(api_key=settings.EXA_API_KEY))
-        if settings.BRAVE_API_KEY:
-            providers.append(BraveProvider(api_key=settings.BRAVE_API_KEY))
         # Tavily is not a discovery provider (roster: resolution and /map);
         # it decayed 62 -> 5 first-discoverers across 99 queries.
+        providers = default_providers()
         if not providers:
             raise CommandError("no provider key is set: EXA_API_KEY, BRAVE_API_KEY")
 
@@ -95,7 +92,7 @@ class Command(BaseCommand):
         else:
             try:
                 languages = pass_languages(
-                    country, family, source=WikidataLanguages(), home_language=home,
+                    country, family, source=CldrLanguages(), home_language=home,
                 )
             except ValueError as error:
                 raise CommandError(str(error)) from error

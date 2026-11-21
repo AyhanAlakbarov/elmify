@@ -2,7 +2,7 @@
 
 ## Goal
 
-Remove machine-wide Codex MCP maintenance assets from `tehsil_agent` without changing either `codex` or `cco codex` behavior.
+Remove machine-wide Codex MCP maintenance assets from `elmify` without changing either `codex` or `cco codex` behavior.
 
 ## Layout
 
@@ -22,11 +22,11 @@ Create and validate a candidate bundle, back up any existing destination, instal
 
 ## Failure Handling
 
-Before successful verification, retain every project source. If setup or verification fails, restore the prior destination and live Codex files through the existing setup rollback, leaving `tehsil_agent` usable.
+Before successful verification, retain every project source. If setup or verification fails, restore the prior destination and live Codex files through the existing setup rollback, leaving `elmify` usable.
 
 ## Testing
 
 - Regression tests must fail while the old project Graphify path remains.
 - Installer tests and shell syntax must pass after relocation.
 - The host verifier must pass configuration, authenticated GitHub, and Graphify invocation for both `codex` and `cco codex`.
-- After success, no relocated maintenance asset may remain in `tehsil_agent`.
+- After success, no relocated maintenance asset may remain in `elmify`.

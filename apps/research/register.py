@@ -154,8 +154,4 @@ def _merged(*groups: Sequence[str]) -> list[str]:
     A label is never a lookup key, so this list is only ever scored against --
     which is why it may hold ZEISS's name and the foundation's without harm.
     """
-    seen: dict[str, None] = {}
-    for label in (item for group in groups for item in group):
-        if label:
-            seen.setdefault(label, None)
-    return list(seen)
+    return list(dict.fromkeys(label for group in groups for label in group if label))

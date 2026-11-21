@@ -1,7 +1,8 @@
 """Diffbot Enhance on the residue: one URL out, the token never in an error.
 
-The fixture is hand-built from the documented response shape, not captured:
-no Diffbot token existed when this was written (its `_provenance` says so).
+The fixture is a live capture (2026-09-27, 25 credits) trimmed to the keys the
+adapter reads; its `_provenance` says so. The live shape matched the documented
+one, so the adapter did not change.
 """
 
 import json
@@ -22,11 +23,11 @@ FIXTURE = Path(__file__).parent / "fixtures" / "diffbot_enhance_shape.json"
 _enhance = partial(DiffbotEnhance, terms_read_on="2026-01-01", today=date(2026, 1, 1))
 
 
-def test_only_the_homepage_is_read_from_the_documented_shape() -> None:
-    documented = json.loads(FIXTURE.read_text("utf-8"))
-    assert "HAND-BUILT" in documented["_provenance"]
-    enhance = _enhance(token="t", get=lambda *a, **k: documented, sleep=lambda s: None)
-    assert enhance.homepage("Georgian Young Lawyers' Association") == "https://www.gyla.ge"
+def test_only_the_homepage_is_read_from_the_captured_shape() -> None:
+    captured = json.loads(FIXTURE.read_text("utf-8"))
+    assert "CAPTURED LIVE" in captured["_provenance"]
+    enhance = _enhance(token="t", get=lambda *a, **k: captured, sleep=lambda s: None)
+    assert enhance.homepage("Georgian Young Lawyers' Association") == "https://gyla.ge"
 
 
 def test_the_request_asks_for_organisations_only() -> None:

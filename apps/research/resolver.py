@@ -18,6 +18,7 @@ throughout: no model call, nothing from a provider kept but a URL.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -36,6 +37,8 @@ from .names import MIN_DISTINCTIVE, NameProfile, fold, inflected_kind, kind_of, 
 from .providers.base import ProviderUnavailable
 from .vocabulary import Vocabulary
 from .wikidata import WikidataMatch
+
+logger = logging.getLogger(__name__)
 
 _SPLIT = re.compile(r"[^a-z0-9]+")
 #: The shortest piece rule 1 splits a label into. Shorter pieces ("de", "ev")
@@ -332,9 +335,19 @@ class Resolver:
         search's own reason standing, except a failed fetch of its answer."""
         try:
             url = self.diffbot(names[0]) if self.diffbot else ""
-        except CallBudgetSpent:
+        except CallBudgetSpent as error:
+            logger.info(
+                "resolver diffbot residue skipped for %r (CallBudgetSpent: %s)",
+                names[0],
+                error,
+            )
             return False, found
-        except ProviderUnavailable:
+        except ProviderUnavailable as error:
+            logger.warning(
+                "resolver diffbot residue degraded for %r (ProviderUnavailable: %s)",
+                names[0],
+                error,
+            )
             return True, found
         domain = registrable_domain(url) if url else ""
         if not domain or is_catalogue(domain):

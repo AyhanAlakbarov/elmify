@@ -16,7 +16,8 @@ from django.utils import timezone
 from apps.privacy.models import PrivacyRequest
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.db import tenant_transaction
-from apps.tenancy.models import Membership, TenantDomain
+from apps.tenancy.models import Membership
+from apps.tenancy.services import TenantHostInvalid, resolve_verified_domain
 
 CLOSING = [o for o in PrivacyRequest.Outcome.values if o != PrivacyRequest.Outcome.OPEN]
 
@@ -38,9 +39,10 @@ class Command(BaseCommand):
         handled_by_email: str | None = None,
         **options: object,
     ) -> None:
-        domain = TenantDomain.objects.filter(host=host, verified_at__isnull=False).first()
-        if domain is None:
-            raise CommandError(f"no verified tenant host {host!r}")
+        try:
+            domain = resolve_verified_domain(host)
+        except TenantHostInvalid as exc:
+            raise CommandError(f"no verified tenant host {host!r}") from exc
         try:
             pk = UUID(str(options["id"]))
         except ValueError as exc:

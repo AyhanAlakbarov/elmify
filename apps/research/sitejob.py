@@ -19,7 +19,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum, StrEnum
-from typing import Protocol
 from urllib.parse import urljoin, urlsplit
 
 from django.conf import settings
@@ -30,7 +29,6 @@ from .harvest import anchors
 __all__ = [
     "DOCUMENT_SUFFIXES",
     "Lead",
-    "PageRead",
     "ProgrammeOutcome",
     "SiteJobResult",
     "Stage",
@@ -70,24 +68,6 @@ class Lead:
     stage: Stage
     kind: str = ""
     why: str = ""
-
-
-@dataclass(frozen=True)
-class PageRead:
-    """What the reader says about one fetched page.
-
-    The funnel does not read; it asks. `requirements` is how many CV or letter
-    requirement sentences the reader selected (D4), `no_cv_required` is D4's
-    third Noul, and `documents` is the further document URLs the read found.
-    """
-
-    requirements: int = 0
-    no_cv_required: bool = False
-    documents: tuple[str, ...] = ()
-
-
-class Reader(Protocol):
-    def __call__(self, page: object, *, kind: str) -> PageRead: ...
 
 
 @dataclass(frozen=True)

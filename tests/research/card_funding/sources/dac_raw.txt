@@ -1,0 +1,142 @@
+# https://www.oecd.org/content/dam/oecd/en/topics/policy-sub-issues/oda-eligibility-and-conditions/DAC-List-of-ODA-Recipients-for-reporting-2025-flows.pdf fetched 2026-10-14 (pdftotext -layout, recipient names as printed incl. footnote marks)
+Afghanistan (L)
+Democratic People’s Republic of Korea
+Algeria
+Albania
+Angola (LM)
+Syrian Arab Republic
+Bhutan
+Argentina
+Bangladesh (LM)
+Bolivia
+Armenia
+Benin (LM)
+Cabo Verde
+Azerbaijan
+Burkina Faso (L)
+Cameroon
+Belarus
+Burundi (L)
+Congo
+Belize
+Cambodia (LM)
+Côte d’Ivoire
+Bosnia and Herzegovina
+Central African Republic (L)
+Egypt
+Botswana
+Chad (L)
+Eswatini
+Brazil
+Comoros (LM)
+Ghana
+China (People’s Republic of)
+Democratic Republic of the Congo (L)
+Honduras
+Colombia
+Djibouti (LM)
+India
+Costa Rica
+Eritrea (L)
+Iran
+Cuba
+Ethiopia (L)
+Jordan
+Dominica
+Gambia (L)
+Kenya
+Dominican Republic
+Guinea (LM)
+Kyrgyzstan
+Ecuador
+Guinea-Bissau (L)
+Lebanon
+El Salvador
+Haiti (LM)
+Micronesia
+Equatorial Guinea
+Kiribati (LM)
+Mongolia
+Fiji
+Lao People’s Democratic Republic (LM)
+Morocco
+Gabon
+Lesotho (LM)
+Nicaragua
+Georgia
+Liberia (L)
+Nigeria
+Grenada
+Madagascar (L)
+Pakistan
+Guatemala
+Malawi (L)
+Papua New Guinea
+Guyana2 (H)
+Mali (L)
+Philippines
+Indonesia
+Mauritania (LM)
+Samoa
+Iraq
+Mozambique (L)
+São Tomé and Príncipe
+Jamaica
+Myanmar (LM)
+Sri Lanka
+Kazakhstan
+Nepal (LM)
+Tajikistan
+Kosovo
+Niger (L)
+Tokelau*
+Libya
+Rwanda (L)
+Tunisia
+Malaysia
+Senegal (LM)
+Ukraine
+Maldives
+Sierra Leone (L)
+Uzbekistan
+Marshall Islands
+Solomon Islands1 (LM)
+Vanuatu
+Mauritius
+Somalia (L)
+Viet Nam
+Mexico
+South Sudan (L)
+Zimbabwe
+Moldova
+Sudan (L)
+Montenegro
+Tanzania (LM)
+Montserrat3 (H)
+Timor-Leste (LM)
+Namibia
+Togo (L)
+Nauru4 (H)
+Tuvalu (UM)
+Niue*
+Uganda (L)
+North Macedonia
+Yemen (L)
+Palau
+Zambia (LM)
+Panama2 (H)
+Paraguay
+Peru
+Saint Helena*
+Saint Lucia
+Saint Vincent and the Grenadines
+Serbia
+South Africa
+Suriname
+Thailand
+Tonga
+Türkiye
+Turkmenistan
+Venezuela5
+Wallis and Futuna*
+West Bank and Gaza Strip

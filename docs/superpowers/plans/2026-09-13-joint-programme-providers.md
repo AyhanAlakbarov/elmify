@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- **Run everything with an isolated database:** prefix every `pytest` and `manage.py` call with `POSTGRES_DB=tehsil_joint`. The shared `tehsil` database is the owner's and must not be migrated.
-- **Work in the worktree** `/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter` on branch `claude/joint-programme-providers`. Use `git -C <worktree>` for every git call — a bare `git commit` lands on the wrong branch.
+- **Run everything with an isolated database:** prefix every `pytest` and `manage.py` call with `POSTGRES_DB=elmify_joint`. The shared `elmify` database is the owner's and must not be migrated.
+- **Work in the worktree** `/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter` on branch `claude/joint-programme-providers`. Use `git -C <worktree>` for every git call — a bare `git commit` lands on the wrong branch.
 - **`nulls_distinct=False` on `program_institution_key_location_uniq` is required, not optional.** Postgres treats `NULL` as distinct from `NULL`, so without it two joint programmes sharing a key both insert and the constraint stops protecting the rows this change creates most of.
 - **The `SINGLE`/`JOINT` rule is a database `CheckConstraint`, never a model validator.** `catalog_ingestion` is a SQL-writing role that never runs Django model code.
 - **`Institution` does not change.** No `CONSORTIUM` kind, no consortium row, ever.
@@ -21,7 +21,7 @@
 - **Never split a composite provider string into names.** A name is not a binding; the raw string goes to `provider_text` for a human.
 - **The detection bias stays toward false-`JOINT`.** A false `JOINT` costs one human glance; a false `SINGLE` mints an `Institution` that can never bind.
 - **No `ruff format`** — this repo is lint-only; `ruff format` churns unrelated files.
-- Gate before each commit: `POSTGRES_DB=tehsil_joint uv run pytest -q`, `uv run ruff check .`, `uv run mypy .`, `POSTGRES_DB=tehsil_joint uv run python manage.py makemigrations --check --dry-run`.
+- Gate before each commit: `POSTGRES_DB=elmify_joint uv run pytest -q`, `uv run ruff check .`, `uv run mypy .`, `POSTGRES_DB=elmify_joint uv run python manage.py makemigrations --check --dry-run`.
 
 ---
 
@@ -125,7 +125,7 @@ def test_a_joint_programme_holds_several_awarding_institutions() -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/funding/test_program_providers.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/funding/test_program_providers.py -q`
 Expected: FAIL — `AttributeError: type object 'Program' has no attribute 'ProvisionType'`
 
 - [ ] **Step 3: Change the model**
@@ -213,7 +213,7 @@ class ProgramAwardingInstitution(models.Model):
 
 - [ ] **Step 4: Generate the schema migration**
 
-Run: `POSTGRES_DB=tehsil_joint uv run python manage.py makemigrations funding --name program_providers`
+Run: `POSTGRES_DB=elmify_joint uv run python manage.py makemigrations funding --name program_providers`
 Expected: creates `apps/funding/migrations/0029_program_providers.py`.
 
 Open it and confirm it contains `AlterField` on `institution`, `AddField` for `provision_type` and `provider_text`, `CreateModel` for `ProgramAwardingInstitution`, `AddField` for `awarding_institutions`, plus the two constraint operations. Add nothing by hand.
@@ -269,15 +269,15 @@ In `tests/tenancy/test_database_isolation.py`, add to `_SHARED_TABLES` after `"f
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/funding/test_program_providers.py tests/tenancy/test_database_isolation.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/funding/test_program_providers.py tests/tenancy/test_database_isolation.py -q`
 Expected: PASS
 
 - [ ] **Step 8: Run the full gate and commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
-POSTGRES_DB=tehsil_joint uv run pytest -q && uv run ruff check . && uv run mypy . \
-  && POSTGRES_DB=tehsil_joint uv run python manage.py makemigrations --check --dry-run
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
+POSTGRES_DB=elmify_joint uv run pytest -q && uv run ruff check . && uv run mypy . \
+  && POSTGRES_DB=elmify_joint uv run python manage.py makemigrations --check --dry-run
 git -C $W add apps/funding/models.py apps/funding/migrations/0029_program_providers.py \
   apps/funding/migrations/0030_program_awarding_institutions_rls.py \
   tests/tenancy/test_database_isolation.py tests/funding/test_program_providers.py
@@ -362,7 +362,7 @@ def test_the_eacea_seed_awards_jointly() -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/research/test_joint_source.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/research/test_joint_source.py -q`
 Expected: FAIL — `AttributeError: 'ResearchLead' object has no attribute 'awards_jointly'`
 
 - [ ] **Step 3: Add the flag to the protocol, the lead, and every source**
@@ -417,14 +417,14 @@ In `apps/research/search.py`, add to both `SearchSource` and `EntityExpansionSou
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/research/test_joint_source.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/research/test_joint_source.py -q`
 Expected: PASS
 
 - [ ] **Step 5: Run the full gate and commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
-POSTGRES_DB=tehsil_joint uv run pytest -q && uv run ruff check . && uv run mypy .
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
+POSTGRES_DB=elmify_joint uv run pytest -q && uv run ruff check . && uv run mypy .
 git -C $W add apps/research/discovery.py apps/research/seeds.py apps/research/search.py \
   tests/research/test_joint_source.py
 git -C $W commit -m "feat(research): a seed declares whether its programmes are jointly awarded"
@@ -506,7 +506,7 @@ def test_the_measured_false_positives_are_accepted_deliberately(name: str) -> No
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/research/test_joint_names.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/research/test_joint_names.py -q`
 Expected: FAIL — `ImportError: cannot import name 'names_several_providers'`
 
 - [ ] **Step 3: Write the rule**
@@ -536,14 +536,14 @@ def names_several_providers(name: str) -> bool:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/research/test_joint_names.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/research/test_joint_names.py -q`
 Expected: PASS
 
 - [ ] **Step 5: Run the full gate and commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
-POSTGRES_DB=tehsil_joint uv run pytest -q && uv run ruff check . && uv run mypy .
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
+POSTGRES_DB=elmify_joint uv run pytest -q && uv run ruff check . && uv run mypy .
 git -C $W add apps/research/catalog.py tests/research/test_joint_names.py
 git -C $W commit -m "feat(research): recognise a provider name that names several universities"
 ```
@@ -641,7 +641,7 @@ Add `from dataclasses import replace`, plus `InstitutionEvidenceClaim` and `Lead
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/research/test_catalog_writer.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/research/test_catalog_writer.py -q`
 Expected: FAIL — the joint lead still creates an `Institution`, so `result.institution is None` fails.
 
 - [ ] **Step 3: Change the writer**
@@ -754,14 +754,14 @@ and pass `joint_pending=len(joint_programs)` to `DiscoveryReport`.
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/research/test_catalog_writer.py tests/research/test_discovery_pipeline.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/research/test_catalog_writer.py tests/research/test_discovery_pipeline.py -q`
 Expected: PASS
 
 - [ ] **Step 6: Run the full gate and commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
-POSTGRES_DB=tehsil_joint uv run pytest -q && uv run ruff check . && uv run mypy .
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
+POSTGRES_DB=elmify_joint uv run pytest -q && uv run ruff check . && uv run mypy .
 git -C $W add apps/research/catalog.py apps/research/pipeline.py tests/research/test_catalog_writer.py
 git -C $W commit -m "feat(research): a joint programme writes no invented institution"
 ```
@@ -907,7 +907,7 @@ def test_it_refuses_a_plaintext_website(tmp_path) -> None:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/funding/test_load_program_providers.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/funding/test_load_program_providers.py -q`
 Expected: FAIL — `CommandError: Unknown command: 'load_program_providers'`
 
 - [ ] **Step 3: Write the command**
@@ -1033,7 +1033,7 @@ program_key,institution_key,name,country_code,official_website
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/funding/test_load_program_providers.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/funding/test_load_program_providers.py -q`
 Expected: PASS
 
 - [ ] **Step 6: Add the wrong-role test**
@@ -1059,7 +1059,7 @@ def test_it_fails_under_the_ordinary_runtime_role(tmp_path, rls_enforced_orm) ->
 
 Import `ProgramAwardingInstitution` at the top of the file. If `rls_enforced_orm` cannot create the joint programme fixture under the restricted role, create the programme before the fixture takes effect by requesting the fixture last in the signature, as `tests/portals/test_rls_spine.py` does.
 
-Run: `POSTGRES_DB=tehsil_joint uv run pytest tests/funding/test_load_program_providers.py -q`
+Run: `POSTGRES_DB=elmify_joint uv run pytest tests/funding/test_load_program_providers.py -q`
 Expected: PASS
 
 - [ ] **Step 7: Correct the three false spec sentences**
@@ -1096,9 +1096,9 @@ See the 2026-09-13 providers design §1.1.
 - [ ] **Step 8: Run the full gate and commit**
 
 ```bash
-W=/home/orkhan/Desktop/tehsil_agent/.worktrees/deqar-adapter
-POSTGRES_DB=tehsil_joint uv run pytest -q && uv run ruff check . && uv run mypy . \
-  && POSTGRES_DB=tehsil_joint uv run python manage.py makemigrations --check --dry-run \
+W=/home/orkhan/Desktop/elmify/.worktrees/deqar-adapter
+POSTGRES_DB=elmify_joint uv run pytest -q && uv run ruff check . && uv run mypy . \
+  && POSTGRES_DB=elmify_joint uv run python manage.py makemigrations --check --dry-run \
   && uv run bandit -c pyproject.toml -r apps config
 git -C $W add apps/funding/management/commands/load_program_providers.py \
   docs/research/program-providers.csv tests/funding/test_load_program_providers.py \
@@ -1111,7 +1111,7 @@ git -C $W commit -m "feat(funding): curate which universities award a joint prog
 
 ## Done when
 
-- `POSTGRES_DB=tehsil_joint uv run pytest -q` passes, with the register-adapter suite untouched.
+- `POSTGRES_DB=elmify_joint uv run pytest -q` passes, with the register-adapter suite untouched.
 - A lead from `seed:eacea` writes a `Program` and **zero** `Institution` rows.
 - A lead from a `one_programme_per_link` registry source is **not** marked joint.
 - `manage.py discover` reports how many joint programmes await provider resolution.

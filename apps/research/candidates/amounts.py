@@ -34,6 +34,12 @@ _MULTIPLIERS: dict[str, int] = {
     "k": 1_000, "тыс": 1_000, "тыс.": 1_000, "тысяч": 1_000, "млн": 1_000_000, "млн.": 1_000_000,
     "million": 1_000_000, "mln": 1_000_000, "milyon": 1_000_000, "bin": 1_000, "min": 1_000,
     "mio": 1_000_000, "mio.": 1_000_000, "millió": 1_000_000, "ezer": 1_000,
+    "ribu": 1_000, "juta": 1_000_000, "miliar": 1_000_000_000,
+    "nghìn": 1_000, "ngàn": 1_000, "triệu": 1_000_000, "tỷ": 1_000_000_000,
+    "lakh": 100_000, "lakhs": 100_000, "lac": 100_000, "lacs": 100_000,
+    "crore": 10_000_000, "crores": 10_000_000, "لاکھ": 100_000, "लाख": 100_000,
+    "ألف": 1_000, "الف": 1_000, "آلاف": 1_000, "الاف": 1_000,
+    "مليون": 1_000_000, "ملايين": 1_000_000,
 }
 _CJK_MULTIPLIERS = "만억천万千億"
 _MULT = "|".join(
@@ -41,7 +47,7 @@ _MULT = "|".join(
     for m in sorted(_MULTIPLIERS, key=len, reverse=True)
 )
 #: Joiners that make a range on their own, and those ("and", "və") that need a lead.
-_FREE_JOIN = r"~|～|–|—|-|to|à|a|bis|до"
+_FREE_JOIN = r"~|～|–|—|-|to|à|a|bis|до|إلى|الى|حتى|sampai|đến"
 _LEAD_JOIN = r"and|и|ve|və|et|ile|ilə"
 _LEAD_BEFORE = re.compile(r"(?:between|entre|от|с|from|zwischen|von)\s*$", re.IGNORECASE)
 _LEAD_AFTER = re.compile(r"^\s*(?:arasında|arasındakı|aralığında|arası)", re.IGNORECASE)

@@ -25,10 +25,10 @@
   {% endfor %}
 </section>
 <section class="panel" aria-labelledby="conversation-heading" id="conversation">
-  <h2 id="conversation-heading">Your counsellor</h2>
+  <h2 id="conversation-heading">{% if viewer_role == "STUDENT" %}Elmify team{% else %}Your counsellor{% endif %}</h2>
   <div class="thread">
   {% for message in conversation %}
-    <p class="bubble{% if message.sender_id == message.student_id %} from-student{% else %} from-counsellor{% endif %}"><span class="who">{% if message.sender_id == message.student_id %}Student{% else %}Counsellor{% endif %}, {{ message.created_at|date:"j M H:i" }}:</span> {{ message.body|linebreaksbr }}</p>
+    <p class="bubble{% if message.sender_id == message.student_id %} from-student{% else %} from-counsellor{% endif %}"><span class="who">{% if message.sender_id == message.student_id %}Student{% elif viewer_role == "STUDENT" %}Elmify{% else %}Counsellor{% endif %}, {{ message.created_at|date:"j M H:i" }}:</span> {{ message.body|linebreaksbr }}</p>
   {% empty %}
     <p class="empty">No messages yet.</p>
   {% endfor %}

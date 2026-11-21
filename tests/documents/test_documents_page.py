@@ -8,7 +8,7 @@ from django.utils import timezone
 
 from apps.concierge.documents import register
 from apps.concierge.models import DocumentVersion
-from apps.documents.models import DocumentDraft
+from apps.documents.models import CvFixRevert, DocumentDraft, VerifiedFact
 from apps.documents.views import page_context
 from apps.mailbox.models import MailboxConnection, MailSignal
 from apps.portals.models import DeviceAction
@@ -24,9 +24,9 @@ PAGE = "/student/documents/"
 SUBMIT = "/student/documents/submit/"
 
 
-def _available(agency, student, kind):
+def _available(agency, student, kind, **mode):
     """Scanned clean, checked and promoted (Task 14): what the extension can fetch."""
-    document = register(agency.id, student.id, kind=kind)
+    document = register(agency.id, student.id, kind=kind, **mode)
     DocumentVersion.objects.filter(id=document.id).update(
         state="AVAILABLE", scan_result="NO_THREATS_FOUND", content_type="application/pdf",
         promoted_key=f"tenants/{agency.id}/students/{student.id}/uploads/{document.id}/abc",
@@ -80,8 +80,7 @@ def test_the_table_has_a_column_per_application_and_a_row_per_document(
     assert '<th scope="row">Passport' in body
     assert "Submit document to M.Sc. Informatics" in body
     assert "dashboard/documents.js" in body
-    assert 'type="radio" name="kind" value="CV" checked' in body
-    assert 'id="upload-file"' in body
+    assert '<label for="upload-kind">' in body
 
 
 def test_submit_document_queues_the_upload_page_for_that_application(
@@ -370,12 +369,9 @@ def test_the_counselor_view_carries_no_student_only_action(
             "student/_documents.html", page_context(membership_a, counselor_view=True),
             request=rf.get("/"),
         )
-    for action in ("/student/documents/", "Submit document to"):
+    for action in ("/student/documents/", "data-api-post", "Submit document to"):
         assert action in student_html
         assert action not in html
-    # Writing and approving the CV moved to the student's CV & letters page.
-    assert "/student/writing/" in student_html
-    assert "data-api-post" not in html
     assert f"/counselor/students/{membership_a.id}/uploads/" in html
 
 
@@ -519,3 +515,428 @@ def test_a_message_whose_classification_gave_up_can_be_named(
     # The student named it, so it counts like a metadata-tier one.
     with tenant_scope(agency_a.id):
         assert _cells(membership_a, signal.application)["TRANSCRIPT"] == "missing"
+
+
+def test_holding_a_diploma_offers_replace_or_add_another_and_counts_several(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    """Plan 4b Task 6: Replace is the default; "Add another" keeps the first."""
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        add_card(agency_a, membership_a, programme, kit_requirements=["Your diplomas."])
+        passport = _available(agency_a, membership_a, "PASSPORT")
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert 'value="ADD" data-kind="DIPLOMA"' not in body  # no diploma held yet
+    with tenant_scope(agency_a.id):
+        bachelor = _available(agency_a, membership_a, "DIPLOMA")
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert (
+        f'<input type="radio" name="mode" value="REPLACE" data-kind="DIPLOMA" '
+        f'data-replaces="{bachelor.id}" checked>' in body
+    )
+    assert 'value="ADD" data-kind="DIPLOMA"' in body
+    assert "Add another (e.g. a second degree)" in body
+    # A dual national holds two passports (owner 2026-10-13): offered, never the default.
+    assert 'value="ADD" data-kind="PASSPORT">' in body and "a second passport" in body
+    assert f'data-replaces="{passport.id}"' in body
+    assert "2 held" not in body
+    with tenant_scope(agency_a.id):
+        master = _available(agency_a, membership_a, "DIPLOMA")
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert "uploaded (2 held)" in body
+    assert f'data-replaces="{master.id}"' in body and f'data-replaces="{bachelor.id}"' in body
+
+
+def test_a_student_holding_two_theses_is_offered_add_preselected(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    """A third thesis or report must be able to add: the page marks Add the default."""
+    with tenant_scope(agency_a.id):
+        first = _available(agency_a, membership_a, "THESIS_OR_REPORT", mode="ADD")
+        second = _available(agency_a, membership_a, "THESIS_OR_REPORT", mode="ADD")
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert 'value="ADD" data-kind="THESIS_OR_REPORT" data-default' in body
+    assert "Add another (e.g. a project report)" in body
+    assert f'data-replaces="{first.id}"' in body and f'data-replaces="{second.id}"' in body
+
+
+@pytest.mark.parametrize("prepared", ["READY", "CANNOT_FIT", None])
+def test_a_merged_cell_offers_one_submit_only_when_the_merge_is_ready(
+    client, agency_a, domain_a, user_a, membership_a, pack, prepared
+) -> None:
+    """Fix M4 and round 2: under "all diplomas as one PDF", one Submit only when the merged
+    file exists to be sent; otherwise each diploma keeps its own Submit, each sendable."""
+    from apps.documents.ocr import Prepared
+    from apps.documents.table import sendable
+    from apps.portals.prepare import prepare_documents
+    from tests.portals.test_prepare import _fake_pdf, _Store
+
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        application = add_card(
+            agency_a, membership_a, programme, kit_requirements=["Your diplomas."],
+            kit_file_rules=[{"document": "DIPLOMA", "field": "combine", "value": "ONE_FILE"}],
+        )
+        diplomas = [_available(agency_a, membership_a, "DIPLOMA", mode="ADD") for _ in range(2)]
+        if prepared is not None:
+            transform = _fake_pdf if prepared == "READY" else (
+                lambda *_: Prepared(refused="pages"))
+            [row] = prepare_documents(application, transform=transform, store=_Store())
+            assert (row.slot, row.state) == ("DIPLOMA", prepared)
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    if prepared == "READY":
+        assert "uploaded (2 held, sent as one file)" in body
+        assert body.count("Submit document") == 1
+    else:
+        assert "uploaded (2 held)" in body and "sent as one file" not in body
+        assert body.count("Submit document") == 2
+        for diploma in diplomas:
+            assert f'name="document_id" value="{diploma.id}"' in body
+            with tenant_scope(agency_a.id):
+                assert sendable(application, document_id=diploma.id, source="upload")
+
+
+def test_recommendation_letters_default_to_add_another(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    """Fix I1: the page marks Add another as the letter's default; documents.js checks it."""
+    with tenant_scope(agency_a.id):
+        letter = _available(agency_a, membership_a, "REFERENCE_LETTER")
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert 'value="ADD" data-kind="REFERENCE_LETTER" data-default' in body
+    assert "Add another (e.g. a letter from another referee)" in body
+    assert f'data-replaces="{letter.id}"' in body
+
+
+def test_the_upload_form_asks_original_or_translation_for_a_transcript(
+    agency_a, membership_a, rf
+):
+    """Onboarding plan task 5: the page never sent `role`, and every transcript upload
+    from it was refused 400 invalid_role (transcript_pages._transcript_upload)."""
+    with tenant_scope(agency_a.id):
+        html = render_to_string(
+            "student/_documents.html", page_context(membership_a, counselor_view=False),
+            request=rf.get("/"),
+        )
+    assert 'name="role" value="ORIGINAL"' in html
+    assert 'name="role" value="TRANSLATION"' in html
+    for language in ("az", "tr", "ru"):
+        assert f'<option value="{language}">' in html
+
+
+def test_the_upload_script_sends_the_transcripts_role_and_language():
+    """A static guard on the one script that builds the upload request: it must send
+    `role` (and `language` for an original) when the kind is a transcript."""
+    from pathlib import Path
+
+    script = (Path(__file__).resolve().parents[2] / "static/dashboard/documents.js").read_text()
+    assert "body.role" in script
+    assert "body.language" in script
+    assert "invalid_role" in script
+
+
+CHANGES = "/student/documents/cv-changes/"
+
+
+def _changed_degree(student):
+    old = VerifiedFact.objects.create(
+        student=student,
+        category=VerifiedFact.Category.EDUCATION,
+        payload={
+            "degree_as_awarded": "BSc",
+            "institution_original": "UFAZ",
+            "city": "Baku",
+        },
+        source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+        source_ref="upload:first",
+        confirmed_by=student,
+        confirmed_at=timezone.now(),
+        created_by=student,
+    )
+    new = VerifiedFact.objects.create(
+        student=student,
+        category=VerifiedFact.Category.EDUCATION,
+        payload={**old.payload, "city": "Sumqayit"},
+        source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+        source_ref="upload:second",
+        supersedes=old,
+        created_by=student,
+    )
+    return old, new
+
+
+def test_a_changed_value_is_shown_old_beside_new_and_not_in_the_confirm_list(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    with tenant_scope(agency_a.id):
+        _, new = _changed_degree(membership_a)
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert "Changed since your last CV" in body
+    assert "city Baku → Sumqayit" in body
+    assert f'name="accept" value="{new.id}" checked' in body
+    assert str(new.id) not in body.split('id="facts-heading"')[1]
+
+
+def test_an_unticked_change_keeps_the_old_value_through_the_page(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    with tenant_scope(agency_a.id):
+        old, new = _changed_degree(membership_a)
+    client.force_login(user_a)
+    response = client.post(CHANGES, {"shown": [str(new.id)]}, HTTP_HOST=domain_a.host)
+    assert response.status_code == 302
+    with tenant_scope(agency_a.id):
+        tip = VerifiedFact.objects.get(supersedes=new)
+    assert tip.payload["city"] == "Baku" and tip.confirmed_by_id == membership_a.id
+
+
+def test_a_ticked_change_is_confirmed_through_the_page(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    with tenant_scope(agency_a.id):
+        _, new = _changed_degree(membership_a)
+    client.force_login(user_a)
+    client.post(
+        CHANGES,
+        {"shown": [str(new.id)], "accept": [str(new.id)]},
+        HTTP_HOST=domain_a.host,
+    )
+    with tenant_scope(agency_a.id):
+        new.refresh_from_db()
+    assert new.confirmed_by_id == membership_a.id
+
+
+def test_a_malformed_id_is_404(client, agency_a, domain_a, user_a, membership_a) -> None:
+    client.force_login(user_a)
+    response = client.post(CHANGES, {"shown": ["not-a-uuid"]}, HTTP_HOST=domain_a.host)
+    assert response.status_code == 404
+
+
+def test_the_counselor_sees_the_changes_but_no_form(agency_a, membership_a, rf) -> None:
+    with tenant_scope(agency_a.id):
+        _changed_degree(membership_a)
+        html = render_to_string(
+            "student/_documents.html",
+            page_context(membership_a, counselor_view=True),
+            request=rf.get("/"),
+        )
+    assert "city Baku → Sumqayit" in html
+    assert CHANGES not in html
+    assert 'name="accept"' not in html
+
+
+FIXES = "/student/documents/cv-fixes/"
+_FIX = {
+    "fix": "soft_skill",
+    "subject": "f" * 64,
+    "where": "skills",
+    "original": "Teamwork",
+    "changed": "",
+    "undone": False,
+}
+
+
+def _cv_draft(agency, student, fixes):
+    return DocumentDraft.objects.create(
+        tenant=agency,
+        student=student,
+        kind=DocumentDraft.Kind.CV,
+        version=1,
+        content={},
+        status=DocumentDraft.Status.DRAFT,
+        applied_fixes=fixes,
+    )
+
+
+def test_the_page_lists_what_we_changed(client, agency_a, domain_a, user_a, membership_a) -> None:
+    with tenant_scope(agency_a.id):
+        _cv_draft(
+            agency_a,
+            membership_a,
+            [
+                _FIX,
+                {
+                    **_FIX,
+                    "fix": "verb_opener",
+                    "subject": "a" * 64,
+                    "original": "A tool for the lab.",
+                    "changed": "Built a tool for the lab.",
+                },
+            ],
+        )
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert "What we changed" in body
+    assert "Left out: Teamwork" in body
+    assert "A tool for the lab. → Built a tool for the lab." in body
+
+
+def test_undo_and_apply_again(client, agency_a, domain_a, user_a, membership_a) -> None:
+    with tenant_scope(agency_a.id):
+        _cv_draft(agency_a, membership_a, [_FIX])
+    client.force_login(user_a)
+    client.post(FIXES, {"subject": "f" * 64, "action": "undo"}, HTTP_HOST=domain_a.host)
+    with tenant_scope(agency_a.id):
+        assert CvFixRevert.objects.filter(student=membership_a, subject="f" * 64).exists()
+    client.post(FIXES, {"subject": "f" * 64, "action": "redo"}, HTTP_HOST=domain_a.host)
+    with tenant_scope(agency_a.id):
+        assert not CvFixRevert.objects.filter(student=membership_a).exists()
+
+
+def test_a_subject_the_latest_draft_does_not_list_is_404(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    with tenant_scope(agency_a.id):
+        _cv_draft(agency_a, membership_a, [_FIX])
+    client.force_login(user_a)
+    response = client.post(
+        FIXES, {"subject": "9" * 64, "action": "undo"}, HTTP_HOST=domain_a.host
+    )
+    assert response.status_code == 404
+
+
+def test_the_counselor_sees_the_list_without_buttons(agency_a, membership_a, rf) -> None:
+    with tenant_scope(agency_a.id):
+        _cv_draft(agency_a, membership_a, [_FIX])
+        html = render_to_string(
+            "student/_documents.html",
+            page_context(membership_a, counselor_view=True),
+            request=rf.get("/"),
+        )
+    assert "Left out: Teamwork" in html and FIXES not in html
+
+
+def test_keep_this_wording_through_the_page(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    with tenant_scope(agency_a.id):
+        fact = VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.EXPERIENCE,
+            payload={"employer": "EPFL", "title": "Intern", "bullets": ["A tool for the lab."]},
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:t",
+            confirmed_by=membership_a,
+            confirmed_at=timezone.now(),
+            created_by=membership_a,
+        )
+        _cv_draft(
+            agency_a,
+            membership_a,
+            [
+                {
+                    **_FIX,
+                    "fix": "verb_opener",
+                    "subject": "a" * 64,
+                    "original": "A tool for the lab.",
+                    "changed": "Built a tool for the lab.",
+                }
+            ],
+        )
+    client.force_login(user_a)
+    body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert 'value="keep"' in body
+    client.post(FIXES, {"subject": "a" * 64, "action": "keep"}, HTTP_HOST=domain_a.host)
+    with tenant_scope(agency_a.id):
+        assert VerifiedFact.objects.get(supersedes=fact).payload["bullets"] == [
+            "Built a tool for the lab."
+        ]
+
+
+def test_keep_is_refused_for_a_fix_that_is_not_wording(
+    client, agency_a, domain_a, user_a, membership_a
+) -> None:
+    with tenant_scope(agency_a.id):
+        _cv_draft(agency_a, membership_a, [_FIX])
+    client.force_login(user_a)
+    assert (
+        client.post(
+            FIXES, {"subject": "f" * 64, "action": "keep"}, HTTP_HOST=domain_a.host
+        ).status_code
+        == 404
+    )
+
+
+def test_warning_lines_read_the_stored_details():
+    from types import SimpleNamespace
+
+    from apps.documents.views import warning_lines
+
+    draft = SimpleNamespace(
+        render_warnings=[
+            {"detail": "the page states: Please sign the CV.", "key": "unapplied"},
+            {"detail": "final page carries 9% of an average page", "key": "min_final_page_fill"},
+        ]
+    )
+    assert warning_lines(draft) == [
+        "the page states: Please sign the CV.",
+        "final page carries 9% of an average page",
+    ]
+
+
+def test_a_redacted_draft_has_no_warning_lines():
+    """redact_student writes {} into a JSONField (redaction._empty_value)."""
+    from types import SimpleNamespace
+
+    from apps.documents.views import warning_lines
+
+    assert warning_lines(SimpleNamespace(render_warnings={})) == []
+    assert warning_lines(SimpleNamespace(render_warnings=[{"no_detail": 1}, "junk"])) == []
+
+
+@pytest.mark.django_db
+def test_page_context_attaches_warning_lines_to_each_draft(agency_a, membership_a):
+    from apps.documents.drafts import create_draft
+    from apps.documents.models import DocumentDraft
+    from apps.documents.views import page_context
+    from apps.tenancy.context import tenant_scope
+
+    from .test_render import _content
+
+    with tenant_scope(agency_a.id):
+        draft = create_draft(student=membership_a, kind=DocumentDraft.Kind.CV, content=_content())
+        DocumentDraft.objects.filter(id=draft.id).update(
+            render_warnings=[{"detail": "the page states: Sign it."}]
+        )
+        drafts = page_context(membership_a, counselor_view=False)["drafts"]
+    assert [d.warning_lines for d in drafts] == [["the page states: Sign it."]]
+
+
+def test_left_out_entries_read_only_well_formed_left_out_fixes():
+    from types import SimpleNamespace
+
+    from apps.documents.views import left_out_entries
+
+    good = {"kind": "left_out", "section": "awards", "item": "Chess prize (2018)",
+            "item_digest": "a" * 64, "reason": "not related to this programme"}
+    draft = SimpleNamespace(applied_fixes=[good, {"kind": "reworded"}, "junk"])
+    assert left_out_entries(draft) == [good]
+    assert left_out_entries(SimpleNamespace(applied_fixes={})) == []
+
+
+@pytest.mark.django_db
+def test_only_the_counsellor_view_carries_notes(agency_a, membership_a, monkeypatch):
+    from apps.documents import views
+    from apps.documents.drafts import create_draft
+    from apps.documents.models import DocumentDraft
+    from apps.tenancy.context import tenant_scope
+
+    from .test_render import _content
+
+    monkeypatch.setattr(views, "counsellor_notes",
+                        lambda student, drafts: {d.id: ["a note"] for d in drafts})
+    with tenant_scope(agency_a.id):
+        create_draft(student=membership_a, kind=DocumentDraft.Kind.CV, content=_content())
+        staff = views.page_context(membership_a, counselor_view=True)["drafts"]
+        own = views.page_context(membership_a, counselor_view=False)["drafts"]
+    assert [d.counsellor_notes for d in staff] == [["a note"]]
+    assert [d.counsellor_notes for d in own] == [[]]
+
+
+
+

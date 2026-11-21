@@ -15,8 +15,13 @@ off master `70848a31`.
 | `docs/superpowers/specs/2026-10-04-student-dashboard-design.md` (merged, PR #178) | The board, Needs you now, the cards, the trust rule for mail, the counsellor board and the tenant-copy pattern (`RecommendationCandidate` copies). This spec changes the board's structure and extends the rest. |
 | `docs/superpowers/specs/2026-09-27-verified-catalog-one-reader-design.md` §3.4 (branch `claude/verified-catalog-design`, commit `42e5ea99`) | **Application routes**: `funding.ApplicationRoute`, `RouteStep`, `RouteDate` and `research.ApplicationSystem`. They are extracted and certified on the catalogue engine. Only `SERVED` routes reach a student, copied into `portals.Application.route_snapshot`. |
 | Same spec, §5.2 | Award facts this spec reads:<br>• `route` (the `_Route` list in `apps/research/funding_judge.py`) and `route_order` (`before_admission` / `after_admission` / `parallel`);<br>• `date_role=results_announced` and `fee_deadline`;<br>• `pays=application_fee`, `duration` and `renewal_condition`. |
-| Requirement reader, PR #185 (tehsil-agent-f3) | `funding.Program.referee_requirements`: typed reference-letter facts (`count`, `kind`, `mode`, `institutional_email_required`, `due`), each with its verbatim sentence. A field with no record was not stated. |
+| Requirement reader, PR #185 (elmify-f3) | `funding.Program.referee_requirements`: typed reference-letter facts (`count`, `kind`, `mode`, `institutional_email_required`, `due`), each with its verbatim sentence. A field with no record was not stated. |
 | Owner decisions, 2026-10-06 to 2026-10-09 (this design session) | Everything in §2–§13 marked *owner*. |
+| Owner decisions, 2026-10-10 (card content) | §5.1: how to apply is never shown to the student, anywhere. The extension guides every portal step; applying needs the extension. The Application Kit is no longer the student's: it survives only as "Answers we'll submit", a read-only debugging page for the assigned counsellor, invisible (404) to everyone else and never a gate on applying. |
+| `docs/superpowers/specs/2026-09-25-tailored-programme-finding-design.md` T15, §4.3, §4.4, §5.1–§5.3 | "Why it fits you", the requirements with their status, the risk label, and the borderline credit count. §5.1 shows them; it does not redefine them. |
+| Verified-catalog spec §0.10, §3.1, §3.2, §5.2, §5.5 | Verified-only display; the one-tap "Does this apply to you?"; EMJM tracks and their mobility paths; the scholarship fact list; an unsure fact is never shown as a guess or as "not stated". |
+| Co-pilot on-page guidance spec D2, §3 (approved 2026-10-09) | "Apply to <programme>" opens the portal page; filling starts from the extension's panel. |
+| Funding-search-engine master spec §9.2, decision 39 | A nomination award names whom to write to, with a drafted email (§5.1: a Needs-you-now task). |
 
 **Not in scope:**
 - extracting routes, awards or referee facts (the three readers above own that);
@@ -28,7 +33,7 @@ off master `70848a31`.
 
 1. **One lane per programme.** A lane holds the programme's application card, plus a card for every award the student applies for separately.
 2. **Awards with no separate application are lines, not cards.** That covers awards that are automatic, considered with admission, nominated by the university, or combined with the programme application.
-3. **Separate awards the student is eligible for are added automatically** when the programme is added (*owner*). Awards whose eligibility is unconfirmed are suggested only.
+3. **Separate awards the student is eligible for are added automatically** when the programme is added (*owner*). An award that hinges on a fact the profile doesn't hold asks "Does this apply to you?"; nothing else is suggested (§4.3, amended 2026-10-10).
 4. **A fee is held automatically** when a funding result arrives before the fee is due, for a student whose attendance depends on funding (*owner*). "Apply now anyway" releases it, and only the student can press it.
 5. **Only the student sets the application budget** (*owner*), as a plan plus an optional extra for exceptional opportunities (§7.7). A counsellor sees both but cannot change or propose them.
 6. **Money is shown in the original currency, then "≈ AZN".** Totals and the budget are in AZN (*owner*).
@@ -36,6 +41,7 @@ off master `70848a31`.
 8. **Reference letters are planned around each professor's agreed number of requests.** A letter for the professor's signature is generated when the professor asks for one (*owner*, option C).
 9. **Scholarship scams and agents are never shown** (*owner*). A programme reachable only through an agent has no route.
 10. **No family view** (*owner*).
+11. **How to apply is never shown** (*owner*, 2026-10-10): no application steps or portal instructions on the card, the programme page or the kit. The extension guides the student through every portal step (§5.1).
 
 ## 2. How each award attaches to a programme
 
@@ -44,11 +50,11 @@ The award's `route` (§5.2) decides what the student sees.
 | `route` | What the student does | On the board |
 |---|---|---|
 | `AUTOMATIC_ON_ADMISSION` | nothing | a line on the programme card: "Considered automatically — nothing to do" |
-| `CONSIDERED_WITH_ADMISSION` | nothing extra, or a box or section in the same form | a line. When the quote names a box or section: "Tick 'Apply for scholarship' in the form". The same text goes into the kit, so the extension can tick it. |
-| `INSTITUTION_NOMINATES` | nothing; the university picks | a line: "Nominated by the university — you cannot apply for it" |
+| `CONSIDERED_WITH_ADMISSION` | nothing extra, or a box or section in the same form | a line: "Considered with your application — nothing extra to submit". When the quote names a box or section, the extension ticks it, or points to it in its panel; the student never reads it as an instruction (rule 11). |
+| `INSTITUTION_NOMINATES` | nothing, or ask the university to nominate | a line: "Nominated by the university". When the page names whom to ask, the line gives that contact and its internal deadline, and the request becomes a Needs-you-now item with a drafted email (§5.1). |
 | `JOINT_SELECTION`, or the programme's route `kind = COMBINED_WITH_AWARD` | one application covers place and award | **one card**: "Programme + scholarship, one application". Its outcome has two parts (§6). |
 | `STUDENT_APPLIES_SEPARATELY`, `HOME_GOVERNMENT_NOMINATES` | a separate application, often on a `SCHOLARSHIP` system | **its own card** in the programme's lane, linked with its `route_order` (§4) |
-| `UNSTATED` | unknown | suggested only: "How to apply for this is not stated — open its page" |
+| `UNSTATED` | unknown | a line: "How to apply for this is not stated — see its official page", linking the source |
 
 **An award covering several programmes** (Chevening's choices, DAAD EPOS, GKS) gets its **own lane**, named for the award. That lane lists its programmes as links, and each programme's lane carries one line: "Also funded by your Chevening application". The award appears once.
 
@@ -58,7 +64,7 @@ The web tier reads tenant tables only, as the dashboard spec requires. The worke
 
 ### 3.1 Copies written by the worker
 
-- **`portals.Application.route_snapshot`**: §3.4's copy at add time, holding steps, dates (with time zone), fees, portal URLs, each quote and each source URL. The route chosen is the one whose `audience` matches the student's nationality (§9.6).
+- **`portals.Application.route_snapshot`**: §3.4's copy at add time, holding steps, dates (with time zone), fees, portal URLs, each quote and each source URL. The route chosen is the one whose `audience` matches the student's nationality (§9.6). The steps feed the deadlines, the fee, the kit and the extension; they are never listed on the card or the programme page (rule 11).
 - **Re-copy.** When the catalogue route changes (a new `SERVED` version), the worker re-copies the snapshot for every application that hasn't started that step. A step already started keeps its copy. The student gets one message: "KTH changed its deadline to 20 Jan". Only the worker writes; the web tier never reads the catalogue route.
 - **Referee facts.** `RecommendationCandidate` gains `referee_requirements`, copied from `Program.referee_requirements` in `_publish`, as with the other candidate copies.
 - **Award facts on award candidates.** `route`, `route_order`, `results_date`, `fee_amount` / `fee_currency` / `fee_deadline`, `duration` and `renewal_condition`, each with its quote. They're copied into `funding_card`.
@@ -75,7 +81,7 @@ The web tier reads tenant tables only, as the dashboard spec requires. The worke
 | | `acceptance_deadline`, `deposit_amount`, `deposit_currency` | Taken from the offer email or entered by the student |
 | | `round_rank` | The student's rank inside a national round (§8). Blank outside rounds. |
 | `portals.ApplicationLink` (new, tenant) | `from_app`, `to_app`, `order` | `order` is `WAITS_FOR` (`from_app` can't proceed until `to_app` has its outcome), `PARALLEL` or `LINKED_ONLY`. A unique pair. A composite `(tenant_id, …)` guard on both FKs, as with every tenant→tenant FK. |
-| `documents.Referee` (new, tenant) | `student`, `name`, `title`, `institution`, `email`, `institutional_email`, `relationship`, `agreed_requests`, `gives_generic_letter`, `status` | One professor. Third-party personal data: minimal, and erased with the student. |
+| `documents.Referee` (new, tenant) | `student`, `name`, `title`, `institution`, `email`, `institutional_email`, `kind` (`ACADEMIC` / `PROFESSIONAL`), `relationship`, `agreed_requests`, `gives_generic_letter`, `status` (`ACTIVE` / `DECLINED` / `SILENT`) | One professor. Third-party personal data: minimal, and erased with the student. `kind` is what lets a programme's required kind be met; `SILENT` is a professor who stopped answering, planned around like `DECLINED`. |
 | `documents.RefereeRequest` (new, tenant) | `referee`, `application`, `mode`, `state` | `mode` is the referee mode copied from the requirement. `state` is `PROPOSED`, `ASKED`, `AGREED`, `DECLINED`, `SUBMITTED`. |
 | `privacy` consent | a new purpose `OUTCOME_LEARNING` | Asked once, at the student's first outcome. Without it, outcomes still drive the board but are never used for learning (§12). |
 
@@ -92,11 +98,11 @@ Every new field is classified in `apps/audit/redaction.py`.
 
 1. **Read the copied facts.** The student (or counsellor) presses Add. The worker copies the route snapshot and the award facts.
 2. **Pick the route.**
-   - **A `SERVED` route matches the student's audience:** the card gets its steps, and Start opens step 1's portal.
+   - **A `SERVED` route matches the student's audience:** the card gets the route copy, and "Apply to <programme>" opens the portal of the first step not `DONE` (§5.1).
    - **None matches:** the card shows "Open programme page", and the counsellor portal task stays as the fallback.
 3. **For each award linked to the programme (§2):**
    - **A separate award the student is confirmed eligible for:** its card is **added automatically**, linked by `ApplicationLink`. A Remove link sits on the card.
-   - **Eligibility unconfirmed:** a "Suggested for this programme" line with an Add button.
+   - **Eligibility depends on a fact the profile doesn't hold** (a special group, for example): a line asking "Does this apply to you?" with the funder's sentence (verified-catalog §3.1). Yes adds the card as above. Nothing else is suggested: an award is shown only when the student is eligible on verified facts (verified-catalog §0.10, amended 2026-10-10).
    - **Not a separate application:** a line on the programme card.
 4. **Link order** comes from `route_order`:
    - `after_admission`: the award card `WAITS_FOR` the programme card;
@@ -117,8 +123,42 @@ No styling, only structure.
   - **one money line** (§7.5), with a renewal flag when one applies (§9.5);
   - **its cards**, each in its own state column (To start, In progress, Submitted, Confirmed, Decision). The columns stay; lanes are rows across them.
 - **The Done section:** a finished lane (rejected, withdrawn, or another offer accepted) moves there with a one-line result: "Admitted · SI scholarship won · €0 left to pay".
-- **The programme page:** a lane opens one page holding everything for that programme: its steps, its funding, its documents and its awards' documents, mail about it, its kit, and its referee requests.
+- **The programme page:** a lane opens one page holding everything for that programme (§5.1).
 - **Words** are the student's: Scholarship, Tuition waiver, Discount, Assistantship. Never "award", "HOLDER", "scope" or the route codes.
+- **Programmes & funding** (the pack before anything is added) keeps the dashboard spec's grouping under the funding (§5 there): a country-wide scholarship heads "Eligible programmes in <country>". Each row there carries the same "why it fits you" and risk label as the programme page.
+
+### 5.1 What the card and the programme page show (*owner*, 2026-10-10)
+
+The student sees what to decide and by when. How to apply is the extension's job and is never shown on the dashboard (rule 11).
+
+**The card** (in its lane):
+- the title, the status sentence and the next deadline in both time zones (§9.2);
+- the fee position line (§7.1) and any warning: country notice (§13a), renewal (§9.5);
+- readiness and mail badges, as in the dashboard spec §4;
+- one button, **"Apply to <programme>"** (below).
+
+**The programme page:**
+- **Why it fits you:** the plain reason, built from facts (tailored spec T15), with its weaknesses named (P1-6, P1-7) and the risk label Safe, Target or Reach (tailored §5.2). "Your best funded chance" when nothing is safe (§5.3 there).
+- **Requirements, each with its status:**
+  - **which requirements:** subject credits ("20 ECTS in theoretical computer science"), the grade bar beside the student's own grade in its own scale, nationality and degree stage, language and the teaching language, required documents (§10), referees (§11.1);
+  - **Met.**
+  - **Still to do:** a requirement the student can still meet, with its date: "Needs IELTS 6.5 by 15 Jan". No test fee is shown (§10).
+  - **Nearly met:** only for a borderline credit count, shown as a range: "We counted 18–22 of the required 20". Never for a fixed fact (nationality, a degree held, a grade awarded), which is met or not.
+  - Every credit status carries "Our count is our estimate, never the university's decision" (tailored §4.4).
+- **Money:** the application fee (original currency, then ≈ AZN, §7.6) with its position (§7.1), and the lane money line: tuition, duration, and what's left after funding won (§7.5).
+- **Deadlines**, by §9: the one that counts, both time zones, rolling and decentralised wording, "Closed for this intake". **A pre-check** (uni-assist) is its own earlier deadline: "uni-assist check: send by 15 Jan". It is a date, not an instruction.
+- **Funding:** every award line (§2), and for each scholarship its deadline and details from verified-catalog §5.2: the amount (and any "up to"), what it covers and any extras, how long it pays, renewal, obligations (for example a return-home bond), and "check with the funder" when its rules are silent on combining it with other funding. A fact still unsure is never shown as a guess or as "not stated" (verified-catalog §5.5).
+- **An EMJM:** each track with its full path (semester or year, university, country), its specialisation, and which universities award the degree (verified-catalog §3.2).
+- **Official source · last checked <date>** for the programme and for each scholarship (dashboard spec §5).
+- the country notice's full text (§13a); its documents and its awards' documents; mail about it; and its referee requests.
+
+**Never on the card or the page:** application steps, portal instructions, or which box to tick.
+
+**Steps stay internal.** The route's steps live in `route_snapshot` and drive the deadlines, the fee and the extension, which takes the student through them in order (uni-assist first, then the university's portal, then the scholarship's portal). No page lists them.
+
+**"Apply to <programme>"** (guidance spec D2, §3) opens the portal page of the first step not `DONE`. Filling starts from the extension's panel ("Start filling"). **The extension is required to apply.** Without it, the button is replaced by "Install the extension to apply"; in another browser, "Open this in Chrome or Edge to apply"; on a phone, "Open this on a computer to apply". This supersedes glass-box decision 12's by-hand fallback. The counsellor is never offered it. A held fee hides it (§7.2).
+
+**A step with no portal** (email, post, a nomination request) becomes one Needs-you-now item: "Ask the international office to nominate you by 1 Dec", with a drafted email. It's a task the extension can't do, not an instruction. The student sends it; the platform never emails a third party (funding-search-engine spec §9.2).
 
 ## 6. Outcomes
 
@@ -155,7 +195,7 @@ A student whose funding is `IMPORTANT` or `OPTIONAL` sees fees but no holds.
 
 ### 7.2 The hold (*owner*: automatic)
 
-- `HELD` hides the card's pay or Start step and keeps it out of Needs until the result arrives or the last safe day comes.
+- `HELD` hides the card's "Apply to <programme>" button and keeps it out of Needs until the result arrives or the last safe day comes.
 - **"Apply now anyway"** sets `RELEASED`. Only the student can press it, because spending is the student's decision.
 - **The result arrives:** the cascade in §6 applies.
 
@@ -169,7 +209,7 @@ A student whose funding is `IMPORTANT` or `OPTIONAL` sees fees but no holds.
 
 - **Unknown fee** (no served route, or the fee isn't stated): `fee_state = UNKNOWN`, and the card shows "Fee not known yet". The budget line lists it as "not counted", never as €0.
 - **One fee for a round:** when the snapshot's `portal_system` has `one_fee_per_round`, the fee is counted **once per round** in the budget line, never per card (§8).
-- **Application-fee waiver:** an award whose `pays=fee_reduction` targets the application fee becomes a "Request a fee waiver" step before payment. The fee counts only if the waiver is refused.
+- **Application-fee waiver:** an award whose `pays=fee_reduction` targets the application fee shows on the card as "A fee waiver may apply". On a portal the extension guides the request; otherwise it's a Needs-you-now task with a drafted email. The fee counts only if the waiver is refused.
 - **Paid:** the student marks it paid. A receipt email recognised by the mail reader marks it paid (`fee_paid_source = MAIL`); otherwise the student does. The extension never touches a payment form (§5.3, unchanged).
 
 ### 7.5 The money lines
@@ -188,6 +228,7 @@ A student whose funding is `IMPORTANT` or `OPTIONAL` sees fees but no holds.
 - Each amount: the original currency first, then "≈ 140 AZN".
 - Totals and the budget: AZN only.
 - The rate is the Central Bank of Azerbaijan's daily official rate (cbar.az). It appears only as a note: "Converted at the CBAR rate of 8 Oct; your bank may charge more". It's fetched once a day by the worker and stored per date.
+- Currencies CBAR doesn't publish are crossed through the euro using the European Central Bank's daily reference rate (owner, 2026-10-14); a currency neither publishes is left out (`NO_EXCHANGE_RATE`).
 - **Margin:** the "fits the budget" check adds a 3% margin for bank charges, so a fee that fits only at the exact rate is shown as "may not fit".
 - The home currency comes from the student's country of residence. AZN is the only one at launch; the rule is per country.
 
@@ -206,7 +247,9 @@ A student may say "I plan to spend 400 AZN, but I'd find more for something real
   - the student's funding is `MANDATORY` and it's a verified funding route the plan doesn't already cover.
 
 **How it's shown:** a separate "Worth stretching for" item in New for you, never mixed with in-budget items. For example: "Fully funded EMJM — fee €60 ≈ 115 AZN, 75 AZN over your plan (within the extra you allowed)".
-- Adding it takes the student's explicit confirmation, every time.
+- Adding it takes the explicit confirmation of whoever adds it (the student, or their assigned counsellor), every time.
+- **One confirmation page for every over-budget add (owner, 2026-10-14).** Adding any programme that does not fit the free budget, whether by add, replace or New for you, opens a page with plain numbers and one tick box naming how much more it costs. Nothing is added until the box is ticked.
+- **The student's assigned counsellor may also add one,** after the same confirmation, worded with the student's name and with no "Change my budget" link.
 - Stretch money is never committed automatically, and never by a hold release.
 
 **The budget line** shows both parts: "Plan 400 AZN · Extra allowed for exceptional cases: up to 150 · Used from extra: 75".
@@ -219,7 +262,7 @@ A student may say "I plan to spend 400 AZN, but I'd find more for something real
 - **Raised:** the pack re-plans. Paid applications from the pool are offered in priority order up to the new figure, as "New for you" (§7.9).
 - **Stretch:** the student edits `budget_stretch` the same way (§7.7).
 - **Lowered:**
-  - it can't go below what's already paid;
+  - it can't go below what's already paid, and it is refused while a paid or committed fee can't yet be converted because no rate is loaded (owner, 2026-10-14); a raise always saves;
   - below what's committed, the student chooses which unpaid applications to drop;
   - nothing is dropped automatically.
 - **The counsellor's board** shows the budget read-only, with no edit or propose control.
@@ -340,7 +383,7 @@ From the copied `referee_requirements`:
 The **student** sends it. The platform never emails a third party. It contains:
 - the professor's applications, deadlines and portal names, with "expect an email from these senders";
 - the student's CV;
-- a facts sheet: courses and grades with this professor, projects, achievements, and what each programme looks for (from `ProgramStatement`);
+- a facts sheet: courses and grades with this professor, projects, achievements, and what each programme looks for (from the card's copied requirements, `kit_requirements`: the web tier never reads `ProgramStatement`);
 - one ready-to-send message.
 
 **Status:** a portal's "your referee has submitted" email, recognised by the mail reader, sets `SUBMITTED`. Otherwise the student marks it.
@@ -370,7 +413,7 @@ When the professor asks the student to write the letter, the student presses **"
 Some countries carry a practical warning a student should read before applying.
 
 - **Student side only.** A notice is display text keyed on the programme's `country_code`, or the award's funder country (`ApplicationSystem.country_code` / the award copy's `country_code`). It is never catalogue data (agreed with the catalogue owner).
-- **Informational only:** it never blocks Add or Start.
+- **Informational only:** it never blocks Add or "Apply to <programme>".
 - **Where it appears:** a one-line warning on the card, and the full text on the programme page.
 - **Before it ships:** every fact is checked against official sources and shown with its check date.
 - **Upkeep:** re-checked every 3 months.
@@ -384,10 +427,10 @@ Card line:
 Programme page:
 > **Before you apply to a programme in Russia**
 > International sanctions in place since 2022 can affect you as a student:
-> - **Payments.** Visa and Mastercard cards issued outside Russia don't work there, and many Russian banks are cut off from international transfers. Ask your bank, before you pay any fee, how you'll pay the tuition and receive money.
-> - **Travel.** Flights between Russia and the EU, UK and US are suspended. Depending on where you live, you may need a connection through a country that still flies to Russia, so check routes from your home city.
-> - **Degree recognition.** Some countries and employers now check Russian degrees more strictly, and Russia's participation in the European Higher Education Area (Bologna) is suspended. If you plan to work or study further in the EU, UK or US, check how your degree will be recognised there.
-> - **Exchanges.** EU programmes such as Erasmus+ no longer work with Russian universities.
+> - **Payments.** Visa and Mastercard have suspended their operations in Russia, so cards issued outside Russia don't work there. Several major Russian banks are also cut off from SWIFT, the network banks use for international transfers. Ask your bank, before you pay any fee, how you'll pay the tuition and receive money.
+> - **Travel.** Russian airlines and Russian-registered planes are banned from EU, UK and US airspace. Depending on where you live, you may need a connection through another country, so check routes from your home city.
+> - **Degree recognition.** Russia's membership of the European Higher Education Area (the Bologna Process) is suspended. If you plan to work or study further in the EU, UK or US, check how your degree will be recognised there.
+> - **Exchanges.** The EU has ended Erasmus+ cooperation with Russian public bodies, a group that includes Russia's state universities.
 >
 > *This is general information as of {check date}, not legal advice. Rules change; your counsellor can help you check what applies to you.*
 
@@ -400,9 +443,12 @@ Each is its own implementation plan. Plans 1–3 need §3.4's tables, which are 
 | Plan | Contents | Needs |
 |---|---|---|
 | 1. Links and copies | §3.1 copies (route snapshot, referee and award facts), `ApplicationLink`, auto-added awards (§4), audience choice | §3.4 tables, PR #185 |
-| 2. Lanes | the lane board (§5), cascades and outcomes (§6), rounds (§8), dates (§9), country notices (§13a) | plan 1 |
-| 3. Money | positions, hold, last safe day, the money lines, CBAR currency, the student-only budget and stretch (with the new consultation answer), New for you (§7) | plans 1–2 |
-| 4. Documents and referees | the document list (§10), the referee plan, package and status, the draft for signature (§11) | plan 1 |
+| 2. Lanes | the lane board (§5), the card and programme page (§5.1) on plan 1a data, the extension-required states, deadline choice and time zones (§9.2–§9.4), country notices (§13a), and the funding-page text fixes: no "not stated", "(unstructured)" or "Not confirmed", country names in group labels, and removal of plan 1a's "Suggested — check you qualify" line (§4.3). The rest is 2b. | plan 1a |
+| 2b. Lanes, the rest | cascades and outcomes (§6), rounds (§8), start-by lead times (§9.1), fit/risk/requirement statuses, EMJM tracks, scholarship renewal and obligations, the nomination task, Apply to the first step not DONE | plan 1b, the tailored build, plan 4 |
+| 3. Money | the Safe and Pay-first positions (§7.1), unknown and paid fees and the fee state (§7.4), the budget line (§7.5), CBAR currency with the 3% margin (§7.6), the student-only budget and stretch with the new consultation answer (§7.7, §7.8), New for you (§7.9), a trusted receipt marking a fee paid. The rest is 3b. | plans 1–2 |
+| 3b. Money, the rest | the fee hold, "Apply now anyway" and the last safe day (§7.2, §7.3), "Wait, then pay" (§7.1), one fee per round and the fee waiver (§7.4), the lane money line (§7.5), stretch reason 3 (§7.7), fee-free items found later (§7.9) | plan 1b, plan 2b |
+| 4. Documents and referees | the document list with needed-by and validity (§10), referee facts on the candidate, the referee plan with swap, the request package, and SUBMITTED from trusted mail (§11.1–§11.3) | plan 1 |
+| 4b. Documents and referees, the rest | the draft for signature (§11.4), strictest value wins, variants beyond the certified copy, route-step and award document sources, needed-by from start-by lead times, per-document reminders, typical and recency validity (§10) | the one-letter-engine design, a requirement-values reader, plan 1b, plan 2b |
 
 ## 15. How it's tested
 
@@ -417,5 +463,9 @@ Each is its own implementation plan. Plans 1–3 need §3.4's tables, which are 
 
 - **Applications with no served route** keep the counsellor portal task until §3.4 serves them.
 - **The application-systems seed** (`docs/research/application-systems.csv`) waits for the owner's review and its verification pass (2026-10-09).
-- **Spec B** (the extension) must fill rankings, tick same-form award boxes, and handle START_FILL per step.
+- **Spec B** (the extension) must fill rankings, tick same-form award boxes, and work from the step "Apply to <programme>" opened (the first not `DONE`). The dashboard's `START_FILL` queueing is superseded by the guidance spec (D2, §3).
+- **The risk label and "why it fits you"** come from the tailored-programme build, which isn't built yet. Until it is, the programme page shows the requirements and the funding without them.
 - **Home currencies other than AZN** follow the same rule when a second market opens.
+- **Deferred from plan 2 to plan 2b:** cascades, outcome and offer comparison, national rounds, start-by lead times, fit/risk/requirement statuses, EMJM tracks, renewal and obligations, the nomination task, and Apply opening the first step not `DONE` (each blocked on the data named in the table in `docs/superpowers/plans/2026-10-11-lanes-plan-2-board-card-page.md`, "Scope ruling: plan 2 now, plan 2b later").
+- **Deferred from plan 3 to plan 3b:** the fee hold and its last safe day, "Wait, then pay", one fee per round, the fee waiver, the lane money line, stretch reason 3, and fee-free items found later (each blocked on the data named in the table in `docs/superpowers/plans/2026-10-13-lanes-plan-3-money.md`, "Scope ruling: plan 3 now, plan 3b later").
+- **Deferred from plan 4 to plan 4b:** the draft for the professor's signature, strictest value wins, variants beyond the certified copy, route-step and award document sources, needed-by from start-by lead times, per-document reminders, and typical or recency validity (each blocked on what the table in `docs/superpowers/plans/2026-10-13-lanes-plan-4-documents-and-referees.md`, "Scope ruling: plan 4 now, plan 4b later", names).

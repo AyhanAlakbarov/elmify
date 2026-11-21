@@ -64,7 +64,7 @@ Still open below.
   `run_research_worker --once` both fail with `NoRegionError`; with a region supplied
   the command wires up correctly. Pre-existing across both workers, now inherited by a
   second service.
-- **The test Postgres role is a superuser** (`tehsil`, `usesuper = True`, same in CI),
+- **The test Postgres role is a superuser** (`elmify`, `usesuper = True`, same in CI),
   so the default `django_db` connection bypasses RLS. Enforcement *is* covered, but only
   through the separate restricted `runtime_connection` fixture in
   `tests/tenancy/test_database_isolation.py` — ordinary tenant-scoped tests prove

@@ -1,20 +1,16 @@
-import { Nav } from "./_components/nav";
-import { Hero } from "./_components/hero";
-import { Agencies, Closing, Faq, Footer, HowItWorks, Product } from "./_components/sections";
+import type { Metadata } from "next";
+import {
+  LandingPage,
+  LocaleHtmlShell,
+  buildLocaleMetadata,
+} from "./_components/landing-page";
+
+export const metadata: Metadata = buildLocaleMetadata("en");
 
 export default function Home() {
   return (
-    <>
-      <Nav />
-      <main id="main">
-        <Hero />
-        <HowItWorks />
-        <Product />
-        <Agencies />
-        <Faq />
-        <Closing />
-      </main>
-      <Footer />
-    </>
+    <LocaleHtmlShell locale="en">
+      <LandingPage locale="en" />
+    </LocaleHtmlShell>
   );
 }

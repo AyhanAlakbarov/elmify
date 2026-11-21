@@ -6,13 +6,14 @@ and a rule enforced only in TypeScript is a rule a later build step can drop.
 Locally the bundle may be absent -- `npm --prefix extension ci && npm --prefix
 extension run build` builds it. Under CI a missing bundle is a FAILURE and
 never a skip: this repository has already shipped one job that went green
-having measured nothing (see .github/workflows/ci.yml's portal-sandbox
-comments), and a skipping security check is that failure again.
+having measured nothing (the retired portal-sandbox job, which a CI=true
+could turn into a skip), and a skipping security check is that failure again.
 """
 
 import json
 import os
 import pathlib
+import re
 
 import pytest
 
@@ -323,3 +324,106 @@ def test_the_alarm_tells_the_dock_when_pairing_is_missing() -> None:
     worker = bundle_text("service_worker.js")
     assert 'message: "pairing_required"' not in worker
     assert "Connect this browser to your dashboard first." in worker
+
+
+def test_the_marks_layer_is_closed_unclickable_and_unmarked_in_production():
+    content = bundle_text("content.js")
+    assert 'mode: "closed"' in content or 'mode:"closed"' in content
+    assert "pointer-events" in content and "none" in content
+    assert "data-elmify-marks" not in content  # test-build only
+
+
+# --- Task 6: start from the dashboard, follow each page ---------------------
+
+
+def test_the_worker_injects_content_only_into_a_bound_tab_on_its_own_origin():
+    """Bench mode (plan 6) is the one other injection: operator only, the
+    active tab, the chosen form's origin."""
+    worker = bundle_text("service_worker.js")
+    assert 'files: ["content.js"]' in worker or 'files:["content.js"]' in worker
+    assert "bindings" in worker and "onUpdated" in worker
+    # the origin check sits with the re-injection
+    assert re.search(r"onUpdated[\s\S]{0,800}origin", worker)
+
+
+def test_start_and_stop_are_accepted_only_from_the_dock():
+    worker = bundle_text("service_worker.js")
+    for kind in ("start-fill", "stop-fill", "language"):
+        assert re.search(rf'"{kind}"[\s\S]{{0,300}}fromDock', worker), kind
+
+
+def test_only_the_panel_asks_for_the_portal_s_host_permission():
+    """The user gesture lives in the panel's Start click. The worker's one
+    permissions.request is the toolbar click on the dashboard (pairing)."""
+    worker = bundle_text("service_worker.js")
+    panel = bundle_text("panel.js")
+    assert worker.count("permissions.request") == 1
+    assert "permissions.request" in panel
+
+
+def test_the_content_script_sends_codes_not_english_sentences():
+    """Final review I2: the panel translates codes; a sentence reaches an
+    az/tr/ru student in English."""
+    content = bundle_text("content.js")
+    for sentence in ("portal's own button", "prove you are human", "confirmed it received"):
+        assert sentence not in content, sentence
+
+
+# --- Security + ponytail fix wave ---------------------------------------------
+
+
+def test_content_scripts_are_locked_out_of_storage_local():
+    """S1: storage.local holds the device token, and a content script can read
+    it unless the worker sets the access level, at load, before any injection."""
+    worker = bundle_text("service_worker.js")
+    assert "setAccessLevel" in worker and "TRUSTED_CONTEXTS" in worker
+    content = bundle_text("content.js")
+    assert "chrome.storage" not in content and "storage.local" not in content
+    manifest = json.loads(bundle_text("manifest.json"))
+    # sidePanel.open (and setAccessLevel, 102) need this; older Chrome ignores the lock.
+    assert int(manifest["minimum_chrome_version"]) >= 116
+
+
+def test_a_choice_is_answered_only_from_the_dock_and_attached_only_by_content() -> None:
+    worker = bundle_text("service_worker.js")
+    assert re.search(r'"choice:answer"[\s\S]{0,300}fromDock', worker)
+    assert '"choice:attach"' in bundle_text("content.js")
+
+
+def test_uploads_are_fetched_with_the_token_and_without_cookies() -> None:
+    worker = bundle_text("service_worker.js").replace(" ", "")
+    assert re.search(r'"/ext/"[\s\S]{0,400}fetchDocument', worker)
+    assert re.search(r'fetchDocument[\s\S]{0,400}credentials:"omit"', worker)
+
+
+def test_answers_leave_only_on_the_dock_s_review_press_and_only_from_a_bound_tab() -> None:
+    """The answers channel's one trigger is "I have checked this page" in our
+    panel: the worker takes review:open only from the dock, the content script
+    sends answers only from that message, and an answers message is a content
+    type, so contentRefusal binds it to its tab and its application."""
+    worker = bundle_text("service_worker.js")
+    assert re.search(r'"review:open"[\s\S]{0,300}fromDock', worker)
+    assert re.search(r'CONTENT_TYPES = [^\]]*new Set\(\[[^\]]*"answers"', worker)
+    content = bundle_text("content.js")
+    assert re.search(r'"review:open"[^;]{0,40}sendAnswers\(\)', content)
+    assert content.count('type: "answers"') == 1
+
+
+def test_bench_messages_are_accepted_only_from_the_dock() -> None:
+    worker = bundle_text("service_worker.js")
+    for kind in ("bench:hello", "bench:record"):
+        assert re.search(rf'"{kind}"[\s\S]{{0,300}}fromDock', worker), kind
+
+
+def test_a_bench_recording_is_checked_against_the_page_s_own_origin() -> None:
+    """The tab may navigate during the worker's awaits; the content script's
+    own location.origin is compared before anything is posted."""
+    assert re.search(r'"record"[\s\S]{0,400}location\.origin', bundle_text("content.js"))
+    worker = bundle_text("service_worker.js")
+    assert re.search(r'\.origin\)\)?\s*throw new ExtError\(409,\s*"wrong_page"\)', worker)
+
+
+def test_unpair_hands_back_the_bench_grants() -> None:
+    worker = bundle_text("service_worker.js")
+    assert re.search(r'"unpair"[\s\S]{0,600}forgetBenchOrigins', worker)
+    assert re.search(r"bench_origins[\s\S]{0,600}permissions\.remove", worker)

@@ -9,7 +9,10 @@ Design: docs/superpowers/specs/2026-09-19-reminder-ladder-design.md
 
 from django.core.management.base import BaseCommand
 
-from apps.portals.reminders import send_due_reminders_for_tenant
+from apps.portals.reminders import (
+    send_due_outcome_checkins_for_tenant,
+    send_due_reminders_for_tenant,
+)
 from apps.tenancy.models import Agency
 from apps.watch.heartbeat import record_run, report_silent
 
@@ -27,5 +30,6 @@ class Command(BaseCommand):
         # re-entry is harmless by tenant_scope's own design.
         for agency in Agency.objects.all():
             send_due_reminders_for_tenant(agency.id)
+            send_due_outcome_checkins_for_tenant(agency.id)
         record_run("send_due_reminders")
         report_silent()

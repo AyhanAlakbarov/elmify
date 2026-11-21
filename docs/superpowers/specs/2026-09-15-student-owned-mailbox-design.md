@@ -63,10 +63,13 @@ printed on the CV ahead of the platform mailbox (`documents/generation.py::conta
    | 0 — none | — | — | what the student tells the dashboard |
    | 1 — metadata (default) | `gmail.metadata` | `Mail.ReadBasic` | headers (sender, subject, date) and labels; never body or attachments; neither scope permits search, so the filter runs on sender in code |
    | 2 — content (opt-in) | `gmail.readonly` | `Mail.Read` | body and attachments, **only** of messages that passed the tier-1 filter |
+   | 3 — draft (opt-in, added 2026-09-25) | `gmail.compose` | `Mail.ReadWrite` | tier 2, plus the ability to put a finished draft — subject, body, attachments — into the student's own mailbox, on their press (decision 9) |
 
    Tier 2 is the one that can classify a message as a decision, document request, interview
    invitation or fee notice and draft a reply. Tier 1 can only say "the university wrote to you on
-   Tuesday" — which is still the notification §5.6 needs. No send scope, at any tier, ever.
+   Tuesday" — which is still the notification §5.6 needs. **No send scope on Microsoft, at any tier,
+   ever** — `Mail.Send` is separate and is never requested. On Google the guarantee is weaker and
+   decision 9 says exactly how.
 
 3. **The filter is the student's own pack.** Before any message is fetched, the sync computes the
    set of sender domains it is allowed to look at: the origins of the `OfficialSource.canonical_url`
@@ -79,13 +82,14 @@ printed on the CV ahead of the platform mailbox (`documents/generation.py::conta
 4. **Nothing sends.** A tier-2 classification that warrants a reply produces a draft in the
    dashboard, built only from verified facts and approved documents, which the student sends from
    their own client (a prefilled `mailto:` and a copy button). §4.4 "never invent an answer" stands;
-   "answer routine messages" is amended to "draft".
+   "answer routine messages" is amended to "draft". *Where the draft goes is amended by decision 9;
+   that a person presses Send in their own client is not.*
 
 5. **Tokens are secrets; erasure is defined with storage.** Refresh tokens live in Secrets Manager
-   under `tehsil/mailbox/{tenant}/{student}/{provider}` — never a model field, never a `JSONField`,
+   under `elmify/mailbox/{tenant}/{student}/{provider}` — never a model field, never a `JSONField`,
    never logged. `audit/deletion.py::advance_deletion` destroys them on the `EXECUTED` path, on the
    same IAM grant the portal credentials were going to use (`WorkerTaskRole` `DeleteSecret`,
-   re-scoped from `tehsil/portal/*`). The rule is the one the 2026-08-25 decision record wrote for
+   re-scoped from `elmify/portal/*`). The rule is the one the 2026-08-25 decision record wrote for
    portal passwords; this is its second tenant.
 
 6. **Stored derivatives are minimal and about the student only.** A `MailSignal` row holds the
@@ -106,6 +110,47 @@ printed on the CV ahead of the platform mailbox (`documents/generation.py::conta
    plus the annual CASA assessment must be complete before a 101st Google user can connect. The
    concierge MVP fits under the 100-user testing cap; production does not. Cost and lead time are to
    be quoted by an approved assessor and recorded in §10 before launch.
+
+9. **One button prepares the whole e-mail — as a draft in the student's own mailbox** (owner,
+   2026-09-25). Some awards are applied for by writing to someone: a nomination scheme like France
+   Excellence / Eiffel, where the student asks the host institution's international office to put
+   them forward (funding engine spec, 2026-09-22 design §9.2, `EMAIL` kit step). That e-mail is a
+   subject, a body and the approved PDFs, and **a `mailto:` link cannot carry an attachment** — no
+   browser or mail client accepts one, for good reasons. So decision 4's `mailto:` leaves the
+   student assembling the attachment by hand at exactly the moment the platform claimed to help.
+
+   On a tier-3 connection, pressing *Prepare this e-mail* creates **one draft in the student's own
+   mailbox** — recipient, subject, body, the approved documents pulled from the evidence bucket and
+   attached — and opens it in their client. The student reads it and presses Send. Three rules make
+   that safe to offer: a draft is written **only** in response to that press, never by the sync or
+   any background job; the body is a document like a letter, so it carries a `ConsentEvent`
+   approval and **the button does not exist before the student has approved it**; and the
+   attachments are only documents already in `APPROVED` state.
+
+   **The provider asymmetry is the cost, and it is not symmetric.** Microsoft separates drafting
+   (`Mail.ReadWrite`) from sending (`Mail.Send`), so the structural guarantee survives untouched:
+   the platform *cannot* send, because it never holds the scope. Google publishes no draft-only
+   scope — `gmail.compose` carries `messages.send` with it. On Gmail, therefore, "the platform
+   cannot send" becomes **"the platform does not send"**: a promise kept by our code rather than
+   refused by the provider. It is pinned the way `apps/concierge` pins its own boundary — a test
+   asserting no send endpoint is called anywhere in the tree, and the scope allowlist naming the
+   four scopes that may ever be requested. A weaker guarantee, bought for an attachment, and the
+   owner may reverse it for Gmail alone (open decision 4) at the cost of tier 3 being a Microsoft
+   feature.
+
+   **The fallback is the old behaviour, and nothing is ever broken by its absence.** On tiers 0-2,
+   on a student who declines, and on any draft call that fails, the kit shows the `mailto:` with
+   subject and body plus a *download and attach these two files* checklist — the Application Kit's
+   own promise that it works on any device, unchanged.
+
+   **What is stored is the provider's draft id on the `EMAIL` `ApplicationStep`**, so the card can
+   say *prepared*, *sent* or *replied* — never the body, never a copy of the draft.
+   **And erasure does not reach it:** a draft inside the student's own mailbox is their data in
+   their account. Erasure destroys our token, our rows and our copies; it cannot delete mail from
+   someone's mailbox, and the dashboard says so where it says what erasure does.
+
+   `gmail.compose` is restricted exactly like `gmail.readonly`, so the CASA assessment already
+   budgeted in decision 8 covers it; no new class of review appears on either provider.
 
 ## Decisions taken with the owner, 2026-09-15 (evening)
 
@@ -161,7 +206,7 @@ headers and bodies are never logged (engineering rule; `python.md`).
 ## Data model
 
 - `MailboxConnection` (tenant-scoped): `membership` FK (cascade), `provider` (`GOOGLE`|`MICROSOFT`),
-  `address`, `tier` (1|2), `secret_id`, `connected_at`, `last_sync_at`, `sync_cursor`, `status`
+  `address`, `tier` (1|2|3), `secret_id`, `connected_at`, `last_sync_at`, `sync_cursor`, `status`
   (`ACTIVE`|`REVOKED`|`ERROR`), `revoked_at`. One active connection per provider per membership.
 - `MailSignal` (tenant-scoped): `connection` FK (cascade), `provider_message_id`, `sender_domain`,
   `received_at`, `application` FK (nullable, `SET_NULL`), `label` (nullable), `confidence`
@@ -174,6 +219,10 @@ headers and bodies are never logged (engineering rule; `python.md`).
   account, so it lives only in that short-lived row, is delivered once, and its payload is cleared on
   completion. It is never written to `MailSignal`, never logged, and never leaves the student's own
   browser to be opened.
+- **A prepared e-mail is one id on one step.** The tier-3 draft (decision 9) writes the provider's
+  draft id onto the `EMAIL` `ApplicationStep` and nothing else — no recipient copy, no body, no
+  attachment bytes. The step's later states come from the mailbox it already watches: the reply
+  arriving is the read-back.
 - **Learned sender domains.** The first message a student confirms as belonging to a portal records
   its sender on `PortalForm.sender_domains`, shared for every later student, which is how the
   pack-derived filter reaches portals that mail from a vendor's domain.
@@ -197,10 +246,14 @@ headers and bodies are never logged (engineering rule; `python.md`).
   `ERROR` and notifies the student; nothing retries indefinitely).
 - **What is never stored:** subjects (read at both tiers for classification, then discarded), bodies,
   attachments, other people's addresses.
+- **What erasure cannot reach.** A tier-3 draft lives in the student's own mailbox (decision 9).
+  Erasure destroys the token, the rows and our copies; mail in someone's own account is theirs to
+  delete, and the consent screen and the erasure page both say so rather than implying otherwise.
 
 ## Requirements amended (dated blocks in `phased requirements.md`)
 
-- §4.3 rewritten: connect-your-own-mailbox, three tiers, pack-derived filter, no send.
+- §4.3 rewritten: connect-your-own-mailbox, four tiers (the fourth prepares a draft in the student's
+  own mailbox, 2026-09-25), pack-derived filter, nothing sent by the platform.
 - §4.4: "Answer routine messages" → "Draft routine replies for the student to send"; reading
   requires tier 2.
 - §5.6: "Monitor the platform-managed mailbox" → "Monitor the connected mailbox, within the
@@ -222,13 +275,18 @@ headers and bodies are never logged (engineering rule; `python.md`).
   confirmed once, in the dashboard, like any other.
 - `apps/audit/redaction.py`: `application_email` stays in the `Membership` redact spec; add
   `MailboxConnection.address` and `MailSignal` to the erasure sweep; `advance_deletion` destroys
-  `tehsil/mailbox/*` secrets.
+  `elmify/mailbox/*` secrets.
 - New app `apps/mailbox/`: `oauth.py` (two providers behind one small interface — the second
   provider is what justifies it), `sync.py`, `filter.py`, `classify.py` (tier 2), `views.py`
   (connect / revoke / tier change), management command `sync_mailboxes`, EventBridge rule modelled on
   `EuropassCanaryRule` once anything is deployed.
-- Infra: `WorkerTaskRole` gains `GetSecretValue`/`DeleteSecret` on `tehsil/mailbox/*`; the
-  `tehsil/portal/*` grant goes with the portal tier.
+- `apps/mailbox/draft.py` and one route behind it (decision 9): builds the MIME message from the
+  approved body and the `APPROVED` documents and creates it through whichever provider the
+  connection names — Gmail `drafts.create`, Graph `createMessage` plus an attachment upload. It
+  refuses without a tier-3 connection and without the body's `ConsentEvent`, and returns the id the
+  `EMAIL` step stores. The provider interface gains `create_draft` and nothing that sends.
+- Infra: `WorkerTaskRole` gains `GetSecretValue`/`DeleteSecret` on `elmify/mailbox/*`; the
+  `elmify/portal/*` grant goes with the portal tier.
 
 ## Testing
 
@@ -240,13 +298,19 @@ headers and bodies are never logged (engineering rule; `python.md`).
 - Tier 2 classifier: data-labelled prompt, `extra="forbid"`, capped tokens, `rate_limited` —
   the same four assertions the other LLM callers carry.
 - Erasure completeness: the existing sweep sees `MailboxConnection` and `MailSignal`; a test
-  asserts the secret-destroy call for `tehsil/mailbox/*` on the `EXECUTED` path.
+  asserts the secret-destroy call for `elmify/mailbox/*` on the `EXECUTED` path.
 - RLS: another tenant's connection is invisible under `rls_enforced_orm`.
 - Logging: a log-capture test asserts no header or body text appears at any level.
+- Tier 3 (decision 9): no send endpoint is called anywhere in the tree, and the scope allowlist
+  admits nothing beyond the four named scopes — the pair that replaces Gmail's missing structural
+  guarantee, so neither may be deleted. The draft route refuses a tier-1/2 connection, refuses an
+  unapproved body, and refuses a document that is not `APPROVED`; a failing provider call leaves the
+  step in its `mailto:` fallback rather than an error page.
 
 ## Deliberately not built
 
-- **Sending mail as the student.** Drafts only.
+- **Sending mail as the student.** Drafts only — in the dashboard at tiers 0-2, in the student's own
+  mailbox at tier 3 (decision 9). A person presses Send, always, in their own client.
 - **IMAP / app passwords.** A stored full-access credential.
 - **Reading Gmail's web UI through the extension.** Fragile, and policy-exposed; the extension is
   for portals.
@@ -261,3 +325,9 @@ headers and bodies are never logged (engineering rule; `python.md`).
 2. ~~Who pays for the CASA assessment and when~~ — **resolved 2026-09-15**: both providers at
    launch; the assessment is budgeted before the 101st Gmail user.
 3. ~~Decision letters~~ — **resolved 2026-09-15**: saved on the student's click.
+4. **Tier 3 on Gmail** (opened 2026-09-25). Decision 9 accepts `gmail.compose`, which carries the
+   ability to send, to buy a one-press e-mail with attachments. The alternative is tier 3 on
+   Microsoft only, with Gmail students kept on `mailto:` plus a download-and-attach checklist —
+   structurally unable to send, and worse to use for what is likely most students. Taken as
+   written; reversible for Gmail alone by dropping one scope from the allowlist, and worth
+   revisiting if Google ever publishes a draft-only scope.

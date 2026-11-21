@@ -4,7 +4,7 @@ Description: Phase 1 one-region runtime — queue, controlled-egress validation,
 Parameters:
   ProbeImage:
     Type: String
-    Description: Immutable URI of the tehsil-agent worker image used by the one-off probe
+    Description: Immutable URI of the elmify worker image used by the one-off probe
     AllowedPattern: "^.+@sha256:[0-9a-f]{64}$"
 
   AppImage:
@@ -14,7 +14,7 @@ Parameters:
 
   DomainName:
     Type: String
-    Description: Wildcard domain covered by the platform ACM certificate (e.g. *.tehsil-agent.example)
+    Description: Wildcard domain covered by the platform ACM certificate (e.g. *.elmify.example)
 
   HostedZoneId:
     Type: String
@@ -50,24 +50,16 @@ Parameters:
 
   DBName:
     Type: String
-    Default: tehsil
+    Default: elmify
 
   DBMasterUsername:
     Type: String
-    Default: tehsil_admin
-
-  PortalImage:
-    Type: String
-    Description: >
-      Immutable URI of the Dockerfile `portal` stage. Separate from AppImage: that stage
-      carries Chrome for Testing and Xvfb, which no other service needs.
-    AllowedPattern: "^.+@sha256:[0-9a-f]{64}$"
+    Default: elmify_admin
 
   AzureDocumentIntelligenceEndpoint:
     Type: String
     Default: ""
     Description: https URL of the EU Document Intelligence resource (transcript reader)
-
   OcrImage:
     Type: String
     Description: >
@@ -75,28 +67,6 @@ Parameters:
       page classification) as an AWS Lambda function. Separate from AppImage: it carries the
       PDF/image parsers and nothing else, and it parses untrusted uploads.
     AllowedPattern: "^.+@sha256:[0-9a-f]{64}$"
-
-  PortalDesiredCount:
-    Type: Number
-    Default: 0
-    MinValue: 0
-    MaxValue: 1
-    Description: >
-      Ships STOPPED. §10's portal-terms blocker gates pointing this at a real portal at all,
-      and the EC2 capacity behind it is not free. MaxValue is 1 and load-bearing: browser
-      profiles are local to the instance that owns them, so a second task cannot resume an
-      application the first one paused.
-
-  LlmApiKeySecretArn:
-    Type: String
-    Description: >
-      Secrets Manager ARN holding the Anthropic API key the learn pass uses. Supplied rather
-      than created here so the key's lifecycle (rotation, access audit) is not this stack's.
-    # This value lands directly in PortalExecutionRole's Resource list.
-    # Without a pattern, a malformed or wildcarded ARN here would widen that
-    # role to every secret in the account, and it would fail closed today only by luck -- IAM
-    # happens to reject the placeholder, not because anything here checks.
-    AllowedPattern: "^arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:[^*]+$"
 
   ProvenanceGateEnforced:
     Type: String
@@ -168,6 +138,29 @@ Conditions:
   HasAdditionalCertificates: !Not [!Equals [!Select [0, !Ref AdditionalCertificateArns], ""]]
 
 Resources:
+  # Students' portal passwords (spec 2026-10-09 §6, D3; apps/portals/credentials.py).
+  # Their own key, so the default aws/secretsmanager key -- which every other
+  # secret here uses -- decrypts none of them, and disabling this one stops
+  # every portal password at once.
+  PortalCredentialsKey:
+    Type: AWS::KMS::Key
+    # Deleting or replacing the key makes every stored portal password
+    # unreadable, so a stack delete or a replacing update keeps it.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Encrypts elmify/portal/* secrets (students' portal passwords)
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AccountAdministersThroughIam
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+
   ValidationVpc:
     Type: AWS::EC2::VPC
     Properties:
@@ -301,13 +294,6 @@ Resources:
           FromPort: 443
           ToPort: 443
           SourceSecurityGroupId: !Ref WorkerSecurityGroup
-        # Same reasoning as the worker rule above: reach without
-        # credentials, and it keeps the portal task's image pulls and log
-        # delivery off the NAT.
-        - IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          SourceSecurityGroupId: !Ref PortalSecurityGroup
 
   AlbSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -344,7 +330,7 @@ Resources:
   DatabaseSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: PostgreSQL access limited to the web, worker and portal tasks
+      GroupDescription: PostgreSQL access limited to the web and worker tasks
       VpcId: !Ref ValidationVpc
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -355,25 +341,16 @@ Resources:
           FromPort: 5432
           ToPort: 5432
           SourceSecurityGroupId: !Ref WorkerSecurityGroup
-        # The portal task reads field maps and writes the §5.5 audit trail
-        # while it types, so it cannot be credential-free. What makes that
-        # acceptable is the renderer sandbox (apps/portals/engine.py refuses
-        # to run without it) and the EC2 launch type that makes the sandbox
-        # possible.
-        - IpProtocol: tcp
-          FromPort: 5432
-          ToPort: 5432
-          SourceSecurityGroupId: !Ref PortalSecurityGroup
 
-  # Same three-security-group shape as DatabaseSecurityGroup above, and for the
+  # Same two-security-group shape as DatabaseSecurityGroup above, and for the
   # same reason: WorkerSecurityGroup is shared by worker, europass-worker,
   # document-worker and the migration RunTask, so this list already covers all
-  # six app task definitions. Deliberately NOT OcrSecurityGroup -- the OCR
+  # five app task definitions. Deliberately NOT OcrSecurityGroup -- the OCR
   # function parses untrusted uploads and has no route to anything but S3.
   CacheSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Valkey access limited to the web, worker and portal tasks
+      GroupDescription: Valkey access limited to the web and worker tasks
       VpcId: !Ref ValidationVpc
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -384,10 +361,6 @@ Resources:
           FromPort: 6379
           ToPort: 6379
           SourceSecurityGroupId: !Ref WorkerSecurityGroup
-        - IpProtocol: tcp
-          FromPort: 6379
-          ToPort: 6379
-          SourceSecurityGroupId: !Ref PortalSecurityGroup
 
   # --- Transcript OCR: subnets with no route out -------------------------------
   # The OCR function parses untrusted uploads (pdfium, OpenCV). Its subnets
@@ -519,7 +492,7 @@ Resources:
   FlowLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/flow"
+      LogGroupName: !Sub "/elmify/validation/${AWS::StackName}/flow"
       RetentionInDays: 30
 
   FlowLogRole:
@@ -563,7 +536,7 @@ Resources:
   ProbeLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/validation/${AWS::StackName}/probe"
+      LogGroupName: !Sub "/elmify/validation/${AWS::StackName}/probe"
       RetentionInDays: 7
 
   # Backs settings.EVIDENCE_BUCKET_NAME (apps/research/storage.py) and the
@@ -1389,13 +1362,21 @@ Resources:
     Properties:
       Description: Azure Document Intelligence key (populate out-of-band)
 
+  # The evidence refresh's one GitHub key (CV evidence spec 12.2): a fine-grained token,
+  # read-only, public repositories only, no organisation access. Populate out of band.
+  # Empty, apps/documents/evidence/github.py makes no request at all and the refresh logs
+  # EvidenceGitHubNoToken -- the unauthenticated path through the shared NAT is gone.
+  GithubTokenSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: GitHub read-only token for public repositories, evidence refresh (populate out-of-band)
+
   # --- Web/worker/migration IAM ------------------------------------------------
 
   # Reads only the runtime_engine database secret (2026-09-25 catalog-read-
   # split): Worker, EuropassWorker, DocumentWorker and Migration all run
   # engine-or-narrower work, and none of them is the agency web tier -- see
-  # WebExecutionRole below for that split, and PortalExecutionRole for the
-  # portal tier's. Keeping the name is the
+  # WebExecutionRole below for that split. Keeping the name is the
   # smaller diff; every task that used to be "runtime" here still is, minus
   # WebTaskDefinition.
   AppExecutionRole:
@@ -1449,6 +1430,7 @@ Resources:
                   # mailbox tokens with the OAuth client secrets.
                   - !Ref MailboxOAuthClientSecretArn
                   - !Ref AzureDocumentIntelligenceKeySecret
+                  - !Ref GithubTokenSecret
 
   # The agency web tier's execution role. Split out of AppExecutionRole
   # (2026-09-25 catalog-read-split) because that role's secretsmanager grant
@@ -1501,50 +1483,6 @@ Resources:
                   # The student-mailbox OAuth client secrets the callback's
                   # code exchange signs with.
                   - !Ref MailboxOAuthClientSecretArn
-
-  # The portal tier's execution role (2026-09-25 catalog-read-split, final
-  # review I3). The portal task connects as runtime_web: nothing on its code
-  # path reads the shared catalogue, and its security rests on the renderer
-  # sandbox holding against hostile pages -- as runtime_engine a sandbox
-  # escape could write the catalogue every tenant reads. So it must not be
-  # able to resolve the engine secret either. ECS resolves the task's
-  # ANTHROPIC_API_KEY Secrets entry through this role, not the task role --
-  # without that grant the task never starts.
-  PortalExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal: {Service: ecs-tasks.amazonaws.com}
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: PullImageWriteLogsReadPortalSecrets
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: ecr:GetAuthorizationToken
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:BatchGetImage
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource:
-                  - !Sub "${PortalLogGroup.Arn}:*"
-              - Effect: Allow
-                Action: secretsmanager:GetSecretValue
-                Resource:
-                  - !Ref WebDatabaseSecret
-                  - !Ref ValidationSecret
-                  - !Ref LlmApiKeySecretArn
 
   # Only WorkerTaskRole can consume the research queue and read/write the
   # evidence bucket. WebTaskRole may only enqueue, read tenants/, and write
@@ -1614,7 +1552,26 @@ Resources:
                   - secretsmanager:CreateSecret
                   - secretsmanager:PutSecretValue
                   - secretsmanager:DeleteSecret
-                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/mailbox/*"
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/mailbox/*"
+              # apps/portals/ext_api.py::portal_login creates a student's portal
+              # password on their first sign-up and reads it for the extension
+              # on every login; the student's "I changed my password"
+              # (apps/portals/views.py::portal_takeover) deletes it. Never
+              # ListSecrets, for the reason given on the mailbox grant above.
+              - Effect: Allow
+                Action:
+                  - secretsmanager:CreateSecret
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DeleteSecret
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/portal/*"
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource: !GetAtt PortalCredentialsKey.Arn
+                Condition:
+                  StringEquals:
+                    kms:ViaService: !Sub "secretsmanager.${AWS::Region}.amazonaws.com"
 
   WorkerTaskRole:
     Type: AWS::IAM::Role
@@ -1674,7 +1631,7 @@ Resources:
                   - s3:ListBucketVersions
                 Resource: !GetAtt EvidenceBucket.Arn
               # Task 8: advance_deletion destroys a student's portal
-              # credentials (apps/portals/auth.py::SecretsManagerCredentials)
+              # credentials (apps/portals/credentials.py)
               # on the same path that deletes their documents, and its
               # deletion helper re-raises anything that is not
               # ResourceNotFoundException. Without this grant every erasure
@@ -1683,7 +1640,7 @@ Resources:
               # not work at all until this grant exists.
               - Effect: Allow
                 Action: secretsmanager:DeleteSecret
-                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/portal/*"
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/portal/*"
               # Task 3 of the student-mailbox plan (apps/mailbox/secrets.py):
               # the OAuth refresh token this role must be able to destroy on
               # the same erasure path is the same secret sync_mailboxes reads
@@ -1701,7 +1658,7 @@ Resources:
                   - secretsmanager:GetSecretValue
                   - secretsmanager:PutSecretValue
                   - secretsmanager:DeleteSecret
-                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/mailbox/*"
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/mailbox/*"
               # Task 17 (institution provenance gate): check_body's register
               # load (apps/research/recognition.py::load_register, reached
               # from provenance_job.py via Deps.load) archives a register's
@@ -1788,7 +1745,7 @@ Resources:
                 Action:
                   - secretsmanager:GetSecretValue
                   - secretsmanager:PutSecretValue
-                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/mailbox/*"
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:elmify/mailbox/*"
 
   # One task holds both grants: quarantine/* read for the scan-and-ingest path
   # and tenants/* write for the render path -- the shape WorkerTaskRole already
@@ -1836,26 +1793,34 @@ Resources:
                   - s3:GetObjectVersion
                 Resource: !Sub "${EvidenceBucket.Arn}/quarantine/*"
               # The render path stores the artefact, and store_document also
-              # reads when re-storing bytes under a draft's own key. Never
-              # delete: erasure is WorkerTaskRole's, and only its.
+              # reads when re-storing bytes under a draft's own key. Delete
+              # is erasure's, WorkerTaskRole's, with one exception below.
               - Effect: Allow
                 Action:
                   - s3:GetObject
                   - s3:PutObject
                 Resource: !Sub "${EvidenceBucket.Arn}/tenants/*"
+              # The one delete: the platform's own derived copies. A replaced or
+              # no-longer-wanted prepared file is removed (owner, 2026-10-10);
+              # nothing the student supplied or approved lives under prepared/.
+              - Effect: Allow
+                Action:
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Resource: !Sub "${EvidenceBucket.Arn}/tenants/*/students/*/prepared/*"
 
   # --- Web/worker/migration ECS ------------------------------------------------
 
   WebLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/web"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/web"
       RetentionInDays: 30
 
   WorkerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/worker"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/worker"
       RetentionInDays: 30
 
   # apps/watch/heartbeat.py logs "JobSilent job=<name>" at ERROR when a scheduled
@@ -1870,14 +1835,14 @@ Resources:
       LogGroupName: !Ref WorkerLogGroup
       FilterPattern: '"JobSilent"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Jobs
+        - MetricNamespace: Elmify/Jobs
           MetricName: JobSilent
           MetricValue: "1"
 
   JobSilentAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/Jobs
+      Namespace: Elmify/Jobs
       MetricName: JobSilent
       Statistic: Sum
       Period: 3600
@@ -1894,14 +1859,14 @@ Resources:
       LogGroupName: !Ref WorkerLogGroup
       FilterPattern: '"JobFinished"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Jobs
+        - MetricNamespace: Elmify/Jobs
           MetricName: JobFinished
           MetricValue: "1"
 
   JobFinishedMissingAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/Jobs
+      Namespace: Elmify/Jobs
       MetricName: JobFinished
       Statistic: Sum
       Period: 3600
@@ -1913,7 +1878,7 @@ Resources:
   MigrationLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/migration"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/migration"
       RetentionInDays: 30
 
   WebTaskDefinition:
@@ -1950,14 +1915,16 @@ Resources:
             # production.py reads every queue URL at import, so every task
             # running Django supplies all of them -- see the identical
             # entries on its siblings.
-            - Name: PORTAL_QUEUE_URL
-              Value: !Ref PortalQueue
             - Name: DOCUMENT_QUEUE_URL
               Value: !Ref DocumentQueue
             - Name: DOCUMENT_SCAN_QUEUE_URL
               Value: !Ref DocumentScanQueue
             - Name: MAILBOX_QUEUE_URL
               Value: !Ref MailboxQueue
+            # apps/portals/credentials.py encrypts portal passwords under this
+            # key; the web tier is the only task that creates them.
+            - Name: PORTAL_SECRETS_KMS_KEY_ID
+              Value: !Ref PortalCredentialsKey
             # apps/ratelimit.py's shared counters; config.settings.production
             # refuses to start without this (a shared counter is a production
             # requirement -- see that module's docstring). rediss:// because
@@ -2044,8 +2011,6 @@ Resources:
             # production.py reads every queue URL at import, so every task
             # running Django supplies all of them -- see the identical
             # entries on its siblings.
-            - Name: PORTAL_QUEUE_URL
-              Value: !Ref PortalQueue
             - Name: DOCUMENT_QUEUE_URL
               Value: !Ref DocumentQueue
             - Name: DOCUMENT_SCAN_QUEUE_URL
@@ -2150,8 +2115,6 @@ Resources:
             # production.py reads every queue URL at import, so every task
             # running Django supplies all of them -- see the identical
             # entries on its siblings.
-            - Name: PORTAL_QUEUE_URL
-              Value: !Ref PortalQueue
             - Name: DOCUMENT_QUEUE_URL
               Value: !Ref DocumentQueue
             - Name: DOCUMENT_SCAN_QUEUE_URL
@@ -2173,7 +2136,7 @@ Resources:
             - Name: DATABASE_ROLE
               Value: migration
             - Name: POSTGRES_MIGRATION_USER
-              Value: tehsil_migration
+              Value: elmify_migration
           Secrets:
             - Name: POSTGRES_MIGRATION_PASSWORD
               ValueFrom: !Ref MigrationDatabaseSecret
@@ -2222,13 +2185,13 @@ Resources:
   EuropassWorkerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/europass-worker"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/europass-worker"
       RetentionInDays: 30
 
   DocumentWorkerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/document-worker"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/document-worker"
       RetentionInDays: 30
 
   EuropassWorkerTaskDefinition:
@@ -2258,8 +2221,6 @@ Resources:
             # production.py reads every queue URL at import, so every task
             # running Django supplies all of them -- see the identical
             # entries on its siblings.
-            - Name: PORTAL_QUEUE_URL
-              Value: !Ref PortalQueue
             - Name: DOCUMENT_QUEUE_URL
               Value: !Ref DocumentQueue
             - Name: DOCUMENT_SCAN_QUEUE_URL
@@ -2324,7 +2285,7 @@ Resources:
   MailboxWorkerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/mailbox-worker"
+      LogGroupName: !Sub "/elmify/app/${AWS::StackName}/mailbox-worker"
       RetentionInDays: 30
 
   # Mirrors what sync_mailboxes needs on WorkerTaskDefinition, and nothing of
@@ -2359,8 +2320,6 @@ Resources:
               Value: !Ref ResearchQueue
             - Name: EUROPASS_QUEUE_URL
               Value: !Ref EuropassQueue
-            - Name: PORTAL_QUEUE_URL
-              Value: !Ref PortalQueue
             - Name: DOCUMENT_QUEUE_URL
               Value: !Ref DocumentQueue
             - Name: DOCUMENT_SCAN_QUEUE_URL
@@ -2450,8 +2409,6 @@ Resources:
             # production.py reads every queue URL at import, so every task
             # running Django supplies all of them -- see the identical
             # entries on its siblings.
-            - Name: PORTAL_QUEUE_URL
-              Value: !Ref PortalQueue
             - Name: DOCUMENT_QUEUE_URL
               Value: !Ref DocumentQueue
             - Name: DOCUMENT_SCAN_QUEUE_URL
@@ -2509,6 +2466,10 @@ Resources:
               ValueFrom: !Ref TypesafeApiKeySecret
             - Name: AZURE_DI_KEY
               ValueFrom: !Ref AzureDocumentIntelligenceKeySecret
+            # The evidence refresh's GitHub key; also what `manage.py ingest_evidence
+            # --student` reads when run as a one-off task of this definition.
+            - Name: GITHUB_TOKEN
+              ValueFrom: !Ref GithubTokenSecret
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -2664,7 +2625,7 @@ Resources:
       LogGroupName: !Ref WorkerLogGroup
       FilterPattern: '"Traceback (most recent call last)"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/App
+        - MetricNamespace: Elmify/App
           MetricName: FailedResearchMessages
           MetricValue: "1"
           DefaultValue: 0
@@ -2672,7 +2633,7 @@ Resources:
   FailedResearchRateAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: FailedResearchMessages
       Statistic: Sum
       Period: 300
@@ -2687,8 +2648,8 @@ Resources:
   # shape would be a dead-letter queue full of students' CVs -- and the fetch
   # engine's retry queue below. Scoped to RunTask on exactly the scheduled task
   # definitions, and to PassRole on only the roles they actually use;
-  # a `Resource: "*"` on either statement would be RunTask on the portal tier
-  # too, whose task role reaches per-tenant portal credentials. Pinned by
+  # a `Resource: "*"` on either statement would be RunTask on every task
+  # definition in the account, each with whatever its task role reaches. Pinned by
   # test_the_events_role_may_run_only_the_scheduled_task_definitions.
   EventsInvokeEcsRole:
     Type: AWS::IAM::Role
@@ -2708,7 +2669,7 @@ Resources:
                 Action: ecs:RunTask
                 Resource:
                   - !Ref EuropassWorkerTaskDefinition
-                  # ReminderLadderRule, WatchApplicationsRule, SyncMailboxesRule,
+                  # ReminderLadderRule, WatchApplicationsRule, SyncMailboxesRule, FetchCbarRatesRule,
                   # RetryDueFetchesRule and VerifyDueCyclesRule below run this one.
                   - !Ref WorkerTaskDefinition
                   # TranscriptResumeRule runs this one (it alone holds the Azure key).
@@ -2768,8 +2729,8 @@ Resources:
              "command":["python","manage.py","resume_transcript_readings"]}]}
 
   # Hourly, not daily: the ladder's last rung is 6 hours before the deadline,
-  # which a daily job cannot hit. Shipped enabled (the erasure schedule was
-  # once deferred; see ExecuteDueErasuresRule) -- a sweep nothing invokes is a ladder that silently
+  # which a daily job cannot hit. Shipped enabled, unlike the erasure schedule
+  # that was deferred -- a sweep nothing invokes is a ladder that silently
   # never fires, with every screen saying the right thing.
   ReminderLadderRule:
     Type: AWS::Events::Rule
@@ -2891,6 +2852,47 @@ Resources:
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
 
+  # Daily (lanes spec §7.6): the CBAR's official rates for the Baku day. The
+  # research worker builds every pack from the newest stored day
+  # (run_research_worker._handle); with none stored it publishes the "no
+  # exchange-rate table" pack. The heartbeat expects it within 26 h
+  # (apps/watch/heartbeat.py).
+  FetchCbarRatesRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Fetch and store the Central Bank of Azerbaijan's daily rates
+      ScheduleExpression: "rate(1 day)"
+      State: ENABLED
+      Targets:
+        - Id: fetch-cbar-rates
+          Arn: !GetAtt ValidationCluster.Arn
+          RoleArn: !GetAtt EventsInvokeEcsRole.Arn
+          EcsParameters:
+            TaskDefinitionArn: !Ref WorkerTaskDefinition
+            LaunchType: FARGATE
+            NetworkConfiguration:
+              AwsVpcConfiguration:
+                Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
+                SecurityGroups: [!Ref WorkerSecurityGroup]
+          Input: !Sub |
+            {"containerOverrides":[{"name":"worker",
+             "command":["python","manage.py","fetch_cbar_rates"]}]}
+
+  FetchCbarRatesRuleFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - Name: RuleName
+          Value: !Ref FetchCbarRatesRule
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+
   # Daily, and shipped ENABLED (institution provenance gate spec §7.6): an
   # UNCONFIRMED body nothing re-checks is a good school lost in silence, with
   # every screen saying the right thing -- the erasure schedule's failure mode.
@@ -2916,17 +2918,15 @@ Resources:
             {"containerOverrides":[{"name":"worker",
              "command":["python","manage.py","provenance_recheck"]}]}
 
-  # Daily, and shipped ENABLED (CLAUDE.md, "Erasure: the schedule is deferred,
-  # and that is a deployment blocker"). A student who requests deletion is
-  # locked out at once; without this rule the thirty-day window expires and
-  # nothing ever moves the request to EXECUTED -- locked out indefinitely and
-  # never erased, with every screen saying the right thing. Runs as the worker
-  # (runtime_engine), the one role granted EXECUTE on the erasure guard
-  # (scripts/create_erasure_guard.sql, run by hand after migrations).
+  # Daily, and shipped ENABLED (erasure console spec §4, scheduled work spec §5.1):
+  # every deletion request whose thirty-day reversal window has expired is
+  # erased under `WorkerTaskDefinition` (`DATABASE_ROLE=runtime_engine`, the
+  # only caller granted EXECUTE on `elmify_erasure_guard` and `DeleteSecret` /
+  # `DeleteObjectVersion` on `WorkerTaskRole`).
   ExecuteDueErasuresRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Execute GDPR erasures whose thirty-day window has expired
+      Description: Execute deletion requests whose thirty-day reversal window has expired
       ScheduleExpression: "rate(1 day)"
       State: ENABLED
       Targets:
@@ -2943,6 +2943,21 @@ Resources:
           Input: !Sub |
             {"containerOverrides":[{"name":"worker",
              "command":["python","manage.py","execute_due_erasures"]}]}
+
+  ExecuteDueErasuresRuleFailedInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - Name: RuleName
+          Value: !Ref ExecuteDueErasuresRule
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
 
   # Rung 5 of the fetch ladder (apps/research/fetch): a due RETRY_SCHEDULED or
   # BUDGET row is time-fixed, not host-fixed, so this just needs to wake up
@@ -3004,8 +3019,8 @@ Resources:
   # DATABASE_ROLE=runtime_engine, the catalogue's only writer, which is the role
   # this command needs. It ships DISABLED because:
   # - WorkerTaskDefinition carries no ANTHROPIC_API_KEY (its Secrets list has
-  #   OPENAI, FIRECRAWL, SCRAPEDO, EXA, BRAVE, TAVILY; only PortalTaskDefinition
-  #   has the Anthropic key), and verify_due_cycles refuses to start without it:
+  #   OPENAI, FIRECRAWL, SCRAPEDO, EXA, BRAVE, TAVILY; no task definition in
+  #   this template carries the Anthropic key), and verify_due_cycles refuses to start without it:
   #   every read is judged by two model families. Enabled today, every run
   #   would exit on that refusal.
   # - The spec 9.3 gate (manage.py cycle_verify --truth) has not been run:
@@ -3042,7 +3057,7 @@ Resources:
       LogGroupName: !Ref EuropassWorkerLogGroup
       FilterPattern: '"EuropassCallMade"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/App
+        - MetricNamespace: Elmify/App
           MetricName: EuropassCallsTotal
           MetricValue: "1"
           DefaultValue: 0
@@ -3057,7 +3072,7 @@ Resources:
       LogGroupName: !Ref EuropassWorkerLogGroup
       FilterPattern: '?"Europass API failed" ?"Traceback (most recent call last)" ?"CommandError"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/App
+        - MetricNamespace: Elmify/App
           MetricName: EuropassCanaryFailures
           MetricValue: "1"
           DefaultValue: 0
@@ -3065,7 +3080,7 @@ Resources:
   EuropassCanaryFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: EuropassCanaryFailures
       Statistic: Sum
       Period: 3600
@@ -3082,7 +3097,7 @@ Resources:
       LogGroupName: !Ref DocumentWorkerLogGroup
       FilterPattern: '"Traceback (most recent call last)"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Documents
+        - MetricNamespace: Elmify/Documents
           MetricName: DocumentWorkerCrashes
           MetricValue: "1"
           DefaultValue: 0
@@ -3096,7 +3111,7 @@ Resources:
       LogGroupName: !Ref MailboxWorkerLogGroup
       FilterPattern: '"Traceback (most recent call last)"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Mailbox
+        - MetricNamespace: Elmify/Mailbox
           MetricName: MailboxWorkerCrashes
           MetricValue: "1"
           DefaultValue: 0
@@ -3104,7 +3119,7 @@ Resources:
   MailboxWorkerCrashAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/Mailbox
+      Namespace: Elmify/Mailbox
       MetricName: MailboxWorkerCrashes
       Statistic: Sum
       Period: 300
@@ -3122,7 +3137,7 @@ Resources:
       LogGroupName: !Ref OcrLogGroup
       FilterPattern: '?"Traceback (most recent call last)" ?"Task timed out" ?"Runtime exited"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Documents
+        - MetricNamespace: Elmify/Documents
           MetricName: OcrFunctionFailures
           MetricValue: "1"
           DefaultValue: 0
@@ -3136,7 +3151,7 @@ Resources:
       LogGroupName: !Ref DocumentWorkerLogGroup
       FilterPattern: '"DocumentScanUnknownStatus"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Documents
+        - MetricNamespace: Elmify/Documents
           MetricName: DocumentScanUnknownStatuses
           MetricValue: "1"
           DefaultValue: 0
@@ -3144,7 +3159,7 @@ Resources:
   DocumentWorkerCrashAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/Documents
+      Namespace: Elmify/Documents
       MetricName: DocumentWorkerCrashes
       Statistic: Sum
       Period: 300
@@ -3156,7 +3171,7 @@ Resources:
   DocumentScanUnknownStatusAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/Documents
+      Namespace: Elmify/Documents
       MetricName: DocumentScanUnknownStatuses
       Statistic: Sum
       Period: 300
@@ -3175,7 +3190,7 @@ Resources:
       LogGroupName: !Ref WebLogGroup
       FilterPattern: '?"PublicationBlocked" ?"TenantContextMissing"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/App
+        - MetricNamespace: Elmify/App
           MetricName: CrossTenantDenials
           MetricValue: "1"
           DefaultValue: 0
@@ -3183,7 +3198,7 @@ Resources:
   CrossTenantDenialAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: CrossTenantDenials
       Statistic: Sum
       Period: 300
@@ -3203,7 +3218,7 @@ Resources:
       LogGroupName: !Ref WebLogGroup
       FilterPattern: '"PublicationBlocked"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/App
+        - MetricNamespace: Elmify/App
           MetricName: ApprovalBypassAttempts
           MetricValue: "1"
           DefaultValue: 0
@@ -3211,7 +3226,7 @@ Resources:
   ApprovalBypassAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: ApprovalBypassAttempts
       Statistic: Sum
       Period: 300
@@ -3228,7 +3243,7 @@ Resources:
       LogGroupName: !Ref WebLogGroup
       FilterPattern: '"SupportGrant"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/App
+        - MetricNamespace: Elmify/App
           MetricName: SupportGrantsUsed
           MetricValue: "1"
           DefaultValue: 0
@@ -3236,7 +3251,7 @@ Resources:
   SupportGrantAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: SupportGrantsUsed
       Statistic: Sum
       Period: 3600
@@ -3245,13 +3260,27 @@ Resources:
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
 
+  # apps/audit/staff_access.py logs "StaffFileView ..." for every Elmify staff view or
+  # download of a student's file (owner decision 2026-10-11). Routine support use, so a
+  # metric to review and deliberately NO alarm; `manage.py staff_file_views` lists them.
+  StaffFileViewsMetricFilter:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref WebLogGroup
+      FilterPattern: '"StaffFileView"'
+      MetricTransformations:
+        - MetricNamespace: Elmify/App
+          MetricName: StaffFileViews
+          MetricValue: "1"
+          DefaultValue: 0
+
   # The next four alarms expect the application to publish these as
-  # PutMetricData/EMF custom metrics under the Tehsil/App namespace; no
+  # PutMetricData/EMF custom metrics under the Elmify/App namespace; no
   # publisher exists yet, so TreatMissingData keeps them quiet until it does.
   StaleEvidenceAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: StaleEvidenceAgeSeconds
       Statistic: Maximum
       Period: 900
@@ -3263,7 +3292,7 @@ Resources:
   ReviewBacklogAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: ReviewBacklogCount
       Statistic: Maximum
       Period: 900
@@ -3275,7 +3304,7 @@ Resources:
   ModelErrorAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: ModelErrorCount
       Statistic: Sum
       Period: 300
@@ -3287,7 +3316,7 @@ Resources:
   ModelCostAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/App
+      Namespace: Elmify/App
       MetricName: ModelCostUsd
       Statistic: Sum
       Period: 3600
@@ -3296,334 +3325,15 @@ Resources:
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
 
-  PortalSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Portal browser tasks; egress only, admitted to the database
-      VpcId: !Ref ValidationVpc
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-
-  PortalDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      KmsMasterKeyId: alias/aws/sqs
-
-  # Standard, not FIFO -- like every other queue here. A FIFO queue would need
-  # either ContentBasedDeduplication: true or a MessageDeduplicationId that
-  # apps/queue.py::enqueue does not send, so every publish would fail, and it
-  # buys nothing with a single consumer.
-  #
-  # VisibilityTimeout 1800: a learn pass plus a fill is minutes rather than
-  # seconds, unlike the research queue's default.
-
-  PortalQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      KmsMasterKeyId: alias/aws/sqs
-      VisibilityTimeout: 1800
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt PortalDeadLetterQueue.Arn
-        maxReceiveCount: 3
-
-  PortalQueueAgeAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      Namespace: AWS/SQS
-      MetricName: ApproximateAgeOfOldestMessage
-      Dimensions:
-        - Name: QueueName
-          Value: !GetAtt PortalQueue.QueueName
-      Statistic: Maximum
-      Period: 60
-      EvaluationPeriods: 2
-      Threshold: 300
-      ComparisonOperator: GreaterThanThreshold
-
-  PortalDeadLetterDepthAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      Namespace: AWS/SQS
-      MetricName: ApproximateNumberOfMessagesVisible
-      Dimensions:
-        - Name: QueueName
-          Value: !GetAtt PortalDeadLetterQueue.QueueName
-      Statistic: Maximum
-      Period: 60
-      EvaluationPeriods: 1
-      Threshold: 0
-      ComparisonOperator: GreaterThanThreshold
-
-  PortalTaskRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action: sts:AssumeRole
-            Principal: {Service: ecs-tasks.amazonaws.com}
-      Policies:
-        - PolicyName: ConsumePortalQueueAndReadPortalCredentials
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - sqs:ReceiveMessage
-                  - sqs:DeleteMessage
-                  - sqs:SendMessage
-                  - sqs:GetQueueAttributes
-                Resource: !GetAtt PortalQueue.Arn
-              # Portal logins, one secret per tenant per portal
-              # (apps/portals/auth.py::SecretsManagerCredentials). Scoped by
-              # path prefix so this role cannot read the database or Django
-              # secrets that live beside it.
-              - Effect: Allow
-                Action: secretsmanager:GetSecretValue
-                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:tehsil/portal/*"
-
-  # --- Portal execution: EC2 capacity, sandboxed, shipped stopped -----------
-  #
-  # Fargate cannot give Chrome's renderer sandbox the unprivileged user
-  # namespaces it needs (measured, us-east-1, 2026-08-26 -- see CLAUDE.md's
-  # Scrapling section). The sandbox is the only boundary between a hostile
-  # portal page and a process holding the database password, the LLM key and
-  # live student cookies, so this tier runs on EC2 capacity instead of
-  # joining the Fargate services above.
-
-  PortalInstanceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Action: sts:AssumeRole
-            Principal: {Service: ec2.amazonaws.com}
-      Policies:
-        # Written out rather than the AmazonEC2ContainerServiceforEC2Role
-        # managed policy: nothing else in this template uses a managed policy,
-        # and this list is what the agent actually calls.
-        - PolicyName: EcsAgentRegistrationAndTelemetry
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ecs:DeregisterContainerInstance
-                  - ecs:DiscoverPollEndpoint
-                  - ecs:Poll
-                  - ecs:RegisterContainerInstance
-                  - ecs:StartTelemetrySession
-                  - ecs:UpdateContainerInstancesState
-                  - ecs:Submit*
-                Resource: "*"
-                # These are container-instance-agent actions with no
-                # resource-level ARN of their own; ecs:cluster is the
-                # scoping condition key AWS documents for exactly this
-                # policy, and ValidationCluster's ARN is already resolved
-                # elsewhere in this template.
-                Condition:
-                  ArnEquals: {"ecs:cluster": !GetAtt ValidationCluster.Arn}
-              # No ARN to scope to: AWS requires Resource "*" for this action.
-              - Effect: Allow
-                Action: ecr:GetAuthorizationToken
-                Resource: "*"
-              # Left at "*", matching every other ECR data-plane grant this
-              # template makes (PortalExecutionRole, above): PortalImage is an
-              # image URI ("registry/repo@sha256:..."), not a repository
-              # ARN, and there is no separate repository-name parameter to
-              # build one from. Recovering a repo ARN from that URI would
-              # need nested Fn::Split/Fn::Select string surgery on a
-              # parameter never meant to be parsed -- and PortalTaskDefinition
-              # sets ExecutionRoleArn, so for EC2 launch type with awsvpc
-              # networking the container agent authenticates pulls through
-              # PortalExecutionRole, not this instance role, making this grant
-              # belt-and-suspenders rather than the actual pull path.
-              - Effect: Allow
-                Action:
-                  - ecr:BatchCheckLayerAvailability
-                  - ecr:GetDownloadUrlForLayer
-                  - ecr:BatchGetImage
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - logs:CreateLogStream
-                  - logs:PutLogEvents
-                Resource: !Sub "${PortalLogGroup.Arn}:*"
-
-  PortalInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Roles: [!Ref PortalInstanceRole]
-
-  PortalLaunchTemplate:
-    Type: AWS::EC2::LaunchTemplate
-    Properties:
-      LaunchTemplateData:
-        ImageId: "{{resolve:ssm:/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id}}"
-        InstanceType: t3.large
-        IamInstanceProfile: {Arn: !GetAtt PortalInstanceProfile.Arn}
-        SecurityGroupIds: [!Ref PortalSecurityGroup]
-        BlockDeviceMappings:
-          - DeviceName: /dev/xvda
-            Ebs:
-              VolumeSize: 40
-              VolumeType: gp3
-              # The browser profiles live here. This is the whole of
-              # "encrypted at rest" for a directory Chrome holds open --
-              # see apps/portals/profiles.py's module docstring.
-              Encrypted: true
-              DeleteOnTermination: true
-        MetadataOptions:
-          # IMDSv2 required: a hostile page that achieves SSRF through the
-          # browser must not be able to read the instance role from
-          # 169.254.169.254 with a plain GET.
-          HttpTokens: required
-          HttpPutResponseHopLimit: 1
-        UserData:
-          Fn::Base64: !Sub |
-            #!/bin/bash
-            echo "ECS_CLUSTER=${ValidationCluster}" >> /etc/ecs/ecs.config
-
-  PortalAutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-      MinSize: "0"
-      MaxSize: "1"
-      DesiredCapacity: !Ref PortalDesiredCount
-      VPCZoneIdentifier: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
-      LaunchTemplate:
-        LaunchTemplateId: !Ref PortalLaunchTemplate
-        Version: !GetAtt PortalLaunchTemplate.LatestVersionNumber
-
-  # ManagedScaling is deliberately DISABLED, not ENABLED. PortalService uses
-  # LaunchType: EC2 (the sandbox requires it -- see the tier comment above),
-  # so its tasks are never attributed to this capacity provider's own task
-  # count. With ManagedScaling ENABLED, ECS would see zero tasks reserved
-  # against the provider and drive the ASG back to MinSize "0" -- taking the
-  # instance out from under a running task, since ManagedTerminationProtection
-  # is DISABLED. DesiredCapacity: !Ref PortalDesiredCount on the ASG already
-  # supplies the one capacity decision this tier needs; managed scaling has
-  # nothing left to do here and only introduces this failure mode.
-
-  PortalCapacityProvider:
-    Type: AWS::ECS::CapacityProvider
-    Properties:
-      AutoScalingGroupProvider:
-        AutoScalingGroupArn: !Ref PortalAutoScalingGroup
-        ManagedScaling: {Status: DISABLED}
-        ManagedTerminationProtection: DISABLED
-
-  PortalCapacityProviderAssociation:
-    Type: AWS::ECS::ClusterCapacityProviderAssociations
-    Properties:
-      Cluster: !Ref ValidationCluster
-      CapacityProviders: [!Ref PortalCapacityProvider, FARGATE]
-      DefaultCapacityProviderStrategy:
-        - CapacityProvider: FARGATE
-          Weight: 1
-
-  PortalLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/tehsil/app/${AWS::StackName}/portal"
-      RetentionInDays: 30
-
-  PortalTaskDefinition:
-    Type: AWS::ECS::TaskDefinition
-    Properties:
-      RequiresCompatibilities: [EC2]
-      NetworkMode: awsvpc
-      Cpu: "1024"
-      Memory: "3072"
-      ExecutionRoleArn: !GetAtt PortalExecutionRole.Arn
-      TaskRoleArn: !GetAtt PortalTaskRole.Arn
-      ContainerDefinitions:
-        - Name: portal
-          Image: !Ref PortalImage
-          Essential: true
-          LinuxParameters:
-            # Chrome forks liberally and orphans processes; without an init to
-            # reap them a long-running task accumulates zombies. Same reason as
-            # the browser task.
-            InitProcessEnabled: true
-          Environment:
-            - Name: DJANGO_SETTINGS_MODULE
-              Value: config.settings.production
-            - Name: DJANGO_ALLOWED_HOSTS
-              Value: !Ref DjangoAllowedHosts
-            - Name: DOCUMENT_QUEUE_URL
-              Value: !Ref DocumentQueue
-            - Name: DOCUMENT_SCAN_QUEUE_URL
-              Value: !Ref DocumentScanQueue
-            - Name: MAILBOX_QUEUE_URL
-              Value: !Ref MailboxQueue
-            # apps/ratelimit.py's shared counters; config.settings.production
-            # refuses to start without this (a shared counter is a production
-            # requirement -- see that module's docstring). rediss:// because
-            # TLS is mandatory on ElastiCache Serverless.
-            - Name: CACHE_URL
-              Value: !Sub "rediss://${Cache.PrimaryEndPoint.Address}:${Cache.PrimaryEndPoint.Port}"
-            - Name: PORTAL_QUEUE_URL
-              Value: !Ref PortalQueue
-            - Name: RESEARCH_QUEUE_URL
-              Value: !Ref ResearchQueue
-            - Name: EUROPASS_QUEUE_URL
-              Value: !Ref EuropassQueue
-            - Name: POSTGRES_HOST
-              Value: !GetAtt Database.Endpoint.Address
-            - Name: POSTGRES_PORT
-              Value: !GetAtt Database.Endpoint.Port
-            - Name: POSTGRES_DB
-              Value: !Ref DBName
-            # runtime_web, not runtime_engine: the portal tier reads no
-            # catalogue (measured 2026-09-25 over run_portal_worker's import
-            # closure), so a sandbox escape here reaches no shared table.
-            - Name: DATABASE_ROLE
-              Value: runtime_web
-            - Name: POSTGRES_WEB_USER
-              Value: runtime_web
-          Secrets:
-            - Name: POSTGRES_WEB_PASSWORD
-              ValueFrom: !Ref WebDatabaseSecret
-            - Name: DJANGO_SECRET_KEY
-              ValueFrom: !Ref ValidationSecret
-            # The learn pass calls the model from inside the browser extension,
-            # so this key is in the browser's process whatever we do. It is one
-            # more reason the renderer sandbox is non-negotiable here.
-            - Name: ANTHROPIC_API_KEY
-              ValueFrom: !Ref LlmApiKeySecretArn
-          LogConfiguration:
-            LogDriver: awslogs
-            Options:
-              awslogs-group: !Ref PortalLogGroup
-              awslogs-region: !Ref AWS::Region
-              awslogs-stream-prefix: portal
-
-  PortalService:
-    Type: AWS::ECS::Service
-    Properties:
-      ServiceName: portal
-      Cluster: !Ref ValidationCluster
-      LaunchType: EC2
-      DesiredCount: !Ref PortalDesiredCount
-      TaskDefinition: !Ref PortalTaskDefinition
-      NetworkConfiguration:
-        AwsvpcConfiguration:
-          AssignPublicIp: DISABLED
-          Subnets: [!Ref WorkerPrivateSubnetA, !Ref WorkerPrivateSubnetB]
-          SecurityGroups: [!Ref PortalSecurityGroup]
-
   PortalEscalationFilter:
     Type: AWS::Logs::MetricFilter
     Properties:
-      LogGroupName: !Ref PortalLogGroup
+      # apps/portals/escalation.py::escalate is reached only from the
+      # extension API (ext_api.py, packets.py), which runs in the web tier.
+      LogGroupName: !Ref WebLogGroup
       FilterPattern: '"PortalEscalation"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Portals
+        - MetricNamespace: Elmify/Portals
           MetricName: PortalEscalations
           MetricValue: "1"
 
@@ -3633,7 +3343,7 @@ Resources:
       # A rate, not a count: escalations are expected -- §5.4 budgets under 10%
       # consultant intervention -- and an alarm on any escalation would page on
       # the system working. A spike means a portal changed shape.
-      Namespace: Tehsil/Portals
+      Namespace: Elmify/Portals
       MetricName: PortalEscalations
       Statistic: Sum
       Period: 3600
@@ -3641,13 +3351,6 @@ Resources:
       Threshold: 20
       ComparisonOperator: GreaterThanThreshold
       TreatMissingData: notBreaching
-
-  # --- The browser tier, isolated from every credential ---------------------
-  #
-  # Design: docs/superpowers/specs/2026-08-26-browser-isolation-design.md.
-  # Chromium runs with --no-sandbox because Fargate refuses unprivileged user
-  # namespaces (measured, us-east-1, 2026-08-26), so a renderer compromise is
-  # assumed possible and made worthless rather than prevented.
 
 Outputs:
   ResearchQueueUrl:
@@ -3676,6 +3379,3 @@ Outputs:
     Value: !Ref MigrationTaskDefinition
   DatabaseEndpointAddress:
     Value: !GetAtt Database.Endpoint.Address
-
-  PortalQueueUrl:
-    Value: !Ref PortalQueue

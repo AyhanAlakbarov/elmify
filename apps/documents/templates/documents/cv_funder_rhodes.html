@@ -22,8 +22,16 @@ would shift every later number on a form selectors read by position.
   .gloss { font-style: italic; }
   /* One indent for every list on the page: bullets, publications,
      awards and languages sat at three different depths otherwise. */
-  ul { margin: 2pt 0 0; padding-left: 14pt; }
+  /* The marker is drawn as inline text (li::before), not as a list marker.
+     WeasyPrint writes list markers to the content stream after the page's
+     text, so pypdf -- our own upload reader and page-fill check -- extracted
+     every "•" as a line at the bottom of the page (R-043, measured
+     2026-10-12). font-kerning: none stops pypdf splitting "PyTorch" into
+     "PyT orch" at a kerned pair. */
+  body { font-kerning: none; }
+  ul { margin: 2pt 0 0; padding-left: 14pt; list-style: none; }
   li { margin-bottom: 1pt; }
+  li::before { content: "•\00a0"; margin-left: -9pt; display: inline-block; width: 9pt; }
   p.skills { margin: 2pt 0 0; }
 </style></head>
 <body>
@@ -33,7 +41,7 @@ would shift every later number on a form selectors read by position.
   <h2>1. Professional/Research/Internship</h2>
   {% for entry in paid_experience %}
   <div class="entry">
-    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
     {% if entry.city or entry.country %}<div>{% include "documents/_cv_place.html" with entry=entry only %}</div>{% endif %}
     {% include "documents/_cv_bullets.html" with entry=entry only %}
   </div>
@@ -46,7 +54,7 @@ would shift every later number on a form selectors read by position.
   <h2>2. Volunteering/Community/Leadership</h2>
   {% for entry in unpaid_experience %}
   <div class="entry">
-    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+    <div class="entry-header"><strong>{{ entry.title }}, {{ entry.employer }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
     {% if entry.city or entry.country %}<div>{% include "documents/_cv_place.html" with entry=entry only %}</div>{% endif %}
     {% include "documents/_cv_bullets.html" with entry=entry only %}
   </div>
@@ -77,5 +85,12 @@ would shift every later number on a form selectors read by position.
   {% endif %}
 
   <h2>6. Other</h2>
+  {% if content.certifications %}
+  <ul>
+  {% for item in content.certifications %}
+    <li>{{ item.title }}{% if item.issuer %}, {{ item.issuer }}{% endif %}{% if item.date %} — {{ item.date|month_year }}{% endif %}</li>
+  {% endfor %}
+  </ul>
+  {% endif %}
 </body>
 </html>

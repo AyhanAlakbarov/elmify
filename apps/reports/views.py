@@ -11,8 +11,9 @@ from .models import ConsultationPayment, ConsultationReport
 
 @login_required
 def download(request: HttpRequest, report_id: str) -> HttpResponse:
-    assert request.user.pk is not None
-    membership = Membership.objects.get(user_id=request.user.pk, active=True)
+    from apps.portals.http import inert_response
+
+    membership = current_membership(request, Membership.Role.STUDENT)
     try:
         report = ConsultationReport.objects.get(
             id=report_id, pack_version__run__profile_version__student=membership
@@ -20,9 +21,7 @@ def download(request: HttpRequest, report_id: str) -> HttpResponse:
     except ConsultationReport.DoesNotExist as error:
         raise Http404 from error
     body = S3ObjectStore().get(report.object_key)
-    response = HttpResponse(body, content_type=report.content_type)
-    response["Content-Disposition"] = f'attachment; filename="report-{report.id}.html"'
-    return response
+    return inert_response(body, report.content_type, f"report-{report.id}.html")
 
 
 @login_required

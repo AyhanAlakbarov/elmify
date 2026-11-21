@@ -44,6 +44,7 @@ from apps.funding.validity import (
     served_intake_year,
 )
 from apps.research.fetch.site import crawl_ceiling
+from apps.research.reader import normalize as _normalised
 
 COLUMNS = (
     "organisation_domain", "country", "award_name", "award_kind", "award_scope", "own_url",
@@ -219,10 +220,6 @@ def _date(value: str) -> dt.date | None:
         return dt.date.fromisoformat(value) if value else None
     except ValueError:
         return None
-
-
-def _normalised(text: str) -> str:
-    return " ".join(text.split()).casefold()
 
 
 def read_truth(path: Path) -> list[dict[str, str]]:

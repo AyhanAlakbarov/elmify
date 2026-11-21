@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from apps.funding.fx import convert
 from apps.funding.rate_sources import parse_cbar_daily, parse_ecb_daily
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -36,7 +37,17 @@ def test_cbar_parses_into_an_azn_based_table() -> None:
 def test_cbar_divides_by_nominal_for_rates_quoted_per_multiple_units() -> None:
     table = parse_cbar_daily((FIXTURES / "cbar_daily.xml").read_bytes())
 
-    assert table.rates["JPY"] == Decimal("0.010668")
+    # The fixture quotes 100 JPY = 1.0668 AZN.
+    assert convert(Decimal("100"), "JPY", "AZN", table) == Decimal("1.07")
+
+
+def test_a_cbar_table_converts_the_right_way_round() -> None:
+    """CBAR quotes 1 EUR = 1.9615 AZN. Stored as quoted, fx.convert read
+    100 EUR as 50.98 AZN -- inverted, off by a factor of almost four."""
+    table = parse_cbar_daily((FIXTURES / "cbar_daily.xml").read_bytes())
+
+    assert convert(Decimal("100.00"), "EUR", "AZN", table) == Decimal("196.15")
+    assert convert(Decimal("196.15"), "AZN", "EUR", table) == Decimal("100.00")
 
 
 def test_an_empty_body_is_rejected_rather_than_yielding_an_empty_table() -> None:

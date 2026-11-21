@@ -15,6 +15,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from apps.documents.templatetags.cv_countries import country_name
+
 from .models import RecommendationCandidate
 
 
@@ -46,14 +48,24 @@ def _levels_agree(award: RecommendationCandidate, programme: RecommendationCandi
     return not levels or not programme.degree_level or programme.degree_level in levels
 
 
-def funds(award: RecommendationCandidate, programme: RecommendationCandidate) -> bool:
+def funds(
+    award: RecommendationCandidate,
+    programme: RecommendationCandidate,
+    *,
+    home_country: str = "",
+) -> bool:
     """Whether this award can pay for this programme, by the award's own scope."""
+    home_countries = (award.funding_card or {}).get("home_countries") or []
+    if home_countries and home_country and home_country not in home_countries:
+        return False
     if programme.program_id is not None and programme.program_id in award.funds_program_ids:
         return True
     scope = _scope(award)
     if scope == "INSTITUTION":
         return award.institution_id is not None and award.institution_id == programme.institution_id
     if scope in ("HOLDER", "COUNTRY"):
+        if scope == "HOLDER" and home_country and award.country_code == home_country:
+            return False
         return (
             bool(award.country_code)
             and award.country_code == programme.country_code
@@ -64,12 +76,16 @@ def funds(award: RecommendationCandidate, programme: RecommendationCandidate) ->
     return False
 
 
-def group_label(award: RecommendationCandidate | None) -> str:
+def group_label(award: RecommendationCandidate | None, *, home_country: str = "") -> str:
     if award is None:
         return "Programmes without separate funding"
     scope = _scope(award)
-    if scope in ("HOLDER", "COUNTRY") and award.country_code:
-        return f"Eligible programmes in {award.country_code}"
+    if (
+        scope in ("HOLDER", "COUNTRY")
+        and award.country_code
+        and not (scope == "HOLDER" and home_country and award.country_code == home_country)
+    ):
+        return f"Eligible programmes in {country_name(award.country_code)}"
     if scope == "GLOBAL":
         return "Eligible programmes"
     return "Programmes it can pay for"
@@ -84,6 +100,7 @@ def group_under_funding(
     *,
     extra: Sequence[RecommendationCandidate] = (),
     extra_label: str = "",
+    home_country: str = "",
 ) -> list[FundingGroup]:
     """One group per award, programmes beneath; unfunded programmes last.
 
@@ -95,10 +112,16 @@ def group_under_funding(
     awards = sorted((c for c in candidates if c.opportunity_id is not None), key=_award_order)
 
     def _programmes(rows: Sequence[RecommendationCandidate]) -> list[RecommendationCandidate]:
-        return sorted((c for c in rows if c.opportunity_id is None), key=lambda c: c.program_name)
+        return sorted(
+            (c for c in rows if c.opportunity_id is None),
+            key=lambda c: (c.rank if c.rank is not None else 999999, c.program_name),
+        )
 
     programmes, others = _programmes(candidates), _programmes(extra)
-    under = {p.id: [a for a in awards if funds(a, p)] for p in (*programmes, *others)}
+    under = {
+        p.id: [a for a in awards if funds(a, p, home_country=home_country)]
+        for p in (*programmes, *others)
+    }
 
     def _placed(p: RecommendationCandidate, award: RecommendationCandidate, where: str) -> Placed:
         return Placed(p, tuple(o.program_name for o in under[p.id] if o.id != award.id), where)
@@ -110,7 +133,7 @@ def group_under_funding(
                 [_placed(p, award, "") for p in programmes if award in under[p.id]]
                 + [_placed(p, award, extra_label) for p in others if award in under[p.id]]
             ),
-            label=group_label(award),
+            label=group_label(award, home_country=home_country),
         )
         for award in awards
     ]

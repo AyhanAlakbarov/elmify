@@ -38,12 +38,12 @@ def test_nothing_is_sent_while_no_from_address_is_configured(settings, applicati
 
 
 def test_a_configured_sender_reaches_the_application_address(settings, application):
-    settings.REMINDER_EMAIL_FROM = "reminders@tehsil.example"
+    settings.REMINDER_EMAIL_FROM = "reminders@elmify.example"
 
     assert email_student(application, timedelta(days=3)) is True
     assert len(mail.outbox) == 1
     assert mail.outbox[0].to == ["student@example.test"]
-    assert mail.outbox[0].from_email == "reminders@tehsil.example"
+    assert mail.outbox[0].from_email == "reminders@elmify.example"
     assert "3 days" in mail.outbox[0].body
 
 
@@ -52,7 +52,7 @@ def test_a_student_with_no_confirmed_address_is_skipped(
 ):
     """No fallback to user.email -- that address is signup and login only, and
     Membership.application_email's own docstring says so."""
-    settings.REMINDER_EMAIL_FROM = "reminders@tehsil.example"
+    settings.REMINDER_EMAIL_FROM = "reminders@elmify.example"
     with tenant_scope(agency_a.id):
         application.student.application_email = ""
         application.student.save(update_fields=["application_email"])

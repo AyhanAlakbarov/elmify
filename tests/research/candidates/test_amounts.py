@@ -177,3 +177,14 @@ def test_a_range_after_an_ordinary_word_stays_a_range(line, low, high):
 ])
 def test_more_labels_never_join(line, value):
     assert one(line).low == Decimal(value)
+
+
+def test_asian_and_arabic_multipliers_and_ranges():
+    assert one("5 juta IDR").low == Decimal(5_000_000)
+    assert one("500 ribu IDR").low == Decimal(500_000)
+    assert one("15 triệu VND").low == Decimal(15_000_000)
+    assert one("2 lakh INR").low == Decimal(200_000)
+    assert one("50 ألف ريال سعودي").low == Decimal(50_000)
+    r = one("1000 إلى 2000 SAR")
+    assert (r.bound, r.low, r.high, r.currency) == ("range", Decimal(1000), Decimal(2000), "SAR")
+

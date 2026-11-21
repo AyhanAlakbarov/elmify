@@ -193,10 +193,17 @@ class Notification(TenantScopedModel):
 class ConversationMessage(TenantScopedModel):
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
     student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
-    counselor = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    #: The assigned counsellor, or None when the student wrote to the Elmify team
+    #: (nobody assigned): the staff inbox (apps/staffdesk) answers those.
+    counselor = models.ForeignKey(
+        Membership, on_delete=models.PROTECT, related_name="+", null=True, blank=True
+    )
     sender = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+    #: When Elmify staff first opened a student's message. Null on a student message
+    #: means unread in the staff inbox; staff's own messages never set it.
+    read_by_staff_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
@@ -272,7 +279,9 @@ UPLOAD_KINDS = (
     ("PASSPORT", "Passport"),
     ("DIPLOMA", "Diploma"),
     ("LANGUAGE_CERTIFICATE", "Language certificate"),
-    ("RECOMMENDATION", "Recommendation letter"),
+    ("REFERENCE_LETTER", "Recommendation letter"),
+    #: Read as research work by the evidence refresh (CV evidence spec §8). PDF only.
+    ("THESIS_OR_REPORT", "Thesis or report"),
     ("OTHER", "Other document"),
 )
 UPLOAD_KIND_VALUES = frozenset(value for value, _label in UPLOAD_KINDS)
@@ -291,6 +300,13 @@ UPLOAD_REJECTIONS = {
 #: Owner, 2026-10-05: a CV is one of the three as well. A Word CV is the common case.
 CV_REJECTED_TYPE = (
     "Upload a PDF, JPEG or PNG; for a Word CV, export it as a PDF "
+    "(File → Save as → PDF) and upload that"
+)
+#: Kinds the upload check accepts only as a PDF: their text is read, and a photo has
+#: none. DOCX never passes the check at all (owner, 2026-10-05), so PDF is the one way in.
+PDF_ONLY_KINDS = frozenset({"THESIS_OR_REPORT"})
+THESIS_REJECTED_TYPE = (
+    "Upload your thesis or report as a PDF; for a Word file, export it as a PDF "
     "(File → Save as → PDF) and upload that"
 )
 
@@ -321,12 +337,21 @@ class DocumentVersion(TenantScopedModel):
     promoted_key = models.CharField(max_length=500, blank=True)
     #: The upload check's reading of the file's own first bytes, never the client's.
     content_type = models.CharField(max_length=100, blank=True)
+    #: The upload this one replaces (Replace on the dashboard): retired once this one is
+    #: AVAILABLE, never before, so a re-upload still being checked hides nothing. None for
+    #: "Add another" and for a first upload. Same student and kind, checked at register.
+    replaces = models.UUIDField(null=True, blank=True)
+    #: Set when a newer upload replaced this one (or, for a transcript, when a REPLACE
+    #: superseded its pages). A retired upload is never held, offered or prepared.
+    retired_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     @property
     def rejection_message(self) -> str:
         if self.state == "REJECTED_TYPE" and self.kind == "CV":
             return CV_REJECTED_TYPE
+        if self.state == "REJECTED_TYPE" and self.kind in PDF_ONLY_KINDS:
+            return THESIS_REJECTED_TYPE
         return UPLOAD_REJECTIONS.get(self.state, "")
 
     class Meta:

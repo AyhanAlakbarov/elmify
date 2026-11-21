@@ -76,3 +76,13 @@ def test_agency_notice_promises_no_marketing_in_any_language():
     for lang, stem in stems.items():
         path = documents.LEGAL_DIR / f"privacy_notice_agency.{lang}.md"
         assert stem not in path.read_text(encoding="utf-8").lower(), lang
+
+
+@pytest.mark.parametrize("notice", [
+    f"privacy_notice_{audience}.{language}.md"
+    for audience in ("direct", "agency") for language in ("en", "az", "ru")
+])
+def test_every_privacy_notice_says_github_is_read(notice):
+    """CV evidence spec §13: one line under "What we process", in all six notices."""
+    text = (documents.LEGAL_DIR / notice).read_text(encoding="utf-8")
+    assert "GitHub" in text

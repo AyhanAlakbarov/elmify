@@ -1,6 +1,5 @@
 import pytest
 
-from apps.documents.generation import GenerationRateLimited
 from apps.documents.ingestion import IngestionRateLimited
 from apps.documents.management.commands import run_document_worker
 
@@ -27,21 +26,16 @@ def test_both_queues_are_drained_in_one_pass(monkeypatch, settings):
     assert polled == ["scan-q", "work-q"]
 
 
-@pytest.mark.parametrize(
-    "error",
-    [GenerationRateLimited("too many"), IngestionRateLimited("too many")],
-    ids=["generation", "ingestion"],
-)
-def test_a_rate_limited_message_is_deferred_not_crashed(monkeypatch, error):
+def test_a_rate_limited_message_is_deferred_not_crashed(monkeypatch):
     """Our own limiter firing is a designed outcome, not a crash. An uncaught
     exception kills the ECS task; each restart re-polls the same message and
     burns its limited redelivery budget faster than the window rolls over,
-    driving a student's CV to the DLQ for no reason. The message is never
+    driving a student's upload to the DLQ for no reason. The message is never
     deleted, so SQS redelivers it after the visibility timeout."""
     monkeypatch.setattr(run_document_worker.boto3, "client", lambda *a, **kw: object())
 
     def _consume_once(**kwargs):
-        raise error
+        raise IngestionRateLimited("too many")
 
     monkeypatch.setattr(run_document_worker, "consume_once", _consume_once)
 
@@ -74,7 +68,7 @@ def test_a_scan_queue_deferral_does_not_starve_the_work_queue(monkeypatch, setti
     def _consume_once(*, queue_url, **kwargs):
         if queue_url == "scan-q":
             polled.append(queue_url)
-            raise GenerationRateLimited("too many")
+            raise IngestionRateLimited("too many")
         else:
             polled.append(queue_url)
             return 0

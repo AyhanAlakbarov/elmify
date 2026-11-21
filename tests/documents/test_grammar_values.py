@@ -2,7 +2,16 @@ import pytest
 
 from apps.documents.derive import Candidate
 from apps.documents.grammar import Slotted, limit_sink, sink_for
-from apps.documents.grammar_values import FORMAT_EXAMPLES, read_values, value_questions, value_state
+from apps.documents.grammar_values import (
+    FORMAT_EXAMPLES,
+    _Draft,
+    _settled,
+    name_pattern,
+    read_values,
+    value_questions,
+    value_state,
+)
+from apps.documents.rule_sinks import to_notes
 from apps.research.decisions import Answer
 
 pytestmark = pytest.mark.django_db
@@ -117,7 +126,9 @@ def test_only_the_operations_present_get_value_questions():
     whether spaces count."""
     candidates, slots = _one("Your CV may not exceed two pages.", "cv", "limit")
     assert set(value_questions(candidates, slots)) == {
-        "0:figure:0:bound", "0:figure:0:unit", "0:figure:0:spaces",
+        # `section` added on purpose 2026-10-14 (Task 12): a count of entries
+        # names its CV section, so every CV figure is asked it.
+        "0:figure:0:bound", "0:figure:0:unit", "0:figure:0:spaces", "0:figure:0:section",
     }
 
 
@@ -842,9 +853,247 @@ def test_referee_questions_need_only_the_document_not_the_operation():
         ("other", None, "unsure"), ("referee", ("count", "TWO"), "")]
 
 
+_DIPLOMAS = "Please upload all your diplomas as one PDF file of at most 2 MB."
+
+
+def test_a_file_sentence_is_asked_the_file_questions_whatever_its_document():
+    """A transcript or diploma sentence is document `other`, which gets no value
+    question at all -- file questions are asked before that, like referee ones."""
+    candidates, slots = _one(_DIPLOMAS, "other", "student_action")
+    questions = value_questions(candidates, slots)
+
+    assert questions["0:file_document"].options[-1] == "NOT_STATED"
+    assert questions["0:file_format"].options == ("PDF", "JPG", "PDF_OR_JPG", "NOT_STATED")
+    assert questions["0:file_combine"].options == ("ONE_FILE", "SEPARATE_FILES", "NOT_STATED")
+    assert questions["0:file_size"].options == ("2 MB", "none")
+
+
+def test_a_sentence_naming_no_file_thing_is_not_asked():
+    candidates, slots = _one("Two letters of motivation are required.", "other",
+                             "student_action")
+    assert not any(q.startswith("0:file_") for q in value_questions(candidates, slots))
+
+
+def test_file_answers_become_one_record_per_stated_field():
+    candidates, slots = _one(_DIPLOMAS, "other", "student_action")
+    rules = read_values(candidates, slots, client=_script({
+        "0:file_document": ("DIPLOMA", 0.97),
+        "0:file_format": ("PDF", 0.95),
+        "0:file_combine": ("ONE_FILE", 0.93),
+        "0:file_size": ("2 MB", 0.96),
+    }))
+    files = sorted(r.value for r in rules if r.operation == "file")
+    assert files == [("DIPLOMA", "combine", "ONE_FILE"), ("DIPLOMA", "format", "PDF"),
+                     ("DIPLOMA", "max_bytes", 2_000_000)]
+    assert all(r.applied for r in rules if r.operation == "file")
+
+
+def test_kilobytes_and_an_unsure_answer():
+    candidates, slots = _one("Scans must be JPG files under 300 KB.", "other",
+                             "student_action")
+    rules = read_values(candidates, slots, client=_script({
+        "0:file_document": ("PASSPORT", 0.9),
+        "0:file_size": ("300 KB", 0.95),
+        "0:file_format": ("JPG", 0.6),  # under SLOT_BAR: writes nothing
+    }))
+    assert [r.value for r in rules if r.operation == "file"] == [
+        ("PASSPORT", "max_bytes", 300_000)]
+
+
+def test_no_document_means_no_file_rule():
+    candidates, slots = _one(_DIPLOMAS, "other", "student_action")
+    rules = read_values(candidates, slots, client=_script({
+        "0:file_size": ("2 MB", 0.99),  # file_document unscripted: NOT_STATED
+    }))
+    assert not [r for r in rules if r.operation == "file"]
+
+
+def test_a_file_name_is_offered_from_the_sentence_and_normalised():
+    text = "Upload your CV as a single PDF named SURNAME_CV.pdf."
+    candidates, slots = _one(text, "cv", "student_action")
+    assert value_questions(candidates, slots)["0:file_name"].options == ("SURNAME_CV.pdf", "none")
+    rules = read_values(candidates, slots, client=_script({
+        "0:file_document": ("CV", 0.98), "0:file_name": ("SURNAME_CV.pdf", 0.95),
+    }))
+    assert ("CV", "name_pattern", "{surname}_CV.pdf") in [r.value for r in rules]
+
+
+def test_a_cv_cap_still_reaches_the_cv_constraint():
+    """Review Focus 2: the file question is added, the limit path is untouched."""
+    text = "The CV may not exceed 2 MB; diplomas as one PDF."
+    candidates, slots = _one(text, "cv", "limit")
+    questions = value_questions(candidates, slots)
+    assert "0:figure:0:bound" in questions and "0:file_document" in questions
+
+
 def test_the_due_question_knows_the_german_with_the_application():
     """Live 2026-10-08: "... sind mit der Bewerbung hochzuladen." came back with
     no due value -- the only WITH_APPLICATION example was English."""
     candidates, slots = _one(_REFERENCE, "reference_letter", "student_action")
     due = value_questions(candidates, slots)["0:referee_due"]
     assert "mit der bewerbung" in str(due.criteria["WITH_APPLICATION"]).lower()
+
+
+def test_name_beside_a_surname_is_the_given_name_and_alone_is_the_full_name():
+    assert name_pattern("Name_Surname_CV.pdf") == "{given_name}_{surname}_CV.pdf"
+    assert name_pattern("Surname_Name_CV.pdf") == "{surname}_{given_name}_CV.pdf"
+    assert name_pattern("Name_CV.pdf") == "{full_name}_CV.pdf"
+
+
+def test_a_comma_before_exactly_three_digits_and_a_unit_is_a_thousands_separator():
+    from apps.documents.grammar_values import size_bytes
+
+    assert size_bytes("10,000 KB") == 10_000_000
+    assert size_bytes("1,5 MB") == 1_500_000
+
+
+@pytest.mark.parametrize(("option", "expected"), [
+    ("10,000 KB", 10_000_000), ("1,5 MB", 1_500_000), ("2,500 KB", 2_500_000),
+    ("10.000 KB", None),  # 10 KB or 10,000 KB: both in the band, so no guess
+    ("1.000 MB", 1_000_000),  # 1,000,000 MB is out of the band
+    ("2.5 MB", 2_500_000),
+])
+def test_size_bytes_reads_a_three_digit_group_both_ways_and_never_guesses(option, expected):
+    from apps.documents.grammar_values import size_bytes
+
+    assert size_bytes(option) == expected
+
+
+# <!-- controller ruling P2 (2026-10-14): a slot's third_party and conditional
+# notes override an `unsure` draft too, or its value would be saved as a
+# reading (rule_sinks.to_notes) and could become the student's own rule. -->
+@pytest.mark.parametrize(("flag", "expected"), [
+    ("third_party", "third_party"), ("conditional", "conditional"),
+])
+def test_an_unsure_draft_on_a_third_party_or_conditional_slot_saves_no_reading(flag, expected):
+    candidates, slots = _one("Short CV (max. 2 pages) from this academic supervisor.",
+                             "cv", "limit", **{flag: True})
+    draft = _Draft("limit", 2, 0.5, note="unsure", unit="pages", bound="maximum")
+    [rule] = _settled(slots[0], candidates[0], [draft], "other")
+    assert rule.note == expected
+    [note] = to_notes((rule,), source_url="https://example.test/apply")
+    assert note.readings is None
+
+
+@pytest.mark.parametrize(("operation", "value"), [
+    ("referee", ("count", "2")), ("file", ("cv", "format", "pdf")),
+])
+def test_an_unsure_referee_or_file_draft_on_a_conditional_slot_stays_unsure(operation, value):
+    """Final review M1: ruling P2 exists to keep a reading out of to_notes,
+    which never reads referee or file rules. Turning their `unsure` into
+    `conditional` made to_referee / to_file_rules store a value below the bar
+    in the shared catalogue."""
+    from apps.documents.rule_sinks import to_file_rules, to_referee
+
+    candidates, slots = _one(_REFERENCE, "reference_letter", "other", conditional=True)
+    draft = _Draft(operation, value, 0.5, note="unsure")
+    [rule] = _settled(slots[0], candidates[0], [draft], "scholarship")
+    assert rule.note == "unsure"
+    assert to_referee((rule,), source_url="u") == ()
+    assert to_file_rules((rule,), source_url="u") == ()
+
+
+@pytest.mark.parametrize(("style", "value"),
+                         [("cv_complete", "complete"), ("cv_relevant_only", "relevant_only")])
+def test_how_much_history_a_cv_holds_is_the_cv_scope_key(style, value):
+    from apps.documents.rule_sinks import to_constraint_rules
+
+    candidates, slots = _one("Your CV must list your complete history.", "cv", "style")
+    rules = read_values(candidates, slots, client=_script({"0:style": (style, 0.93)}))
+    assert [(r.key, r.value) for r in to_constraint_rules(rules, source_url="u")] == [
+        ("cv_scope", value)]
+
+
+@pytest.mark.parametrize(("style", "number", "value"), [
+    ("cv_start_upper_secondary", None, {"milestone": "upper_secondary", "years": None}),
+    ("cv_start_first_degree", None, {"milestone": "first_degree", "years": None}),
+    ("cv_start_last_years", "10", {"milestone": None, "years": 10}),
+])
+def test_where_a_cv_starts_is_the_cv_start_key(style, number, value):
+    from apps.documents.rule_sinks import to_constraint_rules
+
+    candidates, slots = _one("Only list the last 10 years.", "cv", "style")
+    answers = {"0:style": (style, 0.93)} | ({"0:style_number": (number, 0.95)} if number else {})
+    rules = read_values(candidates, slots, client=_script(answers))
+    assert [(r.key, r.value) for r in to_constraint_rules(rules, source_url="u")] == [
+        ("cv_start", value)]
+
+
+def test_the_scope_and_start_have_no_letter_sink():
+    for style in ("cv_complete", "cv_relevant_only", "cv_start_upper_secondary",
+                  "cv_start_first_degree", "cv_start_last_years"):
+        assert sink_for("motivation_letter", "style", style) == ""
+
+
+def test_a_count_of_entries_in_a_section_is_max_entries_per_section():
+    from apps.documents.rule_sinks import to_constraint_rules
+
+    candidates, slots = _one("List at most 3 publications.", "cv", "limit")
+    rules = read_values(candidates, slots, client=_script({
+        "0:figure:0:bound": ("maximum", 0.95), "0:figure:0:unit": ("entries", 0.95),
+        "0:figure:0:section": ("publications", 0.94),
+    }))
+    assert [(r.key, r.value) for r in to_constraint_rules(rules, source_url="u")] == [
+        ("max_entries_per_section", {"publications": 3})]
+
+
+def test_a_count_of_entries_in_no_section_is_unapplied():
+    candidates, slots = _one("List at most 3 items.", "cv", "limit")
+    rules = read_values(candidates, slots, client=_script({
+        "0:figure:0:bound": ("maximum", 0.95), "0:figure:0:unit": ("entries", 0.95),
+    }))
+    assert [(r.operation, r.note) for r in rules] == [("limit", "unapplied")]
+
+
+def test_an_unsure_section_is_a_note_not_a_cap():
+    candidates, slots = _one("List at most 3 publications.", "cv", "limit")
+    rules = read_values(candidates, slots, client=_script({
+        "0:figure:0:bound": ("maximum", 0.95), "0:figure:0:unit": ("entries", 0.95),
+        "0:figure:0:section": ("publications", 0.4),
+    }))
+    assert [r.note for r in rules] == ["unsure"]
+
+
+def test_a_letter_has_no_entries_sink():
+    assert limit_sink("motivation_letter", "maximum", "entries") == ""
+    assert limit_sink("cv", "maximum", "entries") == "max_entries_per_section"
+
+
+def test_a_cap_sentence_becomes_a_section_cap_rule():
+    candidates, slots = _one("List no more than 5 publications.", "cv", "coverage")
+    (rule,) = read_values(candidates, slots, client=_script({
+        "0:coverage": ("section_cap", 0.95),
+        "0:coverage_number": ("5", 0.95),
+        "0:coverage_section": ("publications", 0.95),
+    }))
+    assert (rule.operation, rule.value, rule.note) == (
+        "coverage", ("section_cap", "publications", 5), ""
+    )
+
+
+def test_a_cap_on_degrees_is_unapplied_and_keeps_its_sentence():
+    """Review Focus 4: education is not an option, so the reader answers none."""
+    candidates, slots = _one("List at most 2 degrees.", "cv", "coverage")
+    (rule,) = read_values(candidates, slots, client=_script({
+        "0:coverage": ("section_cap", 0.95),
+        "0:coverage_number": ("2", 0.95),
+        "0:coverage_section": ("none", 0.95),
+    }))
+    assert rule.note == "unapplied"
+    assert rule.sentence == "List at most 2 degrees."
+
+
+def test_eth_s_sentence_is_a_start_rule():
+    candidates, slots = _one(
+        "Begin with your UPPER SECONDARY SCHOOL GRADUATION.", "cv", "coverage"
+    )
+    (rule,) = read_values(candidates, slots, client=_script({
+        "0:coverage": ("from_upper_secondary", 0.97),
+    }))
+    assert (rule.value, rule.note) == (("from_upper_secondary", "", 0), "")
+
+
+def test_an_unsure_coverage_reading_is_a_note():
+    candidates, slots = _one("Your CV should be complete.", "cv", "coverage")
+    (rule,) = read_values(candidates, slots, client=_script({"0:coverage": ("complete", 0.6)}))
+    assert rule.note == "unsure"

@@ -216,3 +216,37 @@ def test_consecutive_failures_during_real_calls_survive_the_transaction(
     circuit = EuropassCircuit.load()
     assert circuit.is_open() is True
     assert circuit.reason == "consecutive failures"
+
+
+def test_a_stored_render_queues_document_preparation(agency_a, django_user_model, monkeypatch):
+    queued = []
+    monkeypatch.setattr("apps.portals.prepare.queue_for_student",
+                        lambda tenant_id, student_id: queued.append((tenant_id, student_id)))
+    monkeypatch.setattr(europass_worker, "render_and_store",
+                        lambda **kw: RenderOutcome(object_key="k", called_remote=False))
+    with tenant_scope(agency_a.id):
+        draft = _approved_draft(agency_a, django_user_model, "prep-1")
+        process_europass_message(
+            EuropassRenderMessage(tenant_id=agency_a.id, draft_id=draft.id), sleep=lambda _s: None
+        )
+    assert queued == [(agency_a.id, draft.student_id)]
+
+
+def test_a_queueing_failure_never_fails_the_render(agency_a, django_user_model, monkeypatch):
+    def _boom(tenant_id, student_id):
+        raise RuntimeError("queue down")
+
+    monkeypatch.setattr("apps.portals.prepare.queue_for_student", _boom)
+    stored = []
+
+    def _store(**kw):
+        stored.append(kw["draft"].id)
+        return RenderOutcome(object_key="k", called_remote=False)
+
+    monkeypatch.setattr(europass_worker, "render_and_store", _store)
+    with tenant_scope(agency_a.id):
+        draft = _approved_draft(agency_a, django_user_model, "prep-2")
+        process_europass_message(
+            EuropassRenderMessage(tenant_id=agency_a.id, draft_id=draft.id), sleep=lambda _s: None
+        )
+    assert stored == [draft.id]  # the render completed; only the queueing failed

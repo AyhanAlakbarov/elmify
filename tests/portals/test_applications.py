@@ -7,8 +7,10 @@ from django.contrib.messages import get_messages
 from django.utils import timezone
 
 from apps.concierge.models import Notification
+from apps.documents.requirement_list import RequirementList
 from apps.funding.models import AuditEvent, RecommendationCandidate
 from apps.portals import applications as applications_module
+from apps.portals.applications import remove_application
 from apps.portals.models import Application, ApplicationStep, DeviceAction, PortalForm
 from apps.portals.pairing import issue_pairing_code, redeem_pairing_code
 from apps.tenancy.context import tenant_scope
@@ -620,3 +622,84 @@ def test_recording_portals_hits_the_pack_command_limit(agency_a, membership_a) -
     assert refused.value.reason == "rate_limited"
     assert not PortalForm.objects.filter(form_key="/apply/one-more").exists()
     cache.clear()
+
+
+def test_start_queues_preparation_of_the_students_documents(
+    signed_in, agency_a, domain_a, membership_a, monkeypatch, django_capture_on_commit_callbacks
+) -> None:
+    from apps.portals import prepare
+
+    sent = []
+    monkeypatch.setattr(
+        prepare, "enqueue_document_work", lambda message, **_kw: sent.append(message)
+    )
+    _pair(agency_a, membership_a)
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a)
+
+    with django_capture_on_commit_callbacks(execute=True):
+        signed_in.post(f"/student/applications/{application.id}/start/", HTTP_HOST=domain_a.host)
+
+    assert [(m.action, m.student_id) for m in sent] == [("prepare_documents", membership_a.id)]
+
+
+@pytest.mark.parametrize(
+    ("code", "enforced", "refusal"),
+    [
+        ("mill_list", False, "provenance_blocked"),
+        ("mill_list", True, "provenance_blocked"),
+        ("absent_from_register", True, "provenance_unconfirmed"),
+        ("", True, "provenance_checking"),
+        ("not_evaluated", True, "provenance_checking"),
+    ],
+)
+def test_adding_follows_the_provenance_verdict(
+    agency_a, membership_a, candidate, captured, settings, code, enforced, refusal
+) -> None:
+    """Provenance spec §7.5: a body BLOCKED after the pack was shown -- the
+    sweep keeps it VISIBLE with a "Cannot be added" note -- is refused here
+    too, exactly as replace_candidate refuses it."""
+    settings.PROVENANCE_GATE_ENFORCED = enforced
+    with tenant_scope(agency_a.id):
+        RecommendationCandidate.objects.filter(id=candidate.id).update(provenance_reason_code=code)
+        with pytest.raises(applications_module.ApplicationRefused) as refused:
+            applications_module.add_application(
+                student=membership_a, candidate_id=candidate.id, actor=membership_a
+            )
+        assert refused.value.reason == refusal
+        assert refusal in applications_module.REFUSALS
+        assert not Application.objects.filter(candidate=candidate).exists()
+
+
+def test_a_recognised_body_is_added_while_the_gate_is_enforced(
+    agency_a, membership_a, candidate, captured, settings
+) -> None:
+    settings.PROVENANCE_GATE_ENFORCED = True
+    with tenant_scope(agency_a.id):
+        RecommendationCandidate.objects.filter(id=candidate.id).update(provenance_reason_code="register")
+        made = applications_module.add_application(
+            student=membership_a, candidate_id=candidate.id, actor=membership_a
+        )
+        assert made.candidate_id == candidate.id
+
+
+def test_removing_an_application_with_a_cv_attached_succeeds(
+    agency_a, membership_a, captured
+) -> None:
+    from apps.documents.drafts import create_draft
+    from apps.documents.models import DocumentDraft
+    from tests.documents.test_document_draft import _content
+
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a)
+        draft = create_draft(
+            student=membership_a,
+            kind=DocumentDraft.Kind.CV,
+            content=_content(),
+            application=application,
+            requirements=RequirementList(items=()),
+        )
+        remove_application(application, actor=membership_a)
+        draft.refresh_from_db()
+        assert draft.application_id is None and draft.requirements is not None
+        assert not Application.objects.filter(id=application.id).exists()

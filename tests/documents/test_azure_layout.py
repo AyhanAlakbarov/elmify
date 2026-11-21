@@ -32,7 +32,7 @@ _RESULT = {
 
 @pytest.fixture(autouse=True)
 def _configured(settings):
-    settings.AZURE_DI_ENDPOINT = "https://tehsil.cognitiveservices.azure.com"
+    settings.AZURE_DI_ENDPOINT = "https://elmify.cognitiveservices.azure.com"
     settings.AZURE_DI_KEY = "test-key"
     settings.AZURE_DI_API_VERSION = "2024-11-30"
 
@@ -40,7 +40,7 @@ def _configured(settings):
 def _start_ok(calls):
     def start(url, *, payload, headers):
         calls.append((url, payload, headers))
-        return "https://tehsil.cognitiveservices.azure.com/op/1"
+        return "https://elmify.cognitiveservices.azure.com/op/1"
     return start
 
 

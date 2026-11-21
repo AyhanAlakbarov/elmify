@@ -19,6 +19,7 @@ student, on the same shared backend apps.ratelimit uses in production
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
@@ -29,11 +30,14 @@ from django.core.cache import cache
 
 from apps.research.discovery import retrieve_official_source
 from apps.research.egress import FetchResult
+from apps.research.fetch import FetchBudgetExhausted, SweepBudget
 from apps.research.harvest import content_digest
 from apps.research.providers.base import on_domain
 from apps.research.reader import is_shell, page_lines
 
 from .split import page_sentences
+
+logger = logging.getLogger(__name__)
 
 PAGE_CACHE_TTL_SECONDS = 7 * 24 * 3600
 PageOutcome = Literal["ok", "off_domain", "unreadable", "fetch_failed"]
@@ -66,9 +70,15 @@ def fetch_page(
     *,
     domain: str,
     tenant_id: UUID,
-    fetch: Callable[[str], FetchResult] = retrieve_official_source,
+    fetch: Callable[..., FetchResult] = retrieve_official_source,
     use_cache: bool = True,
+    budget: SweepBudget | None = None,
 ) -> tuple[Page | None, PageOutcome]:
+    """One page, or an outcome. `budget` is the caller's fetch-credit bound
+    (D15); `FetchBudgetExhausted` is the one exception this function lets out,
+    because it is a signal to stop the whole search rather than a fact about
+    this page -- swallowing it into `fetch_failed` would spend the next page's
+    credits to learn the same thing."""
     key = _cache_key(tenant_id, url)
     cached = cache.get(key) if use_cache else None
     if isinstance(cached, dict):
@@ -81,8 +91,17 @@ def fetch_page(
             captured_at=cached.get("captured_at", ""),
         ), "ok"
     try:
-        fetched = fetch(url)
+        fetched = fetch(url, budget=budget)
+    except FetchBudgetExhausted:
+        raise
     except Exception:  # SourceBlocked, UnsafeTarget, transport -- one outcome, never a raise (D11)
+        # Logged, because this handler is broad enough to catch a TypeError
+        # from our own bad call and report it as a vendor outage. Measured:
+        # threading `budget` through here turned every one-argument test stub
+        # into a silent `fetch_failed`, and the only thing that surfaced it was
+        # an unrelated assertion two layers up. The degradation stays (D11: a
+        # research-fit failure never blocks a letter); the silence does not.
+        logger.warning("research-fit page fetch failed: %s", url, exc_info=True)
         return None, "fetch_failed"
     if not on_domain(fetched.final_url, domain):
         return None, "off_domain"

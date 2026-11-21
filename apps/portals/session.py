@@ -1,11 +1,8 @@
-"""The narrow browser surface the fill engine depends on.
+"""The shape of one stored fill action, and the rule for which may run.
 
-Mirrors Stagehand's ActionInput shape so a stored FieldAction can be handed
-straight back to act(). Keeping this a Protocol is what lets learn.py and
-fill.py be unit-tested without a browser.
+A FieldMap entry's action is a FieldAction; the extension's content script
+mirrors FILL_METHODS and is_fillable, and a test asserts the two agree.
 """
-
-from typing import Protocol
 
 from pydantic import BaseModel, ConfigDict
 
@@ -24,8 +21,8 @@ VALUE_PLACEHOLDER = "%value%"
 
 
 class FieldAction(BaseModel):
-    """What observe() returned. Faithful to the model's output, including output
-    we will refuse to execute -- see is_fillable for what may actually run."""
+    """One stored fill action. Rows from the retired server pass hold whatever
+    its model returned, so is_fillable, not this shape, decides what may run."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -51,37 +48,3 @@ def is_fillable(action: FieldAction) -> bool:
         and action.arguments is not None
         and action.arguments[:1] == [VALUE_PLACEHOLDER]
     )
-
-
-class UnsafeAction(Exception):
-    """An action would do something other than type a verified value.
-
-    Beside is_fillable rather than in fill.py, because both places that raise
-    it -- the stored-map pre-pass and the engine's own act() chokepoint -- are
-    modules fill.py cannot be imported from without a cycle.
-    """
-
-
-class PortalSession(Protocol):
-    def goto(self, url: str) -> None:
-        ...
-
-    def observe(
-        self, instruction: str, variables: dict[str, str] | None = None
-    ) -> list[FieldAction]:
-        ...
-
-    def act(self, action: FieldAction, variables: dict[str, str]) -> None:
-        ...
-
-    def read_value(self, selector: str) -> str:
-        ...
-
-    def exists(self, selector: str) -> bool:
-        ...
-
-    def query_attribute(self, selector: str, attribute: str) -> str | None:
-        ...
-
-    def press_enter(self) -> None:
-        ...

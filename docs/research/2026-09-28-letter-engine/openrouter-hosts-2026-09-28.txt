@@ -1,0 +1,124 @@
+fetched 2026-09-28 from openrouter.ai/api/v1/models/<id>/endpoints and /endpoints/zdr
+cost = 6k in + 2k out (no reasoning tokens)
+
+## deepseek/deepseek-v4-pro-0813 | DeepSeek V4 Pro 0813 is a large-scale mixture-of-experts model from DeepSeek. This is the GA release of DeepSeek V4 Pro.
+  Ionstream              q=unknown  in=$0.226 out=$1.958 letter=$0.0053 so=True rf=True temp=True reas=True zdr=True up1d=98.2 up30m=98.5 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Relace                 q=fp4      in=$0.350 out=$3.500 letter=$0.0091 so=False rf=True temp=True reas=True zdr=True up1d=97.3 up30m=95.2 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Wafer                  q=unknown  in=$0.400 out=$4.200 letter=$0.0108 so=True rf=True temp=True reas=True zdr=True up1d=99.6 up30m=99.8 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Sail Research          q=fp4      in=$0.400 out=$4.300 letter=$0.0110 so=True rf=True temp=True reas=True zdr=True up1d=99.4 up30m=99.2 status=0 maxout=384000 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Sail Research          q=fp4      in=$0.400 out=$4.300 letter=$0.0110 so=True rf=True temp=True reas=True zdr=True up1d=99.4 up30m=99.7 status=0 maxout=384000 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Alibaba                q=unknown  in=$0.581 out=$1.742 letter=$0.0070 so=True rf=True temp=True reas=True zdr=False up1d=98.0 up30m=98.7 status=0 maxout=393216 ctx=1000000 name=deepseek/deepseek-v4-pro-20260813
+  Baidu                  q=fp8      in=$0.659 out=$1.976 letter=$0.0079 so=True rf=True temp=True reas=True zdr=False up1d=100.0 up30m=99.9 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  StreamLake             q=unknown  in=$0.660 out=$1.980 letter=$0.0079 so=False rf=True temp=True reas=True zdr=False up1d=99.6 up30m=99.1 status=0 maxout=384000 ctx=1024000 name=deepseek/deepseek-v4-pro-20260813
+  DeepSeek               q=unknown  in=$0.660 out=$1.980 letter=$0.0079 so=False rf=True temp=True reas=True zdr=False up1d=100.0 up30m=100 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Phala                  q=unknown  in=$0.957 out=$2.878 letter=$0.0115 so=True rf=True temp=True reas=True zdr=True up1d=99.4 up30m=100 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Novita                 q=fp8      in=$0.990 out=$2.970 letter=$0.0119 so=False rf=True temp=True reas=True zdr=True up1d=99.9 up30m=100 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Io Net                 q=fp8      in=$0.990 out=$3.150 letter=$0.0122 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=99.5 status=0 maxout=131072 ctx=262124 name=deepseek/deepseek-v4-pro-20260813
+  NextBit                q=fp8      in=$1.056 out=$3.168 letter=$0.0127 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=100 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  GMICloud               q=fp8      in=$1.056 out=$3.168 letter=$0.0127 so=False rf=True temp=True reas=True zdr=False up1d=99.7 up30m=100 status=0 maxout=943717 ctx=1048575 name=deepseek/deepseek-v4-pro-20260813
+  DeepInfra              q=fp8      in=$1.300 out=$2.600 letter=$0.0130 so=True rf=True temp=True reas=True zdr=True up1d=99.3 up30m=100 status=0 maxout=16384 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  CoreWeave              q=fp8      in=$1.310 out=$3.960 letter=$0.0158 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=100.0 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  AtlasCloud             q=fp8      in=$1.320 out=$3.960 letter=$0.0158 so=True rf=True temp=True reas=True zdr=False up1d=97.7 up30m=97.4 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Parasail               q=fp8      in=$1.320 out=$3.960 letter=$0.0158 so=True rf=True temp=True reas=True zdr=True up1d=99.4 up30m=100 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Together               q=unknown  in=$1.320 out=$3.960 letter=$0.0158 so=True rf=True temp=True reas=True zdr=True up1d=96.8 up30m=86.2 status=-2 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  DigitalOcean           q=unknown  in=$1.320 out=$3.960 letter=$0.0158 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=100 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  SiliconFlow            q=fp8      in=$1.320 out=$3.960 letter=$0.0158 so=False rf=True temp=True reas=True zdr=True up1d=100.0 up30m=100 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Cloudflare             q=unknown  in=$1.320 out=$3.960 letter=$0.0158 so=True rf=True temp=True reas=True zdr=False up1d=98.0 up30m=100 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260813
+  Venice                 q=unknown  in=$1.650 out=$4.950 letter=$0.0198 so=True rf=True temp=True reas=True zdr=True up1d=96.0 up30m=None status=0 maxout=32768 ctx=1000000 name=deepseek/deepseek-v4-pro-20260813
+
+## deepseek/deepseek-v4-pro | DeepSeek V4 Pro is a large-scale Mixture-of-Experts model from DeepSeek with 1.6T total parameters and 49B activated parameters, supporting a 1M-token context w
+  Relace                 q=fp4      in=$0.350 out=$3.500 letter=$0.0091 so=False rf=False temp=True reas=True zdr=True up1d=99.9 up30m=100.0 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  Baidu                  q=fp8      in=$0.600 out=$1.200 letter=$0.0060 so=True rf=True temp=True reas=True zdr=False up1d=99.4 up30m=100.0 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  StreamLake             q=fp8      in=$0.783 out=$1.566 letter=$0.0078 so=True rf=True temp=True reas=True zdr=False up1d=98.6 up30m=99.2 status=0 maxout=384000 ctx=1024000 name=deepseek/deepseek-v4-pro-20260423
+  GMICloud               q=fp8      in=$0.957 out=$1.914 letter=$0.0096 so=False rf=True temp=True reas=True zdr=False up1d=98.7 up30m=99.9 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  DigitalOcean           q=unknown  in=$1.044 out=$2.088 letter=$0.0104 so=False rf=True temp=True reas=True zdr=True up1d=99.8 up30m=100.0 status=0 maxout=384000 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  Cloudflare             q=unknown  in=$1.150 out=$2.550 letter=$0.0120 so=True rf=True temp=True reas=True zdr=False up1d=93.3 up30m=99.5 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  DeepInfra              q=fp8      in=$1.300 out=$2.600 letter=$0.0130 so=True rf=True temp=True reas=True zdr=True up1d=99.5 up30m=99.5 status=0 maxout=16384 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  Alibaba                q=fp8      in=$1.416 out=$2.832 letter=$0.0142 so=True rf=True temp=True reas=True zdr=False up1d=96.2 up30m=96.6 status=0 maxout=393216 ctx=1000000 name=deepseek/deepseek-v4-pro-20260423
+  SiliconFlow            q=fp8      in=$1.502 out=$3.135 letter=$0.0153 so=False rf=True temp=True reas=True zdr=True up1d=99.0 up30m=99.8 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  Novita                 q=fp8      in=$1.600 out=$3.200 letter=$0.0160 so=False rf=True temp=True reas=True zdr=True up1d=99.8 up30m=100.0 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  Venice                 q=unknown  in=$1.650 out=$3.301 letter=$0.0165 so=True rf=True temp=True reas=True zdr=True up1d=88.0 up30m=82.6 status=-2 maxout=32768 ctx=1000000 name=deepseek/deepseek-v4-pro-20260423
+  AtlasCloud             q=fp4      in=$1.680 out=$3.380 letter=$0.0168 so=True rf=True temp=True reas=True zdr=False up1d=98.8 up30m=98.0 status=0 maxout=393216 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  NextBit                q=fp8      in=$1.740 out=$3.480 letter=$0.0174 so=True rf=True temp=True reas=True zdr=True up1d=97.9 up30m=97.9 status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  Parasail               q=fp8      in=$1.740 out=$3.480 letter=$0.0174 so=True rf=True temp=True reas=True zdr=True up1d=99.4 up30m=None status=0 maxout=943718 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+  Azure                  q=unknown  in=$1.910 out=$3.830 letter=$0.0191 so=False rf=True temp=True reas=True zdr=True up1d=98.2 up30m=97.5 status=0 maxout=384000 ctx=1048576 name=deepseek/deepseek-v4-pro-20260423
+
+## moonshotai/kimi-k3 | Kimi K3 is a 2.8T parameter open-weight multimodal reasoning model from Moonshot AI. It is suited for complex coding, knowledge work, and long-horizon agentic w
+  Morph                  q=fp8      in=$0.875 out=$11.200 letter=$0.0277 so=True rf=True temp=True reas=True zdr=True up1d=99.7 up30m=93.0 status=-2 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Sail Research          q=fp4      in=$0.900 out=$7.860 letter=$0.0211 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=99.2 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  InferenceNet           q=fp4      in=$1.000 out=$9.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=99.9 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Wafer                  q=unknown  in=$1.000 out=$9.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=True up1d=99.5 up30m=99.9 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Makora                 q=unknown  in=$2.040 out=$12.750 letter=$0.0377 so=True rf=True temp=True reas=True zdr=True up1d=99.6 up30m=96.3 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Relace                 q=fp4      in=$2.100 out=$10.500 letter=$0.0336 so=False rf=False temp=True reas=True zdr=True up1d=99.8 up30m=99.7 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Phala                  q=unknown  in=$2.550 out=$12.750 letter=$0.0408 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=97.8 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  DigitalOcean           q=unknown  in=$2.550 out=$12.950 letter=$0.0412 so=False rf=True temp=True reas=True zdr=True up1d=99.8 up30m=100 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  DeepInfra              q=bf16     in=$2.850 out=$14.250 letter=$0.0456 so=True rf=True temp=True reas=True zdr=True up1d=98.9 up30m=87.8 status=-2 maxout=16384 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Chutes                 q=mxfp4    in=$3.000 out=$15.000 letter=$0.0480 so=True rf=True temp=True reas=True zdr=False up1d=91.6 up30m=None status=0 maxout=65535 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Parasail               q=fp4      in=$3.000 out=$15.000 letter=$0.0480 so=True rf=True temp=True reas=True zdr=True up1d=98.2 up30m=97.1 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Modal                  q=mxfp4    in=$3.000 out=$15.000 letter=$0.0480 so=True rf=True temp=True reas=True zdr=True up1d=99.6 up30m=99.8 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Together               q=unknown  in=$3.000 out=$15.000 letter=$0.0480 so=True rf=True temp=True reas=True zdr=True up1d=99.7 up30m=99.2 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Fireworks              q=unknown  in=$3.000 out=$15.000 letter=$0.0480 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=99.9 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  BaseTen                q=fp8      in=$3.000 out=$15.000 letter=$0.0480 so=False rf=False temp=True reas=True zdr=True up1d=99.3 up30m=98.7 status=0 maxout=262144 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Moonshot AI            q=mxfp4    in=$3.000 out=$15.000 letter=$0.0480 so=True rf=True temp=False reas=True zdr=True up1d=99.8 up30m=99.8 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Fireworks              q=unknown  in=$3.300 out=$16.500 letter=$0.0528 so=True rf=True temp=True reas=True zdr=True up1d=99.1 up30m=99.7 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Alibaba                q=unknown  in=$3.450 out=$17.250 letter=$0.0552 so=True rf=True temp=False reas=True zdr=False up1d=92.1 up30m=None status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+  Fireworks              q=unknown  in=$4.500 out=$22.500 letter=$0.0720 so=True rf=True temp=True reas=True zdr=True up1d=99.5 up30m=99.6 status=0 maxout=943718 ctx=1048576 name=moonshotai/kimi-k3-20260715
+
+## qwen/qwen3.8-2.4t-a95b | Qwen3.8 2.4T A95B is an open-weight sparse mixture-of-experts model from Qwen and the open-weight variant of [Qwen3.8 Max](/qwen/qwen3.8-max), with 95 billion a
+  Novita                 q=unknown  in=$2.000 out=$6.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=True up1d=100.0 up30m=100 status=0 maxout=131072 ctx=1000000 name=qwen/qwen3.8-2.4t-a95b-20260812
+  Alibaba                q=unknown  in=$2.000 out=$6.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=False up1d=99.7 up30m=None status=0 maxout=131072 ctx=1000000 name=qwen/qwen3.8-2.4t-a95b-20260812
+  SiliconFlow            q=fp8      in=$2.000 out=$6.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=True up1d=99.7 up30m=96.9 status=0 maxout=131072 ctx=1048576 name=qwen/qwen3.8-2.4t-a95b-20260812
+  Venice                 q=unknown  in=$2.000 out=$6.000 letter=$0.0240 so=False rf=False temp=True reas=True zdr=True up1d=99.2 up30m=98.2 status=0 maxout=65536 ctx=262144 name=qwen/qwen3.8-2.4t-a95b-20260812
+  Modal                  q=unknown  in=$2.000 out=$6.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=100 status=0 maxout=262144 ctx=1000000 name=qwen/qwen3.8-2.4t-a95b-20260812
+  DeepInfra              q=fp4      in=$2.000 out=$6.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=True up1d=100.0 up30m=100 status=0 maxout=131072 ctx=262144 name=qwen/qwen3.8-2.4t-a95b-20260812
+  Together               q=unknown  in=$2.000 out=$6.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=99.3 status=0 maxout=909000 ctx=1010000 name=qwen/qwen3.8-2.4t-a95b-20260812
+
+## qwen/qwen3.8-max-0902 | Qwen3.8 Max 0902 is an updated snapshot of Qwen3.8 Max from Alibaba's Qwen team. It is a 2.4-trillion-parameter mixture-of-experts model that accepts text, imag
+  Alibaba                q=unknown  in=$2.000 out=$6.000 letter=$0.0240 so=True rf=True temp=True reas=True zdr=False up1d=99.5 up30m=99.7 status=0 maxout=131072 ctx=1000000 name=qwen/qwen3.8-max-20260902
+
+## qwen/qwen3.8-max-prime | Qwen3.8 Max Prime is a higher-throughput variant of Qwen3.8 Max from Alibaba's Qwen team, served as a separate SKU at a higher price point. It accepts text, ima
+  Alibaba                q=unknown  in=$4.000 out=$12.000 letter=$0.0480 so=True rf=True temp=True reas=True zdr=False up1d=99.6 up30m=99.7 status=0 maxout=131072 ctx=1000000 name=qwen/qwen3.8-max-prime-20260923
+
+## z-ai/glm-5.3-prime | GLM-5.3-Prime is the high-speed variant of Z.ai's GLM-5.3, inheriting its full capabilities while delivering 1.5–2× the output throughput through inference acce
+  Alibaba                q=unknown  in=$2.800 out=$8.800 letter=$0.0344 so=False rf=True temp=True reas=True zdr=False up1d=99.5 up30m=99.7 status=0 maxout=131072 ctx=1000000 name=z-ai/glm-5.3-prime-20260921
+
+## z-ai/glm-5.3 | GLM-5.3 is a large-scale reasoning model from Z.ai, built for complex software engineering and long-horizon agent tasks. It supports text input and output with 
+  Morph                  q=fp8      in=$0.178 out=$2.805 letter=$0.0067 so=True rf=True temp=True reas=True zdr=True up1d=99.0 up30m=99.4 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Relace                 q=unknown  in=$0.290 out=$2.900 letter=$0.0075 so=False rf=True temp=True reas=True zdr=True up1d=99.4 up30m=99.4 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Wafer                  q=unknown  in=$0.295 out=$4.400 letter=$0.0106 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=99.9 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Wafer                  q=unknown  in=$0.295 out=$4.400 letter=$0.0106 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=99.8 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Inceptron              q=fp4      in=$0.322 out=$2.542 letter=$0.0070 so=False rf=True temp=True reas=True zdr=True up1d=99.0 up30m=99.4 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Reka                   q=unknown  in=$0.370 out=$1.140 letter=$0.0045 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=100.0 status=0 maxout=235929 ctx=262144 name=z-ai/glm-5.3-20260816
+  DeepInfra              q=fp4      in=$0.562 out=$2.500 letter=$0.0084 so=True rf=True temp=True reas=True zdr=True up1d=99.2 up30m=94.6 status=-2 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  AtlasCloud             q=fp8      in=$0.602 out=$1.892 letter=$0.0074 so=True rf=True temp=True reas=True zdr=False up1d=99.5 up30m=99.2 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  InferenceNet           q=unknown  in=$0.684 out=$2.280 letter=$0.0087 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=99.9 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Sail Research          q=fp8      in=$0.770 out=$4.000 letter=$0.0126 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=99.9 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Sail Research          q=fp8      in=$0.770 out=$4.000 letter=$0.0126 so=True rf=True temp=True reas=True zdr=True up1d=100.0 up30m=100 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Novita                 q=fp8      in=$0.783 out=$2.460 letter=$0.0096 so=False rf=True temp=True reas=True zdr=True up1d=100.0 up30m=100 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  DigitalOcean           q=unknown  in=$0.910 out=$2.860 letter=$0.0112 so=True rf=True temp=True reas=True zdr=True up1d=97.7 up30m=93.6 status=-2 maxout=128000 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Phala                  q=unknown  in=$0.980 out=$3.080 letter=$0.0120 so=True rf=True temp=True reas=True zdr=True up1d=99.4 up30m=97.5 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  GMICloud               q=fp8      in=$0.980 out=$3.080 letter=$0.0120 so=False rf=True temp=True reas=True zdr=False up1d=99.9 up30m=100 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Makora                 q=fp4      in=$1.050 out=$4.200 letter=$0.0147 so=True rf=True temp=True reas=True zdr=True up1d=98.3 up30m=99.9 status=0 maxout=128000 ctx=980000 name=z-ai/glm-5.3-20260816
+  SiliconFlow            q=fp8      in=$1.120 out=$3.520 letter=$0.0138 so=False rf=True temp=True reas=True zdr=True up1d=98.0 up30m=None status=0 maxout=262144 ctx=1048576 name=z-ai/glm-5.3-20260816
+  AkashML                q=fp8      in=$1.170 out=$3.960 letter=$0.0149 so=True rf=True temp=True reas=True zdr=True up1d=100.0 up30m=99.8 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Alibaba                q=unknown  in=$1.190 out=$3.740 letter=$0.0146 so=False rf=True temp=True reas=True zdr=False up1d=99.7 up30m=100 status=0 maxout=131072 ctx=1000000 name=z-ai/glm-5.3-20260816
+  Decart                 q=fp4      in=$1.190 out=$3.740 letter=$0.0146 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=99.8 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Friendli               q=unknown  in=$1.260 out=$3.960 letter=$0.0155 so=True rf=True temp=True reas=True zdr=False up1d=100.0 up30m=100 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Baidu                  q=fp8      in=$1.399 out=$4.396 letter=$0.0172 so=True rf=True temp=True reas=True zdr=False up1d=100.0 up30m=100 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Mistral                q=nvfp4    in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=99.6 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  BaseTen                q=fp4      in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=98.8 up30m=99.6 status=0 maxout=262144 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Mistral                q=nvfp4    in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=99.7 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Crusoe                 q=fp4      in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=99.6 up30m=99.2 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  PrimeIntellect         q=unknown  in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=100.0 up30m=100.0 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Venice                 q=unknown  in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=99.2 up30m=98.8 status=0 maxout=131072 ctx=1000000 name=z-ai/glm-5.3-20260816
+  Together               q=unknown  in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=99.7 up30m=98.1 status=0 maxout=943717 ctx=1048575 name=z-ai/glm-5.3-20260816
+  Parasail               q=fp8      in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=99.8 up30m=98.3 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Modal                  q=unknown  in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=99.5 up30m=97.1 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  BaseTen                q=fp4      in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=98.5 up30m=100 status=0 maxout=262144 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Fireworks              q=unknown  in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=True up1d=99.4 up30m=100 status=0 maxout=943718 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Cloudflare             q=unknown  in=$1.400 out=$4.400 letter=$0.0172 so=True rf=True temp=True reas=True zdr=False up1d=99.2 up30m=None status=0 maxout=1179648 ctx=1310720 name=z-ai/glm-5.3-20260816
+  Z.AI                   q=fp8      in=$1.400 out=$4.400 letter=$0.0172 so=False rf=True temp=True reas=True zdr=True up1d=100.0 up30m=100.0 status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Mistral                q=nvfp4    in=$1.540 out=$4.840 letter=$0.0189 so=True rf=True temp=True reas=True zdr=True up1d=99.9 up30m=None status=0 maxout=131072 ctx=1048576 name=z-ai/glm-5.3-20260816
+  BaseTen                q=fp8      in=$2.100 out=$6.600 letter=$0.0258 so=False rf=False temp=True reas=True zdr=True up1d=99.8 up30m=None status=0 maxout=262144 ctx=1048576 name=z-ai/glm-5.3-20260816
+  BaseTen                q=fp8      in=$2.100 out=$6.600 letter=$0.0258 so=False rf=False temp=True reas=True zdr=True up1d=99.8 up30m=None status=0 maxout=262144 ctx=1048576 name=z-ai/glm-5.3-20260816
+  Alibaba                q=unknown  in=$2.800 out=$8.800 letter=$0.0344 so=False rf=True temp=True reas=True zdr=False up1d=99.7 up30m=None status=0 maxout=131072 ctx=1000000 name=z-ai/glm-5.3-20260816

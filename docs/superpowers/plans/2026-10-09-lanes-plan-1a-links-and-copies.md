@@ -22,8 +22,8 @@
 
 - **Setup, before Task 1:** `git -C /home/orkhan/Desktop/lanes-and-money-design merge origin/master`. The branch is cut from 70848a31, and master since added funding/0058 (`referee_requirements`) and documents/0027. A new portals migration is numbered after master's portals leaf. Check `ls apps/portals/migrations` after the merge, and renumber 0024–0026 in this plan if master moved past 0023.
 
-- **Worktree:** `/home/orkhan/Desktop/lanes-and-money-design`, branch `claude/lanes-and-money-design`. The shell cwd resets to `/home/orkhan/Desktop/tehsil_agent` after every command, so prefix commands with `cd /home/orkhan/Desktop/lanes-and-money-design &&` and use `git -C /home/orkhan/Desktop/lanes-and-money-design`.
-- **Test DB:** `POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider <paths>`. Never run two suites at once on one DB.
+- **Worktree:** `/home/orkhan/Desktop/lanes-and-money-design`, branch `claude/lanes-and-money-design`. The shell cwd resets to `/home/orkhan/Desktop/elmify` after every command, so prefix commands with `cd /home/orkhan/Desktop/lanes-and-money-design &&` and use `git -C /home/orkhan/Desktop/lanes-and-money-design`.
+- **Test DB:** `POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider <paths>`. Never run two suites at once on one DB.
 - **Gates:**
   - `uv run ruff check .`, never `ruff format`;
   - `uv run mypy apps config`;
@@ -158,7 +158,7 @@ def test_an_unreadable_snapshot_reads_as_none(agency_a, membership_a) -> None:
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_route_snapshot.py`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_route_snapshot.py`
 Expected: FAIL with `ModuleNotFoundError: No module named 'apps.portals.route_snapshot'`.
 
 - [ ] **Step 3: Write the snapshot module**
@@ -277,7 +277,7 @@ Generate the migration: `cd /home/orkhan/Desktop/lanes-and-money-design && uv ru
 
 - [ ] **Step 5: Run the tests and the neighbours**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_route_snapshot.py tests/portals/test_applications.py tests/audit`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_route_snapshot.py tests/portals/test_applications.py tests/audit`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -369,7 +369,7 @@ Also add `"portal_link_from_tenant_fk"` and `"portal_link_to_tenant_fk"` to `_CO
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_application_link.py tests/migrations/test_portals_tenant_guards.py`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_application_link.py tests/migrations/test_portals_tenant_guards.py`
 Expected: FAIL with `ImportError: cannot import name 'ApplicationLink'`.
 
 - [ ] **Step 3: Add the model**
@@ -468,7 +468,7 @@ In `apps/audit/redaction.py`, add to the KEEP mapping:
 
 - [ ] **Step 5: Run the tests and the isolation suite**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_application_link.py tests/migrations tests/tenancy/test_database_isolation.py tests/audit`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_application_link.py tests/migrations tests/tenancy/test_database_isolation.py tests/audit`
 Expected: PASS.
 
 - [ ] **Step 6: Commit**
@@ -539,7 +539,7 @@ def test_an_award_without_a_stated_duration_copies_none() -> None:
 
 - [ ] **Step 2: Run it to see it fail**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/research/test_candidate_copies.py`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/research/test_candidate_copies.py`
 Expected: FAIL with `KeyError: 'duration_months'`.
 
 - [ ] **Step 3: Copy the fields**
@@ -555,7 +555,7 @@ In `apps/research/services.py`, inside `_award_copy`'s `"funding_card": {...}`, 
 
 - [ ] **Step 4: Run it to pass**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/research/test_candidate_copies.py tests/funding/test_grouping.py`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/research/test_candidate_copies.py tests/funding/test_grouping.py`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -699,7 +699,7 @@ def test_an_award_that_funds_nothing_here_is_not_added(agency_a, membership_a) -
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_award_links.py`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_award_links.py`
 Expected: FAIL. The first assertion finds no award card (`Application.DoesNotExist`).
 
 - [ ] **Step 3: Write `award_links.py`**
@@ -813,7 +813,7 @@ Add `from django.db import IntegrityError, transaction` to `award_links.py`.
 
 - [ ] **Step 5: Run the tests and the application suite**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/portals tests/dashboard`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/portals tests/dashboard`
 Expected: PASS. Existing tests that add a programme from a pack holding a separate eligible award may now see one more card. Update any count assertion the change breaks, and say which ones in the commit message.
 
 - [ ] **Step 6: Commit**
@@ -900,7 +900,7 @@ def test_lines_never_use_internal_words(agency_a, membership_a) -> None:
 
 - [ ] **Step 2: Run them to see them fail**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_award_links.py`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_award_links.py`
 Expected: FAIL with `ImportError: cannot import name 'award_lines'`.
 
 - [ ] **Step 3: Add `award_lines`**
@@ -960,10 +960,10 @@ The candidate set is the programme card's own run, exactly as in `link_awards` (
 
 - [ ] **Step 4: Run the tests, then the full suite**
 
-Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_award_links.py`
+Run: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider tests/portals/test_award_links.py`
 Expected: PASS.
 
-Run the full suite once: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=tehsil_lanes uv run pytest -q -p no:cacheprovider`
+Run the full suite once: `cd /home/orkhan/Desktop/lanes-and-money-design && POSTGRES_DB=elmify_lanes uv run pytest -q -p no:cacheprovider`
 Expected: 0 failed.
 
 Run the gates: `uv run ruff check .`, `uv run mypy apps config`, `uv run python manage.py check`, `uv run python manage.py makemigrations --check --dry-run`, `uv run bandit -c pyproject.toml -r apps config`. All must be clean.

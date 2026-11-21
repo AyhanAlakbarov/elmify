@@ -60,18 +60,10 @@ logger = logging.getLogger(__name__)
 _MAX_NOTIFICATIONS = 100
 
 
-def _wants_html(request: HttpRequest) -> bool:
-    """A browser form post (Accept: text/html) gets a redirect and a message; a
-    JSON caller keeps getting JSON. Django's test client sends no Accept header.
-    This picks the response shape only: CSRF, login and ownership are decided
-    before and apart from it."""
-    return "text/html" in request.headers.get("Accept", "")
-
-
 def _answer(
     request: HttpRequest, payload: dict[str, object], *, status: int = 200, message: str = ""
 ) -> HttpResponse:
-    if not _wants_html(request):
+    if "text/html" not in request.headers.get("Accept", ""):
         return JsonResponse(payload, status=status)
     if status == 404:
         # The id of a connection that is not yours is not a fact you get to confirm.
@@ -219,6 +211,9 @@ def callback(request: HttpRequest, provider: str) -> HttpResponse:
         )
         membership.application_email = grant.address
         membership.save(update_fields=["application_email"])
+        from apps.documents.cv_jobs import resume_waiting_cvs
+
+        resume_waiting_cvs(membership)
         if (
             provider == MailboxConnection.Provider.MICROSOFT
             and push.push_host(membership.tenant_id) is not None

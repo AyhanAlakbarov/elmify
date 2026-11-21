@@ -59,7 +59,7 @@ class Overview:
         out = []
         current_given = False
         for key in ("profile", "matches", "choose", "documents", "apply"):
-            if done[key]:
+            if done[key] and not current_given:
                 out.append((key, "done"))
             elif not current_given:
                 out.append((key, "current"))
@@ -73,24 +73,8 @@ class Overview:
         return all(state == "done" for _key, state in self.steps)
 
     @property
-    def documents_percent(self) -> int:
-        return _percent(self.documents_done, self.documents_total)
-
-    @property
-    def answers_percent(self) -> int:
-        return _percent(self.answers_done, self.answers_total)
-
-    @property
-    def next_deadline(self) -> Card | None:
-        return self.deadlines[0] if self.deadlines else None
-
-    @property
     def soon_days(self) -> int:
         return SOON_DAYS
-
-
-def _percent(done: int, total: int) -> int:
-    return round(100 * done / total) if total else 0
 
 
 def build_overview(student: Membership, board: Board, needs: Sized) -> Overview:

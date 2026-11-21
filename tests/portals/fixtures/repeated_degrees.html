@@ -1,0 +1,23 @@
+<!doctype html>
+<!-- Repeated sections and unnamed upload boxes: the box is told apart only by
+     the legend above it and the text of its own group. The banner sits inside
+     the first fieldset so it lands in `context`, carrying a name the snapshot
+     must never ship unredacted (the server redacts it). -->
+<html lang="en"><head><meta charset="utf-8" /><title>Education</title></head>
+<body>
+  <form>
+    <fieldset><legend>Degree 1</legend>
+      <p class="banner">Welcome, Leyla Aliyeva</p>
+      <label for="i1">University</label><input id="i1" name="inst1" />
+      <div class="row">Transcript (original language)
+        <input type="file" id="t1o" accept=".pdf" /></div>
+      <div class="row">Transcript (English translation)
+        <input type="file" id="t1e" accept=".pdf" /></div>
+    </fieldset>
+    <fieldset><legend>Degree 2</legend>
+      <label for="i2">University</label><input id="i2" name="inst2" />
+      <div class="row">Upload <input type="file" id="t2o" /></div>
+    </fieldset>
+    <label for="cv">Curriculum vitae</label><input type="file" id="cv" />
+  </form>
+</body></html>

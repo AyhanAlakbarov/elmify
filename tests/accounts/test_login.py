@@ -107,8 +107,8 @@ def test_a_successful_login_never_redirects_off_site(client, domain_a, student) 
     assert response["Location"] == "/"
 
 
-def test_an_anonymous_visitor_at_the_root_goes_to_login(client, domain_a) -> None:
-    assert client.get("/", HTTP_HOST=domain_a.host)["Location"] == "/accounts/login/"
+def test_an_anonymous_visitor_at_the_root_goes_to_the_website(client, domain_a, settings) -> None:
+    assert client.get("/", HTTP_HOST=domain_a.host)["Location"] == settings.MARKETING_SITE_URL
 
 
 def test_a_counselor_at_the_root_goes_to_their_list(rf, agency_a) -> None:
@@ -147,7 +147,7 @@ def test_logout_refuses_get(client, domain_a, student) -> None:
 
 
 def test_logout_ends_the_session_and_keeps_the_extension_paired(
-    client, agency_a, domain_a, student
+    client, agency_a, domain_a, student, settings
 ) -> None:
     with tenant_scope(agency_a.id):
         membership = Membership.objects.get(user=student)
@@ -157,7 +157,7 @@ def test_logout_ends_the_session_and_keeps_the_extension_paired(
     response = client.post(LOGOUT, HTTP_HOST=domain_a.host)
 
     assert response.status_code == 302
-    assert response["Location"] == "/accounts/login/"
+    assert response["Location"] == settings.MARKETING_SITE_URL
     assert "_auth_user_id" not in client.session
     pairing.refresh_from_db()
     # Owner, 2026-10-04: logout keeps the extension paired; Settings disconnects.
@@ -165,7 +165,9 @@ def test_logout_ends_the_session_and_keeps_the_extension_paired(
     assert pairing.token_hash != ""
 
 
-def test_a_deletion_locked_student_can_still_log_out(client, agency_a, domain_a, student) -> None:
+def test_a_deletion_locked_student_can_still_log_out(
+    client, agency_a, domain_a, student, settings
+) -> None:
     with tenant_scope(agency_a.id):
         membership = Membership.objects.get(user=student)
         DeletionRequest.objects.create(
@@ -173,4 +175,91 @@ def test_a_deletion_locked_student_can_still_log_out(client, agency_a, domain_a,
         )
     client.force_login(student)
     response = client.post(LOGOUT, HTTP_HOST=domain_a.host)
-    assert response["Location"] == "/accounts/login/"
+    assert response["Location"] == settings.MARKETING_SITE_URL
+
+
+def test_session_and_csrf_cookie_hardening_settings(settings) -> None:
+    assert settings.SESSION_COOKIE_AGE == 60 * 60 * 8
+    assert settings.SESSION_SAVE_EVERY_REQUEST is True
+    assert settings.SESSION_EXPIRE_AT_BROWSER_CLOSE is True
+    assert settings.SESSION_COOKIE_HTTPONLY is True
+    assert settings.SESSION_COOKIE_SAMESITE == "Lax"
+    assert settings.CSRF_COOKIE_SAMESITE == "Lax"
+
+
+def test_password_change_updates_password_rotates_session_and_revokes_device_tokens(
+    client, agency_a, domain_a, student, settings
+) -> None:
+    from django.test import Client
+
+    from apps.portals import pairing as pairing_module
+
+    with tenant_scope(agency_a.id):
+        membership = Membership.objects.get(user=student)
+        pairing, token = redeem_pairing_code(issue_pairing_code(membership), "install-1")
+
+    other_client = Client()
+    other_client.post(
+        LOGIN, {"username": "amina", "password": "correct-horse-battery"}, HTTP_HOST=domain_a.host
+    )
+    client.post(
+        LOGIN, {"username": "amina", "password": "correct-horse-battery"}, HTTP_HOST=domain_a.host
+    )
+
+    get_resp = client.get("/accounts/password_change/", HTTP_HOST=domain_a.host)
+    assert get_resp.status_code == 200
+
+    post_resp = client.post(
+        "/accounts/password_change/",
+        {
+            "old_password": "correct-horse-battery",
+            "new_password1": "new-horse-battery-staple-99",
+            "new_password2": "new-horse-battery-staple-99",
+        },
+        HTTP_HOST=domain_a.host,
+    )
+    assert post_resp.status_code == 302
+    assert post_resp["Location"] == "/student/settings/account/"
+
+    student.refresh_from_db()
+    assert student.check_password("new-horse-battery-staple-99")
+    # Current session stays authenticated; other session is invalidated.
+    assert client.get("/student/", HTTP_HOST=domain_a.host).status_code == 200
+    assert other_client.get("/student/", HTTP_HOST=domain_a.host)["Location"].startswith(
+        "/accounts/login/"
+    )
+    # Paired extension device token is revoked.
+    with tenant_scope(agency_a.id):
+        pairing.refresh_from_db()
+        assert pairing.revoked_at is not None
+        assert pairing.token_hash == ""
+        assert pairing_module.authenticate_device(token) is None
+
+
+
+def test_a_visitor_who_is_not_signed_in_is_sent_to_the_website(client, domain_a, settings) -> None:
+    settings.MARKETING_SITE_URL = "https://elmify.example"
+    response = client.get("/", HTTP_HOST=domain_a.host)
+    assert response.status_code == 302
+    assert response["Location"] == "https://elmify.example"
+
+
+def test_logging_out_lands_on_the_website(client, domain_a, student, settings) -> None:
+    settings.LOGOUT_REDIRECT_URL = "https://elmify.example"
+    creds = {"username": "amina", "password": "correct-horse-battery"}
+    client.post(LOGIN, creds, HTTP_HOST=domain_a.host)
+    response = client.post(LOGOUT, HTTP_HOST=domain_a.host)
+    assert response.status_code == 302
+    assert response["Location"] == "https://elmify.example"
+
+
+def test_the_book_a_call_link_shows_only_when_a_booking_page_is_set(
+    client, domain_a, student, settings
+) -> None:
+    client.force_login(student)
+    settings.BOOKING_URL = ""
+    page = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+    assert "Book a 20-min call" not in page
+    settings.BOOKING_URL = "https://calendar.app.google/example"
+    body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+    assert 'href="https://calendar.app.google/example" target="_blank"' in body

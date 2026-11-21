@@ -143,23 +143,43 @@ def _check_revoke_authority(document: DocumentDraft, revoked_by: Membership) -> 
 
 
 @transaction.atomic
-def mark_ready(*, document: DocumentDraft, accepted_by: Membership) -> DocumentDraft:
+def mark_ready(
+    *,
+    document: DocumentDraft,
+    accepted_by: Membership,
+    immigration: bool = False,
+    _via_mark_letter_ready: bool = False,
+) -> DocumentDraft:
     """Approve a draft, or refuse to.
 
     Verdicts are recomputed here from the locked row's own content and the
     student's ledger -- never taken from the caller. UNSUPPORTED and
     CONFLICTING have no override path for anyone, so there is deliberately no
     argument through which a caller could assert a draft is clean.
+
+    Letter drafts (``MOTIVATION_LETTER`` / ``CORE_NARRATIVE``) must enter via
+    ``apps.documents.letter_approval.mark_letter_ready`` so gate violations,
+    counselor flags, and the immigration ``UNCERTAIN`` rule are enforced before
+    approval. ``immigration=True`` widens ``blocking_verdicts`` with
+    ``Verdict.UNCERTAIN`` under the row lock so a fact whose confirmation was
+    withdrawn between generation and approval still blocks an immigration letter.
     """
     locked = DocumentDraft.objects.select_for_update().get(id=document.id)
+    if locked.kind in _LETTER_KINDS and not _via_mark_letter_ready:
+        raise ApprovalBlocked(
+            f"{locked.kind} drafts must be approved via mark_letter_ready, not mark_ready directly"
+        )
     if locked.status == DocumentDraft.Status.APPROVED:
         return locked  # idempotent: never re-stamp approved_by/approved_at
     if locked.status != DocumentDraft.Status.DRAFT:
         raise ApprovalBlocked(f"cannot approve a {locked.status} draft")
     _check_consent_authority(locked, accepted_by)
     verdicts = verdicts_for(locked)
-    if is_blocked(verdicts):
-        blocking = tuple(v for v in verdicts if v.verdict in _BLOCKING_VERDICTS)
+    blocking_verdicts = (
+        _BLOCKING_VERDICTS | {Verdict.UNCERTAIN} if immigration else _BLOCKING_VERDICTS
+    )
+    blocking = tuple(v for v in verdicts if v.verdict in blocking_verdicts)
+    if blocking:
         summary = ", ".join(f"{_verdict_label(v)}={v.verdict}" for v in blocking)
         raise ApprovalBlocked(
             f"document carries {len(blocking)} blocking claim verdict(s): {summary}",
@@ -173,6 +193,11 @@ def mark_ready(*, document: DocumentDraft, accepted_by: Membership) -> DocumentD
         document=locked, mode=locked.approval_mode, granted_by=accepted_by
     )
     record_event(actor=accepted_by, event="document.approved", object_id=locked.id)
+    # Lazy: apps.documents never imports apps.portals at module level. On commit,
+    # never raising: approval stands whatever the queue does.
+    from apps.portals.prepare import queue_for_student
+
+    queue_for_student(locked.tenant_id, locked.student_id)
     return locked
 
 

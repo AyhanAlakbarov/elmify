@@ -26,15 +26,6 @@ def _no_aws(monkeypatch):
     monkeypatch.setattr("apps.audit.deletion.delete_student_documents", lambda **kw: 0)
     monkeypatch.setattr("apps.audit.deletion.delete_student_portal_credentials", lambda **kw: 0)
     monkeypatch.setattr("apps.audit.deletion.delete_student_mailbox_tokens", lambda **kw: 0)
-    # Stubbed for a reason found here, not for convenience: on master,
-    # redact_student's UPDATE of StudentProfileVersion.snapshot is refused by
-    # the accounts_profile_version_immutable trigger (accounts/0003), so ANY
-    # erasure of a student holding a profile version raises IntegrityError
-    # before EXECUTED. No master test erases such a student. This test needs
-    # one (coverage is computed from the profile), so the walk is stubbed and
-    # the rebuild -- the thing under test -- still runs after the student is
-    # made inactive, exactly where it sits on the real path.
-    monkeypatch.setattr("apps.audit.deletion.redact_student", lambda **kw: None)
 
 
 def _due(agency, student):

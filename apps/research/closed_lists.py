@@ -209,6 +209,7 @@ class ListRow:
     rejected_reason: str
     source_url: str
     verified_on: date
+    notes: str = ""
 
 
 def read_list_file(spec: ClosedList, path: Path | None = None) -> tuple[ListRow, ...]:
@@ -264,6 +265,7 @@ def read_list_file(spec: ClosedList, path: Path | None = None) -> tuple[ListRow,
             rejected_reason=rejected,
             source_url=_url(raw["source_url"], f"{where} source_url", required=True),
             verified_on=_day(raw["verified_on"], f"{where} verified_on"),
+            notes=raw.get("notes", "").strip(),
         ))
     return tuple(rows)
 
@@ -404,6 +406,7 @@ class ClosedListSource:
     slug: str
     one_programme_per_link: bool = False
     awards_jointly: bool = False
+    filter_by_country: bool = False
 
     @property
     def name(self) -> str:
@@ -420,8 +423,14 @@ class ClosedListSource:
             .select_related("organisation")
             .order_by("external_key")
         )
+        wanted_cc = query.country_code.strip().upper() if self.filter_by_country else ""
         for entry in entries:
             assert entry.organisation is not None  # filtered above; for mypy
+            if wanted_cc:
+                host_cells = {c.upper() for c in (entry.host_cells or [])}
+                org_cc = (entry.organisation.country_code or "").upper()
+                if org_cc != wanted_cc and wanted_cc not in host_cells and "ANY" not in host_cells:
+                    continue
             if policy == ClosedList.ReadPolicy.SIGNAL_ONLY and not has_signal(entry.organisation):
                 continue
             yield ResearchLead.from_url(

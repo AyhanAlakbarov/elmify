@@ -9,7 +9,7 @@ of the spend. **Result: not adopted.** `ExaProvider` keeps sending no `category`
   asked twice at `numResults: 15` — once `type: auto` with `excludeDomains` = the aggregator
   denylist (arm `auto`), once with `category: company` and no `excludeDomains` (arm `company`),
   because Exa rejects the two together. The denylist was applied client side to both arms.
-- Recapture set: the local database `tehsil_ladder_tr` (item 6a's run), which holds 4,028 `vgm_tr`
+- Recapture set: the local database `elmify_ladder_tr` (item 6a's run), which holds 4,028 `vgm_tr`
   register rows. "Held" means any registrable domain already in `OrganisationDomain`.
 - Billed cost, read from each response's `costDollars.total`: **$0.072 per arm, $0.144 total**.
 

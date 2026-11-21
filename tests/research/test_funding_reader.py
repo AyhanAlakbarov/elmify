@@ -706,3 +706,142 @@ def test_the_card_of_a_decision_and_of_its_written_row_are_the_same_card(program
     written = award_card(row, list(FundingBenefit.objects.filter(opportunity=row)))
     assert written.amounts == card_of(decision).amounts
     assert card_fill(written) == card_fill(card_of(decision))
+
+
+def test_an_institution_scope_decision_on_a_single_programme_joint_site_attaches_to_the_programme(
+    snapshot,
+):
+    from apps.funding.models import FundingOpportunityProgram
+
+    joint_program = Program.objects.create(
+        institution=None,
+        canonical_key=f"program:{uuid4()}",
+        name="Erasmus Mundus Joint Master in Chemoinformatics+",
+        campus_name="Consortium",
+        city="Strasbourg",
+        country_code="FR",
+        location_key="fr:consortium",
+        degree_level="MASTER",
+        teaching_languages=["English"],
+        duration_months=24,
+        provision_type=Program.ProvisionType.JOINT,
+    )
+    em_lead = ResearchLead.from_url(
+        "https://masterchemoinfo.u-strasbg.fr/scholarships/",
+        source_type="PROGRAM",
+        funding_family="MULTILATERAL",
+        evidence_strength="DIRECT",
+        discovered_by="EACEA_ERASMUS_MUNDUS",
+        one_programme_per_site=True,
+    )
+    decision = _decision(
+        name="Erasmus Mundus Joint Master Scholarship",
+        scope="INSTITUTION",
+        kind="I1_UNIVERSITY_WIDE",
+        tuition="FULL",
+        living="FULL",
+    )
+    opportunity = _write(decision, joint_program, snapshot, lead=em_lead)
+    assert opportunity is not None
+    assert opportunity.scope_type == "PROGRAM"
+    assert opportunity.program_id == joint_program.id
+    assert opportunity.institution_id is None
+    assert opportunity.served is True
+    assert FundingOpportunityProgram.objects.filter(
+        opportunity=opportunity, program=joint_program
+    ).exists()
+
+
+def test_later_undated_overview_page_never_erases_intake_specific_suspension(
+    program, snapshot, other_snapshot
+):
+    from apps.funding.cycle_evidence import to_evidence
+    from apps.funding.models import FundingCycleVerification
+
+    no_quote = "The recruitment of the 2027-2029 student intake will be without scholarship."
+    suspended_decision = _decision(
+        offered="NO",
+        applies_to="2027-2029",
+        quotes=(no_quote,),
+        suspension_quote=no_quote,
+    )
+    first = _write(suspended_decision, program, snapshot)
+    assert first is not None
+    assert first.served is False
+    assert first.suspension_quote == no_quote
+    assert first.suspended_for == "2027-2029"
+
+    # Now a general overview page (`other_snapshot`, different source) states
+    # the scholarship exists in general without naming an intake or publication date.
+    undated_overview = _decision(
+        offered="YES",
+        applies_to="UNSTATED",
+        stated_on="UNSTATED",
+    )
+    second = _write(undated_overview, program, other_snapshot)
+    assert second is not None
+    second.refresh_from_db()
+    assert second.id == first.id
+    assert second.served is False
+    assert second.suspension_quote == no_quote
+    assert second.suspended_for == "2027-2029"
+
+    row_2027 = FundingCycleVerification.objects.get(
+        opportunity=second, intake_start_year=2027
+    )
+    ev_2027 = to_evidence(
+        row_2027.evidence,
+        target_year=2027,
+        cadence=None,
+        page_removed=False,
+        lapsed=False,
+    )
+    assert ev_2027.offered == "NO"
+    assert ev_2027.applies_to == "2027"
+
+
+def test_holder_decision_undated_yes_never_erases_cohort_specific_suspension(
+    snapshot, funder_lead
+):
+    from apps.research.funding_reader import write_holder_decision
+
+    no_quote = "The 2027-2028 call for the Foundation Stipendium is suspended."
+    first = write_holder_decision(
+        _holder_decision(
+            offered="NO",
+            applies_to="2027-2028",
+            quotes=(no_quote,),
+            suspension_quote=no_quote,
+        ),
+        holder_domain="example-foundation.org",
+        holder_name="Example Foundation",
+        lead=funder_lead,
+        source=snapshot.source,
+        snapshot=snapshot,
+    )
+    assert first is not None
+    assert first.served is False
+    assert first.suspension_quote == no_quote
+    assert first.suspended_for == "2027-2028"
+
+    second = write_holder_decision(
+        _holder_decision(
+            offered="YES",
+            applies_to="UNSTATED",
+            stated_on="UNSTATED",
+        ),
+        holder_domain="example-foundation.org",
+        holder_name="Example Foundation",
+        lead=funder_lead,
+        source=snapshot.source,
+        snapshot=snapshot,
+    )
+    assert second is not None
+    second.refresh_from_db()
+    assert second.id == first.id
+    assert second.served is False
+    assert second.suspension_quote == no_quote
+    assert second.suspended_for == "2027-2028"
+
+
+

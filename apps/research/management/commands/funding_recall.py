@@ -22,17 +22,13 @@ import csv
 import re
 from collections import Counter
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from django.core.management.base import BaseCommand, CommandParser
 
 from apps.funding.models import FundingOpportunity, OfficialSourceSnapshot
+from apps.research.corpus import host as _origin
 
 DEFAULT_CSV = Path("docs/research/programme-funding-known-answers.csv")
-
-
-def _origin(url: str) -> str:
-    return (urlsplit(url).hostname or "").casefold().removeprefix("www.")
 
 
 def status_for(pattern: str, programme_url: str) -> str:

@@ -5,7 +5,7 @@ proposes exact quotes that code keeps only when byte-exact on the line. Research
 `.context/research/2026-10-05-typed-value-extraction-architecture.md` (recommends the hybrid, narrow;
 evidence is English/clinical only, so this measurement decides).
 
-**Set-up.** The 1,400 keyed round-1 lines (`~/agent-workspace/tehsil_agent-runs/engine-eval/2026-10-r1/`,
+**Set-up.** The 1,400 keyed round-1 lines (`~/agent-workspace/elmify-runs/engine-eval/2026-10-r1/`,
 key built by GPT-5.6-sol + Claude Sonnet 5.5, Opus referee). Arm A: the slice-1 finders as verified in
 the plan (`2026-10-05-card-reader-1-finders.md`). Arm B: DeepSeek V4.1 Flash on Fireworks (a family not
 in the key), thinking off, strict JSON schema `{L<n>: [{type, quote}]}`, 8 lines of one page per call.

@@ -131,3 +131,42 @@ def test_approved_draft_content_is_never_mutated(agency_a, django_user_model):
         create_draft(student=student, kind=DocumentDraft.Kind.CV, content=_content())
         draft.refresh_from_db()
         assert draft.content == original_content
+
+
+def test_create_draft_saves_the_list_its_digest_and_destination(
+    agency_a, membership_a, program_factory
+):
+    from apps.documents.requirement_list import RequirementList, build_requirements
+
+    built = build_requirements(program_factory())
+    with tenant_scope(agency_a.id):
+        draft = create_draft(
+            student=membership_a,
+            kind=DocumentDraft.Kind.CV,
+            content=_content(),
+            requirements=built,
+            destination_label="MSc Data Science, TU Delft",
+        )
+    draft.refresh_from_db()
+    assert RequirementList.model_validate(draft.requirements) == built
+    assert draft.requirements_digest == built.digest()
+    assert draft.requirement_states == {}
+    assert draft.destination_label == "MSc Data Science, TU Delft"
+    assert draft.is_general is False and draft.application_id is None
+
+
+def test_a_draft_made_without_a_list_stores_null(agency_a, membership_a):
+    with tenant_scope(agency_a.id):
+        draft = create_draft(
+            student=membership_a, kind=DocumentDraft.Kind.CV, content=_content()
+        )
+    assert draft.requirements is None and draft.requirements_digest == ""
+
+
+def test_a_new_draft_starts_with_empty_warnings_and_fixes(agency_a, django_user_model):
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "d-warn")
+        draft = create_draft(student=student, kind=DocumentDraft.Kind.CV, content=_content())
+        assert draft.render_warnings == []
+        assert draft.applied_fixes == []
+

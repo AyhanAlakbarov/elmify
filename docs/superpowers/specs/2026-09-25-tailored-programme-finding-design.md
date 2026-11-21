@@ -228,6 +228,8 @@ student's topic profile (§4.2).
 
 ### 3.3 Narrowing, after the search
 
+> **Amended 2026-10-14** by `2026-10-14-field-ladder-design.md`, §5: steps with "I don't know" and "Something else", research/industry from question 7 — which wins where they differ.
+
 When the slice's results split on the topic labels that differ most among them, the student gets one
 or two questions built from those labels ("We found 40 programmes: some weighted to organic
 synthesis, some to catalysis, some to polymers — which interest you?"). Asked only when the answer
@@ -258,6 +260,8 @@ A thin slice (T10) triggers a targeted run for that slice only; the coverage lin
 still researching 2 areas" rather than a short pack.
 
 ### 4.2 Describing — weighted topic labels
+
+> **Amended 2026-10-14** by `2026-10-14-field-ladder-design.md`, §2–§4: no standard list covers niche fields; labels stay in the programme's own words, linked to Wikidata and OpenAlex Keywords — which wins where they differ.
 
 Read once per programme at ingestion, reused for every student:
 

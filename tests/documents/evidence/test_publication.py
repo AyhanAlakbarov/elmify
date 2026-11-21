@@ -24,8 +24,9 @@ class FakeTransport:
         self.seen.append(url)
         for prefix, response in self._responses.items():
             if url.startswith(prefix):
-                return response
-        return 404, {}
+                status, body = response
+                return status, body, {}
+        return 404, {}, {}
 
 
 def _crossref_transport():

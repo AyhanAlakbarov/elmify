@@ -126,28 +126,24 @@ class Formality:
 def _load_formalities() -> dict[str, Formality]:
     """Read the formalities table.
 
-    Three languages, not five. The task plan proposed en/fr/es/pt/de rows
-    whose formulas appear nowhere in the rules they cited -- the "de" row cited
-    M-084, which is an Ireland study-visa rule, and M-005 is an explicit
-    finding that DAAD prescribes no formalities at all. Each row here carries
-    wording its own rule states verbatim, and a test checks that against
+    Four languages (`en`, `fr`, `es`, `pt`), not five. The task plan proposed a
+    "de" row citing M-084, which is an Ireland study-visa rule, and M-005 is an
+    explicit finding that DAAD prescribes no formalities at all. Each row here
+    carries wording its own rule states verbatim, and a test checks that against
     letter-shape-rules.csv.
 
-    French is the gap that matters: M-025 gives the salutation ("Madame,
-    Monsieur,") and says a formule de politesse is obligatory, but its source
-    deck -- fetched and read, 2026-09-22 -- names no closing, it links out for
-    one. A French formal letter therefore renders as an essay until a sourced
-    closing exists, which is the spec's own rule for a language with no row.
+    French (`fr`, M-025) pairs the salutation ("Madame, Monsieur,") from Campus
+    France Minsk's guidance with the formule de politesse ("Je vous prie
+    d'agréer, Madame, Monsieur, mes salutations distinguées.") from Université
+    de Montpellier SCUIO-IP's poursuite-d'études sheets.
 
-    Three rows, and after review 3 checked each against its primary source,
-    ONE of them is usable. "Presente" was moved out of the Spanish salutation:
-    UNAM's own template (fetched) puts it on the line under the recipient,
-    inside the addressee block, and has no salutation -- so `es` joins `pt` as
-    a row with a sourced closing and no sourced opening, and both fall back.
-    What ships is English, from one Dutch university's psychology form. Read
-    that as the sample it is: three institutions were standing in for three
-    world languages, and the spec's section 10 already says the research is a
-    sample. The rows stay in the file as the record of where each gap is.
+    Two rows (`en`, `fr`) are complete and usable; two (`es`, `pt`) carry a
+    sourced closing and no separate salutation line. "Presente" was moved out of
+    the Spanish salutation because Mexican university templates (UNAM M-034,
+    UNICH) put it on the line under the recipient inside the addressee block and
+    have no separate salutation; Brazilian university templates (UFMG M-101) do
+    the same. Both `es` and `pt` therefore fall back to the essay template, and
+    stay in the file as the record of where each gap is.
     """
     with _FORMALITIES_CSV.open(encoding="utf-8") as handle:
         return {
@@ -476,15 +472,25 @@ def _check_question_limits(
     """
     mapped = artifact.field_mapped or {}
     for question in questions or ():
+        if not isinstance(question, dict) or not question.get("id"):
+            continue
         question_id = str(question["id"])
         text = str(mapped.get(question_id, ""))
         max_words = question.get("max_words")
-        if max_words is not None and len(text.split()) > int(cast(int, max_words)):
+        if (
+            isinstance(max_words, int)
+            and not isinstance(max_words, bool)
+            and len(text.split()) > max_words
+        ):
             raise PreflightBlocked(
                 f"{question_id}: {len(text.split())} words exceeds {max_words}"
             )
         max_chars = question.get("max_chars_incl_spaces")
-        if max_chars is not None and len(text) > int(cast(int, max_chars)):
+        if (
+            isinstance(max_chars, int)
+            and not isinstance(max_chars, bool)
+            and len(text) > max_chars
+        ):
             raise PreflightBlocked(f"{question_id}: {len(text)} characters exceeds {max_chars}")
 
 
@@ -520,9 +526,9 @@ def _check_letter_constraint(
     # Fail closed on anything this function cannot measure, matching
     # render.py's _CHECKERS branch: "We cannot verify it, so we will not
     # pretend the artefact satisfies it." Returning None here instead would
-    # silently pass every BINDING key it does not branch on -- "font", and
-    # every CV-engine key (max_pages, max_bytes, language, prohibited_content,
-    # required_fields) -- reporting compliance that was never checked. That is
+    # silently pass every BINDING key it does not branch on -- every CV-engine
+    # key (language, prohibited_content, required_fields, photo_allowed and the
+    # rest) -- reporting compliance that was never checked. That is
     # the same defect class as an unsatisfiable rule, in the more dangerous
     # direction: a permanent block is visible, a false pass is not.
     return LetterConstraintViolation(

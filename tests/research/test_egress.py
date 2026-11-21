@@ -652,3 +652,40 @@ def test_data_file_types_do_not_widen_what_a_vendor_page_may_be() -> None:
         assert usable(content_type, b"a,b\n" * 2_000, 200) == (
             False, f"content_type:{content_type}"
         )
+
+
+def test_a_search_call_waits_out_a_throttle_and_tries_again(public_dns) -> None:
+    """Exa's 10 QPS is per team, shared by every tap and sweep: a 429 is "later",
+    so a caller that opts in waits (Retry-After honoured) instead of failing."""
+    answers = [FakeResponse(429, {"Retry-After": "1"}), FakeResponse(503), _JsonBody(
+        "application/json"
+    )]
+    slept: list[float] = []
+    body = fetch_json_api(
+        "https://api.exa.ai/search", payload={"query": "q"}, headers={},
+        transport=lambda *_a, **_k: answers.pop(0), retry_throttled=True, sleep=slept.append,
+    )
+    assert body == {"results": {"bindings": []}}
+    assert len(slept) == 2 and slept[0] == 1.0
+
+
+def test_a_throttle_that_lasts_is_still_a_refusal(public_dns) -> None:
+    slept: list[float] = []
+    with pytest.raises(SourceBlocked, match="HTTP 429"):
+        fetch_json_api(
+            "https://api.exa.ai/search", payload={"query": "q"}, headers={},
+            transport=lambda *_a, **_k: FakeResponse(429), retry_throttled=True,
+            sleep=slept.append,
+        )
+    assert len(slept) == 3  # _RETRY_ATTEMPTS waits, then the refusal
+
+
+def test_a_caller_that_did_not_opt_in_is_refused_at_once(public_dns) -> None:
+    """The card engine owns its own retry and its wall-clock deadline."""
+    slept: list[float] = []
+    with pytest.raises(SourceBlocked, match="HTTP 429"):
+        fetch_json_api(
+            "https://openrouter.ai/api/v1/chat/completions", payload={}, headers={},
+            transport=lambda *_a, **_k: FakeResponse(429), sleep=slept.append,
+        )
+    assert slept == []

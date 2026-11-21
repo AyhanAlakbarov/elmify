@@ -60,8 +60,27 @@ def word_limit_band(prompt: Any) -> str:
 
 
 def cluster_key(prompt: Any, *, discipline: str, scholarship_present: bool) -> tuple[object, ...]:
-    """The reuse key for a resolved prompt. ``discipline``/``scholarship_present``
-    come from Program/FundingOpportunity, never from ApplicationPrompt itself."""
+    """The reuse key for a resolved prompt.
+
+    ``scholarship_present`` comes from FundingOpportunity. ``discipline`` does
+    NOT come from Program -- this docstring used to say it did, and that is the
+    whole defect: `Program` has no discipline field, so a caller reads nothing
+    and invents a string, and two prompts for the same subject cluster only if
+    two callers happened to spell it the same way. Reuse then silently does not
+    happen, which costs tokens rather than correctness, so nothing fails.
+
+    The engine design names the fix and it is deliberately NOT a plain column:
+    "free text would make cluster keys never match", so the field must be the
+    UNESCO **ISCED-F narrow field** (11 broad / 29 narrow / ~80 detailed),
+    which this repo's own research files under adopt-not-invent -- it is
+    published, and encoding it from memory would be the same fabrication the
+    formalities table is pinned against. The producer is designed elsewhere
+    (the funding-search master design writes ISCED-F-derived tags at
+    ingestion). So the order is: adopt the table, wire the producer, add the
+    column, type this parameter against it. A bare CharField added first is
+    the free text the design rules out, on a function no production path calls
+    yet.
+    """
     return (
         discipline,
         prompt.structure,

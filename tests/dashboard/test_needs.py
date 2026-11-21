@@ -19,12 +19,12 @@ NOW = timezone.now()
 def _card(**overrides) -> Card:
     fields = dict(
         application_id=uuid4(), title="TUM M.Sc.", institution="TUM", country="DE",
-        column=Column.TO_START, created_at=NOW, deadline=None, deadline_local=None,
+        column=Column.TO_START, created_at=NOW, deadline=None, deadline_text="",
         days_left=None, documents=(0, 0), answers=(0, 0), funding=(),
-        funding_outcome_line="", funds=(), needs=(), gap="", fee=None, fee_currency="",
+        funding_outcome_line="", gap="", fee=None, fee_currency="", fee_text="",
         badges=(), missing=(), outcome_line="", offer=None,
-        button=Button("Start application", "/start", "post"), has_portal=True,
-        portal_url="https://campus.tum.de/apply", kit_url="/kit",
+        button=Button("Apply to TUM M.Sc.", "/start", "post", apply=True), has_portal=True,
+        portal_url="https://campus.tum.de/apply", kit_url="",
         documents_url="/student/documents/#application-x", outcome_url="", remove_url="",
         portal_record_url="", outcome="", conditions=(),
     )
@@ -49,13 +49,14 @@ def test_dated_items_by_deadline_then_undated_newest_first() -> None:
 def test_each_card_gives_its_items_with_one_button() -> None:
     card = _card(
         deadline=NOW + timedelta(days=5), missing=("Transcript",), answers=(10, 12),
-        fee=75, fee_currency="EUR",
+        fee=75, fee_currency="EUR", fee_text="75 EUR",
     )
     items = items_from_cards([card], now=NOW, answer_url="/answer")
     by_button = {item.button: item for item in items}
     assert by_button["Submit document"].text == "Transcript — needed for TUM M.Sc."
     assert by_button["Answer"].text == "2 answers missing for TUM M.Sc."
-    assert by_button["Start application"].method == "post"
+    assert by_button["Apply to TUM M.Sc."].method == "post"
+    assert by_button["Apply to TUM M.Sc."].apply
     assert by_button["Open portal"].url == "https://campus.tum.de/apply"
 
 
@@ -162,7 +163,7 @@ def test_an_interview_item_shows_its_time_and_sorts_by_it(agency_a, membership_a
         Notification.objects.create(
             tenant=agency_a, recipient=membership_a, roadmap_item=later, message="Later item"
         )
-        items = items_for(membership_a, board=Board(columns=()))
+        items = items_for(membership_a, board=Board(lanes=(), done=()))
     assert items[0].text == (
         f"ethz.ch invited you to an interview on {as_utc:%d %b %Y}, 09:00 UTC. "
         "Check the time and reply."
@@ -183,7 +184,7 @@ def test_notifications_carry_their_button_and_acknowledge(agency_a, membership_a
             message="Your Microsoft mailbox connection stopped working.",
             action=Notification.Action.RECONNECT,
         )
-        items = items_for(membership_a, board=Board(columns=()))
+        items = items_for(membership_a, board=Board(lanes=(), done=()))
     assert (items[0].button, items[0].url) == ("Reconnect", "/student/settings/mailbox/")
     assert items[0].acknowledge_url == f"/student/notifications/{note.id}/acknowledge/"
 
@@ -197,38 +198,88 @@ def test_an_unpaired_extension_asks_to_pair(agency_a, membership_a, pack) -> Non
     assert ("Pair", "/student/settings/extension/") in [(i.button, i.url) for i in items]
 
 
-@pytest.mark.parametrize("days, words", [(1, "1 day left"), (2, "2 days left"), (0, "Today")])
+@pytest.mark.parametrize("days, words", [(1, "1 day left"), (2, "2 days left"), (0, "0 days left")])
 def test_the_card_counts_days_in_english(days, words) -> None:
     from django.template.loader import render_to_string
 
     body = render_to_string(
-        "student/_card.html", {"card": _card(deadline_local=NOW, days_left=days)}
+        "student/_card.html", {"card": _card(deadline_text="x", days_left=days)}
     )
     assert words in body
 
 
-def test_missing_letters_are_one_row_that_opens_the_writer() -> None:
-    """Found on the 2026-10-25 showcase: thirteen "Motivation letter — needed for"
-    rows, each with a Submit document button for a letter not yet written."""
-    first = _card(missing=("Motivation letter",), deadline=NOW + timedelta(days=9))
-    second = _card(missing=("Motivation letter", "Transcript"), deadline=NOW + timedelta(days=3))
-    items = items_from_cards([first, second], now=NOW, answer_url="/a", group_letters=True)
-    letters = [item for item in items if item.button == "Write letters"]
-    assert len(letters) == 1
-    assert letters[0].text == "Motivation letters still needed for 2 applications"
-    assert letters[0].url == "/student/writing/#letters"
-    assert letters[0].deadline == NOW + timedelta(days=3)
-    assert [item.button for item in items if "Transcript" in item.text] == ["Submit document"]
+def test_a_fee_with_no_portal_url_gives_no_open_portal_item_and_no_kit_fallback() -> None:
+    card = _card(
+        deadline=NOW + timedelta(days=30), fee=75, fee_currency="EUR", fee_text="75 EUR",
+        portal_url="",
+    )
+    items = items_from_cards([card], now=NOW, answer_url="")
+    assert "Open portal" not in [i.button for i in items]
 
 
-def test_one_missing_letter_links_to_its_own_workspace() -> None:
-    card = _card(missing=("Motivation letter",))
-    [item] = items_from_cards([card], now=NOW, answer_url="/a", group_letters=True)
-    assert item.button == "Write letter"
-    assert item.url == f"/student/writing/letters/{card.application_id}/"
+def test_only_the_counselor_gets_a_kit_url() -> None:
+    from apps.dashboard.routes import action_url
+
+    student_id, application_id = uuid4(), uuid4()
+    assert action_url(False, "kit", student_id, application_id) == ""
+    assert action_url(True, "kit", student_id, application_id).endswith(
+        f"/applications/{application_id}/answers/"
+    )
 
 
-def test_a_counsellor_keeps_one_row_per_application() -> None:
-    cards = [_card(missing=("Motivation letter",)), _card(missing=("Motivation letter",))]
-    items = items_from_cards(cards, now=NOW, answer_url="/a")
-    assert [item.button for item in items] == ["Submit document", "Submit document"]
+def test_the_card_links_the_answers_page_only_when_it_has_a_kit_url() -> None:
+    from django.template.loader import render_to_string
+
+    without = render_to_string("student/_card.html", {"card": _card(kit_url="")})
+    with_link = render_to_string("student/_card.html", {"card": _card(kit_url="/k/")})
+    assert "/k/" not in without and "Answers we" not in without
+    assert 'href="/k/"' in with_link and "Answers we" in with_link
+
+
+def test_a_closed_card_asks_for_nothing() -> None:
+    card = _card(
+        closed=True, deadline=NOW + timedelta(days=1), missing=("Transcript",), answers=(0, 2),
+    )
+    assert items_from_cards([card], now=NOW, answer_url="/answer") == []
+
+
+def test_a_need_carries_the_cards_own_deadline_text() -> None:
+    card = _card(
+        deadline=NOW + timedelta(days=3), deadline_text="16 Oct, 23:59 Los Angeles time",
+        missing=("Transcript",),
+    )
+    items = items_from_cards([card], now=NOW, answer_url="/answer")
+    assert {item.deadline_text for item in items} == {"16 Oct, 23:59 Los Angeles time"}
+
+
+@pytest.mark.django_db
+def test_needs_come_from_open_lanes_only(agency_a, membership_a, pack) -> None:
+    from apps.portals.models import ApplicationLink
+
+    programme, award = pack
+    with tenant_scope(agency_a.id):
+        p = add_card(
+            agency_a, membership_a, programme, state="SUBMITTED", outcome="WITHDRAWN",
+            outcome_recorded_at=NOW,
+        )
+        a = add_card(
+            agency_a, membership_a, award, deadline=NOW + timedelta(days=3),
+            deadline_timezone="Europe/Berlin",
+        )
+        ApplicationLink.objects.create(tenant=agency_a, from_app=a, to_app=p)
+        board = board_for(membership_a, now=NOW)
+        items = items_for(membership_a, board=board, now=NOW)
+    assert [lane.title for lane in board.done] == ["TUM — M.Sc. Informatics (Germany)"]
+    assert not [item for item in items if "DAAD Study Scholarship" in item.text]
+
+
+@pytest.mark.django_db
+def test_a_new_student_without_a_profile_is_prompted_to_complete_it(
+    agency_a, membership_a
+) -> None:
+    with tenant_scope(agency_a.id):
+        items = items_for(membership_a, board=Board(lanes=(), done=()), now=NOW)
+    assert any(
+        item.button == "Complete your profile" and item.url == "/student/profile/"
+        for item in items
+    )

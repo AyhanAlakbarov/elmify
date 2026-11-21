@@ -231,10 +231,6 @@ _UNTRUSTED = (
 )
 
 
-class VetoSkipped(RuntimeError):
-    pass
-
-
 def _pinned(served: str) -> bool:
     """The reply names the pinned model: `typesafe/jev-1.13.0` answers for
     `jev-1.13`; `jev-1.130` and `jev-2.0.0` do not."""

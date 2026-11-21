@@ -224,14 +224,38 @@ def test_an_unknown_inbox_kind_is_refused(settings, student_client) -> None:
     assert response.json() == {"reason": "unknown_kind"}
 
 
-def test_connect_without_an_oauth_client_says_so_instead_of_redirecting(
-    student_client, settings
+@pytest.mark.django_db
+def test_connecting_a_mailbox_resumes_waiting_cvs(
+    student_client, fake_exchange, monkeypatch, django_capture_on_commit_callbacks
 ) -> None:
-    settings.GOOGLE_OAUTH_CLIENT_ID = ""
-    client, _student = student_client
-    response = client.get(
-        reverse("mailbox-connect", args=["GOOGLE"]) + "?tier=CONTENT",
-        HTTP_ACCEPT="text/html",
+    from uuid import uuid4
+
+    from apps.documents import cv_jobs
+    from apps.portals.models import Application
+
+    sent = []
+    monkeypatch.setattr(
+        cv_jobs, "enqueue_document_work", lambda message, **_kw: sent.append(message)
     )
-    assert response.status_code in {302, 400}
-    assert "accounts.google.com" not in response.get("Location", "")
+    client, student = student_client
+    with tenant_scope(student.tenant_id):
+        waiting = Application.objects.create(
+            tenant_id=student.tenant_id,
+            student=student,
+            program_id=uuid4(),
+            cv_status=Application.CVStatus.WAITING_EMAIL,
+        )
+    state = signing.dumps(
+        {"membership": str(student.id), "provider": "GOOGLE", "tier": "CONTENT"}
+    )
+
+    with django_capture_on_commit_callbacks(execute=True):
+        response = client.get(
+            reverse("mailbox-callback", args=["GOOGLE"]) + f"?code=c&state={state}"
+        )
+
+    assert response.status_code == 302
+    assert [(m.action, m.application_id) for m in sent] == [("generate", waiting.id)]
+    with tenant_scope(student.tenant_id):
+        waiting.refresh_from_db()
+    assert waiting.cv_status == Application.CVStatus.QUEUED

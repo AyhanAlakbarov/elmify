@@ -17,8 +17,10 @@ the flagged path, not this one.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import combinations
 from uuid import UUID
 
 from django.utils import timezone
@@ -28,10 +30,15 @@ from apps.tenancy.models import Membership
 
 from .approval import ApprovalBlocked, mark_ready
 from .audit import record_event
-from .letter_gates import LetterGateViolation
+from .letter_gates import (
+    LetterGateViolation,
+    check_ai_style,
+    check_first_person_plural,
+    check_language_mismatch,
+)
 from .letter_schemas import ClaimKind, LetterContent
 from .letter_verification import LetterClaimVerdict, verify_letter_claims
-from .letters import is_letter_blocked
+from .letters import inputs_for_programme, is_letter_blocked
 from .models import DocumentDraft, NarrativeInput, VerifiedFact
 from .research_fit.service import recheck_research_fit
 from .verification import _SPEC_BY_CATEGORY, Verdict, _details_conflict, _fact_payload, _identity
@@ -65,27 +72,26 @@ def find_conflicting_facts(facts: dict[UUID, VerifiedFact]) -> frozenset[UUID]:
     module's gates fail closed rather than silently letting an
     unidentifiable pair pass uncompared.
     """
-    by_category: dict[str, list[tuple[UUID, VerifiedFact]]] = {}
+    by_category: defaultdict[str, list[tuple[UUID, VerifiedFact]]] = defaultdict(list)
     for fact_id, fact in facts.items():
-        by_category.setdefault(fact.category, []).append((fact_id, fact))
+        by_category[fact.category].append((fact_id, fact))
 
     conflicting: set[UUID] = set()
     for category, group in by_category.items():
         spec = _SPEC_BY_CATEGORY.get(category)
-        for i, (id_a, fact_a) in enumerate(group):
-            for id_b, fact_b in group[i + 1 :]:
-                payload_a, payload_b = _fact_payload(fact_a), _fact_payload(fact_b)
-                if spec is not None:
-                    identity_a, identity_b = _identity(spec, payload_a), _identity(spec, payload_b)
-                    if any(identity_a) or any(identity_b):
-                        if identity_a == identity_b and _details_conflict(
-                            spec, payload_a, payload_b
-                        ):
-                            conflicting.update((id_a, id_b))
-                        continue
-                shared_keys = set(payload_a) & set(payload_b)
-                if any(payload_a[key] != payload_b[key] for key in shared_keys):
-                    conflicting.update((id_a, id_b))
+        for (id_a, fact_a), (id_b, fact_b) in combinations(group, 2):
+            payload_a, payload_b = _fact_payload(fact_a), _fact_payload(fact_b)
+            if spec is not None:
+                identity_a, identity_b = _identity(spec, payload_a), _identity(spec, payload_b)
+                if any(identity_a) or any(identity_b):
+                    if identity_a == identity_b and _details_conflict(
+                        spec, payload_a, payload_b
+                    ):
+                        conflicting.update((id_a, id_b))
+                    continue
+            shared_keys = set(payload_a) & set(payload_b)
+            if any(payload_a[key] != payload_b[key] for key in shared_keys):
+                conflicting.update((id_a, id_b))
     return frozenset(conflicting)
 
 
@@ -242,10 +248,18 @@ def mark_letter_ready(
     # plan are plain stand-ins that only set the fields their own test
     # exercises. Real ApplicationPrompt rows always carry immigration.
     immigration = getattr(prompt, "immigration", False)
+    doc_language = getattr(prompt, "document_language", content.language) or content.language
+    inputs = inputs_for_programme(inputs, prompt.programme_id)
     claim_verdicts = verify_letter_claims(
         content, facts=facts, inputs=inputs, immigration=immigration
     )
-    if is_letter_blocked(claim_verdicts, gate_violations, immigration=immigration):
+    effective_gate_violations = (
+        *gate_violations,
+        *check_language_mismatch(content, document_language=doc_language),
+        *check_first_person_plural(content),
+        *check_ai_style(content),
+    )
+    if is_letter_blocked(claim_verdicts, effective_gate_violations, immigration=immigration):
         raise ApprovalBlocked("letter carries a blocking claim verdict or gate violation")
 
     flags = compute_letter_flags(
@@ -278,7 +292,13 @@ def mark_letter_ready(
     # content (Plan A's approval.py:verdicts_for, now kind-aware for letter
     # drafts) -- never from anything a caller asserts. Two independent
     # recomputations, then: this function's own, against `content` and the
-    # ledger it was handed (the only one that is immigration-aware), and
-    # mark_ready's, against the locked row under lock. The second catches a
-    # `content` argument that does not match what was actually stored.
-    return mark_ready(document=document, accepted_by=accepted_by)
+    # ledger it was handed, and mark_ready's, against the locked row and live
+    # ledger under lock (both immigration-aware). The second catches a
+    # `content` argument that does not match what was actually stored, or a
+    # fact whose confirmation was withdrawn between the two checks.
+    return mark_ready(
+        document=document,
+        accepted_by=accepted_by,
+        immigration=immigration,
+        _via_mark_letter_ready=True,
+    )

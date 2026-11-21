@@ -15,7 +15,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-22-funding-search-engine-master-design.md` — read §3 (principles), §8.1–§8.7 (the reader), §9.2 "Whose deadline?" and the nomination paragraph (the contact), §10.2–§10.4 (facts, gates, the card), §15 (measurement) and decision-log row 39. Then `docs/superpowers/specs/2026-09-22-typed-decisions-and-multilingual-sources-design.md` §2 (what it leaves out), §3.1a (how questions are written), §4 (D4, D5), §9 (security), §13 ("Jev for deadlines, amounts, dates") — and the two 2026-09-23 plans named above, whose interfaces Part B consumes unchanged.
 
-**Base branch:** `master` at `115c752` (2026-09-25). Work on `claude/award-card`: `git fetch origin master && git switch -c claude/award-card origin/master`. Test database: `POSTGRES_DB=tehsil_card` — never share a test database between sessions (CLAUDE.md).
+**Base branch:** `master` at `115c752` (2026-09-25). Work on `claude/award-card`: `git fetch origin master && git switch -c claude/award-card origin/master`. Test database: `POSTGRES_DB=elmify_card` — never share a test database between sessions (CLAUDE.md).
 
 ---
 
@@ -61,7 +61,7 @@ The brief asks for this explicitly, so it is stated once here and restated at th
 - **Tenancy of everything added:** every column and the one new table (`FundingRequiredDocument`, Task 8) are **shared catalogue** — an award's amount or documents are the same fact for every agency — under `shared_catalog_select` + `catalog_ingestion_write`, the pattern of `apps/funding/migrations/0030_program_awarding_institutions_rls.py`. No student data is ever written to any of them.
 - **Migration numbers are never hard-coded.** `funding`'s leaf on master is `0048_merge_20260925_0838` today; generate with `makemigrations funding --name <name>`, and before committing run `ls apps/funding/migrations | sort | tail -4`. Two leaves means master moved: run `uv run python manage.py makemigrations funding --merge` and commit the merge migration with yours (the 2026-09-15 collision in CLAUDE.md is what this prevents).
 - **Never run `ruff format`** — the repo is lint-only and it churns 26 files.
-- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_card uv run pytest`, `uv run python manage.py makemigrations --check --dry-run` — all clean before the commit.
+- **After every task:** `uv run ruff check apps config tests scripts`, `uv run mypy apps config`, `POSTGRES_DB=elmify_card uv run pytest`, `uv run python manage.py makemigrations --check --dry-run` — all clean before the commit.
 
 ## Deliberately not in this plan, and where each belongs
 
@@ -244,7 +244,7 @@ def test_every_evidence_row_names_a_real_currency_and_is_reviewable():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_card_fields.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_card_fields.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.research.card_fields'`
 
 - [ ] **Step 3: Write the data file**
@@ -501,7 +501,7 @@ def duration_months(text: str, unit: str) -> int | None:
 
 - [ ] **Step 5: Run test to verify it passes**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_card_fields.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_card_fields.py -v`
 Expected: PASS (all parametrised cases)
 
 - [ ] **Step 6: The after-every-task checks, then commit**
@@ -639,7 +639,7 @@ def test_the_real_anthropic_sdk_accepts_a_verdict_with_the_cards_fields():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_funding_judge_card.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_funding_judge_card.py -v`
 Expected: FAIL — `ImportError: cannot import name 'AmountStated'`
 
 - [ ] **Step 3: Add the closed lists and `AmountStated`**
@@ -738,7 +738,7 @@ _MAX_OUTPUT_TOKENS = 10_000
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_funding_judge_card.py tests/research/test_funding_judge.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_funding_judge_card.py tests/research/test_funding_judge.py -v`
 Expected: PASS. `test_the_two_openai_readings_share_an_identical_prefix` still passes: the prefix changed for every reading at once.
 
 - [ ] **Step 8: Checks, then commit**
@@ -879,7 +879,7 @@ def test_an_unagreed_award_keeps_its_card_but_names_nothing_unconfirmed():
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_funding_judge_card.py -v -k "card or figure or currency or semester or timing or states_nothing or durations or unagreed"`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_funding_judge_card.py -v -k "card or figure or currency or semester or timing or states_nothing or durations or unagreed"`
 Expected: FAIL — `ImportError: cannot import name 'DecidedAmount'`
 
 - [ ] **Step 3: Add `DecidedAmount` and the card fields on `FundingDecision`**
@@ -1107,7 +1107,7 @@ and in the returned `FundingDecision(...)`, after `disputed_conditions=...`:
 
 - [ ] **Step 6: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_funding_judge_card.py tests/research/test_funding_judge.py tests/research/test_funding_reader.py tests/research/test_pipeline_funding.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_funding_judge_card.py tests/research/test_funding_judge.py tests/research/test_funding_reader.py tests/research/test_pipeline_funding.py -v`
 Expected: PASS — the existing judge and writer tests are unchanged, because a verdict with no card fields yields an empty card and no new `disputed` name.
 
 - [ ] **Step 7: Checks, then commit**
@@ -1258,7 +1258,7 @@ def test_the_card_columns_are_readable_with_no_tenant_and_writable_by_nobody_els
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/funding/test_award_card_columns.py tests/research/test_award_card_rls.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/funding/test_award_card_columns.py tests/research/test_award_card_rls.py -v`
 Expected: FAIL — `TypeError: FundingOpportunity() got unexpected keyword arguments: 'tuition', ...`
 
 - [ ] **Step 3: Add the fields**
@@ -1345,7 +1345,7 @@ Expected: one new file whose `dependencies` names the leaf you just listed, with
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/funding/test_award_card_columns.py tests/research/test_award_card_rls.py tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/funding/test_award_card_columns.py tests/research/test_award_card_rls.py tests/tenancy/test_database_isolation.py -v`
 Expected: PASS
 
 - [ ] **Step 6: Checks, then commit**
@@ -1471,7 +1471,7 @@ def test_the_card_of_a_decision_and_of_its_written_row_are_the_same_card(program
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_funding_reader.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_funding_reader.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.funding.card'`
 
 - [ ] **Step 3: Write `apps/funding/card.py`**
@@ -1765,7 +1765,7 @@ def _write_amount(
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_funding_reader.py tests/research/test_pipeline_funding.py tests/research/test_funding_review.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_funding_reader.py tests/research/test_pipeline_funding.py tests/research/test_funding_review.py -v`
 Expected: PASS
 
 - [ ] **Step 6: Checks, then commit**
@@ -1944,7 +1944,7 @@ def test_a_packed_award_carries_its_card(profile):
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/funding/test_card.py tests/funding/test_facts.py tests/funding/test_pack_awards.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/funding/test_card.py tests/funding/test_facts.py tests/funding/test_pack_awards.py -v`
 Expected: `test_card.py` PASSES (Task 5 wrote the module); the facts tests FAIL with `TypeError: program_facts() got an unexpected keyword argument 'durations'`; the pack test FAILS with `TypeError: ... unexpected keyword argument 'card'`.
 
 - [ ] **Step 3: The facts**
@@ -2072,7 +2072,7 @@ In `apps/research/spine.py`, in the `FundingOpportunityProgram` loop, add `"oppo
 
 - [ ] **Step 6: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/funding tests/research/test_funding_reader.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/funding tests/research/test_funding_reader.py -v`
 Expected: PASS, including `tests/funding/test_spine.py` and `test_affordability.py` unchanged.
 
 - [ ] **Step 7: Checks, then commit**
@@ -2243,7 +2243,7 @@ def test_three_live_readings_copy_a_monthly_stipend_and_its_duration():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_funding_yield.py tests/research/test_card_check.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_funding_yield.py tests/research/test_card_check.py -v`
 Expected: FAIL — `TypeError: Tally.record() got an unexpected keyword argument 'page_url'`, and `CommandError: Unknown command: 'card_check'`
 
 - [ ] **Step 3: The tallies**
@@ -2401,7 +2401,7 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_funding_yield.py tests/research/test_card_check.py tests/research/test_funding_judge_card.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_funding_yield.py tests/research/test_card_check.py tests/research/test_funding_judge_card.py -v`
 Expected: PASS (the live test is excluded by the default `-m 'not live'`)
 
 - [ ] **Step 6: Checks, then commit**
@@ -2504,7 +2504,7 @@ def test_a_required_document_is_shared_catalogue_under_a_real_policy(runtime_con
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_award_card_rls.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_award_card_rls.py -v`
 Expected: FAIL — `ImportError: cannot import name 'FundingRequiredDocument'`
 
 - [ ] **Step 3: The model and the columns**
@@ -2608,7 +2608,7 @@ In `tests/tenancy/test_database_isolation.py`, add `"funding_fundingrequireddocu
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_award_card_rls.py tests/tenancy/test_database_isolation.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_award_card_rls.py tests/tenancy/test_database_isolation.py -v`
 Expected: PASS
 
 - [ ] **Step 6: Checks, then commit**
@@ -2761,7 +2761,7 @@ If `page_sentences` on master returns the heading as its own `Sentence` first (r
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_card_questions.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_card_questions.py -v`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.research.card_questions'`
 
 - [ ] **Step 3: Write `card_questions.py` (documents half)**
@@ -2894,7 +2894,7 @@ def write_award_documents(
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_card_questions.py tests/research/test_funding_reader.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_card_questions.py tests/research/test_funding_reader.py -v`
 Expected: PASS
 
 - [ ] **Step 6: Checks, then commit**
@@ -3051,7 +3051,7 @@ def test_a_read_card_reports_its_documents_and_its_contact():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research/test_card_questions.py tests/research/test_card_fields.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research/test_card_questions.py tests/research/test_card_fields.py -v`
 Expected: FAIL — `ImportError: cannot import name 'CONTACT_BAR'`
 
 - [ ] **Step 3: The contact half of `card_questions.py`**
@@ -3406,7 +3406,7 @@ Append a pipeline test to `tests/research/test_pipeline_funding.py` following th
 
 - [ ] **Step 7: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/research tests/funding -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/research tests/funding -v`
 Expected: PASS, including the Uzbek-apostrophe `on_line` case (it passes only because reader-plan Task 3's `normalize` is on master — if it fails, Part B was started too early).
 
 - [ ] **Step 8: Checks, then commit**
@@ -3498,7 +3498,7 @@ Then, in the same file, every existing test that expects its award in `pack.awar
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/funding/test_card.py tests/funding/test_pack_awards.py -v`
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/funding/test_card.py tests/funding/test_pack_awards.py -v`
 Expected: FAIL — `ImportError: cannot import name 'deadline_state'`
 
 - [ ] **Step 3: `deadline_state`**
@@ -3571,7 +3571,7 @@ and in `build_pack`'s award loop, directly after the `NOT_ELIGIBLE` / `ELIGIBLE_
 
 - [ ] **Step 5: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_card uv run pytest tests/funding tests/research/test_spine.py -v` (and `tests/funding/test_spine.py`)
+Run: `POSTGRES_DB=elmify_card uv run pytest tests/funding tests/research/test_spine.py -v` (and `tests/funding/test_spine.py`)
 Expected: PASS. If `test_spine`'s end-to-end award is now excluded as `CARD_INCOMPLETE`, stop: either item 11's evidence is not reaching `award_facts`, or the spine's fixture award states no amount — fix the cause, never the assertion.
 
 - [ ] **Step 6: Checks, then commit**
@@ -3624,7 +3624,7 @@ Write `docs/superpowers/research/<date>-award-card-gate.md` with: the commit mea
 - [ ] **Step 5: The live test, once**
 
 ```bash
-POSTGRES_DB=tehsil_card uv run pytest -m live tests/research/test_funding_judge_card.py -v
+POSTGRES_DB=elmify_card uv run pytest -m live tests/research/test_funding_judge_card.py -v
 ```
 
 Record pass or fail in the gate note. A failure here with a passing hand check means the question reads German figures differently from the corridor's pages — worth a line, not a stop.

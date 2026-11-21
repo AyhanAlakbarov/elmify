@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- **Work in the worktree `.claude/worktrees/erasure-console`, on branch `claude/erasure-console`.** The main checkout at `/home/orkhan/Desktop/tehsil_agent` holds unrelated uncommitted changes and must not be touched.
-- **Set `POSTGRES_DB` to a name unique to this worktree before running tests:** `export POSTGRES_DB=tehsil_erasure_console`. The default `tehsil` produces the shared `test_tehsil` database, which wedges when another session runs tests at the same time.
+- **Work in the worktree `.claude/worktrees/erasure-console`, on branch `claude/erasure-console`.** The main checkout at `/home/orkhan/Desktop/elmify` holds unrelated uncommitted changes and must not be touched.
+- **Set `POSTGRES_DB` to a name unique to this worktree before running tests:** `export POSTGRES_DB=elmify_erasure_console`. The default `elmify` produces the shared `test_elmify` database, which wedges when another session runs tests at the same time.
 - **Never run `ruff format`.** This repository is lint-only; `ruff format` rewrites 26 unrelated files.
 - **The full gate, exactly as CI runs it** (`.github/workflows/ci.yml`):
   ```
@@ -95,7 +95,7 @@ def test_terminal_states_have_no_exit(agency_a, membership_a, terminal):
 - [ ] **Step 2: Run the tests to verify they fail**
 
 ```bash
-export POSTGRES_DB=tehsil_erasure_console
+export POSTGRES_DB=elmify_erasure_console
 uv run pytest tests/audit/test_deletion.py -q -k "cancelled or terminal"
 ```
 
@@ -965,7 +965,7 @@ Claude-Session: https://claude.ai/code/session_01LgxcordBdyPJUPX3sahrKP"
 - [ ] **Step 1: Run every check CI runs**
 
 ```bash
-export POSTGRES_DB=tehsil_erasure_console
+export POSTGRES_DB=elmify_erasure_console
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config

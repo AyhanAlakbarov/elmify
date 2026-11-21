@@ -5,8 +5,8 @@ Tavily extract per labelled source URL (the drift check) and one read_and_derive
 per programme (three statement reads plus up to six judge calls on a page whose
 text changed). Excluded from a default run by `-m 'not live'`. Run with:
 
-    set -a; . ~/.config/tehsil_agent/openai.env; . ~/.config/tehsil_agent/anthropic.env
-    . ~/.config/tehsil_agent/search.env; set +a; export SEARCH_API_KEY="$TAVILY_API_KEY"
+    set -a; . ~/.config/elmify/openai.env; . ~/.config/elmify/anthropic.env
+    . ~/.config/elmify/search.env; set +a; export SEARCH_API_KEY="$TAVILY_API_KEY"
     uv run pytest tests/research/test_cv_corpus.py -m live -s
 
 The printed table is the artifact; the assertions only stop a regression. The

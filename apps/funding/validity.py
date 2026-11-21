@@ -41,6 +41,42 @@ Validity = Literal[
 #: should pass it.
 _ASSUMED_INTAKE_START = (9, 1)
 
+#: Country-specific primary and secondary academic intake start dates `(month, day)` for
+#: Southern Hemisphere (`AU`, `NZ`) and East/Southeast Asian biannual academic calendars
+#: (`KR`, `JP`, `SG`, `MY`, `BN`).
+_COUNTRY_INTAKE_STARTS: dict[str, tuple[tuple[int, int], ...]] = {
+    "AU": ((2, 15), (7, 15)),
+    "NZ": ((2, 15), (7, 15)),
+    "KR": ((3, 1), (9, 1)),
+    "JP": ((4, 1), (10, 1)),
+    "SG": ((8, 1), (1, 15)),
+    "MY": ((9, 1), (2, 15)),
+    "BN": ((8, 1), (1, 15)),
+}
+
+
+def default_intake_start_for_country(
+    country_code: str, year: int, *, today: dt.date | None = None
+) -> dt.date:
+    """Resolve the default academic intake start date in `year` for `country_code`.
+
+    For Northern Hemisphere annual calendars, returns `year-09-01`. For Southern
+    Hemisphere (`AU`, `NZ`) and biannual Asian calendars (`KR`, `JP`, `SG`, `MY`, `BN`),
+    returns the next upcoming intake start in `year` on or after `today` (or the
+    country's primary intake in `year` when `today` is not in `year`).
+    """
+    starts = _COUNTRY_INTAKE_STARTS.get((country_code or "").strip().upper())
+    if not starts:
+        month, day = _ASSUMED_INTAKE_START
+        return dt.date(year, month, day)
+    candidates = sorted(dt.date(year, m, d) for m, d in starts)
+    if today is not None and today.year == year:
+        for cand in candidates:
+            if cand >= today:
+                return cand
+    month, day = starts[0]
+    return dt.date(year, month, day)
+
 _YEAR = re.compile(r"(?:19|20)\d{2}")
 #: Month names are matched in English only here. A page's own month name
 #: reaches this module already normalised by the reader; this is the fallback
@@ -127,6 +163,65 @@ def intake_start_year(text: str) -> int | None:
     """
     found = _YEAR.search(text or "")
     return int(found.group()) if found else None
+
+
+_MULTI_INTAKE_SPLIT_RE = re.compile(r"\s*(?:,|;|&|\band\b|\bor\b)\s*", re.IGNORECASE)
+_OPEN_ENDED_FROM_RE = re.compile(
+    r"\b(?:from|since)\s+(?:the\s+)?((?:19|20)\d{2})\b"
+    r"|\b((?:19|20)\d{2})(?:[-/]\d{2,4})?\s+onwards\b",
+    re.IGNORECASE,
+)
+_OPEN_ENDED_AFTER_RE = re.compile(
+    r"\bafter\s+(?:the\s+)?((?:19|20)\d{2})\b",
+    re.IGNORECASE,
+)
+
+
+def intake_start_years(text: str) -> tuple[int, ...]:
+    """All intake start years named in `text`.
+
+    A single cohort range ("2027-2029", "2026/27") yields its start year `(2027,)` /
+    `(2026,)`; a list ("2026 and 2027", "2026-2028, 2027-2029") yields each cohort's
+    start year `(2026, 2027)`.
+    """
+    raw = (text or "").strip()
+    if not raw or raw == "UNSTATED":
+        return ()
+    parts = _MULTI_INTAKE_SPLIT_RE.split(raw)
+    years: list[int] = []
+    for part in parts:
+        y = intake_start_year(part)
+        if y is not None and y not in years:
+            years.append(y)
+    return tuple(years)
+
+
+def intake_matches_target(text: str, target: int | str | None) -> bool:
+    """True when `text` is unstated/blank or names an intake/range that includes `target`."""
+    raw = (text or "").strip()
+    if not raw or raw == "UNSTATED":
+        return True
+    target_int = (
+        target
+        if isinstance(target, int)
+        else (intake_start_year(str(target)) if target is not None else None)
+    )
+    if target_int is None:
+        return False
+    m_from = _OPEN_ENDED_FROM_RE.search(raw)
+    if m_from:
+        from_year = int(m_from.group(1) or m_from.group(2))
+        if target_int >= from_year:
+            return True
+    m_after = _OPEN_ENDED_AFTER_RE.search(raw)
+    if m_after:
+        after_year = int(m_after.group(1))
+        if target_int > after_year:
+            return True
+    years = intake_start_years(raw)
+    if not years:
+        return True
+    return target_int in years
 
 
 def _intake_start(intake: str, override: dt.date | None) -> dt.date | None:
@@ -231,7 +326,28 @@ def _condition_outcome(condition: str, student: dict[str, object]) -> Outcome:
             # A bare "ROUND" or "DESCENT" names no group at all; it must not
             # match every student whose dict happens to lack that key.
             return "FAILED"
-        matched = str(student.get(kind.casefold(), "")).casefold() == value.casefold()
+        student_val = str(student.get(kind.casefold(), "")).casefold()
+        target_val = value.casefold()
+        if kind == "APPLICANT_CLASS" and student_val:
+            if student_val in ("eu", "eea", "eu_eea") and target_val in (
+                "eu",
+                "eea",
+                "eu_eea",
+            ):
+                return "SATISFIED"
+            if student_val in (
+                "non_eu",
+                "non_eea",
+                "non_eu_eea",
+                "international",
+            ) and target_val in (
+                "non_eu",
+                "non_eea",
+                "non_eu_eea",
+                "international",
+            ):
+                return "SATISFIED"
+        matched = student_val == target_val
         return "SATISFIED" if matched else "FAILED"
     key = _ELIGIBILITY_ALIASES.get(kind, kind)
     # key is plain str (an unvalidated condition prefix); ConditionTriple.key is a
@@ -243,10 +359,6 @@ def _condition_outcome(condition: str, student: dict[str, object]) -> Outcome:
     except ValidationError:
         return "FAILED"
     return decide(triple, _profile_view(student)).outcome
-
-
-def _matches(condition: str, student: dict[str, object]) -> bool:
-    return _condition_outcome(condition, student) == "SATISFIED"
 
 
 def _profile_view(student: dict[str, object]) -> SimpleNamespace:
@@ -293,7 +405,11 @@ def select_deadline(evidence: Evidence, student: dict[str, object]) -> Deadline 
     decider), and the four casefolded partition keys `applicant_class`,
     `funding`, `route`, `round`.
     """
-    matching = [(date, whose) for date, whose in evidence.deadlines if _matches(whose, student)]
+    matching = [
+        (date, whose)
+        for date, whose in evidence.deadlines
+        if _condition_outcome(whose, student) == "SATISFIED"
+    ]
     if not matching and evidence.deadline is not None:
         matching = [(evidence.deadline, "ALL")]
     if not matching:
@@ -328,11 +444,15 @@ def cycle_validity(
     start = _intake_start(target_intake, intake_starts_on)
     if evidence.page_removed:
         return "ENDED"
-    contrary = intake_start_year(evidence.contrary_intake)
-    if evidence.contrary_on is not None and (contrary is None or contrary == target):
+    if evidence.contrary_on is not None and intake_matches_target(evidence.contrary_intake, target):
         return "SUSPENDED"
     stated_for = intake_start_year(evidence.applies_to)
-    if evidence.offered == "NO" and stated_for in (None, target):
+    no_intake = (
+        evidence.applies_to
+        if evidence.applies_to != "UNSTATED"
+        else evidence.contrary_intake
+    )
+    if evidence.offered == "NO" and intake_matches_target(no_intake, target):
         return "SUSPENDED"
     if (
         evidence.from_register
@@ -351,7 +471,15 @@ def cycle_validity(
     # whose deadline can have passed, and reading the statement first returned
     # OPEN for a window that had already shut.
     chosen = select_deadline(evidence, student)
-    if chosen is not None and chosen.date <= start:
+    latest_start = max(start, dt.date(target, *_ASSUMED_INTAKE_START))
+    if chosen is not None and (
+        chosen.date <= latest_start
+        or (
+            stated_for == target
+            and chosen.date.year == target
+            and chosen.date.month <= 10
+        )
+    ):
         # A deadline for this intake: ahead of us it is open, behind us the
         # window is over and the student is offered the next intake instead.
         return "OPEN" if chosen.date >= today else "CLOSED_FOR_INTAKE"

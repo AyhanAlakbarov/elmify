@@ -1,7 +1,7 @@
 """The whole escalation surface: six triggers, and nothing else escalates.
 
-Everything not in this table recovers on its own and is recorded as a
-RecoveryEvent instead (apps/portals/recovery.py). The distinction is the
+Everything not in this table is not escalated; the retired server tier
+recorded its own recoveries as RecoveryEvent rows. The distinction is the
 spec's, and it is the difference between a platform that notifies a human when
 only a human can answer and one that queues work behind every hiccup.
 """
@@ -83,6 +83,21 @@ def _recipient(application: Application, trigger: Trigger) -> Membership:
     return assignment.counselor if assignment else application.student
 
 
+def has_open_escalation(application: Application, trigger: Trigger) -> bool:
+    """Is this trigger's human task still waiting? The application sits in the
+    trigger's BLOCKED_* state with an exception_item nobody has finished --
+    the same "not DONE" test dispatch.resume_application makes before resuming.
+    A device re-reporting the same page (a resumed panel) must add a step to
+    the trail, not a second task to the desk."""
+    with tenant_transaction(application.tenant_id):
+        item = application.exception_item
+        return (
+            application.state == BLOCKED_STATE[trigger]
+            and item is not None
+            and item.state != RoadmapItem.State.DONE
+        )
+
+
 def escalate(application: Application, trigger: Trigger, *, detail: str) -> RoadmapItem:
     """Block the application, create the human's task, and tell them.
 
@@ -91,44 +106,40 @@ def escalate(application: Application, trigger: Trigger, *, detail: str) -> Road
     something anyone can act on.
     """
     with tenant_transaction(application.tenant_id):
-        return _escalate(application, trigger, detail=detail)
-
-
-def _escalate(application: Application, trigger: Trigger, *, detail: str) -> RoadmapItem:
-    recipient = _recipient(application, trigger)
-    item = RoadmapItem.objects.create(
-        tenant=application.tenant,
-        student=application.student,
-        stage=STAGE.get(trigger, DEFAULT_STAGE),
-        owner=recipient,
-        owner_kind=RoadmapItem.OwnerKind.HUMAN,
-        deadline=timezone.now() + ESCALATION_SLA,
-    )
-    ApplicationStep.objects.create(
-        tenant=application.tenant,
-        application=application,
-        sequence=application.next_step_sequence(),
-        kind="ESCALATION",
-        detail={"trigger": trigger.value, "detail": detail, "roadmap_item": str(item.id)},
-    )
-    application.state = BLOCKED_STATE[trigger]
-    application.exception_item = item
-    application.save(update_fields=["state", "exception_item"])
-    Notification.objects.create(
-        tenant=application.tenant,
-        recipient=recipient,
-        roadmap_item=item,
-        message=f"{application.where}: {trigger.value} -- {detail}",
-    )
-    # Watched by PortalEscalationFilter (infra/template.yaml). The alarm is on
-    # the rate: escalations are expected, a spike in them is not.
-    logger.info(
-        "PortalEscalation trigger=%s application=%s portal=%s",
-        trigger.value,
-        application.id,
-        application.where,
-    )
-    return item
+        recipient = _recipient(application, trigger)
+        item = RoadmapItem.objects.create(
+            tenant=application.tenant,
+            student=application.student,
+            stage=STAGE.get(trigger, DEFAULT_STAGE),
+            owner=recipient,
+            owner_kind=RoadmapItem.OwnerKind.HUMAN,
+            deadline=timezone.now() + ESCALATION_SLA,
+        )
+        ApplicationStep.objects.create(
+            tenant=application.tenant,
+            application=application,
+            sequence=application.next_step_sequence(),
+            kind="ESCALATION",
+            detail={"trigger": trigger.value, "detail": detail, "roadmap_item": str(item.id)},
+        )
+        application.state = BLOCKED_STATE[trigger]
+        application.exception_item = item
+        application.save(update_fields=["state", "exception_item"])
+        Notification.objects.create(
+            tenant=application.tenant,
+            recipient=recipient,
+            roadmap_item=item,
+            message=f"{application.where}: {trigger.value} -- {detail}",
+        )
+        # Watched by PortalEscalationFilter (infra/template.yaml). The alarm is on
+        # the rate: escalations are expected, a spike in them is not.
+        logger.info(
+            "PortalEscalation trigger=%s application=%s portal=%s",
+            trigger.value,
+            application.id,
+            application.where,
+        )
+        return item
 
 
 def request_first_portal_review(application: Application) -> RoadmapItem | None:
@@ -142,33 +153,27 @@ def request_first_portal_review(application: Application) -> RoadmapItem | None:
     if portal_form is None or not portal_form.review_required:
         return None
     with tenant_transaction(application.tenant_id):
-        return _request_first_portal_review(application)
-
-
-def _request_first_portal_review(application: Application) -> RoadmapItem:
-    portal_form = application.portal_form
-    assert portal_form is not None  # request_first_portal_review returned None for it
-    recipient = _recipient(application, Trigger.AMBIGUOUS_DECISION)
-    item = RoadmapItem.objects.create(
-        tenant=application.tenant,
-        student=application.student,
-        stage=DEFAULT_STAGE,
-        owner=recipient,
-        owner_kind=RoadmapItem.OwnerKind.HUMAN,
-        deadline=timezone.now() + ESCALATION_SLA,
-    )
-    Notification.objects.create(
-        tenant=application.tenant,
-        recipient=recipient,
-        roadmap_item=item,
-        message=(
-            f"First prepared application on {portal_form.portal_host} -- "
-            "review before it is submitted."
-        ),
-    )
-    # PortalForm is platform-shared, so the first review covers every tenant.
-    # That is the same amortisation argument as FieldMap: the form is public
-    # and nothing about the review is tenant-specific.
-    portal_form.review_required = False
-    portal_form.save(update_fields=["review_required"])
-    return item
+        recipient = _recipient(application, Trigger.AMBIGUOUS_DECISION)
+        item = RoadmapItem.objects.create(
+            tenant=application.tenant,
+            student=application.student,
+            stage=DEFAULT_STAGE,
+            owner=recipient,
+            owner_kind=RoadmapItem.OwnerKind.HUMAN,
+            deadline=timezone.now() + ESCALATION_SLA,
+        )
+        Notification.objects.create(
+            tenant=application.tenant,
+            recipient=recipient,
+            roadmap_item=item,
+            message=(
+                f"First prepared application on {portal_form.portal_host} -- "
+                "review before it is submitted."
+            ),
+        )
+        # PortalForm is platform-shared, so the first review covers every tenant.
+        # That is the same amortisation argument as FieldMap: the form is public
+        # and nothing about the review is tenant-specific.
+        portal_form.review_required = False
+        portal_form.save(update_fields=["review_required"])
+        return item

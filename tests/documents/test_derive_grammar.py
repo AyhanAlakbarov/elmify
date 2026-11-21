@@ -710,6 +710,64 @@ def test_referee_facts_land_on_the_programme(program_factory, grammar):
     assert {r["source_url"] for r in program.referee_requirements} == {snapshot.final_url}
 
 
+_DIPLOMAS = "Diplomas as one PDF, max 2 MB."
+
+
+def test_file_rules_land_on_the_programme(program_factory, grammar):
+    grammar({_DIPLOMAS: [
+        {"document": "other", "operation": "file", "value": ("DIPLOMA", "max_bytes", 2_000_000)},
+    ]})
+    program = program_factory()
+    snapshot = _snapshot()
+
+    derive_page_rules(program, page_text=f"{_PAGE}{_DIPLOMAS}\n", snapshot=snapshot,
+                      client=object())
+
+    program.refresh_from_db()
+    assert program.file_rules[0]["field"] == "max_bytes"
+    assert program.file_rules[0]["rule_text"] == _DIPLOMAS
+    assert program.file_rules[0]["source_url"] == snapshot.final_url
+
+
+_FOOTER = "Brochure (PDF, 1 MB)"
+
+
+class _NoJudge:
+    def __getattr__(self, name):
+        raise AssertionError("the frontier judge must not be called")
+
+
+def test_a_file_only_page_keeps_the_empty_page_cv_semantics(program_factory, grammar):
+    grammar({_FOOTER: [
+        {"document": "other", "operation": "file", "value": ("BROCHURE", "max_bytes", 1_000_000)},
+    ]})
+    program = program_factory()
+
+    decision = derive_page_rules(program, page_text=f"{_FOOTER}\n", snapshot=_snapshot(),
+                                 client=object())
+
+    program.refresh_from_db()
+    assert decision.confidence == Program.CVFormatConfidence.NO_CV_FOUND
+    assert program.cv_format_confidence == Program.CVFormatConfidence.NO_CV_FOUND
+    assert program.cv_format_requirement == Program.CVFormatRequirement.ANY
+    assert [r["field"] for r in program.file_rules] == ["max_bytes"]
+
+
+def test_a_file_only_page_without_a_provider_never_reaches_the_judge(
+    program_factory, grammar
+):
+    grammar(raises=_no_key())
+    stale = [{"document": "CV", "field": "format", "value": "PDF", "rule_text": "old"}]
+    program = program_factory(file_rules=stale)
+
+    derive_page_rules(program, page_text=f"{_FOOTER}\n", snapshot=_snapshot(),
+                      parser=_NoJudge(), claude=_NoJudge())
+
+    program.refresh_from_db()
+    assert program.file_rules == stale
+    assert program.cv_format_confidence == Program.CVFormatConfidence.NO_CV_FOUND
+
+
 def test_a_german_reference_sentence_reaches_the_reader_but_not_the_judge():
     """German has no generic `letter` word in the vocabulary, and the patterns
     are word-bounded, so Empfehlungsschreiben never matched. It is a candidate

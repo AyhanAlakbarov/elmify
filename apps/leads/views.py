@@ -10,7 +10,8 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods, require_POST
 
-from apps.privacy.views import _client_ip, _key
+from apps.privacy.views import _client_ip
+from apps.ratelimit import actor_key as _key
 from apps.ratelimit import rate_limited
 from apps.tenancy.models import Membership
 from apps.tenancy.services import current_membership
@@ -23,18 +24,24 @@ _HOUR = 3600
 
 
 @require_http_methods(["GET", "POST"])
-def book_demo(request: HttpRequest) -> HttpResponse:
-    form = DemoRequestForm(request.POST or None)
+def book_demo(request: HttpRequest, audience: str | None = None) -> HttpResponse:
+    asked = audience or request.GET.get("audience") or request.POST.get("audience")
+    resolved_audience = asked if asked in ("student", "agency") else None
+    form = DemoRequestForm(request.POST or None, audience=resolved_audience)
+    context = {"form": form, "audience": resolved_audience or "agency"}
     if request.method == "POST":
         if rate_limited("demo-request", _key(_client_ip(request)), limit=5, window_seconds=_HOUR):
             return render(
-                request, "leads/book_demo.html", {"form": form, "error": TOO_MANY}, status=429
+                request,
+                "leads/book_demo.html",
+                {**context, "error": TOO_MANY},
+                status=429,
             )
         if form.is_valid():
             form.save()
             return redirect("leads-demo-thanks")
-        return render(request, "leads/book_demo.html", {"form": form}, status=400)
-    return render(request, "leads/book_demo.html", {"form": form})
+        return render(request, "leads/book_demo.html", context, status=400)
+    return render(request, "leads/book_demo.html", context)
 
 
 def demo_thanks(request: HttpRequest) -> HttpResponse:

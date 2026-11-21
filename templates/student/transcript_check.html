@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Check your transcript{% endblock %}
+{% block content %}
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-documents' %}">Documents</a><span aria-hidden="true">/</span><span>Check your transcript</span></nav>
+  <div class="page-head">
+    <div>
+      <h1>Check your transcript</h1>
+      <p>Confirm the courses and grades we read from your transcript.</p>
+    </div>
+  </div>
+  {% if reading is None %}
+    <section class="panel">
+      <p class="empty">Nothing to check. <a href="{% url 'student-documents' %}">Your documents</a></p>
+    </section>
+  {% else %}
+    {% if degree %}<p class="muted">{{ degree }}</p>{% endif %}
+    {% if reading.review_requested_at %}<p role="status" class="note note-ok">Thanks — someone will look at it.</p>{% endif %}
+    {% if total == 0 %}
+      {# SHOULD BE DONE BY AYKHAN: the one-tap card (variant 3). #}
+      <section class="panel" aria-labelledby="clean">
+        <h2 id="clean">{{ clean }} Looks right?</h2>
+        <details>
+          <summary>See the {{ courses|length }} course{{ courses|length|pluralize }}</summary>
+          {% include "student/_transcript_courses.html" %}
+        </details>
+        <form method="post" class="row-actions">
+          {% csrf_token %}
+          <input type="hidden" name="reading_id" value="{{ reading.id }}">
+          <input type="hidden" name="action" value="accept">
+          <button type="submit">{% if reading.review_requested_at %}Continue{% else %}Yes{% endif %}</button>
+        </form>
+        {% include "student/_transcript_review.html" %}
+      </section>
+    {% elif card %}
+      {# SHOULD BE DONE BY AYKHAN: the card layout (variant 4) -- the picture beside the value. #}
+      <section class="panel" aria-labelledby="card">
+        {% if position == 1 %}
+          <p>We weren't sure about {{ total }} thing{{ total|pluralize }} on your transcript. Compare each with your transcript; everything else we read is shown at the end.</p>
+        {% endif %}
+        <p>{{ position }} of {{ total }}</p>
+        <h2 id="card">{{ card_title }}</h2>
+        {% if card.cell == "degree" %}
+          <p>We read: <strong>{{ card.reader_value }}</strong></p>
+          <p>{{ card.reason }}</p>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="reading_id" value="{{ reading.id }}">
+            <input type="hidden" name="action" value="answer">
+            <input type="hidden" name="ref" value="{{ card.ref }}">
+            <button type="submit" name="choice" value="same">Same degree</button>
+            <button type="submit" name="choice" value="different">Different degree</button>
+          </form>
+        {% elif card.typed_only %}
+          <p>{{ card.reason }}</p>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="reading_id" value="{{ reading.id }}">
+            <input type="hidden" name="action" value="answer">
+            <input type="hidden" name="ref" value="{{ card.ref }}">
+            <input type="hidden" name="choice" value="fix">
+            <label for="fix-value">{{ card_label }}</label>
+            {% if countries %}
+              <select id="fix-value" name="value" required>
+                <option value="">Choose a country</option>
+                {% for code, name in countries %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
+              </select>
+            {% else %}
+              <input id="fix-value" name="value" required>
+            {% endif %}
+            <button type="submit">Save</button>
+          </form>
+        {% else %}
+          {% for item, item_label in card_items %}
+            {% if item.crop_ref %}
+              <img src="{% url 'api-documents-transcript-crop' reading.id item.crop_ref %}" alt="The {{ item_label|lower }} of {{ card_title }}, as printed on your transcript">
+            {% endif %}
+            <p>{{ item_label }} we read: <strong>{{ item.reader_value|default:"(blank)" }}</strong></p>
+          {% endfor %}
+          {% if not card.crop_ref %}<p>No picture for this one — find it on your transcript.</p>{% endif %}
+          <p>{{ card.reason }}</p>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="reading_id" value="{{ reading.id }}">
+            <input type="hidden" name="action" value="answer">
+            {% for ref in card_refs %}<input type="hidden" name="ref" value="{{ ref }}">{% endfor %}
+            <button type="submit" name="choice" value="matches">Matches</button>
+            <button type="submit" name="choice" value="cant_read">Can't read</button>
+          </form>
+          <details>
+            <summary>Fix</summary>
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="reading_id" value="{{ reading.id }}">
+              <input type="hidden" name="action" value="answer">
+              <input type="hidden" name="choice" value="fix">
+              {% for item, item_label in card_items %}
+                <input type="hidden" name="ref" value="{{ item.ref }}">
+                <label for="fix-{{ forloop.counter }}">{{ item_label }} as the transcript shows it</label>
+                {% if item.ref == "field:country" %}
+                  <select id="fix-{{ forloop.counter }}" name="value:{{ item.ref }}" required>
+                    {% for code, name in countries %}<option value="{{ code }}"{% if code == item.reader_value %} selected{% endif %}>{{ name }}</option>{% endfor %}
+                  </select>
+                {% else %}
+                  <input id="fix-{{ forloop.counter }}" name="value:{{ item.ref }}" value="{{ item.reader_value }}" required>
+                {% endif %}
+              {% endfor %}
+              <button type="submit">Save</button>
+            </form>
+          </details>
+        {% endif %}
+        {% if back %}
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="reading_id" value="{{ reading.id }}">
+            <input type="hidden" name="action" value="reopen">
+            <input type="hidden" name="ref" value="{{ back }}">
+            <button type="submit">Back</button>
+          </form>
+        {% endif %}
+      </section>
+    {% else %}
+      {# SHOULD BE DONE BY AYKHAN: the summary table. #}
+      <section class="panel" aria-labelledby="summary">
+        <h2 id="summary">Your transcript</h2>
+        <dl>
+          <dt>Overall grade</dt><dd>{{ numbers.overall_grade|default:"not printed" }}{% if numbers.grading_scale %} on a {{ numbers.grading_scale }} scale{% endif %}</dd>
+          <dt>Total credits</dt><dd>{{ numbers.total_credits|default:"not printed" }}</dd>
+        </dl>
+        {% for note in notes %}<p>{{ note }}</p>{% endfor %}
+        {% include "student/_transcript_courses.html" %}
+        <p>Only the cells we asked about were checked with you.</p>
+        <h3>Your answers</h3>
+        <ul>
+          {% for ref, asked, given in answered %}
+            <li>{{ asked }}: {{ given }}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="reading_id" value="{{ reading.id }}">
+                <input type="hidden" name="action" value="reopen">
+                <input type="hidden" name="ref" value="{{ ref }}">
+                <button type="submit">Change</button>
+              </form>
+            </li>
+          {% endfor %}
+        </ul>
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="reading_id" value="{{ reading.id }}">
+          <input type="hidden" name="action" value="accept">
+          <button type="submit">Accept</button>
+        </form>
+        {% include "student/_transcript_review.html" %}
+      </section>
+    {% endif %}
+  {% endif %}
+{% endblock %}

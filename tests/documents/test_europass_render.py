@@ -475,3 +475,130 @@ def test_the_cache_key_tells_an_oldest_first_programme_from_a_newest_first_one()
     oldest = payload_hash(*europass_content(content, chronological))
 
     assert newest != oldest
+
+
+def test_the_cache_key_tells_a_programme_banning_links_from_one_that_does_not():
+    """Review focus 2. The key hashes what is SENT, and a hyperlink ban
+    changes what is sent: the DOI leaves the payload."""
+    from apps.documents.constraints import ConstraintRule, Enforcement
+    from apps.documents.render import europass_content
+    from apps.documents.schemas import PublicationEntry
+
+    from .test_europass import _content as _cv
+
+    content = _cv(publications=(PublicationEntry(
+        authors=("Doe, J.",), self_author_index=0, title="Sparsifiers in practice",
+        venue="Journal of Examples", year=2024, doi="10.1000/sparsifiers",
+    ),))
+    no_links = ConstraintRule(rule_id="PAGE-0-prohibited", key="prohibited_content",
+                              value=["hyperlinks"], enforcement=Enforcement.ADVISORY_HIGH_RISK,
+                              rule_text="No hyperlinks.")
+    assert payload_hash(*europass_content(content, ())) != payload_hash(
+        *europass_content(content, (), constraints=(no_links,))
+    )
+
+
+def test_the_europass_cache_key_hashes_the_saved_lists_rules(
+    agency_a, django_user_model, monkeypatch
+):
+    from apps.documents.drafts import create_draft
+    from apps.documents.render import draft_rules, europass_content
+    from apps.documents.schemas import CVContent, PublicationEntry
+
+    from .test_europass import _content as _cv
+    from .test_render import _list_with
+
+    content = _cv(
+        publications=(
+            PublicationEntry(
+                authors=("Doe, J.",),
+                self_author_index=0,
+                title="Sparsifiers in practice",
+                venue="Journal of Examples",
+                year=2024,
+                doi="10.1000/sparsifiers",
+            ),
+        )
+    )
+    with tenant_scope(agency_a.id):
+        user = django_user_model.objects.create(username="saved-list-cache")
+        student = Membership.objects.create(
+            tenant=agency_a, user=user, role=Membership.Role.STUDENT, active=True
+        )
+        a = create_draft(
+            student=student,
+            kind=DocumentDraft.Kind.CV,
+            content=content,
+            render_variant="EUROPASS_API",
+            requirements=_list_with(prohibited=["hyperlinks"]),
+        )
+        b = create_draft(
+            student=student,
+            kind=DocumentDraft.Kind.CV,
+            content=content,
+            render_variant="EUROPASS_API",
+            requirements=_list_with(),
+        )
+
+    def _cache_key(draft: DocumentDraft) -> str:
+        parsed = CVContent.model_validate(draft.content)
+        rules = draft_rules(draft, parsed)
+        return payload_hash(*europass_content(parsed, (), constraints=rules))
+
+    assert _cache_key(a) != _cache_key(b)
+
+
+def test_a_cross_draft_cache_hit_still_writes_this_drafts_content_warnings(
+    agency_a, django_user_model, program_factory, monkeypatch
+):
+    """Two drafts share a PDF when their Europass payload is identical, even if
+    the second draft's programme has an advisory rule the first did not. The
+    second draft must still record its own content warnings."""
+    from apps.documents.drafts import create_draft
+    from apps.documents.schemas import CVContent
+
+    from .test_render import _content
+
+    monkeypatch.setattr(
+        europass_render, "render_draft", lambda **kw: pytest.fail("called europa.eu")
+    )
+    store = _FakeStore()
+    rule = {
+        "rule_id": "PAGE-0-photo",
+        "key": "photo_required",
+        "value": True,
+        "enforcement": "ADVISORY_HIGH_RISK",
+        "rule_text": "Include a photo.",
+        "scope": "PROGRAMME",
+    }
+    with tenant_scope(agency_a.id):
+        first = _approved_draft(agency_a, django_user_model, "warn-hit-a")
+        user_b = django_user_model.objects.create(username="warn-hit-b")
+        student_b = Membership.objects.create(
+            tenant=agency_a, user=user_b, role=Membership.Role.STUDENT, active=True
+        )
+        second = create_draft(
+            student=student_b,
+            kind=DocumentDraft.Kind.CV,
+            content=_content(),
+            programme=program_factory(cv_constraints=[rule]),
+        )
+        DocumentDraft.objects.filter(id=second.id).update(
+            status=DocumentDraft.Status.APPROVED, render_variant="EUROPASS_API"
+        )
+        second.refresh_from_db()
+        content = CVContent.model_validate(first.content)
+        stored_key = document_key(
+            tenant_id=agency_a.id,
+            student_id=first.student_id,
+            draft_id=first.id,
+            filename=europass_render._ARTEFACT_FILENAME,
+        )
+        store.objects[stored_key] = _genuine_pdf()
+        EuropassRenderCache.objects.create(
+            payload_hash=payload_hash(content), object_key=stored_key
+        )
+        render_and_store(draft=second, store=store)
+        second.refresh_from_db()
+    assert [w["rule_id"] for w in second.render_warnings] == ["PAGE-0-photo"]
+

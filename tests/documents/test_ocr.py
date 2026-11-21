@@ -75,7 +75,7 @@ class _Lambda:
 
 
 def _function(monkeypatch, client):
-    monkeypatch.setattr(settings, "OCR_FUNCTION_NAME", "tehsil-transcript-ocr")
+    monkeypatch.setattr(settings, "OCR_FUNCTION_NAME", "elmify-transcript-ocr")
     monkeypatch.setattr(ocr, "_lambda_client", lambda: client)
     monkeypatch.setattr(ocr.subprocess, "run", lambda *a, **k: pytest.fail("ran a child"))
 
@@ -154,7 +154,7 @@ def test_with_a_function_named_the_key_is_sent_never_the_bytes(monkeypatch):
     [read] = every_page(_DOCUMENT, b"%PDF the whole upload")
     assert read.lines == ("BSc Chemistry",)
     [call] = client.calls
-    assert call["FunctionName"] == "tehsil-transcript-ocr"
+    assert call["FunctionName"] == "elmify-transcript-ocr"
     assert json.loads(call["Payload"]) == {"key": "quarantine/tenant/document", "version_id": "v1"}
 
 
@@ -182,6 +182,32 @@ def test_a_function_error_is_unavailable_and_its_message_is_not_logged(monkeypat
     with pytest.raises(OcrUnavailable):
         every_page(_DOCUMENT, b"%PDF")
     assert "MemoryError" in caplog.text and "Aliyev" not in caplog.text
+
+
+@pytest.mark.parametrize("error_type", ["KeyError", "ClientError", "Runtime.ImportModuleError"])
+def test_a_deployment_wide_function_error_is_an_outage(monkeypatch, error_type):
+    _function(monkeypatch, _Lambda({"errorType": error_type}, function_error="Unhandled"))
+    with pytest.raises(OcrUnavailable) as raised:
+        ocr._invoke("k", "v")
+    assert raised.value.kind == "outage"
+
+
+@pytest.mark.parametrize("error_type", ["Sandbox.Timedout", "Runtime.OutOfMemory",
+                                         "Runtime.ExitError", "ValueError"])
+def test_a_function_side_error_is_a_failed_job_not_an_outage(monkeypatch, error_type):
+    _function(monkeypatch, _Lambda({"errorType": error_type}, function_error="Unhandled"))
+    with pytest.raises(OcrUnavailable) as raised:
+        ocr._invoke("k", "v")
+    assert raised.value.kind == "job"
+
+
+def test_a_transport_error_is_an_outage(monkeypatch):
+    from botocore.exceptions import ClientError
+
+    _function(monkeypatch, _Lambda(None, raises=ClientError({"Error": {}}, "Invoke")))
+    with pytest.raises(OcrUnavailable) as raised:
+        ocr._invoke("k", "v")
+    assert raised.value.kind == "outage"
 
 
 def test_a_function_that_does_not_answer_in_time_is_unavailable(monkeypatch):
@@ -460,3 +486,169 @@ def test_an_answer_outside_the_contract_is_unavailable_never_clean(tmp_path, mon
     _answering(tmp_path, monkeypatch, output)
     with pytest.raises(OcrUnavailable):
         inspect_upload(_DOCUMENT, b"%PDF")
+
+
+# --- Final review M3: the local child's timeout or crash is this file's, as on Lambda ---
+
+
+def test_m3_a_local_child_that_runs_out_of_time_is_a_failed_job(tmp_path, monkeypatch):
+    _child(tmp_path, monkeypatch, "import time; time.sleep(30)")
+    monkeypatch.setattr(ocr, "_TIMEOUT_SECONDS", 0.5)
+    with pytest.raises(OcrUnavailable) as raised:
+        ocr._run_child(b"%PDF")
+    assert raised.value.kind == "job"
+
+
+def test_m3_a_local_child_that_crashes_is_a_failed_job(tmp_path, monkeypatch):
+    _child(tmp_path, monkeypatch, "raise MemoryError('Ali Aliyev')")
+    with pytest.raises(OcrUnavailable) as raised:
+        ocr._run_child(b"%PDF")
+    assert raised.value.kind == "job"
+
+
+def test_m3_a_missing_local_interpreter_is_an_outage(tmp_path, monkeypatch):
+    _child(tmp_path, monkeypatch, "print('{}')")
+    monkeypatch.setattr(settings, "OCR_PYTHON", str(tmp_path / "no-such-python"))
+    with pytest.raises(OcrUnavailable) as raised:
+        ocr._run_child(b"%PDF")
+    assert raised.value.kind == "outage"
+
+
+def _one_cell_layout(*, polygon, page_width, page_height, content, pages=1):
+    """One table cell on the last of `pages` pages; every page is `page_width` x `page_height`
+    except earlier ones, which are twice as large, so a region normalised against the wrong page
+    shows."""
+    def page(n):
+        scale = 1 if n == pages else 2
+        return {"pageNumber": n, "width": page_width * scale, "height": page_height * scale,
+                "unit": "pixel",
+                "words": [{"content": content or "x", "confidence": 0.9,
+                           "span": {"offset": 0, "length": 1}}]}
+
+    return AzureLayout.model_validate({
+        "content": "x",
+        "pages": [page(n) for n in range(1, pages + 1)],
+        "tables": [{"rowCount": 1, "columnCount": 1, "cells": [{
+            "rowIndex": 0, "columnIndex": 0, "content": content,
+            "spans": [{"offset": 0, "length": 1}] if content else [],
+            "boundingRegions": [{"pageNumber": pages, "polygon": polygon}]}]}],
+    })
+
+
+def test_an_azure_cell_carries_its_region_as_page_fractions():
+    layout = _one_cell_layout(polygon=[100, 50, 300, 50, 300, 80, 100, 80],
+                              page_width=1000, page_height=2000, content="6")
+    page = ocr._azure_page(layout, layout.pages[0])
+    assert page.cell_regions[0][0][0] == (0.1, 0.025, 0.3, 0.04)
+
+
+def test_a_blank_cell_has_no_region():
+    layout = _one_cell_layout(polygon=[100, 50, 300, 50, 300, 80, 100, 80],
+                              page_width=1000, page_height=2000, content="")
+    assert ocr._azure_page(layout, layout.pages[0]).cell_regions[0][0][0] is None
+
+
+def test_a_rotated_polygon_is_boxed_by_its_extremes():
+    layout = _one_cell_layout(polygon=[300, 50, 310, 80, 110, 90, 100, 60],
+                              page_width=1000, page_height=1000, content="A")
+    assert ocr._azure_page(layout, layout.pages[0]).cell_regions[0][0][0] == (0.1, 0.05, 0.31, 0.09)
+
+
+def test_a_cell_on_a_second_page_is_normalised_against_that_page():
+    layout = _one_cell_layout(polygon=[100, 50, 300, 50, 300, 80, 100, 80],
+                              page_width=1000, page_height=2000, content="6", pages=2)
+    page = ocr._azure_page(layout, layout.pages[1])
+    assert page.cell_regions[0][0][0] == (0.1, 0.025, 0.3, 0.04)
+
+
+def test_a_page_stored_before_regions_existed_still_loads():
+    assert ocr.OcrPage.model_validate({"lines": [], "tables": [[["x"]]]}).cell_regions == ()
+
+
+_AVAILABLE = SimpleNamespace(object_key="quarantine/tenant/document", scanned_version="v1",
+                             state="AVAILABLE")
+_PNG_A, _PNG_B = b"\x89PNG-a", b"\x89PNG-b"
+
+
+def _b64(*images):
+    import base64
+
+    return [base64.b64encode(image).decode() for image in images]
+
+
+def test_a_crop_sends_the_key_the_page_and_the_boxes_never_the_bytes(monkeypatch):
+    client = _Lambda({"crops": _b64(_PNG_A, _PNG_B)})
+    _function(monkeypatch, client)
+    boxes = [(0.1, 0.2, 0.3, 0.25), (0.4, 0.2, 0.5, 0.25)]
+    assert ocr.crop_cells(_AVAILABLE, 2, boxes) == [_PNG_A, _PNG_B]
+    [call] = client.calls
+    assert json.loads(call["Payload"]) == {
+        "op": "crop", "key": "quarantine/tenant/document", "version_id": "v1",
+        "page": 2, "boxes": [list(box) for box in boxes], "dpi": ocr.CROP_DPI,
+    }
+
+
+def test_locally_a_crop_is_the_same_child_with_the_upload_inline(tmp_path, monkeypatch):
+    _child(
+        tmp_path,
+        monkeypatch,
+        f"""
+        import base64, json, sys
+        assert sys.argv[1:] == ["--crop"], sys.argv
+        envelope = json.loads(sys.stdin.buffer.read())
+        assert base64.b64decode(envelope["inline"]) == b"%PDF upload"
+        assert (envelope["page"], envelope["boxes"]) == (1, [[0, 0, 1, 1]])
+        print(json.dumps({{"crops": {_b64(_PNG_A)!r}}}))
+        """,
+    )
+    monkeypatch.setattr("apps.documents.storage.read_upload", lambda document: b"%PDF upload")
+    assert ocr.crop_cells(_AVAILABLE, 1, [(0, 0, 1, 1)]) == [_PNG_A]
+
+
+@pytest.mark.parametrize("answer", [
+    {"crops": _b64(_PNG_A)},  # one crop for two boxes
+    {"crops": _b64(b"<svg>", _PNG_A)},  # not a PNG
+    {"crops": ["not base64!", "x"]},
+    {"refused": "x"},
+])
+def test_a_crop_answer_outside_the_contract_is_unavailable(monkeypatch, answer):
+    _function(monkeypatch, _Lambda(answer))
+    with pytest.raises(OcrUnavailable):
+        ocr.crop_cells(_AVAILABLE, 1, [(0, 0, 1, 1), (0, 0, 0.5, 0.5)])
+
+
+def test_an_upload_no_longer_available_is_never_cropped(monkeypatch):
+    client = _Lambda({"crops": _b64(_PNG_A)})
+    _function(monkeypatch, client)
+    blocked = SimpleNamespace(object_key="k", scanned_version="v1", state="BLOCKED")
+    with pytest.raises(OcrUnavailable):
+        ocr.crop_cells(blocked, 1, [(0, 0, 1, 1)])
+    assert client.calls == []
+
+
+def test_an_azure_page_keeps_the_shape_the_reader_saw():
+    layout = _one_cell_layout(polygon=[100, 50, 300, 50, 300, 80, 100, 80],
+                              page_width=1000, page_height=2000, content="6")
+    assert ocr._azure_page(layout, layout.pages[0]).page_aspect == 0.5
+
+
+def test_a_crop_carries_the_pages_shape_so_a_turned_render_is_refused(monkeypatch):
+    client = _Lambda({"crops": _b64(_PNG_A)})
+    _function(monkeypatch, client)
+    ocr.crop_cells(_AVAILABLE, 1, [(0, 0, 1, 1)], aspect=0.5)
+    assert json.loads(client.calls[0]["Payload"])["aspect"] == 0.5
+
+
+def test_an_azure_page_keeps_how_far_its_text_is_turned():
+    layout = _one_cell_layout(polygon=[100, 50, 300, 50, 300, 80, 100, 80],
+                              page_width=1000, page_height=2000, content="6")
+    page = layout.pages[0].model_copy(update={"angle": 179.5})
+    assert ocr._azure_page(layout, page).page_angle == 179.5
+    assert ocr._azure_page(layout, layout.pages[0]).page_angle is None
+
+
+def test_a_crop_carries_the_pages_turn_so_its_picture_comes_back_upright(monkeypatch):
+    client = _Lambda({"crops": _b64(_PNG_A)})
+    _function(monkeypatch, client)
+    ocr.crop_cells(_AVAILABLE, 1, [(0, 0, 1, 1)], aspect=0.5, angle=-90.0)
+    assert json.loads(client.calls[0]["Payload"])["angle"] == -90.0

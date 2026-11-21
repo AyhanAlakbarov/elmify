@@ -1,12 +1,12 @@
 {
- "_provenance": "HAND-BUILT, NOT CAPTURED. Written 2026-09-26 from the documented Enhance entity shape (data[].entity.homepageUri, name, type; docs/superpowers/research/2026-09-17-diffbot-perplexity-recon.md section 1) because no Diffbot credential exists. The homepage value is illustrative. A live capture (build item 8 plan, Task 5 Step 4: 25 credits) is owed and replaces this file; if the real response differs, the adapter follows the capture.",
+ "_provenance": "CAPTURED LIVE 2026-09-27 from kg/v3/enhance (type=Organization, name=\"Georgian Young Lawyers' Association\"), 25 credits. Only the keys the adapter reads are kept: score, entity.type, entity.name, entity.homepageUri.",
  "data": [
   {
-   "score": 0.42,
+   "score": 0.5361400823668953,
    "entity": {
     "type": "Organization",
-    "name": "Georgian Young Lawyers' Association",
-    "homepageUri": "www.gyla.ge"
+    "name": "Georgian Young Lawyers' Association (GYLA)",
+    "homepageUri": "gyla.ge"
    }
   }
  ]

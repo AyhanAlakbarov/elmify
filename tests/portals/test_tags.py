@@ -107,16 +107,17 @@ def test_the_kit_shows_the_tagged_address(agency_a, membership_a, with_address, 
     assert kit.apply_with_email.startswith("leyla.apply+")
 
 
-def test_a_student_with_no_address_gets_missing_fact_on_a_map_with_the_email_field(
+def test_a_student_with_no_address_fills_the_email_field_themselves(
     agency_a, membership_a, monkeypatch
 ):
-    """The documented consequence of T5 (final review): the agency's map always
-    may carry contact.email, and a student with no application_email cannot
-    fill it."""
+    """The agency's map may carry contact.email (final review T5). A student with
+    no application_email gets that box as their own red hint (owner, 2026-10-09),
+    never a refused packet."""
     from apps.portals import packets
 
     monkeypatch.setattr(packets, "verified_values", lambda student: {})
     with tenant_scope(agency_a.id):
         application = _application(agency_a, membership_a, entries=[EMAIL_ENTRY])
-        with pytest.raises(packets.PacketRefused, match="missing_fact"):
-            packets.mint_packet(application)
+        packet = packets.mint_packet(application)
+    assert [(h.profile_field, h.reason) for h in packet.hints] == [("contact.email", "no_fact")]
+    assert packet.entries == ()

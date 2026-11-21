@@ -12,14 +12,14 @@
 
 ## Global Constraints
 
-- Work in the worktree `/home/orkhan/Desktop/tehsil_agent/.claude/worktrees/cv-corpus`, branch `claude/cv-corpus`. Never `cd` to the main checkout; it carries the owner's uncommitted work.
+- Work in the worktree `/home/orkhan/Desktop/elmify/.claude/worktrees/cv-corpus`, branch `claude/cv-corpus`. Never `cd` to the main checkout; it carries the owner's uncommitted work.
 - Every `uv run` and `pytest` command below is run from that worktree root.
 - `requirement_key` values come from the engine's vocabulary: `CONSTRAINT_KEYS` (`apps/documents/constraints.py`) plus `cv_format_requirement` and `cv_directive`. **Never invent a key**; `unapplied` is the key for a requirement the vocabulary cannot carry.
 - `seed_url` is always the programme's own front page, never a documents/requirements/FAQ page.
 - Hosts from `docs/research/cv-format-eval.csv` and the 2026-09-15 survey may be `dev`, never `heldout`. The loader enforces it.
 - Tavily is called through `fetch_json_api` only (HTTPS, private-network block, no redirects). Never `proxy: stealth`/`enhanced`/`auto` anywhere — Tavily has no such option; the rule is recorded so nobody adds Firecrawl fetching here.
 - `ruff check .`, `mypy apps config`, `bandit -c pyproject.toml -r apps config` must stay clean. Line length 100. mypy is `strict`; tests are excluded from mypy.
-- Live keys: `set -a; . ~/.config/tehsil_agent/openai.env; . ~/.config/tehsil_agent/anthropic.env; . ~/.config/tehsil_agent/search.env; set +a; export SEARCH_API_KEY="$TAVILY_API_KEY"`. The repo reads Tavily's key from `settings.SEARCH_API_KEY`.
+- Live keys: `set -a; . ~/.config/elmify/openai.env; . ~/.config/elmify/anthropic.env; . ~/.config/elmify/search.env; set +a; export SEARCH_API_KEY="$TAVILY_API_KEY"`. The repo reads Tavily's key from `settings.SEARCH_API_KEY`.
 - Commit after every task with the message given. End each commit message with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - The `live` runner spends real credits (one Tavily extract per labelled URL, one `read_and_derive` per programme). Run it only in Task 9.
 
@@ -1660,8 +1660,8 @@ Tavily extract per labelled source URL (the drift check) and one read_and_derive
 per programme (three statement reads plus up to six judge calls on a page whose
 text changed). Excluded from a default run by `-m 'not live'`. Run with:
 
-    set -a; . ~/.config/tehsil_agent/openai.env; . ~/.config/tehsil_agent/anthropic.env
-    . ~/.config/tehsil_agent/search.env; set +a; export SEARCH_API_KEY="$TAVILY_API_KEY"
+    set -a; . ~/.config/elmify/openai.env; . ~/.config/elmify/anthropic.env
+    . ~/.config/elmify/search.env; set +a; export SEARCH_API_KEY="$TAVILY_API_KEY"
     uv run pytest tests/research/test_cv_corpus.py -m live -s
 
 The printed table is the artifact; the assertions only stop a regression. The
@@ -2072,7 +2072,7 @@ This task spends credits: roughly 20 Tavily extracts for digests, 30 crawls (≈
 - [ ] **Step 1: Export the keys**
 
 ```bash
-set -a; . ~/.config/tehsil_agent/openai.env; . ~/.config/tehsil_agent/anthropic.env; . ~/.config/tehsil_agent/search.env; set +a
+set -a; . ~/.config/elmify/openai.env; . ~/.config/elmify/anthropic.env; . ~/.config/elmify/search.env; set +a
 export SEARCH_API_KEY="$TAVILY_API_KEY"
 ```
 
@@ -2090,7 +2090,7 @@ Expected: one `vendor: <id>: N pages, M candidates` line per dev programme and a
 
 - [ ] **Step 4: Run the live runner on `dev`**
 
-Run: `uv run pytest tests/research/test_cv_corpus.py -m live -k dev -s 2>&1 | tee /tmp/claude-1000/-home-orkhan-Desktop-tehsil-agent/ccbb4fe9-8703-4059-a9d3-bfb125dfd675/scratchpad/corpus-baseline.txt`
+Run: `uv run pytest tests/research/test_cv_corpus.py -m live -k dev -s 2>&1 | tee /tmp/claude-1000/-home-orkhan-Desktop-elmify/ccbb4fe9-8703-4059-a9d3-bfb125dfd675/scratchpad/corpus-baseline.txt`
 Expected: PASS (floors are 0.0). The output has the table, drift lines, and the two CSV blocks. Append the `candidates` block's rows to `docs/research/cv-corpus-candidates.csv` (skip the header line). Keep the `unjudged` block for Step 5.
 
 - [ ] **Step 5: Record the baseline**

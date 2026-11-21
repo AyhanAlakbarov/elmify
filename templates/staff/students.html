@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Students{% endblock %}
+{% block content %}
+  <div class="page-head"><div><h1>Students</h1><p>Open a student to see their profile, universities and chat.</p></div></div>
+  <form class="panel staff-search" method="get" action="{% url 'staff-students' %}" role="search">
+    <label for="q">Find a student</label>
+    <input type="search" id="q" name="q" value="{{ q }}" placeholder="Name, username or email">
+    <button type="submit">Search</button>
+  </form>
+  <section class="panel" aria-labelledby="list-heading">
+    <div class="panel-head"><h2 id="list-heading">{{ rows|length }} student{{ rows|length|pluralize }}</h2></div>
+    <table>
+      <thead><tr><th scope="col">Student</th><th scope="col">Email</th><th scope="col">Joined</th><th scope="col">Profile</th><th scope="col">Universities</th><th scope="col">Chat</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+          <tr>
+            <th scope="row"><a href="{% url 'staff-student' r.student.id %}">{{ r.name }}</a></th>
+            <td>{{ r.student.user.email|default:"—" }}</td>
+            <td>{{ r.student.user.date_joined|date:"j M Y" }}</td>
+            <td>{% if r.has_profile %}<span class="pill pill-ok">Done</span>{% else %}<span class="pill pill-muted">Not yet</span>{% endif %}</td>
+            <td>{{ r.applications }}</td>
+            <td>{% if r.unread %}<a class="pill pill-brand" href="{% url 'staff-thread' r.student.id %}">{{ r.unread }} new</a>{% else %}—{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="empty">No student matches.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+{% endblock %}

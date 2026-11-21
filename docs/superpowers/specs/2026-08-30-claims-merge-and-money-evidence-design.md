@@ -275,7 +275,7 @@ what licenses trusting the rest.
 ## Open items
 
 - **The corpus is preserved outside the repository, not in it.**
-  `~/.local/share/tehsil_agent/2026-08-30-eacea-claims.jsonl` (1.3 MB, sha256
+  `~/.local/share/elmify/2026-08-30-eacea-claims.jsonl` (1.3 MB, sha256
   `8da484632e56222c...`) is the artifact of 595 model calls, and every verification step above
   replays from it. It was copied there from an ephemeral job directory during design. It is third-party
   page content, so it stays out of git deliberately — but it is also not backed up, and losing it turns

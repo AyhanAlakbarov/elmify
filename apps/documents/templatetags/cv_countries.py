@@ -55,7 +55,7 @@ TN:Tunisia;TO:Tonga;TR:Turkey;TT:Trinidad and Tobago;TV:Tuvalu;TW:Taiwan
 TZ:Tanzania;UA:Ukraine;UG:Uganda;UM:US Minor Outlying Islands;US:United States
 UY:Uruguay;UZ:Uzbekistan;VA:Vatican City;VC:Saint Vincent and the Grenadines
 VE:Venezuela;VG:British Virgin Islands;VI:US Virgin Islands;VN:Vietnam;VU:Vanuatu
-WF:Wallis and Futuna;WS:Samoa;YE:Yemen;YT:Mayotte;ZA:South Africa;ZM:Zambia;ZW:Zimbabwe
+WF:Wallis and Futuna;WS:Samoa;XK:Kosovo;YE:Yemen;YT:Mayotte;ZA:South Africa;ZM:Zambia;ZW:Zimbabwe
 """
 
 _NAMES: dict[str, str] = dict(

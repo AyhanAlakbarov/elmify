@@ -39,10 +39,6 @@ _KEEPS = PortalForm.TagStatus.KEEPS
 _REJECTS = PortalForm.TagStatus.REJECTS
 
 
-def _new_tag() -> str:
-    return "".join(secrets.choice(_TAG_ALPHABET) for _ in range(_TAG_LENGTH))
-
-
 def tagged(address: str, tag: str) -> str:
     """`local+tag@domain`, or the address unchanged when it cannot take a tag."""
     local, at, domain = address.rpartition("@")
@@ -91,7 +87,10 @@ def portal_address(application: Application) -> str:
     account, _ = PortalAccount.objects.get_or_create(
         student=application.student,
         portal_host=form.portal_host,
-        defaults={"tenant_id": application.tenant_id, "tag": _new_tag()},
+        defaults={
+            "tenant_id": application.tenant_id,
+            "tag": "".join(secrets.choice(_TAG_ALPHABET) for _ in range(_TAG_LENGTH)),
+        },
     )
     if not account.address:
         account.address = base if form.tag_status == _REJECTS else tagged(base, account.tag)

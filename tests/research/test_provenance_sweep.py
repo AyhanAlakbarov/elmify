@@ -22,6 +22,7 @@ from apps.funding.models import (
     RecommendationRun,
 )
 from apps.funding.services import PackCommandError, replace_candidate
+from apps.portals.models import Application
 from apps.research.provenance import record_verdict
 from apps.research.provenance_sweep import SweepReport, sweep
 from apps.tenancy.context import tenant_scope
@@ -556,3 +557,31 @@ def test_recheck_still_sweeps_when_the_check_fails_and_then_reraises(monkeypatch
     with pytest.raises(CommandError, match="1 domain"):
         call_command("provenance_recheck")
     assert calls == ["provenance_check", "provenance_pack_sweep"]
+
+
+@pytest.fixture
+def started_on_blocked(world, agency_a, membership_a):
+    """A card on the candidate the sweep is about to withdraw: started, fee paid."""
+    with tenant_scope(agency_a.id):
+        candidate = RecommendationCandidate.objects.get(program_name="MSc Blocked")
+        card = Application.objects.create(
+            tenant=agency_a, student=membership_a, program_id=candidate.program_id,
+            candidate=candidate, started_at=NOW, fee_state="PAID", fee_paid_source="STUDENT",
+            fee_paid_at=NOW,
+        )
+        return card.id, Application.objects.filter(id=card.id).values().get()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_sweep_never_touches_a_started_paid_card(
+    started_on_blocked, agency_a, rls_enforced_orm
+) -> None:
+    """P1-11, lanes spec section 7.9: a started lane is locked from pack refreshes.
+    The candidate leaves the pack; the student's application stays as it was."""
+    card_id, before = started_on_blocked
+
+    sweep(now=NOW, dispatch=_no_dispatch, enqueue=_no_enqueue)
+
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        assert RecommendationCandidate.objects.get(program_name="MSc Blocked").state == "REJECTED"
+        assert Application.objects.filter(id=card_id).values().get() == before

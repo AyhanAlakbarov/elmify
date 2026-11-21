@@ -494,3 +494,25 @@ def test_runtime_engine_applies_behind_the_real_grants_and_policies(
     entry.refresh_from_db()
     assert (entry.resolution, entry.resolved_via) == ("RESOLVED", "HUMAN")
     assert not ResolutionItem.objects.exists()
+
+
+def test_a_person_s_answer_to_a_pointer_binds_its_row(platform) -> None:
+    """The applier was built for register rows; a pointer row is one."""
+    from apps.research.resolution.writers import file_site_unknown
+
+    entry = RegisterEntry.objects.create(
+        register="pointer", external_key="medeniyyet nazirliyi", name="Mədəniyyət Nazirliyi",
+        names=["Mədəniyyət Nazirliyi"], resolution="UNRESOLVED", last_seen=NOW,
+        country_code="AZ", kind="NATIONAL_GOVERNMENT",
+        pointer_quote="a line", pointer_url="https://example-agency.az/x",
+    )
+    item = file_site_unknown(entry, names=entry.names, why='named on example-agency.az: "a line"')
+    ResolutionItem.objects.filter(id=item.id).update(
+        state="DECIDED", resolution={"option": "paste", "url": "https://example-ministry.az/"},
+        decided_at=timezone.now(),
+    )
+    assert apply_decided(now=NOW).applied == 1
+    entry.refresh_from_db()
+    assert (entry.resolution, entry.resolved_via) == ("RESOLVED", "HUMAN")
+    assert entry.organisation is not None
+    assert entry.organisation.primary_domain == "example-ministry.az"

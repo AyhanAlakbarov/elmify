@@ -50,3 +50,14 @@ def app_shell(request: HttpRequest) -> dict[str, bool]:
         and request.user.is_authenticated
         and not request.path.startswith(_GATE_PREFIXES)
     }
+
+
+def marketing_site(request: HttpRequest) -> dict[str, str]:
+    """The marketing website's address, for the "About Elmify" link in the shell, and the
+    call-booking page (empty hides every "Book a call" link)."""
+    from django.conf import settings
+
+    return {
+        "marketing_site_url": settings.MARKETING_SITE_URL,
+        "booking_url": settings.BOOKING_URL,
+    }

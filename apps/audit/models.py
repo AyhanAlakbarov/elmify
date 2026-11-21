@@ -180,3 +180,37 @@ class Pseudonym(TenantScopedModel):
         constraints = [
             models.UniqueConstraint(fields=("tenant", "id"), name="pseudonym_tenant_id_uniq")
         ]
+
+
+class StaffFileAccess(TenantScopedModel):
+    """One view or download of a student's file by Elmify staff (owner decision 2026-10-11).
+
+    Written by apps/audit/staff_access.py::record_staff_access before a byte is read; a
+    failed write serves nothing. Its own table rather than an AuditEvent because the record
+    must name the student and the kind of document by itself: a document row can be deleted
+    and an AuditEvent holds only the document id. No filename, no name.
+
+    An audit record about staff, not data derived from the student, so it points at
+    Membership (PROTECT) like AuditEvent and DeletionRequest, not at Pseudonym, and it
+    survives the student's erasure (apps/audit/redaction.py keeps every field).
+    """
+
+    class Action(models.TextChoices):
+        VIEW = "VIEW", "Viewed"
+        DOWNLOAD = "DOWNLOAD", "Downloaded"
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    staff = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    student = models.ForeignKey(Membership, on_delete=models.PROTECT, related_name="+")
+    action = models.CharField(max_length=10, choices=Action.choices)
+    #: DRAFT_<DocumentDraft.kind>, UPLOAD_<DocumentVersion.kind> or
+    #: PREPARED_<PreparedDocument.document>: each half from a closed set.
+    document_kind = models.CharField(max_length=48)
+    document_id = models.UUIDField()
+    accessed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=("tenant", "id"), name="staff_access_tenant_id_uniq")
+        ]
+        indexes = [models.Index(fields=("tenant", "accessed_at"), name="staff_access_time_idx")]

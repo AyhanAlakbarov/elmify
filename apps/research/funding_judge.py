@@ -225,6 +225,9 @@ class LineVerdict(BaseModel):
     timing: _Timing = "UNSTATED"
     cycle: _Cycle = "UNSTATED"
     name: str = Field(min_length=1, max_length=80)
+    #: POINTER lines only: the body that holds the money, COPIED as the line
+    #: writes it. `name` is the award's label; the resolver needs the body's.
+    funder: str = Field(default="", max_length=120)
 
 
 class FundingVerdicts(BaseModel):
@@ -263,7 +266,9 @@ _QUESTION = (
     "to, so a line saying it is open to international students under a scholarship carries "
     "that scholarship's kind and scope. UNSTATED means the listing nowhere states that value "
     "for that award.\n"
-    "offered: YES when the line states the support is available, NO when it states it is not.\n"
+    "offered: YES when the line states the support is available, NO when it states it is not "
+    "(including recruitment without scholarship, self-funded applicants only, grant expired, or "
+    "scholarship applications closed for an intake).\n"
     "kind: I0_HOLDER_AWARD for an award the page's own organisation gives to students and that "
     "is not tied to one institution or programme (a foundation's, ministry's, company's or "
     "association's own scholarship or loan); I1_UNIVERSITY_WIDE for an award open across the "
@@ -335,6 +340,9 @@ _QUESTION = (
     "ANNUAL_FIXED for one call a year with a fixed deadline, ROLLING for applications taken at "
     "any time, WITH_ADMISSION_CYCLE when it is decided with the admission application, ONE_OFF "
     "for a single call, or UNSTATED.\n"
+    "funder: on a POINTER line only, the name of the body that holds the money, copied exactly "
+    "as the line writes it (\"the Ministry of Culture\", \"DAAD\"), or empty when the line names "
+    "none. Leave funder empty on every other line.\n"
     "Lines may be in any language."
 )
 
@@ -420,8 +428,12 @@ def _openai_reading(
         kwargs["service_tier"] = "flex"
     try:
         response = parser.parse(**kwargs)
-    except RateLimitError:
+    except RateLimitError as error:
         if tier is not ReadingTier.FLEX:
+            logger.warning(
+                "openai reading rate-limited on %s (%s: %s)",
+                source_id, type(error).__name__, error,
+            )
             _lost(meter)
             return None
         # Flex capacity is not guaranteed; a 429 means "none spare now". One
@@ -431,10 +443,18 @@ def _openai_reading(
         kwargs.pop("service_tier")
         try:
             response = parser.parse(**kwargs)
-        except ValidationError:
+        except ValidationError as retry_error:
+            logger.warning(
+                "openai flex-fallback reading off-schema on %s (%d validation error(s))",
+                source_id, retry_error.error_count(),
+            )
             _answered_off_schema(meter)
             return None
-        except Exception:
+        except Exception as retry_error:
+            logger.warning(
+                "openai flex-fallback reading failed on %s (%s: %s)",
+                source_id, type(retry_error).__name__, retry_error,
+            )
             _lost(meter)
             return None
     except BadRequestError as error:
@@ -442,14 +462,26 @@ def _openai_reading(
             raise ReadingTierRefused(
                 f"{settings.OPENAI_EXTRACTION_MODEL} refused a flex request: {error}"
             ) from error
+        logger.warning(
+            "openai reading refused on %s (%s: %s)",
+            source_id, type(error).__name__, error,
+        )
         _lost(meter)
         return None
-    except ValidationError:
+    except ValidationError as error:
         # The SDK validates inside parse(): an off-schema answer -- including
         # JSON cut off at max_output_tokens -- came back and was billed.
+        logger.warning(
+            "openai reading off-schema on %s (%d validation error(s))",
+            source_id, error.error_count(),
+        )
         _answered_off_schema(meter)
         return None
-    except Exception:  # a failed call is a reading that learned nothing, never a crash
+    except Exception as error:  # a failed call is a reading that learned nothing, never a crash
+        logger.warning(
+            "openai reading failed on %s (%s: %s)",
+            source_id, type(error).__name__, error,
+        )
         _lost(meter)
         return None
     if meter is not None:
@@ -520,7 +552,11 @@ def _claude_reading(
             max_tokens=2 * _MAX_OUTPUT_TOKENS,
             on_response=answered.append,
         )
-    except Exception:  # transport errors, as for the OpenAI readings
+    except Exception as error:  # transport errors, as for the OpenAI readings
+        logger.warning(
+            "claude reading failed on %s (%s: %s)",
+            source_id, type(error).__name__, error,
+        )
         reading = None
     if meter is not None:
         if answered:
@@ -769,8 +805,12 @@ class PointerLead:
     the organisation register, never an award. One Turkish page named 31."""
 
     quote: str
+    #: The award's label, at most six words.
     name: str
     holder: str
+    #: The body's own name as the line prints it, or "" when no reading copied
+    #: one that is on the line (spec 2026-09-27 4.7).
+    funder: str = ""
 
 
 @dataclass(frozen=True)
@@ -977,12 +1017,16 @@ def _intake_buckets(members: list[LineOutcome]) -> dict[str, list[LineOutcome]]:
     return {intake: bucket + general for intake, bucket in named.items()}
 
 
-def _specificity(member: LineOutcome, intake: str) -> tuple[bool, bool, str]:
-    """How strongly a line speaks about `intake`: naming it, then carrying a date."""
+def _specificity(member: LineOutcome, intake: str) -> tuple[bool, bool, bool, str]:
+    """How strongly a line speaks about `intake`: naming it, printing it on the line itself,
+    then carrying a date."""
     label = _representative(member.verdicts)
     dated = label.stated_on != "UNSTATED"
+    named = intake != "UNSTATED" and label.applies_to == intake
+    in_line = named and on_line(intake, member.line.text)
     return (
-        intake != "UNSTATED" and label.applies_to == intake,
+        named,
+        in_line,
         dated,
         label.stated_on if dated else "",
     )
@@ -1008,7 +1052,91 @@ def _resolve_offered(members: list[LineOutcome], intake: str) -> tuple[str, str,
         return "NO", best_no.line.text, True
     if _specificity(best_yes, intake) > _specificity(best_no, intake):
         return "YES", "", True
-    return "NO", "", False
+    return "NO", best_no.line.text if intake != "UNSTATED" else "", False
+
+
+def _pointer_funder(outcome: LineOutcome) -> str:
+    """The body a pointer names, copied from its own line -- never a reading's
+    paraphrase. The most common copy that is on the line; "" when none is."""
+    copies = Counter(
+        v.funder for v in outcome.verdicts if v.funder and on_line(v.funder, outcome.line.text)
+    )
+    return copies.most_common(1)[0][0] if copies else ""
+
+
+_SCHOLARSHIP_GROUP_KINDS = frozenset(
+    {"I1_UNIVERSITY_WIDE", "I2_PROGRAMME_ATTACHED", "I5_FUNDED_DUAL_DEGREE"}
+)
+_PROGRAMME_GROUP_SCOPES = frozenset({"PROGRAM", "PROGRAMS", "INSTITUTION"})
+
+
+def _propagate_programme_negations(
+    groups: dict[tuple[str, str, str], list[LineOutcome]],
+) -> None:
+    """Attach programme-level scholarship negations (`offered == "NO"`) to matching
+    positive scholarship groups on the same page even when the disclaimer appears under
+    a different heading (e.g. `## Scholarship` vs `# Overview`) or generic kind
+    (`I2_PROGRAMME_ATTACHED` vs `I5_FUNDED_DUAL_DEGREE`)."""
+    positive_keys = [
+        key
+        for key, members in groups.items()
+        if key[1] in _SCHOLARSHIP_GROUP_KINDS
+        and key[2] in _PROGRAMME_GROUP_SCOPES
+        and any(_representative(m.verdicts).offered == "YES" for m in members)
+    ]
+    if not positive_keys:
+        return
+    has_grant_group = any(
+        any(
+            _representative(m.verdicts).offered == "YES"
+            and _representative(m.verdicts).money_form == "GRANT"
+            for m in groups[key]
+        )
+        for key in positive_keys
+    )
+    absorbed_negation_only_keys: list[tuple[str, str, str]] = []
+    for key, members in list(groups.items()):
+        if key[1] not in _SCHOLARSHIP_GROUP_KINDS or key[2] not in _PROGRAMME_GROUP_SCOPES:
+            continue
+        no_members = [m for m in members if _representative(m.verdicts).offered == "NO"]
+        if not no_members:
+            continue
+        attached_any = False
+        for no_member in no_members:
+            no_rep = _representative(no_member.verdicts)
+            mentions_waiver = "waiver" in no_member.line.text.casefold()
+            for pos_key in positive_keys:
+                if pos_key == key:
+                    continue
+                pos_members = groups[pos_key]
+                is_pure_waiver = all(
+                    _representative(m.verdicts).money_form == "FEE_WAIVER"
+                    for m in pos_members
+                    if _representative(m.verdicts).offered == "YES"
+                )
+                if (
+                    has_grant_group
+                    and is_pure_waiver
+                    and not mentions_waiver
+                    and no_rep.money_form != "FEE_WAIVER"
+                ):
+                    continue
+                adapted = LineOutcome(
+                    line=no_member.line,
+                    status=no_member.status,
+                    verdicts=tuple(
+                        v.model_copy(update={"kind": pos_key[1], "scope": pos_key[2]})
+                        for v in no_member.verdicts
+                    ),
+                    disputed=no_member.disputed,
+                )
+                if not any(existing.line == adapted.line for existing in pos_members):
+                    pos_members.append(adapted)
+                attached_any = True
+        if attached_any and all(_representative(m.verdicts).offered == "NO" for m in members):
+            absorbed_negation_only_keys.append(key)
+    for key in absorbed_negation_only_keys:
+        groups.pop(key, None)
 
 
 def awards(outcomes: Iterable[LineOutcome]) -> FundingReadResult:
@@ -1039,14 +1167,22 @@ def awards(outcomes: Iterable[LineOutcome]) -> FundingReadResult:
         if label.scope == "POINTER":
             pointers += 1
             leads.append(
-                PointerLead(quote=outcome.line.text, name=label.name[:80], holder=label.holder)
+                PointerLead(
+                    quote=outcome.line.text, name=label.name[:80], holder=label.holder,
+                    funder=_pointer_funder(outcome),
+                )
             )
             continue
         groups.setdefault((outcome.line.heading, label.kind, label.scope), []).append(outcome)
+    _propagate_programme_negations(groups)
     decisions: list[FundingDecision] = []
     for (heading, kind, scope), award_members in groups.items():
-        for intake, members in _intake_buckets(award_members).items():
-            decisions.append(_decide(heading, kind, scope, intake, members))
+        group_decisions = [
+            _decide(heading, kind, scope, intake, members)
+            for intake, members in _intake_buckets(award_members).items()
+        ]
+        group_decisions.sort(key=lambda d: 0 if d.offered == "NO" else 1)
+        decisions.extend(group_decisions)
     return FundingReadResult(tuple(decisions), pointers, negations, noise, tuple(leads))
 
 
@@ -1086,7 +1222,18 @@ def _decide(
     offered, suspension_quote, settled = _resolve_offered(members, intake)
     if settled:
         # The dispute was resolved, not merged: one line is strictly more
-        # specific about this intake than the other.
+        # specific about this intake than the other. Compare only the winning
+        # side's labels so a negation's UNSTATED detail fields do not pollute
+        # a settled decision.
+        winning_members = [
+            m for m in members if _representative(m.verdicts).offered == offered
+        ] or members
+        winning_labels = [_representative(m.verdicts) for m in winning_members]
+        disputed = (
+            {field for m in winning_members for field in m.disputed}
+            | _differing(winning_labels)
+            | card.unconfirmed
+        )
         disputed.discard("offered")
         if agreement == "UNAGREED" and not disputed & set(_EXISTENCE):
             agreement = "AGREED"

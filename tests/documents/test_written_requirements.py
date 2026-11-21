@@ -228,16 +228,17 @@ def test_the_judge_sees_the_whole_letter() -> None:
     assert "Musterstadt" in payload and '"de"' in payload and "q1" in payload
 
 
-def test_a_students_letter_does_not_reach_a_second_vendor_by_default(settings) -> None:
+def test_a_students_letter_does_not_reach_a_second_vendor_when_the_setting_is_off(
+    settings,
+) -> None:
     """The setting is the decision, not the caller passing a client.
 
-    Branch security review: this check would be the first path on which a
-    student's own text leaves the platform to the second model family, which
-    reads only programme pages everywhere else.
+    This check is the first path on which a student's own text leaves the
+    platform to the second model family, which reads only programme pages
+    everywhere else. The owner took that decision on 2026-09-24 and the
+    shipped default is now ON, so what still needs pinning is that turning it
+    OFF actually withholds the text -- not what the default happens to be.
     """
-    import config.settings.base as base
-
-    assert base.LETTER_JUDGE_SECOND_FAMILY is False, "the shipped default must be off"
     settings.LETTER_JUDGE_SECOND_FAMILY = False
     claude = _Fake(False)
     _check(_Fake(False), claude)
@@ -262,3 +263,18 @@ def test_a_reading_that_judged_nothing_does_not_silence_the_others() -> None:
             return _Reading(RequirementVerdicts.model_validate({"verdicts": []}))
 
     assert _check(_Empty(False), _Fake(False)) == (0, 1)
+
+
+def test_the_shipped_default_sends_the_letter_to_the_second_family() -> None:
+    """Owner decision, 2026-09-24: the written basis this gate was waiting for.
+
+    Pinned because the default IS the decision -- an env var nobody sets is
+    what production runs on. Two conditions travel with it and neither is
+    code: the use agreement naming the second vendor is still to be published,
+    and `ANTHROPIC_API_KEY` does not reach the worker task definition, so until
+    it does the Claude reading is lost and the judge logs "judged by one model
+    family" -- on, and no second opinion, which looks exactly like working.
+    """
+    import config.settings.base as base
+
+    assert base.LETTER_JUDGE_SECOND_FAMILY is True

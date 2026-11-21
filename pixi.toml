@@ -1,0 +1,11 @@
+[workspace]
+authors = ["Orkhan Abdullayev <102918441+0rkhann@users.noreply.github.com>"]
+channels = ["conda-forge"]
+name = "elmify-test-postgres"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+
+[dependencies]
+postgresql = "==17.10"

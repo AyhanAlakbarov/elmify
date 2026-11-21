@@ -58,10 +58,18 @@ def main() -> None:
     agency = Agency.objects.create(name="Elmify Demo", brand_primary_color="#6D28D9")
     TenantDomain.objects.create(agency=agency, host=HOST, verified_at=timezone.now())
 
-    student = User.objects.create_user(username="aysel", password=PASSWORD, first_name="Aysel")
-    counselor = User.objects.create_user(username="counselor", password=PASSWORD)
-    owner = User.objects.create_user(username="owner", password=PASSWORD)
-    platform = User.objects.create_user(username="platform", password=PASSWORD)
+    student = User.objects.create_user(
+        username="aysel", email="aysel@elmify.az", password=PASSWORD, first_name="Aysel"
+    )
+    counselor = User.objects.create_user(
+        username="counselor", email="counselor@elmify.az", password=PASSWORD
+    )
+    owner = User.objects.create_user(
+        username="owner", email="owner@elmify.az", password=PASSWORD
+    )
+    platform = User.objects.create_user(
+        username="platform", email="platform@elmify.az", password=PASSWORD
+    )
     from apps.research.models import PlatformAgency
     from apps.tenancy.models import CounselorAssignment
 

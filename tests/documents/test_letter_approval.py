@@ -12,7 +12,7 @@ from apps.documents.letter_approval import (
 )
 from apps.documents.letter_schemas import ClaimKind, LetterClaim, LetterContent, LetterUnit
 from apps.documents.letter_verification import LetterClaimVerdict
-from apps.documents.models import DocumentDraft, VerifiedFact
+from apps.documents.models import DocumentDraft, NarrativeInput, VerifiedFact
 from apps.documents.schemas import CVContent, EducationEntry, PersonalInformation
 from apps.documents.verification import Verdict
 from apps.funding.models import ApplicationPrompt, AuditEvent, Program
@@ -101,6 +101,11 @@ def _draft(agency, django_user_model, name, *, content=None):
     return student, draft, content, facts
 
 
+#: The programme every stub prompt is for (plan 1, task 4: research rows are
+#: filtered to it).
+_PROGRAMME_ID = uuid4()
+
+
 def _prompt_stub(source, *, immigration=False):
     class _Stub:
         pass
@@ -108,6 +113,7 @@ def _prompt_stub(source, *, immigration=False):
     stub = _Stub()
     stub.source = source
     stub.immigration = immigration
+    stub.programme_id = _PROGRAMME_ID
     return stub
 
 
@@ -587,3 +593,125 @@ def test_the_default_recheck_is_the_research_fit_one():
 
     default = inspect.signature(mark_letter_ready).parameters["recheck"].default
     assert default is recheck_research_fit
+
+
+def test_mark_letter_ready_never_accepts_another_programmes_research(
+    agency_a, django_user_model
+):
+    """Plan 1, task 4: a SOURCED claim citing a research row verified for a
+    DIFFERENT programme is UNSUPPORTED once the inputs are filtered, so the
+    letter is blocked rather than naming another university's lab."""
+    with tenant_scope(agency_a.id):
+        student, draft, _content, facts = _draft(agency_a, django_user_model, "la-other")
+        other = NarrativeInput(
+            id=uuid4(), kind=NarrativeInput.Kind.RESEARCH_FIT,
+            proposed_by=NarrativeInput.ProposedBy.ENGINE, text="The Chair of Elsewhere.",
+            provenance={
+                "program_id": str(uuid4()), "sentence": "The Chair of Elsewhere.",
+                "entity": "Chair of Elsewhere", "source_url": "https://else.example/x",
+            },
+        )
+        text = "I want to join the Chair of Elsewhere."
+        claim = LetterClaim(
+            text="the Chair of Elsewhere", span_start=0, span_end=len(text),
+            kind=ClaimKind.SOURCED, source_url="https://else.example/x", input_id=other.id,
+        )
+        content = LetterContent(
+            language="en",
+            units=(LetterUnit(archetype="WHY_PROGRAMME", text=text, claims=(claim,)),),
+        )
+        with pytest.raises(ApprovalBlocked):
+            mark_letter_ready(
+                document=draft,
+                content=content,
+                gate_violations=(),
+                prompt=_prompt_stub(ApplicationPrompt.Source.VERIFIED),
+                letter_required=Program.LetterRequired.REQUIRED,
+                facts=facts,
+                inputs={other.id: other},
+                binding_violation_after_retry=False,
+                accepted_by=student,
+                recheck=lambda inputs: (),
+            )
+
+
+def test_mark_letter_ready_immigration_blocks_when_live_ledger_is_uncertain_under_lock(
+    agency_a, django_user_model
+):
+    """Even if the caller's stale `facts` snapshot still shows a confirmed
+    fact, `mark_ready` re-reads the live ledger under lock with
+    `immigration=True` and blocks when the stored claim is `UNCERTAIN`."""
+    with tenant_scope(agency_a.id):
+        user = django_user_model.objects.create(username="la-imm-lock")
+        student = Membership.objects.create(
+            tenant=agency_a, user=user, role=Membership.Role.STUDENT, active=True
+        )
+        # Live row in DB is unconfirmed (UNCERTAIN).
+        unconfirmed = _unconfirmed_fact(student)
+        content = _letter_content(fact_id=unconfirmed.id)
+        draft = DocumentDraft.objects.create(
+            student=student,
+            kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            version=1,
+            content=content.model_dump(mode="json"),
+            status=DocumentDraft.Status.DRAFT,
+        )
+        # Caller hands a stale in-memory snapshot where confirmed_by is set.
+        stale_confirmed = VerifiedFact(
+            id=unconfirmed.id,
+            tenant_id=agency_a.id,
+            student=student,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={"degree": "BSc"},
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="intake-unconfirmed",
+            confirmed_by=student,
+            confirmed_at=timezone.now(),
+            created_by=student,
+        )
+        prompt = _prompt_stub(ApplicationPrompt.Source.VERIFIED, immigration=True)
+        with pytest.raises(ApprovalBlocked):
+            mark_letter_ready(
+                document=draft,
+                content=content,
+                gate_violations=(),
+                prompt=prompt,
+                letter_required=Program.LetterRequired.REQUIRED,
+                facts={unconfirmed.id: stale_confirmed},
+                inputs={},
+                binding_violation_after_retry=False,
+                accepted_by=student,
+            )
+        draft.refresh_from_db()
+        assert draft.status == DocumentDraft.Status.DRAFT
+
+
+def test_mark_letter_ready_blocks_ai_style_violation_even_when_caller_passes_empty_gates(
+    agency_a, django_user_model
+):
+    with tenant_scope(agency_a.id):
+        ai_content = LetterContent(
+            language="en",
+            units=(
+                LetterUnit(
+                    archetype="WHY_PROGRAMME",
+                    text="This project was a pivotal moment in my academic trajectory.",
+                ),
+            ),
+        )
+        student, draft, content, facts = _draft(
+            agency_a, django_user_model, "la-ai-gate", content=ai_content
+        )
+        prompt = _prompt_stub(ApplicationPrompt.Source.VERIFIED)
+        with pytest.raises(ApprovalBlocked):
+            mark_letter_ready(
+                document=draft,
+                content=content,
+                gate_violations=(),
+                prompt=prompt,
+                letter_required=Program.LetterRequired.REQUIRED,
+                facts=facts,
+                inputs={},
+                binding_violation_after_retry=False,
+                accepted_by=student,
+            )

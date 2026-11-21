@@ -1,6 +1,6 @@
 # The funding reader, measured live — 497 EACEA leads
 
-Run finished 2026-09-16 after 15h12m. Throwaway database `tehsil_funding_precision_v2`,
+Run finished 2026-09-16 after 15h12m. Throwaway database `elmify_funding_precision_v2`,
 evidence on local disk, both model families answering live. Driver: `funding_run.py`
 (scratchpad, not committed — it is the pipeline's own entry points wired to a disk store).
 
@@ -105,7 +105,7 @@ either, so a student is shown an award without being told whether they are eligi
 
 ## Sample verification: the 32 unagreed rows, read by hand (2026-09-22)
 
-Read all 32 stored quotes directly from `tehsil_funding_precision_v2` (`FundingOpportunity`
+Read all 32 stored quotes directly from `elmify_funding_precision_v2` (`FundingOpportunity`
 rows filtered `agreement="UNAGREED"`) against their pages' content, and specifically 15 of the
 17 decisions carrying `offered` in `disputed` — the question the previous section left open.
 

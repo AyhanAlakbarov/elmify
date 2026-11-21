@@ -140,6 +140,10 @@ class PersonalInformation(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
     email: str = Field(min_length=3, max_length=320, pattern=_EMAIL_PATTERN)
     phone: str | None = Field(default=None, max_length=30)
+    #: As in the passport, collected on the dashboard when a programme's file
+    #: name needs them. Carried, never compared against full_name.
+    surname: str | None = Field(default=None, max_length=100)
+    given_name: str | None = Field(default=None, max_length=100)
     photo_url: str | None = None
     date_of_birth: CVDate = None
     # SISGP (R-079) mandates both as fixed template fields; every other
@@ -299,10 +303,10 @@ class EducationEntry(_RangeEntry):
     #: The degree's own thesis, printed under the degree. Every source that
     #: discusses graduate-applicant CVs puts the two together: the education
     #: block is the first landmark a reader's eye hits and the thesis is the
-    #: most informative fact in it. Duplicating ResearchEntry.thesis_title is
-    #: the point -- the Research section carries the work, this carries the
-    #: qualification it was submitted for -- and it stays null unless the
-    #: document states a thesis for that degree.
+    #: most informative fact in it. It may equal a ResearchEntry's thesis_title;
+    #: the cv_base.html render then prints the title once, under the degree
+    #: (render.thesis_printed_once, CV design 2026-10-12 §5.4) -- and it stays
+    #: null unless the document states a thesis for that degree.
     thesis_title: str | None = Field(default=None, max_length=300)
     #: "3rd of 120", "top 5%". A string, not a number: what a transcript
     #: states is a rank, a percentile or a decile depending on the country,
@@ -566,6 +570,22 @@ class AwardEntry(BaseModel):
     detail: str | None = Field(default=None, max_length=300)
 
 
+class CertificationEntry(BaseModel):
+    """A course certificate or professional licence (S-036, S-042).
+
+    Not an award: an award is an honour someone granted on merit, a
+    certification is something the applicant completed. Not a language test
+    either: IELTS, TOEFL and the rest live in LanguageEntry (R-041), and the
+    renderer drops a certification that duplicates one (render.py).
+    """
+
+    model_config = _CONTENT_CONFIG
+
+    title: str = Field(min_length=1, max_length=300)
+    issuer: str | None = Field(default=None, max_length=300)
+    date: CVDate = None
+
+
 class ReferenceEntry(BaseModel):
     """One named referee. European academic applications routinely expect them.
 
@@ -732,6 +752,19 @@ class TimelineEntry(_RangeEntry):
     )
 
 
+class ProjectEntry(_RangeEntry):
+    """A standalone project or course project placed from `EvidenceReading`
+    (CV evidence spec §10.4)."""
+
+    model_config = _CONTENT_CONFIG
+
+    title: str = Field(min_length=1, max_length=300)
+    url: str | None = Field(default=None, max_length=300, pattern=_HTTPS_URL_PATTERN)
+    start_date: CVDate = None
+    end_date: CVEndDate = None
+    bullets: tuple[Bullet, ...] = Field(default=(), min_length=1, max_length=3)
+
+
 def open_span_end(start: date, starts: Iterable[date | None]) -> date | None:
     """Where an open-ended gap statement stops: the next entry to start after it.
 
@@ -804,6 +837,10 @@ class CVContent(BaseModel):
     #: referees existed still validates as version 3, which is what keeps
     #: this from being a fourth incompatible shape.
     references: tuple[ReferenceEntry, ...] = Field(default=(), max_length=10)
+    #: Defaulted for the same reason as `references`: a stored draft written
+    #: before certifications existed still validates as version 3.
+    certifications: tuple[CertificationEntry, ...] = Field(default=(), max_length=20)
+    projects: tuple[ProjectEntry, ...] = Field(default=(), max_length=10)
     summary: str | None = Field(default=None, max_length=1_000)
     document_language: str = Field(min_length=2, max_length=10)
 

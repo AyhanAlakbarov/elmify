@@ -28,6 +28,7 @@ from uuid import UUID
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.core.exceptions import PermissionDenied
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import reverse
@@ -35,20 +36,24 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from apps.concierge.cycles import paid_cycle
-from apps.concierge.documents import presigned_upload, register
+from apps.concierge.documents import UploadModeRefused, presigned_upload, register
 from apps.concierge.models import UPLOAD_KIND_VALUES, DocumentVersion
 from apps.funding.models import PackCandidate
 from apps.funding.services import current_pack
 from apps.portals.models import Application
-from apps.ratelimit import login_rate_limited, rate_limited
+from apps.ratelimit import login_rate_limited, pack_command_rate_limited, rate_limited
 from apps.tenancy.context import current_tenant_id
 from apps.tenancy.models import Membership
 from apps.tenancy.services import current_membership
 
 from .approval import ApprovalBlocked, mark_ready, verdicts_for
 from .confirmation import FactNotFound, confirm_facts
-from .document_queue import DocumentWorkMessage, enqueue_document_work
-from .generation import generation_rate_limited
+from .document_queue import DocumentWorkMessage, enqueue_document_work, queue_evidence_refresh
+from .evidence import facts as evidence_facts
+from .evidence.github import LOGIN, UNKNOWN_USER_MESSAGE
+from .evidence.refresh import reset as reset_evidence_refresh
+from .evidence.refresh import unknown_login
+from .fact_writer import is_one_tap_row, use_document_value
 from .models import (
     DocumentDraft,
     TranscriptPage,
@@ -56,12 +61,18 @@ from .models import (
     TranscriptUpload,
     VerifiedFact,
 )
+from .reupload import has_pending_changes
 from .transcript_pages import (
     TranscriptRegistrationRefused,
     register_transcript,
     replace_pending,
 )
-from .verification import ClaimVerdict, generatable_facts, unsuperseded_facts
+from .verification import (
+    ClaimVerdict,
+    confirm_candidates,
+    generatable_facts,
+    has_full_name,
+)
 
 #: The one place a document kind is validated, and it stays CV-only.
 #:
@@ -88,6 +99,10 @@ _UPLOAD_RATE_WINDOW_SECONDS = 3600
 _CONFIRM_RATE_LIMIT = 60
 _CONFIRM_RATE_WINDOW_SECONDS = 3600
 _MAX_CONFIRM_BATCH = 200
+
+#: Setting or clearing the GitHub username: each set queues a refresh (CV evidence spec §5.1).
+_GITHUB_LOGIN_LIMIT = 10
+_GITHUB_LOGIN_WINDOW_SECONDS = 3600
 
 _View = Callable[..., HttpResponse]
 
@@ -275,7 +290,13 @@ def uploads(request: HttpRequest, student: Membership) -> HttpResponse:
         except TranscriptRegistrationRefused as refused:
             raise _ApiError(refused.status, refused.code) from refused
     else:
-        document = register(current_tenant_id(), student.id, kind=kind)
+        try:
+            document = register(
+                current_tenant_id(), student.id, kind=kind,
+                mode=body.get("mode"), replaces=body.get("replaces"),
+            )
+        except UploadModeRefused as refused:
+            raise _ApiError(refused.status, refused.code) from refused
     presigned = presigned_upload(document)
     return JsonResponse(
         {
@@ -308,6 +329,54 @@ def upload_status(request: HttpRequest, student: Membership, document_id: UUID) 
             "state": upload.state, "refusal": upload.refusal, "refusal_page": upload.refusal_page,
         }
     return JsonResponse(body)
+
+
+@require_http_methods(["GET", "POST", "DELETE"])
+@_student_endpoint
+def github_login(request: HttpRequest, student: Membership) -> HttpResponse:
+    """The student's GitHub username (CV evidence spec §5.1); the screen is Aykhan's.
+
+    GET: the login on file and, when the last refresh could not find it, the one
+    student-facing message. POST {"login"}: set or change it -- it supersedes the
+    IDENTITY row and queues a refresh. DELETE: clear it and every github reading;
+    skill suggestions already written stay.
+    """
+    if request.method == "GET":
+        login = evidence_facts.github_login(student)
+        missing = unknown_login(student.id)
+        message = (
+            UNKNOWN_USER_MESSAGE.format(login=login) if login and missing == login else None
+        )
+        return JsonResponse({"login": login or None, "message": message})
+    if request.method == "DELETE":
+        # Not rate limited: clearing queues nothing, and a 429 here would refuse the
+        # erasure of a data source.
+        try:
+            evidence_facts.clear_github_login(student)
+        except IntegrityError:
+            # verifiedfact_one_superseder: a change landed between read and write.
+            raise _ApiError(409, "conflict") from None
+        reset_evidence_refresh(student.id)
+        return JsonResponse({"status": "cleared"})
+    if rate_limited(
+        "github-login",
+        student.id,
+        limit=_GITHUB_LOGIN_LIMIT,
+        window_seconds=_GITHUB_LOGIN_WINDOW_SECONDS,
+    ):
+        raise _ApiError(429, "rate_limited")
+    raw = _json_body(request).get("login")
+    login = raw.strip() if isinstance(raw, str) else ""
+    if not LOGIN.fullmatch(login):
+        raise _ApiError(400, "invalid_login")
+    try:
+        evidence_facts.set_github_login(student, login)
+    except IntegrityError:
+        # verifiedfact_one_superseder: another request changed it between read and write.
+        raise _ApiError(409, "conflict") from None
+    reset_evidence_refresh(student.id)
+    queue_evidence_refresh(student.tenant_id, student.id)
+    return JsonResponse({"status": "queued"}, status=202)
 
 
 @require_GET
@@ -349,9 +418,12 @@ def fact_candidates(request: HttpRequest, student: Membership) -> HttpResponse:
     """What the student is being asked to stand behind.
 
     Unsuperseded and unconfirmed, in the ledger's own order (oldest first),
-    which is the order the uploaded CV listed things in.
+    which is the order the uploaded CV listed things in. A document read's
+    doubtful values are not here: the dashboard offers those one key at a time.
     """
-    facts = unsuperseded_facts(student).filter(confirmed_by__isnull=True)
+    facts = [
+        fact for fact in confirm_candidates(student) if not fact.source_ref.startswith("document:")
+    ]
     return JsonResponse(
         {
             "facts": [
@@ -387,8 +459,32 @@ def confirm(request: HttpRequest, student: Membership) -> HttpResponse:
     except ValueError:
         raise _ApiError(400, "fact_ids_invalid") from None
     try:
-        confirmed = confirm_facts(student=student, fact_ids=fact_ids, actor=student)
-    except FactNotFound:
+        with transaction.atomic():
+            # A waiting one-value ID-document row (a passport's Use) is the panel's tap:
+            # a new confirmed row, never a confirm in place (fact_writer.use_document_value).
+            taps = [
+                f.id for f in VerifiedFact.objects.filter(student=student, id__in=fact_ids)
+                if is_one_tap_row(f)
+            ]
+            confirmed = confirm_facts(
+                student=student, fact_ids=[i for i in fact_ids if i not in taps], actor=student
+            )
+            # A tap row already answered (superseded) is 409, so the dashboard can say
+            # "Done." for that and only that; any other refusal stays a 404.
+            used = set(
+                VerifiedFact.objects.filter(supersedes_id__in=taps).values_list(
+                    "supersedes_id", flat=True
+                )
+            )
+            for fact_id in dict.fromkeys(taps):
+                if fact_id in used:
+                    raise _ApiError(409, "already_used")
+                try:
+                    use_document_value(student=student, fact_id=fact_id)
+                except IntegrityError:  # a second Use racing this one: it won
+                    raise _ApiError(409, "already_used") from None
+                confirmed += 1
+    except (FactNotFound, IntegrityError, ValueError):
         raise _ApiError(404, "not_found") from None
     return JsonResponse({"confirmed": confirmed})
 
@@ -414,18 +510,29 @@ def generate(request: HttpRequest, student: Membership) -> HttpResponse:
     if kind not in _SUPPORTED_KINDS:
         raise _ApiError(400, "unsupported_kind")
     programme_id = _programme_id(body, student)
-    if not generatable_facts(student).filter(category=VerifiedFact.Category.IDENTITY).exists():
+    if has_pending_changes(student):
+        raise _ApiError(409, "cv_changes_pending")
+    if not has_full_name(generatable_facts(student)).exists():
         raise _ApiError(409, "identity_not_confirmed")
     if not student.application_email:
         raise _ApiError(409, "application_email_missing")
-    if generation_rate_limited(student.id):
+    if pack_command_rate_limited(student.id):
         raise _ApiError(429, "rate_limited")
+    application_id: UUID | None = None
+    if programme_id is not None:
+        application_id = (
+            Application.objects.filter(student=student, program_id=programme_id)
+            .order_by("-created_at")
+            .values_list("id", flat=True)
+            .first()
+        )
     enqueue_document_work(
         DocumentWorkMessage(
             action="generate",
             kind=kind,
             tenant_id=current_tenant_id(),
             student_id=student.id,
+            application_id=application_id,
             programme_id=programme_id,
         ),
         queue_url=settings.DOCUMENT_QUEUE_URL,
@@ -593,3 +700,32 @@ def approve(request: HttpRequest, student: Membership, draft_id: UUID) -> HttpRe
             queue_url=settings.DOCUMENT_QUEUE_URL,
         )
     return JsonResponse({"status": "queued"}, status=202)
+
+
+@require_POST
+@_student_endpoint
+def put_back(request: HttpRequest, student: Membership, draft_id: UUID) -> HttpResponse:
+    """Remember that the student wants a left-out item on this programme's CV.
+
+    The only digests accepted are the ones the server itself put in this
+    draft's left-out list: the posted value is matched against it, never
+    stored on its own say-so. Takes effect at the next generation.
+    """
+    from .models import CVItemChoice
+    from .views import left_out_entries
+
+    digest = str(_json_body(request).get("item_digest") or "")
+    draft = DocumentDraft.objects.filter(
+        id=draft_id, student=student, kind=DocumentDraft.Kind.CV
+    ).first()
+    if draft is None or draft.programme_id is None:
+        raise _ApiError(404, "not_found")
+    entry = next((e for e in left_out_entries(draft) if e["item_digest"] == digest), None)
+    if entry is None:
+        raise _ApiError(404, "not_found")
+    CVItemChoice.objects.get_or_create(
+        student=student, program_id=draft.programme_id, item_digest=digest,
+        defaults={"section": entry["section"]},
+    )
+    return JsonResponse({"status": "put_back"})
+

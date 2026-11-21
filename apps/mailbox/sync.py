@@ -19,6 +19,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from django.db.models import F
@@ -63,10 +64,10 @@ from apps.watch.rules import REGISTRATION_MAIL_WINDOW
 
 logger = logging.getLogger(__name__)
 
-#: Six syncs an hour per student. The sweep runs far less often than this; the
-#: limit exists so a connect screen, a manual retry and the sweep together
-#: cannot become a provider-quota problem.
-SYNC_LIMIT = 6
+#: Twelve syncs an hour per student. The sweep runs far less often than this; the
+#: limit exists so a connect screen, a manual retry, multiple portal sign-ups and
+#: the sweep together cannot become a provider-quota problem.
+SYNC_LIMIT = 12
 SYNC_WINDOW_SECONDS = 3600
 
 #: Push syncs (push.py) count in their own bucket. A burst of mail is one
@@ -157,6 +158,10 @@ def _cursor(connection: MailboxConnection) -> datetime | None:
     except ValueError:
         # A cursor we cannot parse is a cursor we should not trust; fall back to
         # where tracking began rather than to the epoch.
+        logger.warning(
+            "unparseable sync_cursor on connection %s; falling back to tracking_since",
+            connection.id,
+        )
         return None
 
 
@@ -213,7 +218,7 @@ def _classify(
     except ClassificationRateLimited:
         logger.info("classify rate limit reached on connection %s", connection.id)
         return False
-    except (ProviderError, ClassificationFailure):
+    except (ProviderError, ClassificationFailure) as error:
         with tenant_transaction(connection.tenant_id):
             # Fix round 1, finding 2: compare-and-swap, not check-then-act.
             # Two overlapping syncs (the hourly sweep and an extension-
@@ -237,7 +242,16 @@ def _classify(
                 )
         # A message we could not read is a message that stays a bare signal.
         # The card already told the student it arrived.
-        logger.warning("could not classify a message on connection %s", connection.id)
+        party = "provider" if isinstance(error, ProviderError) else "classifier"
+        cause = f" ({type(error.__cause__).__name__})" if error.__cause__ is not None else ""
+        logger.warning(
+            "could not classify signal %s on connection %s (%s: %s%s)",
+            signal.id,
+            connection.id,
+            party,
+            error,
+            cause,
+        )
     else:
         # Jev reads every classified mail tied to a card: a decision the
         # classifier labelled OTHER still gets its one reading. Outside any
@@ -310,183 +324,49 @@ def sync_connection(
     ):
         raise SyncRefused("sync rate limit reached")
 
-    with tenant_transaction(connection.tenant_id):
-        # One read of the pack and the applications, shared by all three.
-        vouching = vouched_senders(connection.membership)
-        allowed = allowed_senders(connection.membership, vouched=vouching)
-        since = _cursor(connection) or tracking_since(connection.membership)
-        unconfirmed = unconfirmed_senders(connection.membership, vouched=vouching)
-        vouched = set(vouching)
-        # Acting, not reading: full hosts, never the sender keys above. Taken
-        # before the header loop on purpose -- anything it learns is
-        # unconfirmed, and an unconfirmed sender is never a link target.
-        links = link_hosts(connection.membership)
-        # Only an address that really carries its account's tag. tagged()
-        # returns a base address already holding a "+" unchanged, and a
-        # REJECTS portal is given the base itself: counting either as a tag
-        # made every stranger's mail to the plain address trusted (final
-        # review I7). An account whose own REJECTS dropped the tag is still
-        # recognised at `plain+tag` (final review M3): the portal may hold the
-        # tag after all, and that mail is the only evidence that can say so.
-        tags: dict[str, PortalAccount] = {}
-        for owned in PortalAccount.objects.filter(student=connection.membership):
-            if plain_of(owned):
-                tags[owned.address.casefold()] = owned
-            elif owned.tag_outcome == PortalForm.TagStatus.REJECTS and owned.tag:
-                dropped = tagged(owned.address, owned.tag)
-                if dropped != owned.address:
-                    tags[dropped.casefold()] = owned
-        awaiting = _awaiting_registration(connection.membership, timezone.now())
-    # Never learned, whatever a tag mail claims to be: this connection's own
-    # mailbox domain and every tagged address's own domain (fix round 1,
-    # finding 2 -- alongside the free-mail denylist learnable_domain checks).
-    own_domains = {sender_key(connection.address)} | {
-        sender_key(account.address) for account in tags.values()
-    }
-    if not allowed or since is None:
+    scope = _load_sync_scope(connection)
+    if not scope["allowed"] or scope["since"] is None:
         # Nothing to read means nothing to read -- not "read everything".
         _mark_synced(connection)
         return []
 
-    try:
-        # Fix round 1, finding 1: provider_for used to run here, ahead of this
-        # try, so a connection row naming a provider this codebase doesn't
-        # build a client for raised a bare ProviderError past every caller's
-        # `except SyncRefused` (handle_work among them). Guarded like any
-        # other provider failure.
-        client = provider if provider is not None else provider_for(connection.provider, http=http)
-        token = access_token_for(connection, http=http, secrets_client=secrets_client)
-        headers = client.list_headers(
-            access_token=token, since=since, senders=_search_for(connection, allowed)
-        )
-    except (GrantRefused, ProviderError) as error:
-        # Only a lost grant flips the row and asks for a reconnect. A 429, a
-        # 5xx or a dropped connection is the provider's passing problem, not
-        # the student's: the row stays ACTIVE and Task 9's stale-inbox alert
-        # covers an outage that lasts (final review I2). access_token_for's
-        # own token-endpoint failures reach here the same way: a transient
-        # one is oauth.py's GrantUnavailable, a ProviderError subclass, so it
-        # is caught and ruled "not lost" by this same status check without a
-        # second exception shape.
-        lost = isinstance(error, GrantRefused) or error.status in (401, 403)
-        if lost:
-            with tenant_transaction(connection.tenant_id):
-                # Conditional: request_deletion may have REVOKED the row since
-                # this sync read it, and an erasing student must not be told to
-                # reconnect.
-                if MailboxConnection.objects.filter(
-                    pk=connection.pk, status=MailboxConnection.Status.ACTIVE
-                ).update(status=MailboxConnection.Status.ERROR):
-                    connection.status = MailboxConnection.Status.ERROR
-                    announce_lost_grant(connection)
-        logger.warning(
-            "mailbox sync failed for connection %s (grant lost: %s)", connection.id, lost
-        )
-        raise SyncRefused("provider refused" if lost else "provider unavailable") from error
+    client, token, headers = _fetch_headers_or_refuse(
+        connection,
+        since=scope["since"],
+        allowed=scope["allowed"],
+        provider=provider,
+        http=http,
+        secrets_client=secrets_client,
+    )
 
     created: list[MailSignal] = []
     # ponytail: held for this run only, so a message whose first
     # classification fails is retried with the plain label card, not the
     # shared-portal one. Store the portal host on MailSignal if that matters.
     shared_portals: dict[UUID, tuple[str, int]] = {}
-    # Fix round 1, finding 1: providers list newest first, so a naive inline
-    # write let a newer untagged signal record STRIPS before an older tagged
-    # signal in the same batch ever got to record KEEPS -- the weaker
-    # evidence won on order alone. KEEPS is still recorded inline (nothing
-    # ever outweighs it); a STRIPS candidate is only collected here and
-    # written after the whole batch is read, once no KEEPS for that account
-    # showed up anywhere in it.
     keeps_accounts: set[UUID] = set()
     strips_candidates: dict[UUID, PortalAccount] = {}
     newest = _cursor(connection)
+    tags = scope["tags"]
+    awaiting = scope["awaiting"]
     for header in headers:
-        # First, before any branch below can `continue`: the cursor is the
-        # newest message this connection has SEEN (models.py), kept or not.
-        # Advanced only past kept mail, every sync re-listed all the dropped
-        # mail since the last kept one -- weeks of a school inbox, every run.
         if newest is None or header.received_at > newest:
             newest = header.received_at
         account = next((tags[r] for r in header.recipients if r in tags), None)
-        shared_portal: tuple[str, int] | None = None
-        if account is not None:
-            domain = sender_key(header.sender)
-            if not domain:
-                continue
-            with tenant_transaction(connection.tenant_id):
-                on_portal = list(
-                    Application.objects.filter(
-                        student=connection.membership,
-                        portal_form__portal_host=account.portal_host,
-                    ).values_list("id", flat=True)
-                )
-            # One application on this portal is the answer; several are a
-            # question the card asks rather than a guess (final review I6b).
-            application_id = on_portal[0] if len(on_portal) == 1 else None
-            if len(on_portal) > 1:
-                shared_portal = (account.portal_host, len(on_portal))
-            trusted = not header.junk
-            # The tag makes mail trusted enough to act on; an outcome also needs
-            # the provider's verdict, from a sender the pack already vouches for.
-            # DMARC proves who sent it, not which application it is about: a
-            # domain vouched for ANOTHER application is not tied to this tag's
-            # one (final review M3), or its letter could record this card's
-            # outcome.
-            sender_authenticated = (
-                trusted
-                and domain in allowed
-                and allowed[domain] in (application_id, None)
-                and domain not in unconfirmed
-                and (header.authenticated or _verified(connection, client, token, header))
-            )
-            if domain not in allowed:
-                if learnable_domain(domain, own_domains=own_domains):
-                    with tenant_transaction(connection.tenant_id):
-                        LearnedSender.objects.get_or_create(
-                            student=connection.membership,
-                            domain=domain,
-                            defaults={
-                                "tenant_id": connection.tenant_id,
-                                "portal_host": account.portal_host,
-                            },
-                        )
-                    logger.info("SenderLearned connection=%s domain=%s", connection.id, domain)
-                    allowed[domain] = application_id
-                    unconfirmed.add(domain)
-                    # Learned this instant, so unconfirmed; the tag alone is
-                    # the proof.
-                # else: a free-mail domain or this student's own domain is
-                # never remembered -- the message is still read above (this
-                # signal still gets recorded), only the write is refused.
-        elif header.junk:
-            # Junk is read only for mail sent to a tag we issued.
+        resolved = _resolve_header_target(
+            connection,
+            client,
+            token,
+            header,
+            account=account,
+            allowed=scope["allowed"],
+            unconfirmed=scope["unconfirmed"],
+            own_domains=scope["own_domains"],
+        )
+        if resolved is None:
             continue
-        else:
-            domain = matched_domain(header.sender, allowed)
-            if not domain and connection.kind == MailboxConnection.Kind.APPLICATION:
-                # An application inbox holds nothing but application mail, so
-                # no sender filter applies (spec §3): every sender is read.
-                # Still sender_key(), not the raw host: a From header is
-                # attacker-controlled text, and sender_key is what bounds it to
-                # a registrable domain (or "" for a reserved-suffix / IP-literal
-                # / unregistrable host, which the `continue` below then skips).
-                # Controller ruling, fix round 1 finding 1.
-                domain = sender_key(header.sender)
-            if not domain:
-                # Never listed further, never fetched, never stored. This branch
-                # is the product promise.
-                continue
-            application_id = allowed.get(domain)
-            trusted = (
-                domain in allowed
-                and domain not in unconfirmed
-                and (header.authenticated or _verified(connection, client, token, header))
-            )
-            sender_authenticated = trusted
+        domain, application_id, trusted, sender_authenticated, shared_portal = resolved
         with tenant_transaction(connection.tenant_id):
-            # The same message, seen by an EARLIER connection of this student
-            # (a reconnect, a tier change): Graph's immutable ids survive both,
-            # measured 2026-10-03. It is not news twice, and a label it already
-            # earned is not paid for twice.
             earlier = (
                 MailSignal.objects.filter(
                     connection__membership=connection.membership,
@@ -516,10 +396,6 @@ def sync_connection(
                     announce(signal)
                 if shared_portal is not None:
                     shared_portals[signal.pk] = shared_portal
-                # Spec §2a: what this portal does with the tag, measured by the
-                # mail itself. Any mail to a tag says the tag survived; untagged
-                # mail from a portal the student just registered on says it was
-                # stripped. record_tag_outcome keeps the first answer only.
                 if account is not None:
                     if not record_tag_outcome(account, PortalForm.TagStatus.KEEPS):
                         restore_tag(account)
@@ -530,53 +406,196 @@ def sync_connection(
                 ):
                     strips_candidates[registering.pk] = registering
 
-    # Fix round 1, finding 1 (continued): now that the whole batch has been
-    # read, a candidate is written only for an account this batch never also
-    # saw KEEPS for.
     for pk, registering in strips_candidates.items():
-        if pk in keeps_accounts:
-            continue
-        with tenant_transaction(connection.tenant_id):
-            record_tag_outcome(registering, PortalForm.TagStatus.STRIPS)
+        if pk not in keeps_accounts:
+            with tenant_transaction(connection.tenant_id):
+                record_tag_outcome(registering, PortalForm.TagStatus.STRIPS)
 
     if connection.tier == MailboxConnection.Tier.CONTENT:
-        with tenant_transaction(connection.tenant_id):
-            # Every unlabelled signal under the ceiling except this run's own:
-            # attempts == 0 included, so a signal a previous sync recorded and
-            # never got to classify (killed mid-run, final review I1) is read.
-            # Fix round 1, finding 1: oldest first and capped, so a backlog
-            # built up during a classify outage cannot turn one sync into an
-            # unbounded run of provider body-fetch calls.
-            retryable = list(
-                MailSignal.objects.filter(
-                    connection=connection,
-                    label="",
-                    classify_attempts__lt=MAX_CLASSIFY_ATTEMPTS,
-                )
-                .exclude(pk__in=[signal.pk for signal in created])
-                .order_by("received_at")[:MAX_RETRIES_PER_SYNC]
-            )
-        # A signal that inherited its label from an earlier connection was
-        # classified, and acted on if it could, there.
-        fresh = sorted(
-            (signal for signal in created if not signal.label),
-            key=lambda signal: signal.received_at,
-            reverse=True,
+        _classify_pending_signals(
+            connection,
+            client,
+            token,
+            created=created,
+            links=scope["links"],
+            vouched=scope["vouched"],
+            shared_portals=shared_portals,
         )
-        for signal in (*fresh[:MAX_CLASSIFY_PER_SYNC], *retryable):
-            if not _classify(
-                connection,
-                client,
-                token,
-                signal,
-                links,
-                vouched=vouched,
-                shared_portal=shared_portals.get(signal.pk),
-            ):
-                break
 
     _mark_synced(connection, newest)
     return created
+
+
+def _load_sync_scope(connection: MailboxConnection) -> dict[str, Any]:
+    """Load the student's sender allowlist, tagged accounts, and link hosts in one transaction."""
+    with tenant_transaction(connection.tenant_id):
+        vouching = vouched_senders(connection.membership)
+        allowed = allowed_senders(connection.membership, vouched=vouching)
+        since = _cursor(connection) or tracking_since(connection.membership)
+        unconfirmed = unconfirmed_senders(connection.membership, vouched=vouching)
+        vouched = set(vouching)
+        links = link_hosts(connection.membership)
+        tags: dict[str, PortalAccount] = {}
+        for owned in PortalAccount.objects.filter(student=connection.membership):
+            if plain_of(owned):
+                tags[owned.address.casefold()] = owned
+            elif owned.tag_outcome == PortalForm.TagStatus.REJECTS and owned.tag:
+                dropped = tagged(owned.address, owned.tag)
+                if dropped != owned.address:
+                    tags[dropped.casefold()] = owned
+        awaiting = _awaiting_registration(connection.membership, timezone.now())
+    own_domains = {sender_key(connection.address)} | {
+        sender_key(account.address) for account in tags.values()
+    }
+    return {
+        "allowed": allowed,
+        "since": since,
+        "unconfirmed": unconfirmed,
+        "vouched": vouched,
+        "links": links,
+        "tags": tags,
+        "awaiting": awaiting,
+        "own_domains": own_domains,
+    }
+
+
+def _fetch_headers_or_refuse(
+    connection: MailboxConnection,
+    *,
+    since: datetime,
+    allowed: dict[str, UUID | None],
+    provider: MailboxProvider | None,
+    http: object | None,
+    secrets_client: object | None,
+) -> tuple[MailboxProvider, str, tuple[MessageHeader, ...]]:
+    """Mint an access token and list headers, flipping the row to ERROR only on a lost grant."""
+    try:
+        client = provider if provider is not None else provider_for(connection.provider, http=http)
+        token = access_token_for(connection, http=http, secrets_client=secrets_client)
+        headers = client.list_headers(
+            access_token=token, since=since, senders=_search_for(connection, allowed)
+        )
+        return client, token, headers
+    except (GrantRefused, ProviderError) as error:
+        lost = isinstance(error, GrantRefused) or error.status in (401, 403)
+        if lost:
+            with tenant_transaction(connection.tenant_id):
+                if MailboxConnection.objects.filter(
+                    pk=connection.pk, status=MailboxConnection.Status.ACTIVE
+                ).update(status=MailboxConnection.Status.ERROR):
+                    connection.status = MailboxConnection.Status.ERROR
+                    announce_lost_grant(connection)
+        logger.warning(
+            "mailbox sync failed for connection %s (grant lost: %s, %s: %s)",
+            connection.id,
+            lost,
+            type(error).__name__,
+            error,
+        )
+        raise SyncRefused("provider refused" if lost else "provider unavailable") from error
+
+
+def _resolve_header_target(
+    connection: MailboxConnection,
+    client: MailboxProvider,
+    token: str,
+    header: MessageHeader,
+    *,
+    account: PortalAccount | None,
+    allowed: dict[str, UUID | None],
+    unconfirmed: set[str],
+    own_domains: set[str],
+) -> tuple[str, UUID | None, bool, bool, tuple[str, int] | None] | None:
+    """Resolve header target tuple or return None to skip."""
+    if account is not None:
+        domain = sender_key(header.sender)
+        if not domain:
+            return None
+        with tenant_transaction(connection.tenant_id):
+            on_portal = list(
+                Application.objects.filter(
+                    student=connection.membership,
+                    portal_form__portal_host=account.portal_host,
+                ).values_list("id", flat=True)
+            )
+        application_id = on_portal[0] if len(on_portal) == 1 else None
+        shared_portal = (account.portal_host, len(on_portal)) if len(on_portal) > 1 else None
+        trusted = not header.junk
+        sender_authenticated = (
+            trusted
+            and domain in allowed
+            and allowed[domain] in (application_id, None)
+            and domain not in unconfirmed
+            and (header.authenticated or _verified(connection, client, token, header))
+        )
+        if domain not in allowed and learnable_domain(domain, own_domains=own_domains):
+            with tenant_transaction(connection.tenant_id):
+                LearnedSender.objects.get_or_create(
+                    student=connection.membership,
+                    domain=domain,
+                    defaults={
+                        "tenant_id": connection.tenant_id,
+                        "portal_host": account.portal_host,
+                    },
+                )
+            logger.info("SenderLearned connection=%s domain=%s", connection.id, domain)
+            allowed[domain] = application_id
+            unconfirmed.add(domain)
+        return domain, application_id, trusted, sender_authenticated, shared_portal
+
+    if header.junk:
+        return None
+    domain = matched_domain(header.sender, allowed)
+    if not domain and connection.kind == MailboxConnection.Kind.APPLICATION:
+        domain = sender_key(header.sender)
+    if not domain:
+        return None
+    application_id = allowed.get(domain)
+    trusted = (
+        domain in allowed
+        and domain not in unconfirmed
+        and (header.authenticated or _verified(connection, client, token, header))
+    )
+    return domain, application_id, trusted, trusted, None
+
+
+def _classify_pending_signals(
+    connection: MailboxConnection,
+    client: MailboxProvider,
+    token: str,
+    *,
+    created: list[MailSignal],
+    links: set[str],
+    vouched: set[str],
+    shared_portals: dict[UUID, tuple[str, int]],
+) -> None:
+    """Classify up to MAX_CLASSIFY_PER_SYNC new signals plus MAX_RETRIES_PER_SYNC retries."""
+    with tenant_transaction(connection.tenant_id):
+        retryable = list(
+            MailSignal.objects.filter(
+                connection=connection,
+                label="",
+                classify_attempts__lt=MAX_CLASSIFY_ATTEMPTS,
+            )
+            .exclude(pk__in=[signal.pk for signal in created])
+            .order_by("received_at")[:MAX_RETRIES_PER_SYNC]
+        )
+    fresh = sorted(
+        (signal for signal in created if not signal.label),
+        key=lambda signal: signal.received_at,
+        reverse=True,
+    )
+    for signal in (*fresh[:MAX_CLASSIFY_PER_SYNC], *retryable):
+        if not _classify(
+            connection,
+            client,
+            token,
+            signal,
+            links,
+            vouched=vouched,
+            shared_portal=shared_portals.get(signal.pk),
+        ):
+            break
 
 
 def _mark_synced(connection: MailboxConnection, newest: datetime | None = None) -> None:

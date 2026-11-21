@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from decimal import Decimal
 from typing import Any
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
@@ -70,6 +70,9 @@ class EvidenceClaim(TenantScopedModel):
         constraints = [
             models.UniqueConstraint(fields=("tenant", "id"), name="evidence_tenant_id_uniq")
         ]
+
+
+_UNSET_FUNDED_PCT: Any = object()
 
 
 class RecommendationCandidate(TenantScopedModel):
@@ -140,6 +143,120 @@ class RecommendationCandidate(TenantScopedModel):
     #: funder's sentence, the reason) plus their stated yearly budget. Derived
     #: from the student's profile, so erasure redacts it (audit.redaction).
     fit = models.JSONField(default=dict, blank=True)
+    #: A programme's Program.referee_requirements (lanes spec §3.1): its
+    #: reference-letter facts, one record per field the page stated, each with
+    #: its sentence (documents/rule_sinks.py::to_referee). [] for an award, and
+    #: for a page that states none -- a field with no record was not stated.
+    referee_requirements = models.JSONField(default=list, blank=True)
+    #: The programme's place in the engine's ranking for this run, 1 = best
+    #: (pack.rank_candidates). Written for packed AND over-budget programmes;
+    #: None for awards and student-named programmes. "New for you" orders by
+    #: it and the stretch rule compares it (lanes spec §7.7, §7.9).
+    rank = models.PositiveIntegerField(null=True, blank=True)
+    #: What the student said they can pay themselves over the programme, in
+    #: `currency`, capped at `funding_gap` (affordability.self_funded). None when
+    #: they stated nothing or the programme is not costed. It reveals their
+    #: means, so it is REDACT (apps/audit/redaction.py).
+    self_funded = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    #: Shown under the gap when the programme is affordable only by winning
+    #: selective funding (owner, 2026-10-24). Derived from the student's
+    #: finances: REDACT.
+    funding_condition = models.CharField(max_length=500, blank=True, default="")
+    #: Estimated admission or scholarship chance percentage (1..100), computed at
+    #: pack-build time by `apps/funding/probability.py`. Derived from the student's
+    #: profile and transcript margins: REDACT.
+    estimated_chance_pct = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: Estimated joint admission and selective-funding chance percentage (1..100)
+    #: for a programme when selective scholarship(s) apply to it. Derived from the
+    #: student's profile: REDACT.
+    estimated_funded_chance_pct = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: Normalized numeric feature vector used for outcome calibration once an
+    #: application reaches a terminal decision. Derived from the student's profile: REDACT.
+    calibration_features = models.JSONField(default=dict, blank=True)
+
+    @property
+    def left_to_find(self) -> Decimal | None:
+        """The funding gap less what the student pays themselves."""
+        return None if self.self_funded is None else self.funding_gap - self.self_funded
+
+    @property
+    def cannot_afford_without_scholarship(self) -> bool:
+        """True when the student cannot cover this programme's cost without a scholarship."""
+        if self.opportunity_id is not None:
+            return False
+        if self.funding_condition:
+            return True
+        if not self.funding_gap_is_placeholder and self.funding_gap > Decimal("0"):
+            if self.self_funded is not None and self.self_funded < self.funding_gap:
+                return True
+        return False
+
+    def format_chance_line(
+        self,
+        *,
+        funded_chance_pct: int | None = _UNSET_FUNDED_PCT,
+        cannot_afford: bool | None = None,
+    ) -> str:
+        """Render the card's estimated chance wording (R1).
+
+        - Standalone award or programme without selective scholarship:
+          ``We estimate that there is an ~X% chance``
+        - Programme with selective scholarship when the student cannot afford study
+          without a scholarship:
+          ``We estimate that there is an ~Y% chance of admission and funding``
+        - Programme with selective scholarship when the student can afford study
+          themselves:
+          ``We estimate that there is an ~X% chance (~Y% with admission and funding)``
+        """
+        if self.estimated_chance_pct is None:
+            return ""
+        funded_pct = (
+            self.estimated_funded_chance_pct
+            if funded_chance_pct is _UNSET_FUNDED_PCT
+            else funded_chance_pct
+        )
+        if self.opportunity_id is not None or funded_pct is None:
+            return f"We estimate that there is an ~{self.estimated_chance_pct}% chance"
+        needs_scholarship = (
+            cannot_afford
+            if cannot_afford is not None
+            else self.cannot_afford_without_scholarship
+        )
+        if needs_scholarship:
+            return f"We estimate that there is an ~{funded_pct}% chance of admission and funding"
+        return (
+            f"We estimate that there is an ~{self.estimated_chance_pct}% chance "
+            f"(~{funded_pct}% with admission and funding)"
+        )
+
+    @property
+    def chance_line(self) -> str:
+        return self.format_chance_line()
+
+    @property
+    def risk_tier_label(self) -> str:
+        """Human-readable portfolio risk tier persisted by the pack builder."""
+        tier = str((self.calibration_features or {}).get("risk_tier") or "")
+        labels = {
+            "SAFETY": "Safety",
+            "TARGET": "Target",
+            "REACH": "Reach",
+        }
+        return labels.get(tier, "")
+
+    @property
+    def risk_notes(self) -> list[str]:
+        """Structured risk and tradeoff disclosures persisted by the pack builder."""
+        notes = (self.calibration_features or {}).get("risk_notes")
+        if isinstance(notes, list):
+            return [str(n) for n in notes if n]
+        return []
+
+    @property
+    def is_below_fit_bar(self) -> bool:
+        """Whether this eligible programme fell below the balanced profile fit threshold."""
+        reason = (self.calibration_features or {}).get("over_budget_reason")
+        return reason == "ELIGIBLE_BELOW_FIT_BAR"
 
     class EligibilityStatus(models.TextChoices):
         ELIGIBLE = "ELIGIBLE", "Eligible"
@@ -164,7 +281,24 @@ class RecommendationCandidate(TenantScopedModel):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(fields=("tenant", "id"), name="candidate_tenant_id_uniq")
+            models.UniqueConstraint(fields=("tenant", "id"), name="candidate_tenant_id_uniq"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(estimated_chance_pct__isnull=True)
+                    | models.Q(estimated_chance_pct__gte=1, estimated_chance_pct__lte=100)
+                ),
+                name="candidate_estimated_chance_pct_range",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(estimated_funded_chance_pct__isnull=True)
+                    | models.Q(
+                        estimated_funded_chance_pct__gte=1,
+                        estimated_funded_chance_pct__lte=100,
+                    )
+                ),
+                name="candidate_estimated_funded_chance_pct_range",
+            ),
         ]
 
 
@@ -185,6 +319,10 @@ class PackVersion(TenantScopedModel):
     #: (catalog-read-split). It names the student's home cells, which is
     #: nationality, so it is REDACT (apps/audit/redaction.py).
     coverage = models.JSONField(default=dict, blank=True)
+    #: Why the spine packed nothing, copied here so the student page can say it
+    #: (P1-7: never a silently short pack). "" on a pack that packed something.
+    #: It can name the student's field, intake and excluded countries: REDACT.
+    empty_reason = models.TextField(blank=True, default="")
 
     class Meta:
         constraints = [
@@ -193,10 +331,6 @@ class PackVersion(TenantScopedModel):
                 fields=("tenant", "run", "version"), name="pack_tenant_run_version_uniq"
             ),
         ]
-
-    @property
-    def current_version_id(self) -> UUID:
-        return self.id
 
 
 class PackCandidate(TenantScopedModel):
@@ -215,6 +349,32 @@ class PackCandidate(TenantScopedModel):
                 fields=("tenant", "pack_version", "candidate"),
                 name="pack_candidate_tenant_uniq",
             ),
+        ]
+
+
+class ExchangeRate(models.Model):
+    """One currency on one day's official table (lanes spec §7.6).
+
+    Not tenant data: every agency reads the same CBAR rate, so there is no
+    tenant column and no RLS. The web tier reads it -- the board converts at
+    render time -- and only the worker's ``fetch_cbar_rates`` writes it;
+    migration 0060 revokes runtime_web's writes so that stays true.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    day = models.DateField()
+    base = models.CharField(max_length=3, default="AZN")
+    currency = models.CharField(max_length=3)
+    #: Units of ``currency`` per ONE unit of ``base`` -- RateTable.rates'
+    #: convention, the one fx.convert reads (1 AZN = 0.51 EUR is stored 0.51).
+    rate = models.DecimalField(max_digits=30, decimal_places=20)
+    source = models.CharField(max_length=10, default="CBAR")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("day", "base", "currency"), name="exchange_rate_day_uniq"
+            )
         ]
 
 
@@ -564,6 +724,10 @@ class Program(models.Model):
     #: derive_page_rules and rederive_rules; read by the application-route
     #: catalogue. A field with no record was not stated.
     referee_requirements = models.JSONField(default=list, blank=True)
+    #: The page's file rules (rule_sinks.to_file_rules): one record per
+    #: (document, field) -- max_bytes, format, combine, name_pattern -- each with
+    #: its sentence. Read only by capture_requirements, in the worker.
+    file_rules = models.JSONField(default=list, blank=True)
 
     class LetterRequired(models.TextChoices):
         REQUIRED = "required"
@@ -1977,3 +2141,50 @@ class ApplicationPrompt(models.Model):
                 name="applicationprompt_confidence_range",
             ),
         ]
+
+
+class OutcomeCalibrationRecord(models.Model):
+    """Anonymised outcome calibration row synced by `runtime_engine` from decided applications.
+
+    Shared catalogue (`_SHARED_TABLES`): holds no `tenant_id` or `student_id`, only an opaque
+    `application_id` for idempotent upsert on outcome correction (`correct_outcome`) and
+    `source_application_id` for deletion on student erasure (`redact_student`). Readable/writable
+    by `runtime_engine`; `runtime_web` holds no grant.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid4, editable=False)
+    application_id = models.UUIDField(unique=True)
+    source_application_id = models.UUIDField(db_index=True, null=True, blank=True)
+    program = models.ForeignKey(
+        Program,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="outcome_calibration_records",
+    )
+    opportunity = models.ForeignKey(
+        FundingOpportunity,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="outcome_calibration_records",
+    )
+    country_code = models.CharField(max_length=2, blank=True, default="")
+    origin_country = models.CharField(max_length=2, blank=True, default="")
+    family = models.CharField(max_length=40, blank=True, default="")
+    route = models.CharField(max_length=40, blank=True, default="")
+    outcome_source = models.CharField(max_length=10, blank=True, default="")
+    intake_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    predicted_chance_pct = models.PositiveSmallIntegerField()
+    feature_vector = models.JSONField(default=dict, blank=True)
+    won = models.BooleanField()
+    recorded_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(predicted_chance_pct__gte=1, predicted_chance_pct__lte=100),
+                name="outcome_calibration_chance_range",
+            ),
+        ]
+

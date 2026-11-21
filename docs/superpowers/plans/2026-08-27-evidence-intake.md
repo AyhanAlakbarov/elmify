@@ -267,8 +267,8 @@ Expected: All checks passed
 - [ ] **Step 7: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> commit -m "feat(evidence): parse student-supplied sources at the trust boundary
+git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> commit -m "feat(evidence): parse student-supplied sources at the trust boundary
 
 No student string may become a hostname or an unescaped path segment. What
 survives parsing cannot contain a separator, a dot-segment or a percent-escape,
@@ -293,7 +293,7 @@ Run this and save the output verbatim to `tests/documents/evidence/fixtures/cros
 
 ```bash
 curl -s "https://api.crossref.org/works/10.1021/acscatal.5c00348" \
-  -H "User-Agent: tehsil-agent/1.0 (mailto:a.orhan.master@gmail.com)" \
+  -H "User-Agent: elmify/1.0 (mailto:a.orhan.master@gmail.com)" \
   > tests/documents/evidence/fixtures/crossref_acscatal.json
 ```
 
@@ -441,7 +441,7 @@ from typing import Protocol
 import urllib3
 
 _TIMEOUT = urllib3.Timeout(connect=5, read=20)
-_USER_AGENT = "tehsil-agent/1.0 (+https://github.com/0rkhann/tehsil_agent)"
+_USER_AGENT = "elmify/1.0 (+https://github.com/0rkhann/elmify)"
 
 
 class Transport(Protocol):
@@ -599,8 +599,8 @@ Expected: All checks passed; Success
 - [ ] **Step 8: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> commit -m "feat(evidence): resolve a DOI to a bibliographic record
+git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> commit -m "feat(evidence): resolve a DOI to a bibliographic record
 
 Crossref first, OpenAlex for the conference papers it lacks. Author order is
 preserved exactly because PublicationEntry.self_author_index indexes into it,
@@ -840,8 +840,8 @@ Expected: all pass
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> commit -m "feat(evidence): write publication records into the fact ledger
+git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> commit -m "feat(evidence): write publication records into the fact ledger
 
 Payloads come from verification.fact_payload so they cannot drift from the
 verifier. Mechanical facts are confirmed at ingest because no model reads them
@@ -1223,8 +1223,8 @@ Expected: All checks passed; Success
 - [ ] **Step 7: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> commit -m "feat(evidence): read a repository through its host API, and gate on authorship
+git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> commit -m "feat(evidence): read a repository through its host API, and gate on authorship
 
 Six endpoints, no clone. Commits by the student are the only proof of
 authorship: three of the four repositories this was validated against are forks
@@ -1465,8 +1465,8 @@ Expected: PASS (9 tests)
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> commit -m "feat(evidence): repository skills and the project shell
+git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> commit -m "feat(evidence): repository skills and the project shell
 
 Languages are byte counts the host computed, so they are confirmed at ingest.
 What a project achieved is not mechanical and becomes a fact only once the
@@ -1671,8 +1671,8 @@ Expected: PASS (4 tests)
 - [ ] **Step 5: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> commit -m "feat(evidence): propose a project description, and never author one
+git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> commit -m "feat(evidence): propose a project description, and never author one
 
 The only LLM in the package. Repository text is framed as data, the prompt
 forbids stating any number DATA does not state, and nothing here writes a fact
@@ -2153,8 +2153,8 @@ Expected: PASS
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> commit -m "feat(evidence): one entry point, three outcomes
+git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> add apps/documents/evidence/ tests/documents/evidence/
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> commit -m "feat(evidence): one entry point, three outcomes
 
 NEEDS_INPUT is not a soft failure: a fork with no commits from the student is a
 perfectly successful fetch of evidence that cannot support a claim. The result
@@ -2305,8 +2305,8 @@ Expected: all green; test count above the recorded baseline; **"No changes detec
 - [ ] **Step 6: Commit**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> add tests/documents/evidence/ pyproject.toml
-uv run git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/<worktree> commit -m "test(evidence): pin the structural invariants and the API contracts
+git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> add tests/documents/evidence/ pyproject.toml
+uv run git -C /home/orkhan/Desktop/elmify/.worktrees/<worktree> commit -m "test(evidence): pin the structural invariants and the API contracts
 
 facts.py is the only module allowed Django models, nothing imports a view, and
 sources.py cannot reach a network module -- if the trust boundary could fetch,

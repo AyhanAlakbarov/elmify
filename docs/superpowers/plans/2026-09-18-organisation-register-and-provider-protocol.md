@@ -38,7 +38,7 @@
 | `apps/research/providers/exa.py` (new) | Exa adapter |
 | `apps/research/providers/brave.py` (new) | Brave adapter + offset loop |
 | `apps/research/providers/tavily.py` (new) | Tavily adapter |
-| `apps/research/goggles/tehsil-funders.goggle` (new) | the hosted Goggle, committed |
+| `apps/research/goggles/elmify-funders.goggle` (new) | the hosted Goggle, committed |
 | `config/settings/base.py` (modify) | per-provider keys |
 | `infra/template.yaml` (modify) | the keys as Secrets Manager entries |
 
@@ -127,7 +127,7 @@ def test_resolution_makes_no_network_call(monkeypatch: pytest.MonkeyPatch) -> No
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/test_hosts.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/test_hosts.py -q
 ```
 
 Expected: collection error, `ModuleNotFoundError: No module named 'apps.research.hosts'`.
@@ -183,7 +183,7 @@ def registrable_domain(value: str) -> str:
 - [ ] **Step 5: Run the test to verify it passes**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/test_hosts.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/test_hosts.py -q
 ```
 
 Expected: PASS, 14 tests.
@@ -355,7 +355,7 @@ def test_an_invalid_kind_is_refused_by_the_database() -> None:
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/funding/test_organisation.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/funding/test_organisation.py -q
 ```
 
 Expected: `ImportError: cannot import name 'Organisation'`.
@@ -601,7 +601,7 @@ In `tests/tenancy/test_database_isolation.py`, append to the `_SHARED_TABLES` tu
 - [ ] **Step 7: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/funding/test_organisation.py tests/tenancy/test_database_isolation.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/funding/test_organisation.py tests/tenancy/test_database_isolation.py -q
 ```
 
 Expected: PASS. The isolation suite is what verifies the RLS policies actually landed — it reads `pg_policies`, not the migration text.
@@ -737,7 +737,7 @@ def test_known_domains_normalises_what_it_is_given() -> None:
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/test_organisations.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/test_organisations.py -q
 ```
 
 Expected: `ModuleNotFoundError: No module named 'apps.research.organisations'`.
@@ -850,7 +850,7 @@ Note: `F` is imported for symmetry with the repo's other services but is unused 
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/test_organisations.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/test_organisations.py -q
 ```
 
 Expected: PASS, 7 tests.
@@ -944,7 +944,7 @@ def test_steering_carries_no_provider_country_or_language_parameter() -> None:
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/test_domains.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/test_domains.py -q
 ```
 
 Expected: `ImportError: cannot import name 'AGGREGATOR_DOMAINS'`.
@@ -1043,13 +1043,13 @@ Add `from dataclasses import dataclass` to the module's imports.
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/test_domains.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/test_domains.py -q
 ```
 
 - [ ] **Step 5: Run the existing consumers' tests — this module has three**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research -q
 ```
 
 Expected: PASS. If `test_discovery.py` fails on a newly-denied host, that is the change working; update the fixture's expectation rather than shrinking the denylist.
@@ -1162,7 +1162,7 @@ def test_no_request_field_can_carry_a_student_fact() -> None:
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers -q
 ```
 
 Expected: `ModuleNotFoundError: No module named 'apps.research.providers'`.
@@ -1282,7 +1282,7 @@ def requests_for(query_template: str, country_code: str) -> tuple[SearchRequest,
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers -q
 ```
 
 Expected: PASS, 7 tests.
@@ -1410,7 +1410,7 @@ def test_an_empty_response_yields_nothing_and_does_not_raise() -> None:
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers/test_exa.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers/test_exa.py -q
 ```
 
 Expected: `ModuleNotFoundError: No module named 'apps.research.providers.exa'`.
@@ -1483,7 +1483,7 @@ class ExaProvider:
 - [ ] **Step 4: Run the test to verify it passes**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers/test_exa.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers/test_exa.py -q
 ```
 
 Expected: PASS, 7 tests.
@@ -1511,7 +1511,7 @@ their absence, so a future reading of Exa's docs cannot quietly add them."
 
 **Files:**
 - Create: `apps/research/providers/brave.py`
-- Create: `apps/research/goggles/tehsil-funders.goggle`
+- Create: `apps/research/goggles/elmify-funders.goggle`
 - Test: `tests/research/providers/test_brave.py`
 
 **Interfaces:**
@@ -1612,20 +1612,20 @@ def test_the_key_travels_in_the_subscription_header() -> None:
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers/test_brave.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers/test_brave.py -q
 ```
 
 Expected: `ModuleNotFoundError: No module named 'apps.research.providers.brave'`.
 
 - [ ] **Step 3: Write the Goggle**
 
-Create `apps/research/goggles/tehsil-funders.goggle`:
+Create `apps/research/goggles/elmify-funders.goggle`:
 
 ```
-! name: Tehsil funders
+! name: Elmify funders
 ! description: Discards commercial scholarship aggregators and boosts institutional and funder hosts. Committed to the repo because a Goggle hosted elsewhere is configuration nobody can review.
 ! public: true
-! author: Tehsil
+! author: Elmify
 
 ! Discard: aggregators describe funding they do not administer, so they can
 ! route research and can never support a claim.
@@ -1716,7 +1716,7 @@ class BraveProvider:
     api_key: str = field(repr=False)
     name: str = "brave"
     get: Callable[..., dict[str, object]] = field(default=fetch_json_api)
-    #: A public HTTPS URL for tehsil-funders.goggle. Empty until the file is
+    #: A public HTTPS URL for elmify-funders.goggle. Empty until the file is
     #: hosted, and the parameter is then omitted: the Goggle is a precision
     #: win (aggregators 33% -> 14% in the probe), never a recall one, so the
     #: sweep is correct without it and merely noisier.
@@ -1757,7 +1757,7 @@ If it takes only `payload` (a POST body), add a GET path to it in this task rath
 - [ ] **Step 6: Run the test to verify it passes**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers/test_brave.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers/test_brave.py -q
 ```
 
 Expected: PASS, 7 tests.
@@ -1889,7 +1889,7 @@ def test_candidates_is_empty_when_nothing_matches() -> None:
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers/test_tavily.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers/test_tavily.py -q
 ```
 
 - [ ] **Step 3: Write the implementation**
@@ -2019,7 +2019,7 @@ Add to `docs/superpowers/specs/2026-09-17-role-routed-discovery-design.md` §13:
 - [ ] **Step 5: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research -q
 ```
 
 Expected: PASS, including the existing `test_search.py` which must be unaffected.
@@ -2101,7 +2101,7 @@ def test_every_provider_key_defaults_to_empty() -> None:
 - [ ] **Step 2: Run to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/infra/test_template.py tests/test_bootstrap.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/infra/test_template.py tests/test_bootstrap.py -q
 ```
 
 Expected: failures naming the missing secrets and the missing settings.
@@ -2139,7 +2139,7 @@ In `infra/template.yaml`, find `WorkerTaskDefinition`'s `Secrets` list and add f
 
 ```bash
 uv run cfn-lint infra/template.yaml
-POSTGRES_DB=tehsil_progpage uv run pytest tests/infra/test_template.py tests/test_bootstrap.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/infra/test_template.py tests/test_bootstrap.py -q
 ```
 
 - [ ] **Step 6: Commit**
@@ -2273,7 +2273,7 @@ def test_no_query_carries_a_profile_field() -> None:
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/test_sweep.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/test_sweep.py -q
 ```
 
 - [ ] **Step 3: Write `apps/research/sweep.py`**
@@ -2422,7 +2422,7 @@ class Command(BaseCommand):
 - [ ] **Step 5: Run the tests**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research -q
 ```
 
 Expected: PASS.
@@ -2438,7 +2438,7 @@ Expected: `CommandError: no provider key is set: ...` and `exit=1`.
 - [ ] **Step 7: Verify it runs with keys, dry**
 
 ```bash
-set -a; . ~/.config/tehsil_agent/search.env; set +a
+set -a; . ~/.config/elmify/search.env; set +a
 uv run python manage.py sweep_organisations --country TR --dry-run
 ```
 
@@ -2447,7 +2447,7 @@ Expected: `would sweep TR with: exa, brave, tavily`.
 - [ ] **Step 8: Full suite, lint, type-check**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest -q
+POSTGRES_DB=elmify_progpage uv run pytest -q
 uv run ruff check apps tests config
 uv run mypy apps
 uv run python manage.py makemigrations --check --dry-run
@@ -2728,7 +2728,7 @@ def test_regional_engines_exist_only_where_the_rule_was_measured() -> None:
 - [ ] **Step 2: Run them to verify they fail**
 
 ```bash
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers/test_serpapi.py tests/research/test_domains.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers/test_serpapi.py tests/research/test_domains.py -q
 ```
 
 Expected: `ModuleNotFoundError: No module named 'apps.research.providers.serpapi'`, then `ImportError` on `REGIONAL_ENGINES`.
@@ -2762,7 +2762,7 @@ institutions at the top of each; record novel hosts against the register in the 
 ```bash
 uv run ruff check apps/research/providers/serpapi.py apps/research/domains.py tests/research/providers/test_serpapi.py tests/research/test_domains.py
 uv run mypy apps/research/providers/serpapi.py apps/research/domains.py
-POSTGRES_DB=tehsil_progpage uv run pytest tests/research/providers tests/research/test_domains.py -q
+POSTGRES_DB=elmify_progpage uv run pytest tests/research/providers tests/research/test_domains.py -q
 git add apps/research/providers/serpapi.py apps/research/domains.py apps/research/management/commands/sweep_organisations.py tests/research/providers/test_serpapi.py tests/research/test_domains.py
 git commit -m "feat(research): Baidu and Naver through SerpApi, for the two countries the rule was measured on
 

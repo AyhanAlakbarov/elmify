@@ -22,9 +22,9 @@
 ## Global Constraints
 
 - Work in `/home/orkhan/Desktop/mailbox-port`, branch `claude/mailbox-port`. Always `git -C /home/orkhan/Desktop/mailbox-port …` — the shell's cwd resets to the main repo and a bare `git commit` lands on the wrong branch.
-- Test DB: prefix every pytest/manage.py command with `POSTGRES_DB=tehsil_mailbox_port`. Never another worktree's DB name.
+- Test DB: prefix every pytest/manage.py command with `POSTGRES_DB=elmify_mailbox_port`. Never another worktree's DB name.
 - Lint: `uv run ruff check .` only. **Never run `ruff format`** (it churns unrelated files).
-- Types: `uv run mypy apps config`. Security: `uv run bandit -c pyproject.toml -r apps config`. Migrations: `POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations --check --dry-run`.
+- Types: `uv run mypy apps config`. Security: `uv run bandit -c pyproject.toml -r apps config`. Migrations: `POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations --check --dry-run`.
 - Line length 100.
 - Every tenant-scoped query outside a request runs inside `tenant_scope(tenant_id)` **and** `tenant_transaction(tenant_id)`. Missing the transaction is legal SQL that returns zero rows in production (CLAUDE.md, RLS failure mode 1), and no test catches it except one run under `rls_enforced_orm` with `@pytest.mark.django_db(transaction=True)`.
 - Every new tenant table gets `ENABLE` + `FORCE ROW LEVEL SECURITY`, the `tenant_isolation` policy, and a composite `(tenant_id, <fk>_id)` foreign key to each tenant-scoped parent, in its migration.
@@ -189,7 +189,7 @@ def test_a_job_run_is_one_row_per_job():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/mailbox-port && POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_models.py -q`
+Run: `cd /home/orkhan/Desktop/mailbox-port && POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_models.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.watch'`.
 
 - [ ] **Step 3: Create the app and models**
@@ -291,8 +291,8 @@ In `apps/concierge/models.py`, class `Notification`, directly after the `acknowl
 Run:
 ```bash
 cd /home/orkhan/Desktop/mailbox-port
-POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations concierge --name notification_urgent_escalation
-POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations watch
+POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations concierge --name notification_urgent_escalation
+POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations watch
 ```
 
 Open `apps/watch/migrations/0001_initial.py`. Make its `dependencies` exactly:
@@ -367,7 +367,7 @@ and add, next to `"portals.ReminderSent"`:
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_models.py tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_models.py tests/audit/test_redaction_classification.py tests/tenancy/test_database_isolation.py -q`
 Expected: all PASS. If `test_redaction_classification` names `watch.Expectation.alerted`, it is an FK and is skipped by `classifiable_fields`; if it is listed anyway, add `"alerted"` to the KEEP tuple.
 
 - [ ] **Step 7: Commit**
@@ -432,7 +432,7 @@ def test_no_deadline_uses_the_slow_ladder():
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_rules.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_rules.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.watch.rules'`.
 
 - [ ] **Step 3: Implement**
@@ -484,7 +484,7 @@ def escalation_target(created_at: datetime, now: datetime, deadline: datetime | 
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_rules.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_rules.py -q`
 Expected: 5 passed.
 
 - [ ] **Step 5: Commit**
@@ -624,7 +624,7 @@ def test_another_tenant_is_not_touched(agency_a, membership_a, agency_b, members
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_watchdog.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_watchdog.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.watch.watchdog'`.
 
 - [ ] **Step 3: Rename the quiet-hours helper**
@@ -760,7 +760,7 @@ def _watch_one(application_id: UUID, moment: datetime) -> bool:
 
 - [ ] **Step 5: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_watchdog.py tests/portals/test_reminder_sweep.py tests/portals/test_boundary.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_watchdog.py tests/portals/test_reminder_sweep.py tests/portals/test_boundary.py -q`
 Expected: all PASS (the boundary test proves nothing in `apps/portals` newly names the submitted state).
 
 - [ ] **Step 6: Commit**
@@ -944,7 +944,7 @@ def test_quiet_hours_defer_escalation(agency_a, membership_a, with_email):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_escalation.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_escalation.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.watch.escalation'`.
 
 - [ ] **Step 3: Implement**
@@ -1070,7 +1070,7 @@ def _tell_counselor(note: Notification) -> None:
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_escalation.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_escalation.py -q`
 Expected: 9 passed.
 
 - [ ] **Step 5: Commit**
@@ -1219,7 +1219,7 @@ def test_the_command_works_behind_real_row_level_security(
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch/test_heartbeat.py tests/watch/test_command.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch/test_heartbeat.py tests/watch/test_command.py -q`
 Expected: FAIL — `ModuleNotFoundError: No module named 'apps.watch.heartbeat'`.
 
 - [ ] **Step 3: Implement the heartbeat**
@@ -1334,7 +1334,7 @@ In `apps/mailbox/management/commands/sync_mailboxes.py` add `from apps.watch.hea
 
 - [ ] **Step 5: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch tests/portals/test_send_due_reminders_command.py tests/mailbox/test_command.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch tests/portals/test_send_due_reminders_command.py tests/mailbox/test_command.py -q`
 Expected: all PASS.
 
 - [ ] **Step 6: Commit**
@@ -1410,7 +1410,7 @@ def test_a_silent_job_sets_off_an_alarm(template: Template) -> None:
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/infra/test_template.py -q -k "watch or silent or stops_invoking"`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/infra/test_template.py -q -k "watch or silent or stops_invoking"`
 Expected: FAIL — `WatchApplicationsRule is not defined in infra/template.yaml`.
 
 - [ ] **Step 3: Add the resources**
@@ -1486,14 +1486,14 @@ Directly after the `WorkerLogGroup` resource:
       LogGroupName: !Ref WorkerLogGroup
       FilterPattern: '"JobSilent"'
       MetricTransformations:
-        - MetricNamespace: Tehsil/Jobs
+        - MetricNamespace: Elmify/Jobs
           MetricName: JobSilent
           MetricValue: "1"
 
   JobSilentAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      Namespace: Tehsil/Jobs
+      Namespace: Elmify/Jobs
       MetricName: JobSilent
       Statistic: Sum
       Period: 3600
@@ -1518,7 +1518,7 @@ attached yet — wire them to a notification topic when one exists.
 
 - [ ] **Step 5: Run to verify pass**
 
-Run: `POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/infra/test_template.py -q`
+Run: `POSTGRES_DB=elmify_mailbox_port uv run pytest tests/infra/test_template.py -q`
 Expected: all PASS. If an existing test pins an exact list of alarms or rules and now fails, add the new names to that list — do not loosen it to a subset check.
 
 - [ ] **Step 6: Commit**
@@ -1543,8 +1543,8 @@ cd /home/orkhan/Desktop/mailbox-port
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -q -c pyproject.toml -r apps config
-POSTGRES_DB=tehsil_mailbox_port uv run python manage.py makemigrations --check --dry-run
-POSTGRES_DB=tehsil_mailbox_port uv run pytest -q
+POSTGRES_DB=elmify_mailbox_port uv run python manage.py makemigrations --check --dry-run
+POSTGRES_DB=elmify_mailbox_port uv run pytest -q
 ```
 
 Expected: ruff "All checks passed!", mypy "Success", bandit no issues, "No changes detected", and the full suite passing with no new failures against the 3963-passed baseline.
@@ -1552,7 +1552,7 @@ Expected: ruff "All checks passed!", mypy "Success", bandit no issues, "No chang
 - [ ] **Step 2: Prove the idempotency tests bite (mutation check, then restore)**
 
 Temporarily replace `select_for_update().get(` with `.get(` in `apps/watch/watchdog.py`, then run
-`POSTGRES_DB=tehsil_mailbox_port uv run pytest tests/watch -q`. The row lock cannot be exercised by a single-threaded test, so expect this to still pass — record that in the report as a known limit, restore the file with `git -C /home/orkhan/Desktop/mailbox-port checkout apps/watch/watchdog.py`, and confirm `git status` is clean. Then make `_watch_one` skip the `alerted_id is not None` check and confirm `test_a_second_sweep_does_not_alert_again` fails; restore.
+`POSTGRES_DB=elmify_mailbox_port uv run pytest tests/watch -q`. The row lock cannot be exercised by a single-threaded test, so expect this to still pass — record that in the report as a known limit, restore the file with `git -C /home/orkhan/Desktop/mailbox-port checkout apps/watch/watchdog.py`, and confirm `git status` is clean. Then make `_watch_one` skip the `alerted_id is not None` check and confirm `test_a_second_sweep_does_not_alert_again` fails; restore.
 
 - [ ] **Step 3: Report**
 

@@ -58,10 +58,34 @@ def current_pack(student: Membership) -> PackVersion | None:
             profile_version__student=student,
             state=RecommendationRun.State.PUBLISHED,
         )
+        .select_related("profile_version")
         .order_by("-created_at")
         .first()
     )
     if latest_run is None:
+        return None
+    return (
+        PackVersion.objects.filter(run=latest_run)
+        .select_related("run__profile_version")
+        .order_by("-version")
+        .first()
+    )
+
+
+def latest_empty_pack(student: Membership) -> PackVersion | None:
+    """The student's newest run's pack when that run packed nothing.
+
+    `current_pack` shows PUBLISHED runs only, and an empty pack leaves its run
+    DRAFT_READY, so without this the page told a student with a finished
+    profile to finish it. The pack carries why it is empty and its coverage
+    line (P1-7: never a silently short pack). A tenant-table read only.
+    """
+    latest_run = (
+        RecommendationRun.objects.filter(profile_version__student=student)
+        .order_by("-created_at")
+        .first()
+    )
+    if latest_run is None or latest_run.state != RecommendationRun.State.DRAFT_READY:
         return None
     return PackVersion.objects.filter(run=latest_run).order_by("-version").first()
 
@@ -75,7 +99,7 @@ def pack_awards(student: Membership) -> list[RecommendationCandidate]:
         member.candidate
         for member in PackCandidate.objects.filter(
             pack_version=pack, candidate__opportunity_id__isnull=False
-        ).select_related("candidate")
+        ).select_related("candidate__evidence")
     ]
 
 
@@ -114,7 +138,6 @@ def _copy_pool(
     source: PackVersion,
     target: PackVersion,
     *,
-    exclude_candidate_id: UUID | None = None,
     exclude_candidate_ids: Collection[UUID] = (),
 ) -> None:
     """Copy every surviving pool membership from ``source`` onto ``target``.
@@ -126,8 +149,6 @@ def _copy_pool(
     intermediate packs the student never meant to see.
     """
     excluded = {*exclude_candidate_ids}
-    if exclude_candidate_id is not None:
-        excluded.add(exclude_candidate_id)
     memberships = PackCandidate.objects.filter(pack_version=source)
     if excluded:
         memberships = memberships.exclude(candidate_id__in=excluded)
@@ -150,6 +171,37 @@ def _copy_pool(
     target.save(update_fields=["coverage"])
 
 
+def _strip_rejected_award_from_run_programmes(rejected: RecommendationCandidate) -> None:
+    if rejected.opportunity_id is None or not rejected.program_name:
+        return
+    for prog_cand in RecommendationCandidate.objects.filter(
+        run_id=rejected.run_id,
+        opportunity_id__isnull=True,
+        state=RecommendationCandidate.State.VISIBLE,
+    ):
+        features = dict(prog_cand.calibration_features or {})
+        winnable = features.get("winnable_with")
+        if not isinstance(winnable, list) or rejected.program_name not in winnable:
+            continue
+        remaining = [name for name in winnable if name != rejected.program_name]
+        features["winnable_with"] = remaining
+        update_fields = ["calibration_features"]
+        prog_cand.calibration_features = features
+        if remaining:
+            prog_cand.funding_condition = (
+                f"Affordable only if you win {', '.join(remaining)}. "
+                "Apply for it before paying this programme's fees."
+            )[:500]
+            update_fields.append("funding_condition")
+        elif prog_cand.funding_condition:
+            prog_cand.funding_condition = (
+                f"{rejected.program_name} was removed from your pack — "
+                "check funding before paying this programme's fees."
+            )[:500]
+            update_fields.append("funding_condition")
+        prog_cand.save(update_fields=update_fields)
+
+
 @transaction.atomic
 def reject_candidate(pack: PackVersion, candidate_id: UUID, actor: Membership) -> PackVersion:
     """Remove ``candidate_id`` from the pool, writing a new immutable pack version.
@@ -164,10 +216,13 @@ def reject_candidate(pack: PackVersion, candidate_id: UUID, actor: Membership) -
     if pool.count() <= 1:
         raise PackCommandError("cannot reject the last remaining candidate in the pack")
     new_version = PackVersion.objects.create(run=current.run, version=current.version + 1)
-    _copy_pool(current, new_version, exclude_candidate_id=candidate_id)
+    _copy_pool(current, new_version, exclude_candidate_ids=(candidate_id,))
+    rejected = RecommendationCandidate.objects.filter(id=candidate_id).first()
     RecommendationCandidate.objects.filter(id=candidate_id).update(
         state=RecommendationCandidate.State.REJECTED
     )
+    if rejected is not None:
+        _strip_rejected_award_from_run_programmes(rejected)
     StudentDecision.objects.create(
         candidate_id=candidate_id, actor=actor, decision=StudentDecision.Decision.REJECTED
     )
@@ -204,10 +259,39 @@ def reject_for_student(
     )
     if not updated:  # a double submit: the other request already wrote the "no"
         return
+    _strip_rejected_award_from_run_programmes(candidate)
     StudentDecision.objects.create(
         candidate_id=candidate.id, actor=actor, decision=StudentDecision.Decision.REJECTED
     )
     AuditEvent.objects.create(actor=actor, event="candidate.rejected", object_id=candidate.id)
+
+
+def clear_overflow_pack_notes(candidate: RecommendationCandidate) -> None:
+    """Strip overflow-only pack notes and reasons when a pool item is promoted."""
+    rep_features = dict(candidate.calibration_features or {})
+    rep_changed = False
+    if rep_features.get("over_budget_reason") in (
+        "PACK_DIVERSITY_LIMIT",
+        "FEE_NOT_KNOWN_LIMIT",
+        "ANCHOR_BUDGET_RESERVED",
+        "APPLICATION_BUDGET_EXCEEDED",
+    ):
+        rep_features.pop("over_budget_reason", None)
+        rep_changed = True
+    rep_notes = rep_features.get("risk_notes")
+    if isinstance(rep_notes, list):
+        cleaned_notes = [
+            str(n)
+            for n in rep_notes
+            if "kept in Other options" not in str(n)
+            and "application budget reserved for a higher-probability" not in str(n)
+        ]
+        if cleaned_notes != rep_notes:
+            rep_features["risk_notes"] = cleaned_notes
+            rep_changed = True
+    if rep_changed:
+        candidate.calibration_features = rep_features
+        candidate.save(update_fields=["calibration_features"])
 
 
 @transaction.atomic
@@ -231,6 +315,8 @@ def replace_candidate(
         raise PackCommandError("replacement candidate is not part of this run") from error
     if replacement.state != RecommendationCandidate.State.VISIBLE:
         raise PackCommandError("replacement candidate has not been reviewed")
+    if not replacement.eligible:
+        raise PackCommandError("replacement candidate is no longer eligible")
     # The tenant copy the worker wrote (spec §7.4) -- this web path never reads
     # the catalogue. BLOCKED never enters a pack. While the gate is enforced
     # only RECOGNISED does (verified-catalog §0.18: an unconfirmed body never
@@ -246,12 +332,16 @@ def replace_candidate(
         pack_version=current, candidate_id=replacement_candidate_id
     ).exists():
         raise PackCommandError("replacement candidate is already in the pack")
+    clear_overflow_pack_notes(replacement)
     new_version = PackVersion.objects.create(run=current.run, version=current.version + 1)
-    _copy_pool(current, new_version, exclude_candidate_id=candidate_id)
+    _copy_pool(current, new_version, exclude_candidate_ids=(candidate_id,))
     PackCandidate.objects.create(pack_version=new_version, candidate=replacement)
+    replaced = RecommendationCandidate.objects.filter(id=candidate_id).first()
     RecommendationCandidate.objects.filter(id=candidate_id).update(
         state=RecommendationCandidate.State.REJECTED
     )
+    if replaced is not None:
+        _strip_rejected_award_from_run_programmes(replaced)
     StudentDecision.objects.create(
         candidate_id=candidate_id, actor=actor, decision=StudentDecision.Decision.REPLACED
     )
@@ -270,6 +360,10 @@ def consider_named_program(
     pool, so it cannot enter the pack until the queued research task is reviewed
     (see :func:`resolve_named_program`).
     """
+    from apps.research.catalog import is_non_masters_program_title
+
+    if is_non_masters_program_title(program_name):
+        raise PackCommandError("only Master's degree programmes are supported")
     evidence = EvidenceClaim.objects.create(
         source_url=f"https://research.pending.internal/named-program/{uuid4()}",
         claim=f"Pending official verification for {program_name}",
@@ -279,6 +373,7 @@ def consider_named_program(
         run=pack.run,
         evidence=evidence,
         program_name=program_name,
+        degree_level="MASTER",
         funding_gap=Decimal("0.00"),
         currency="USD",
         eligible=False,
@@ -321,10 +416,56 @@ def resolve_named_program(
     if candidate.state != RecommendationCandidate.State.CHECKING:
         raise PackCommandError("candidate is not awaiting review")
     placeholder_url = candidate.evidence.source_url
+    estimated_chance_pct: int | None = None
+    calibration_features: dict[str, object] = {}
+    resolved_country = candidate.country_code or ""
+    if eligible:
+        from pydantic import ValidationError
+
+        from apps.accounts.models import StudentProfileVersion
+        from apps.accounts.schemas import StudentProfileSnapshot
+        from apps.funding.pack import risk_tier_for
+        from apps.funding.probability import (
+            estimate_named_program_chance,
+            infer_country_from_url,
+        )
+
+        if not resolved_country:
+            resolved_country = infer_country_from_url(source_url)
+        version = StudentProfileVersion.objects.filter(id=candidate.run.profile_version_id).first()
+        profile: StudentProfileSnapshot | None = None
+        if version is not None and version.schema_version == 3:
+            try:
+                profile = StudentProfileSnapshot.model_validate(version.snapshot)
+            except ValidationError as exc:
+                logger.warning(
+                    "resolve_named_program: StudentProfileSnapshot.model_validate failed for "
+                    "profile_version %s on candidate %s; degrading to cold-start prior: %s",
+                    version.id,
+                    candidate.id,
+                    exc,
+                )
+                profile = None
+        est = estimate_named_program_chance(
+            candidate.program_name,
+            resolved_country,
+            profile,
+            source_url=source_url,
+        )
+        estimated_chance_pct = est.chance_pct
+        calibration_features = dict(est.features)
+        tier = risk_tier_for(estimated_chance_pct)
+        if tier:
+            calibration_features["risk_tier"] = tier
     RecommendationCandidate.objects.filter(id=candidate.id).update(
-        state=RecommendationCandidate.State.VISIBLE, eligible=eligible,
+        state=RecommendationCandidate.State.VISIBLE,
+        eligible=eligible,
+        country_code=resolved_country,
+        estimated_chance_pct=estimated_chance_pct,
+        calibration_features=calibration_features,
         # The verified URL is new, so any earlier code is for another site.
-        provenance_reason_code="", provenance_body_id=None,
+        provenance_reason_code="",
+        provenance_body_id=None,
     )
     EvidenceClaim.objects.filter(id=candidate.evidence_id).update(
         source_url=source_url, claim=reason, last_checked_at=timezone.now()

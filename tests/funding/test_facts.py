@@ -279,3 +279,134 @@ def test_an_award_fact_carries_its_card(award):
     facts = award_facts(award, benefits=(benefit,), rules=())
     assert facts.card is not None and facts.card.duration_months == 12
     assert card_fill(facts.card)["amount"] == "FILLED"
+
+
+def test_program_facts_scores_upstream_fit_when_profile_is_supplied_with_zero_queries(
+    program, profile, django_assert_num_queries
+):
+    with django_assert_num_queries(0):
+        facts = program_facts(program, costs=(), benefits=(), rules=(), profile=profile)
+    assert facts.dimension_scores["PROGRAM_FIT"] == Decimal("90")
+    assert facts.dimension_scores["ACADEMIC_FIT"] == Decimal("90")
+    assert facts.dimension_scores["DURATION"] == Decimal("90")
+
+
+def test_disambiguated_research_interests_keep_general_field_programme_above_balanced_bar(
+    program,
+):
+    from tests.funding.conftest import make_profile
+
+    program.name = "MSc Data Science"
+    balanced_ds_profile = make_profile(
+        target_field="Data Science",
+        research_interests=("Natural Language Processing",),
+        strategy="BALANCED",
+    )
+    facts = program_facts(
+        program, costs=(), benefits=(), rules=(), profile=balanced_ds_profile
+    )
+    assert facts.dimension_scores["PROGRAM_FIT"] >= Decimal("85")
+    assert facts.dimension_scores["RESEARCH_FIT"] >= Decimal("75")
+
+
+def test_percentage_tuition_waiver_resolves_against_programme_tuition(program, profile):
+    from datetime import date
+
+    from apps.funding.models import CostComponent
+
+    cost = CostComponent.objects.create(
+        program=program,
+        kind="TUITION",
+        amount=Decimal("10000.00"),
+        currency="EUR",
+        period="ANNUAL",
+    )
+    award = _programme_award(program, duration_months=24)
+    benefit = _read_benefit(
+        award,
+        kind="TUITION",
+        amount=None,
+        currency=None,
+        period="FULL_PROGRAM",
+        description="Selected students receive a 50% tuition waiver.",
+        amount_text="",
+        amount_bound="",
+        amount_quote="",
+    )
+    facts = program_facts(
+        program,
+        costs=(cost,),
+        benefits=(benefit,),
+        rules=(),
+        routes={award.id: "AUTOMATIC_ON_ADMISSION"},
+        tuition_levels={award.id: "PARTIAL"},
+        application_deadline=date(2026, 5, 1),
+        today=date(2026, 6, 1),
+    )
+    (bf,) = facts.benefits
+    # 10,000 EUR/yr over 24 months = 20,000 EUR total; 50% = 10,000 EUR
+    assert bf.amount == Decimal("10000.00")
+    assert bf.currency == "EUR"
+    assert bf.period == "FULL_PROGRAM"
+    assert facts.application_deadline == date(2026, 5, 1)
+    assert facts.deadline_is_viable is False
+
+
+def test_academic_year_monthly_stipend_counts_stated_academic_months_per_year(program, profile):
+    award = _programme_award(program, duration_months=24)
+    benefit = _read_benefit(
+        award,
+        kind="STIPEND",
+        amount=Decimal("1000"),
+        currency="EUR",
+        period="MONTHLY",
+        description="€1,000 per month for 10 academic months per year.",
+        amount_text="€1,000",
+        amount_bound="EXACT",
+        amount_quote="€1,000 per month for 10 academic months per year.",
+    )
+    fact = _one_benefit(program, profile, benefit, {award.id: 24})
+    # 2 years * 10 academic months/year = 20 months -> 20,000 EUR (not 24,000 EUR)
+    assert (fact.amount, fact.currency, fact.period) == (
+        Decimal("20000.00"),
+        "EUR",
+        "FULL_PROGRAM",
+    )
+
+
+def test_award_facts_with_internationals_included_no_restricts_citizenship(award, profile):
+    from datetime import date
+
+    from apps.funding.evaluation import evaluate_award
+
+    award.nationality_shape = "UNSTATED"
+    award.internationals_included = "NO"
+    facts_de = award_facts(award, benefits=(), rules=(), country_code="DE")
+    assert len(facts_de.applicant_conditions) == 1
+    assert facts_de.applicant_conditions[0].key == "CITIZENSHIP"
+    assert facts_de.applicant_conditions[0].value == "DE"
+
+    # Profile is non-DE (e.g. AZ), so evaluate_award marks it NOT_ELIGIBLE
+    outcome = evaluate_award(profile, facts_de, today=date(2026, 10, 1))
+    assert outcome.outcome == "NOT_ELIGIBLE"
+
+
+def test_score_program_fit_post_study_work_covers_all_eea_and_global_destinations(
+    program, profile
+):
+    from apps.funding.facts import score_program_fit
+
+    psw_profile = profile.model_copy(
+        update={
+            "allowed_countries": (),
+            "mobility_priorities": ("post_study_work",),
+        }
+    )
+    for code in ("DK", "CH", "US", "SG", "NO"):
+        program.country_code = code
+        scores = score_program_fit(program, psw_profile)
+        assert scores["MOBILITY_FIT"] == Decimal("90")
+
+
+
+

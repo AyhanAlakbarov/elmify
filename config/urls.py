@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.contrib import admin
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import redirect
@@ -7,10 +8,10 @@ from apps.tenancy.models import Membership
 
 
 def index(request: HttpRequest) -> HttpResponse:
-    """Send a student to the board, a counsellor or owner to their list, others to login.
+    """Send a student to the board, a counsellor or owner to their list, a visitor to the website.
 
     The Outlook callback ends on the mailbox page now, but any other link to the
-    bare host lands somewhere useful instead of on the word "Tehsil".
+    bare host lands somewhere useful instead of on the word "Elmify".
     """
     role = getattr(getattr(request, "membership", None), "role", None)
     if role == Membership.Role.STUDENT:
@@ -20,8 +21,11 @@ def index(request: HttpRequest) -> HttpResponse:
     if role == Membership.Role.OWNER:
         return redirect("concierge-owner-dashboard")
     if role == Membership.Role.PLATFORM_ADMIN:
-        return redirect("resolution-queue")
-    return redirect("accounts-login")
+        return redirect("staff-overview")
+    if getattr(request, "user", None) is not None and request.user.is_authenticated:
+        return redirect("accounts-login")
+    # Nobody signed in: the first thing a new visitor sees is the website, not a login box.
+    return redirect(settings.MARKETING_SITE_URL)
 
 
 urlpatterns = [
@@ -38,6 +42,7 @@ urlpatterns = [
     path("", include("apps.mailbox.urls")),
     path("", include("apps.privacy.urls")),
     path("", include("apps.leads.urls")),
+    path("", include("apps.staffdesk.urls")),
     path("", include("apps.research.urls")),
     path("admin/", admin.site.urls),
 ]

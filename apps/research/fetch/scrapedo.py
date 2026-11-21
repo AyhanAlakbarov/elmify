@@ -72,6 +72,10 @@ from .types import (
 logger = logging.getLogger(__name__)
 
 ENDPOINT = "https://api.scrape.do/"
+#: The range scrape.do accepts for `timeout`, in ms: "must be between 5000 ms and 120000 ms"
+#: (https://scrape.do/documentation/api-response/timeout/, read 2026-10-14).
+SCRAPEDO_TIMEOUT_MIN_MS = 5000
+SCRAPEDO_TIMEOUT_MAX_MS = 120000
 #: scrape.do's own failures, none of them billed -- their published status-code
 #: table, read 2026-09-19: 401 no credits or suspended account, 429 concurrency
 #: limit, 502 "please try again", 510 the client cancelled. None of these is
@@ -108,12 +112,13 @@ _BLOCKING = frozenset({403})
 #: request-time signal, so `Scrape.do-Request-Cost` is read first always.
 _TARIFF = {3: 1, 4: 25}
 
-Get = Callable[[str], tuple[int, bytes, Mapping[str, str]]]
+Get = Callable[..., tuple[int, bytes, Mapping[str, str]]]
 
 
-def _get(url: str) -> tuple[int, bytes, Mapping[str, str]]:
+def _get(url: str, total_s: float | None = None) -> tuple[int, bytes, Mapping[str, str]]:
+    # `total_s` caps connect and read together for a caller with a deadline; None: no cap.
     response = urllib3.request(
-        "GET", url, timeout=urllib3.Timeout(connect=10, read=120), retries=False
+        "GET", url, timeout=urllib3.Timeout(connect=10, read=120, total=total_s), retries=False
     )
     # response.headers, not dict(...): it is urllib3's case-insensitive
     # HTTPHeaderDict, and HTTP/2 lowercases header names on the wire, so
@@ -139,6 +144,7 @@ def scrape(
     session_id: int | None = None,
     screenshot: bool = False,
     get: Get = _get,
+    timeout_s: float | None = None,
 ) -> FetchedPage:
     if not api_key:
         # About us, not the target -- the host was never asked. Escalating
@@ -158,6 +164,13 @@ def scrape(
         "url": url,
         "timeout": getattr(profile, "timeout_ms", 0) or settings.FETCH_DEFAULT_TIMEOUT_MS,
     }
+    bound: dict[str, float] = {}
+    if timeout_s is not None:  # fetch_page's deadline: scrape.do's clock and ours end together
+        # clamped to the range scrape.do accepts; our own wait still ends at the deadline
+        # (`total_s`), so the floor never outlives the caller
+        wanted = min(params["timeout"], int(timeout_s * 1000))
+        params["timeout"] = min(SCRAPEDO_TIMEOUT_MAX_MS, max(SCRAPEDO_TIMEOUT_MIN_MS, wanted))
+        bound = {"total_s": timeout_s}
     if rung >= 4:
         params["render"] = "true"
         params["super"] = "true"
@@ -177,7 +190,7 @@ def scrape(
 
     started = time.monotonic()
     try:
-        status, body, headers = get(f"{ENDPOINT}?{urlencode(params)}")
+        status, body, headers = get(f"{ENDPOINT}?{urlencode(params)}", **bound)
     except urllib3.exceptions.HTTPError as error:
         # urllib3's own exceptions -- timeouts, TLS and DNS failures, resets --
         # all inherit from HTTPError, not OSError.

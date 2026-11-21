@@ -332,15 +332,15 @@ def _dissolved(claims: dict[str, Any]) -> bool:
 
 
 def _labels(entity: dict[str, Any], languages: Sequence[str]) -> tuple[str, ...]:
-    seen: dict[str, None] = {}
-    for lang in languages:
-        label = ((entity.get("labels") or {}).get(lang) or {}).get("value")
-        if label:
-            seen.setdefault(label, None)
-        for alias in (entity.get("aliases") or {}).get(lang) or []:
-            if alias.get("value"):
-                seen.setdefault(alias["value"], None)
-    return tuple(seen)
+    labels = entity.get("labels") or {}
+    aliases = entity.get("aliases") or {}
+    raw = (
+        val
+        for lang in languages
+        for item in [labels.get(lang) or {}, *(aliases.get(lang) or ())]
+        if (val := item.get("value"))
+    )
+    return tuple(dict.fromkeys(raw))
 
 
 def find_item(
@@ -397,3 +397,122 @@ def find_item(
         websites = tuple(v for v in _statements(claims, "P856") if isinstance(v, str))
         matches.append(WikidataMatch(qid, websites, _labels(entity, all_languages)))
     return matches[0] if len(matches) == 1 else None
+
+
+OPENALEX_KEYWORDS_API = "https://api.openalex.org/keywords"
+_DEFAULT_SUBJECT_LANGUAGES: tuple[str, ...] = (
+    "en",
+    "de",
+    "fr",
+    "it",
+    "es",
+    "nl",
+    "tr",
+    "az",
+    "ru",
+    "zh",
+    "ja",
+    "ko",
+)
+
+
+def lookup_subject_translations(
+    term: str,
+    *,
+    languages: Sequence[str] = _DEFAULT_SUBJECT_LANGUAGES,
+    get: Get = fetch_json_api,
+) -> dict[str, tuple[str, ...]]:
+    """Fetch multilingual labels and aliases for an academic discipline `term` from Wikidata.
+
+    Used to ground any emerging or niche discipline in native-language terms
+    (e.g. Q610620 chemoinformatics -> `Chemoinformatik`, `chémoinformatique`,
+    `chemoinformatica`, `化学信息学`, `ケモインフォマティクス`, `화학정보학`).
+    """
+    cleaned = term.strip()
+    if not cleaned:
+        return {}
+    data = get(
+        WIKIDATA_API,
+        params={
+            "action": "wbsearchentities",
+            "search": cleaned,
+            "language": "en",
+            "uselang": "en",
+            "type": "item",
+            "limit": 5,
+            "format": "json",
+        },
+        headers=_headers(),
+    )
+    hits = data.get("search")
+    if not isinstance(hits, list) or not hits:
+        return {}
+
+    wanted = fold(cleaned)
+    chosen_qid = ""
+    for hit in hits:
+        if not isinstance(hit, dict):
+            continue
+        qid = str(hit.get("id") or "")
+        label = str(hit.get("label") or "")
+        aliases = [str(a) for a in (hit.get("aliases") or []) if isinstance(a, str)]
+        if qid and any(fold(candidate) == wanted for candidate in (label, *aliases)):
+            chosen_qid = qid
+            break
+    if not chosen_qid and isinstance(hits[0], dict):
+        chosen_qid = str(hits[0].get("id") or "")
+    if not chosen_qid:
+        return {}
+
+    entity_data = get(
+        WIKIDATA_API,
+        params={
+            "action": "wbgetentities",
+            "ids": chosen_qid,
+            "props": "labels|aliases",
+            "languages": "|".join(dict.fromkeys(languages)),
+            "format": "json",
+        },
+        headers=_headers(),
+    )
+    entities = entity_data.get("entities")
+    if not isinstance(entities, dict):
+        return {}
+    entity = entities.get(chosen_qid)
+    if not isinstance(entity, dict):
+        return {}
+
+    translations: dict[str, tuple[str, ...]] = {}
+    for lang in dict.fromkeys(languages):
+        lang_terms = _labels(entity, (lang,))
+        if lang_terms:
+            translations[lang] = lang_terms
+    return translations
+
+
+def lookup_openalex_keywords(
+    term: str,
+    *,
+    limit: int = 10,
+    get: Get = fetch_json_api,
+) -> tuple[str, ...]:
+    """Fetch canonical academic keywords matching `term` from OpenAlex `/keywords` API."""
+    cleaned = term.strip()
+    if not cleaned:
+        return ()
+    data = get(
+        OPENALEX_KEYWORDS_API,
+        params={"search": cleaned, "per-page": max(1, min(limit, 25))},
+        headers=_headers(),
+    )
+    results = data.get("results")
+    if not isinstance(results, list):
+        return ()
+    keywords: list[str] = []
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+        display_name = str(item.get("display_name") or "").strip().casefold()
+        if display_name and display_name not in keywords:
+            keywords.append(display_name)
+    return tuple(keywords)

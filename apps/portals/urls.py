@@ -4,9 +4,19 @@ from . import ext_api, views
 
 urlpatterns = [
     path(
-        "applications/<uuid:application_id>/kit",
-        views.application_kit,
-        name="portals-application-kit",
+        "prepared/<uuid:prepared_id>/view",
+        views.prepared_view,
+        name="portals-prepared-view",
+    ),
+    path(
+        "staff/prepared/<uuid:prepared_id>/download",
+        views.staff_prepared_download,
+        name="portals-staff-download-prepared",
+    ),
+    path(
+        "prepared/<uuid:prepared_id>/<str:filename>",
+        views.prepared_download,
+        name="portals-prepared-download",
     ),
     path("api/extension/pairing-code", views.pairing_code, name="portals-extension-pairing-code"),
     path("ext/pair", ext_api.pair, name="portals-ext-pair"),
@@ -19,6 +29,13 @@ urlpatterns = [
         "ext/portal-forms/<uuid:portal_form_id>/snapshot",
         ext_api.snapshot,
         name="portals-ext-snapshot",
+    ),
+    path("ext/bench/whoami", ext_api.bench_whoami, name="portals-ext-bench-whoami"),
+    path("ext/bench/portal-forms", ext_api.bench_portal_forms, name="portals-ext-bench-forms"),
+    path(
+        "ext/bench/portal-forms/<uuid:portal_form_id>/pages",
+        ext_api.bench_page,
+        name="portals-ext-bench-page",
     ),
     path(
         "ext/applications/<uuid:application_id>/events",
@@ -37,6 +54,11 @@ urlpatterns = [
         ext_api.application_status,
         name="portals-ext-status",
     ),
+    path(
+        "ext/applications/<uuid:application_id>/outcome",
+        ext_api.portal_outcome,
+        name="portals-ext-outcome",
+    ),
     path("ext/mailbox/check", ext_api.mailbox_check, name="portals-ext-mailbox-check"),
     path(
         "ext/applications/<uuid:application_id>/address",
@@ -49,6 +71,21 @@ urlpatterns = [
         name="portals-ext-registration",
     ),
     path(
+        "ext/applications/<uuid:application_id>/portal-login",
+        ext_api.portal_login,
+        name="portals-ext-portal-login",
+    ),
+    path(
+        "ext/applications/<uuid:application_id>/answers",
+        ext_api.answers,
+        name="portals-ext-answers",
+    ),
+    path(
+        "ext/applications/<uuid:application_id>/facts/<uuid:fact_id>/confirm",
+        ext_api.confirm_offer,
+        name="portals-ext-fact-confirm",
+    ),
+    path(
         "student/settings/extension/",
         views.extension_settings,
         name="student-settings-extension",
@@ -57,6 +94,22 @@ urlpatterns = [
         "student/settings/extension/<uuid:pairing_id>/disconnect/",
         views.extension_disconnect,
         name="student-settings-extension-disconnect",
+    ),
+    path("student/settings/portals/", views.portal_logins, name="student-settings-portals"),
+    path(
+        "student/settings/portals/browsers/<uuid:pairing_id>/allow/",
+        views.portal_browser_allow,
+        name="student-settings-portal-browser-allow",
+    ),
+    path(
+        "student/settings/portals/<uuid:account_id>/reveal/",
+        views.portal_reveal,
+        name="student-settings-portal-reveal",
+    ),
+    path(
+        "student/settings/portals/<uuid:account_id>/takeover/",
+        views.portal_takeover,
+        name="student-settings-portal-takeover",
     ),
     path(
         "student/applications/add/<uuid:candidate_id>/",
@@ -77,6 +130,11 @@ urlpatterns = [
         "student/applications/<uuid:application_id>/remove/",
         views.application_remove,
         name="student-application-remove",
+    ),
+    path(
+        "student/applications/<uuid:application_id>/fee-paid/",
+        views.application_fee_paid,
+        name="student-application-fee-paid",
     ),
     path(
         "student/offers/<uuid:signal_id>/accept/",

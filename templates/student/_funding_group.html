@@ -1,27 +1,23 @@
-{% load dashboard cv_countries %}{% if group.award or group.programmes %}<section class="funding-group tone-{% if group.award %}{{ group.award.program_name|tone }}{% else %}plain{% endif %}">
+{% load dashboard cv_countries %}<section class="funding-group pack-section tone-{% if group.award %}{{ group.award.program_name|tone }}{% else %}plain{% endif %}">
   {% if group.award %}
     {% with award=group.award card=group.award.funding_card %}
       <header class="funding-head">
         <div class="funding-title">
-          <p class="funding-kicker"><span class="badge badge-tone">Scholarship</span>{% if award.country_code %}<span class="match-country">{{ award.country_code|flag }}{{ award.country_code|country_name }}</span>{% endif %}</p>
+          <p class="funding-kicker"><span class="badge badge-brand">Scholarship</span>{% if award.country_code %}<span class="match-country">{{ award.country_code|flag }}{{ award.country_code|country_name }}</span>{% endif %}</p>
           <h3>{{ award.program_name }}</h3>
-          {% if card.holder %}<p class="muted">Awarded by {{ card.holder }}</p>{% endif %}
         </div>
+        {# card.unconfirmed is never shown: an unsure fact is not a guess (verified-catalog §5.5) #}
         <dl class="funding-facts">
-          <div><dt>Tuition</dt><dd><span class="cov cov-{{ card.tuition|coverage_tone }}">{{ card.tuition|coverage }}</span></dd></div>
-          <div><dt>Living costs</dt><dd><span class="cov cov-{{ card.living|coverage_tone }}">{{ card.living|coverage }}</span></dd></div>
+          {% if card.holder %}<div><dt>Offered by</dt><dd>{{ card.holder }}</dd></div>{% endif %}
+          {% with t=card.tuition l=card.living %}{% if t and t != "UNSTATED" or l and l != "UNSTATED" %}<div><dt>Covers</dt><dd>{% if t and t != "UNSTATED" %}Tuition: {{ t|lower }}{% endif %}{% if t and t != "UNSTATED" and l and l != "UNSTATED" %}; {% endif %}{% if l and l != "UNSTATED" %}living: {{ l|lower }}{% endif %}</dd></div>{% endif %}{% endwith %}
           {% if card.amounts %}<div><dt>Amount</dt><dd>{{ card.amounts|join:"; " }}</dd></div>{% endif %}
-          <div><dt>Deadline</dt><dd>{{ card.deadline|default:"Not stated" }}</dd></div>
+          {% if card.deadline %}<div><dt>Deadline</dt><dd>{{ card.deadline }}</dd></div>{% endif %}
+          {% if award.evidence.claim %}<div class="funding-claim"><dt>Who can apply</dt><dd>{{ award.evidence.claim }}</dd></div>{% endif %}
         </dl>
-        <details class="funding-more">
-          <summary>Who can apply</summary>
-          <p>{{ award.evidence.claim }}</p>
-          {% if card.unconfirmed %}<p class="muted">Not confirmed yet: {{ card.unconfirmed|join:", " }}</p>{% endif %}
-        </details>
         {% include "student/_candidate.html" with candidate=award also_under=None as_banner=True %}
       </header>
     {% endwith %}
-    {% if group.programmes %}<p class="group-label">{% if group.award.country_code and group.label == "Eligible programmes in "|add:group.award.country_code %}{{ group.award.country_code|flag }}Eligible programmes in {{ group.award.country_code|country_name }}{% else %}{{ group.label }}{% endif %}</p>{% endif %}
+    {% if group.programmes %}<p class="group-label">{% if group.award.country_code %}{{ group.award.country_code|flag }}{% endif %}{{ group.label }}: <span class="group-label-sub">degree programmes from your matches that this scholarship can fund</span></p>{% endif %}
   {% else %}
     <h3 class="group-plain">{{ group.label }}</h3>
   {% endif %}
@@ -30,14 +26,17 @@
       {% for placed in group.programmes %}
         <li>
           {% if placed.elsewhere %}
-            {% include "student/_candidate.html" with candidate=placed.candidate also_under=placed.also_under in_pack=False elsewhere=placed.elsewhere %}
+            <p class="match-note match-elsewhere-badge"><span class="badge badge-muted">Listed {{ placed.elsewhere }}</span><span class="sr-only"> ({{ placed.elsewhere }})</span></p>
+            {% include "student/_candidate.html" with candidate=placed.candidate also_under=placed.also_under in_pack=False %}
           {% else %}
             {% include "student/_candidate.html" with candidate=placed.candidate also_under=placed.also_under %}
           {% endif %}
         </li>
       {% endfor %}
     </ul>
+  {% elif group.award %}
+    <p class="quiet-line">No programme in this list matches this funding. Check its eligibility.</p>
   {% else %}
-    <p class="quiet-line">No programme in your list matches this scholarship yet. Check who can apply above.</p>
+    <p class="quiet-line">None.</p>
   {% endif %}
-</section>{% endif %}
+</section>

@@ -13,7 +13,7 @@ from search-engine results instead of from the publisher's page.
 
 ## The run, verbatim
 
-Run against the local database `tehsil_enum` after `migrate` and `load_closed_lists` (a second
+Run against the local database `elmify_enum` after `migrate` and `load_closed_lists` (a second
 `load_closed_lists` reported `new 0` on every list, so the load is idempotent):
 
 ```

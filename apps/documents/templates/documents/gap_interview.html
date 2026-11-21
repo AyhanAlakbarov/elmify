@@ -14,15 +14,23 @@
   base.html carries no text input, so the exact `<input type="text"` count in
   tests/documents/test_gap_interview_view.py still counts questions only.
   {% endcomment %}
-  <div class="page-head"><div><h1>Questions for you</h1><p>Things the AI could not find in your files but your CV or applications need. Answer what you can; anything you leave blank stays on the list.</p></div></div>
-  {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+  <div class="page-head">
+    <div>
+      <h1>Questions for you</h1>
+      <p>Things the AI could not find in your files that help strengthen your CV or applications. Answer what you can right now — anything you leave blank is simply skipped for later.</p>
+    </div>
+    {% if fields %}
+      <span class="badge">{{ fields|length }} open question{{ fields|length|pluralize }}</span>
+    {% endif %}
+  </div>
+  {% if error %}<p role="alert" class="note note-error">{{ error }}</p>{% endif %}
   {% if notes %}
     <section class="panel">
       <h2>Worth knowing</h2>
-      <p>Nothing to answer here -- these are for you and your counsellor.</p>
-      <ul>
+      <p class="muted">Nothing to answer here — these are for you and your counsellor.</p>
+      <ul class="item-list worth-knowing-list">
         {% for note in notes %}
-          <li>{{ note.text }} <small>{{ note.evidence }}</small></li>
+          <li><span>{{ note.text }} <small class="muted">{{ note.evidence }}</small></span></li>
         {% endfor %}
       </ul>
     </section>
@@ -30,14 +38,27 @@
   {% if fields %}
     <form method="post" class="panel gap-form">
       {% csrf_token %}
-      {% for name, question in fields %}
-        <p>
-          <label for="q{{ forloop.counter }}">{{ question.prompt }}</label>
-          <small>{{ question.evidence }}</small>
-          <input type="text" id="q{{ forloop.counter }}" name="{{ name }}"{% if question.kind == "TIMELINE_GAP" %} list="gap-statements" maxlength="300"{% endif %}>
-        </p>
+      <div class="gap-submit-bar gap-submit-top">
+        <p class="muted small">You can save any single answer or several at once. Every question is optional.</p>
+        <button type="submit">Save answers</button>
+      </div>
+      {% for row in question_rows %}
+        {% if row.section_title %}
+          <div class="gap-section-head">
+            <h2>{{ row.section_title }}</h2>
+            <p class="muted small">{{ row.section_subtitle }}</p>
+          </div>
+        {% endif %}
+        <div class="gap-item{% if row.is_group_followup %} gap-item-followup{% endif %}"{% if row.is_group_parent %} data-gap-group-parent="{{ row.group_slug }}"{% elif row.is_group_followup %} data-gap-group-child="{{ row.group_slug }}"{% endif %}>
+          <label for="q{{ row.index }}">{{ row.question.prompt }}</label>
+          <small>{{ row.question.evidence }}</small>
+          <input type="text" id="q{{ row.index }}" name="{{ row.name }}"{% if row.question.kind == "TIMELINE_GAP" %} list="gap-statements" maxlength="300"{% elif row.question.kind == "NAME_PARTS" %} maxlength="100"{% endif %}>
+        </div>
       {% endfor %}
-      <button type="submit">Save answers</button>
+      <div class="gap-submit-bar">
+        <p class="muted small">Blank fields stay skipped until you are ready to answer them.</p>
+        <button type="submit">Save answers</button>
+      </div>
       {% comment %}
          A gap question is the one question in this interview a student may
          not want to answer, and it is also the one that cannot be dismissed:

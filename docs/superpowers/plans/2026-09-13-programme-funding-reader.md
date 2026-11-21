@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- **Worktree:** `/home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader` on branch `claude/programme-funding-reader`. The shell's cwd resets between Bash calls: every command starts with `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader &&` and every git call is `git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader …`.
-- **Tests:** `POSTGRES_DB=tehsil_funding_reader uv run pytest …`. Never a bare `pytest`. The suite excludes `-m live` by default.
+- **Worktree:** `/home/orkhan/Desktop/elmify/.worktrees/funding-reader` on branch `claude/programme-funding-reader`. The shell's cwd resets between Bash calls: every command starts with `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader &&` and every git call is `git -C /home/orkhan/Desktop/elmify/.worktrees/funding-reader …`.
+- **Tests:** `POSTGRES_DB=elmify_funding_reader uv run pytest …`. Never a bare `pytest`. The suite excludes `-m live` by default.
 - Every commit leaves `uv run ruff check .`, `uv run mypy apps config` (strict) and the touched test files green. **Never `ruff format`.**
 - Commit with `uv run git -C <worktree> commit`; stage named paths only, never `git add -A`.
 - Commit messages end with:
@@ -36,22 +36,22 @@
 - [ ] **Step 1: Create the worktree from master and bring the spec and the `CLAUDE.md` rule across**
 
 ```bash
-git -C /home/orkhan/Desktop/tehsil_agent worktree add /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader -b claude/programme-funding-reader master
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader cherry-pick 233d041 66b7d25
-cp /home/orkhan/Desktop/tehsil_agent/docs/superpowers/plans/2026-09-13-programme-funding-reader.md /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader/docs/superpowers/plans/
-git -C /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader log --oneline -3
+git -C /home/orkhan/Desktop/elmify worktree add /home/orkhan/Desktop/elmify/.worktrees/funding-reader -b claude/programme-funding-reader master
+git -C /home/orkhan/Desktop/elmify/.worktrees/funding-reader cherry-pick 233d041 66b7d25
+cp /home/orkhan/Desktop/elmify/docs/superpowers/plans/2026-09-13-programme-funding-reader.md /home/orkhan/Desktop/elmify/.worktrees/funding-reader/docs/superpowers/plans/
+git -C /home/orkhan/Desktop/elmify/.worktrees/funding-reader log --oneline -3
 ```
 Expected: top two commits are the spec (`docs: institution and programme funding search …`) and the census plan/`CLAUDE.md` commit. If `233d041` conflicts on `docs/superpowers/specs/2026-09-13-inbound-government-search-design.md` (a file master lacks), resolve by taking the incoming file.
 
 - [ ] **Step 2: Baseline**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research -q -x`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research -q -x`
 Expected: all pass. Record the count.
 
 - [ ] **Step 3: Commit the plan copy**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add docs/superpowers/plans/2026-09-13-programme-funding-reader.md && uv run git commit -m "docs: programme funding reader plan, increments 1-3
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add docs/superpowers/plans/2026-09-13-programme-funding-reader.md && uv run git commit -m "docs: programme funding reader plan, increments 1-3
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -190,7 +190,7 @@ def test_the_vocabulary_names_every_funding_kind_the_spec_lists():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_reader.py -q`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_reader.py -q`
 Expected: `ImportError: cannot import name 'FUNDING_READS'` (module missing).
 
 - [ ] **Step 3: Write the module (schema and call only)**
@@ -366,13 +366,13 @@ def extract_funding_statements(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_reader.py -q && uv run ruff check apps/research/funding_reader.py tests/research/test_funding_reader.py && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_reader.py -q && uv run ruff check apps/research/funding_reader.py tests/research/test_funding_reader.py && uv run mypy apps config`
 Expected: `7 passed`, `All checks passed!`, mypy clean.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add apps/research/funding_reader.py tests/research/test_funding_reader.py && uv run git commit -m "research: a funding statement schema and one model call with its own vocabulary
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add apps/research/funding_reader.py tests/research/test_funding_reader.py && uv run git commit -m "research: a funding statement schema and one model call with its own vocabulary
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -480,7 +480,7 @@ def test_the_result_types_are_frozen():
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_reader.py -q`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_reader.py -q`
 Expected: `ImportError: cannot import name 'FundingDecision'`.
 
 - [ ] **Step 3: Implement** — append to `apps/research/funding_reader.py` (add `from collections import Counter`, `from collections.abc import Iterable, Sequence`, `from dataclasses import dataclass` to the imports, and `from .reader import _MAX_PAGE_TEXT_CHARS, _haystack, normalize`):
@@ -614,13 +614,13 @@ def decide_funding(
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_reader.py -q && uv run ruff check apps/research tests/research && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_reader.py -q && uv run ruff check apps/research tests/research && uv run mypy apps config`
 Expected: `16 passed`, lint and mypy clean. (If mypy rejects the `_vote` return, build the tuple explicitly with four `_modal` calls.)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add apps/research/funding_reader.py tests/research/test_funding_reader.py && uv run git commit -m "research: a funding award is decided by agreement of three verified readings, never one
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add apps/research/funding_reader.py tests/research/test_funding_reader.py && uv run git commit -m "research: a funding award is decided by agreement of three verified readings, never one
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -793,7 +793,7 @@ def test_a_funding_opportunity_refuses_an_unknown_agreement_or_kind(db):
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_reader.py tests/funding/test_catalog_models.py -q`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_reader.py tests/funding/test_catalog_models.py -q`
 Expected: `ImportError: cannot import name 'write_funding_decision'`.
 
 - [ ] **Step 3: Add the model fields**
@@ -842,7 +842,7 @@ and two constraints appended to `Meta.constraints`:
 
 - [ ] **Step 4: Generate the migration and check it**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run python manage.py makemigrations funding -n funding_opportunity_read_fields && cat apps/funding/migrations/0031_funding_opportunity_read_fields.py`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run python manage.py makemigrations funding -n funding_opportunity_read_fields && cat apps/funding/migrations/0031_funding_opportunity_read_fields.py`
 Expected: nine `AddField` operations and two `AddConstraint` operations, dependency `("funding", "0031_cv_directives_undecided_unreadable")`. Add this comment at the top of the file:
 
 ```python
@@ -962,13 +962,13 @@ def write_funding_decision(
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_reader.py tests/funding/test_catalog_models.py tests/tenancy/test_database_isolation.py -q && uv run ruff check apps tests/research tests/funding && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_reader.py tests/funding/test_catalog_models.py tests/tenancy/test_database_isolation.py -q && uv run ruff check apps tests/research tests/funding && uv run mypy apps config`
 Expected: all pass (the isolation test still lists `funding_fundingopportunity` and sees its policies intact), lint and mypy clean. If `FundingBenefit` rejects `period="FULL_PROGRAM"`, use `Period.FULL_PROGRAM` from `apps.funding.models`.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add apps/funding/models.py apps/funding/migrations/0031_funding_opportunity_read_fields.py apps/research/funding_reader.py tests/research/test_funding_reader.py tests/funding/test_catalog_models.py && uv run git commit -m "funding: a read funding row carries its agreement, and is served only when three readings agree
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add apps/funding/models.py apps/funding/migrations/0031_funding_opportunity_read_fields.py apps/research/funding_reader.py tests/research/test_funding_reader.py tests/funding/test_catalog_models.py && uv run git commit -m "funding: a read funding row carries its agreement, and is served only when three readings agree
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1136,7 +1136,7 @@ def test_a_page_the_lead_cannot_vouch_for_is_not_read_for_funding(agency_a, fake
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_discovery_pipeline.py -q -k funding`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_discovery_pipeline.py -q -k funding`
 Expected: `TypeError: run_discovery() got an unexpected keyword argument 'funding_parser'`.
 
 - [ ] **Step 3: Wire the reader into the pipeline**
@@ -1285,13 +1285,13 @@ In `apps/research/management/commands/discover.py`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research -q && uv run ruff check apps tests/research && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research -q && uv run ruff check apps tests/research && uv run mypy apps config`
 Expected: every existing pipeline test still passes (the parser defaults to `None`), the seven new ones pass, lint and mypy clean. If the shell test's page trips `looks_unrendered` first (it is then rendered or becomes a consultant task, never read), pad it with a 25,000-byte HTML comment instead (`b"<!--" + b"x" * 25_000 + b"-->"`), which `readable_text` strips and `looks_unrendered` ignores.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add apps/research/pipeline.py apps/research/management/commands/discover.py tests/research/test_discovery_pipeline.py && uv run git commit -m "research: discovery reads funding off the page it already holds -- no extra fetch, served only when agreed
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add apps/research/pipeline.py apps/research/management/commands/discover.py tests/research/test_discovery_pipeline.py && uv run git commit -m "research: discovery reads funding off the page it already holds -- no extra fetch, served only when agreed
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1361,7 +1361,7 @@ def test_a_hop_from_a_register_lead_keeps_the_programme_identity(agency_a, fake_
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_discovery_pipeline.py -q -k "register_lead or search_hit or keeps_the_programme"`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_discovery_pipeline.py -q -k "register_lead or search_hit or keeps_the_programme"`
 Expected: `ImportError: cannot import name '_group_key'`.
 
 - [ ] **Step 3: Implement**
@@ -1412,13 +1412,13 @@ In `run_discovery`:
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research -q && uv run ruff check apps tests/research && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research -q && uv run ruff check apps tests/research && uv run mypy apps config`
 Expected: all pass, including `test_a_hopped_page_does_not_inherit_the_catalogues_identity` (catalogue leads still drop identity).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add apps/research/pipeline.py tests/research/test_discovery_pipeline.py && uv run git commit -m "research: a named programme's pages pool under its own identity on a many-programme host
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add apps/research/pipeline.py tests/research/test_discovery_pipeline.py && uv run git commit -m "research: a named programme's pages pool under its own identity on a many-programme host
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1590,13 +1590,13 @@ def test_the_committed_csv_has_the_spec_header():
 
 - [ ] **Step 3: Run the test to verify it fails**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_recall.py -q`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_recall.py -q`
 Expected: `CommandError: Unknown command: 'funding_recall'` and the CSV test failing on a missing file.
 
 - [ ] **Step 4: Create the CSV header and the command**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && printf '"institution_ror","institution","country_iso","programme_url","kind","pattern","verified_on","source_url"\n' > docs/research/programme-funding-known-answers.csv
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && printf '"institution_ror","institution","country_iso","programme_url","kind","pattern","verified_on","source_url"\n' > docs/research/programme-funding-known-answers.csv
 ```
 
 Create `apps/research/management/commands/funding_recall.py`:
@@ -1670,13 +1670,13 @@ class Command(BaseCommand):
 
 - [ ] **Step 5: Run the tests to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_recall.py -q && uv run ruff check apps tests/research && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_recall.py -q && uv run ruff check apps tests/research && uv run mypy apps config`
 Expected: `5 passed`, lint and mypy clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add docs/superpowers/research/PROMPT-programme-funding-known-answers.md docs/research/programme-funding-known-answers.csv apps/research/management/commands/funding_recall.py tests/research/test_funding_recall.py && uv run git commit -m "research: a known-answer set for programme funding, and a command that reports recall rather than asserting it
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add docs/superpowers/research/PROMPT-programme-funding-known-answers.md docs/research/programme-funding-known-answers.csv apps/research/management/commands/funding_recall.py tests/research/test_funding_recall.py && uv run git commit -m "research: a known-answer set for programme funding, and a command that reports recall rather than asserting it
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1701,11 +1701,11 @@ For each destination in this order — GB, NL, SE, IE, IT, AU, CA, US — until 
 - [ ] **Step 5: Write the per-destination synthesis**: rows accepted, rows rejected and why, which run found what, and the completion lines.
 - [ ] **Step 6: Validate and commit** (per destination):
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && POSTGRES_DB=tehsil_funding_reader uv run pytest tests/research/test_funding_recall.py -q && uv run python manage.py funding_recall`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && POSTGRES_DB=elmify_funding_reader uv run pytest tests/research/test_funding_recall.py -q && uv run python manage.py funding_recall`
 Expected: tests pass; every row `PENDING` (nothing crawled yet).
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add docs/research/programme-funding-known-answers.csv docs/superpowers/research/ && git status --short && uv run git commit -m "research: programme funding known answers -- <CC>
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add docs/research/programme-funding-known-answers.csv docs/superpowers/research/ && git status --short && uv run git commit -m "research: programme funding known answers -- <CC>
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1720,11 +1720,11 @@ Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
 
 **Interfaces:** none new. This is increment 1 run for real, and it needs the owner's yes on model spend first (169 sites × up to 3 reads × ~1–2 cents).
 
-- [ ] **Step 1: Ask the owner to approve the spend and confirm `OPENAI_API_KEY` is sourced** (`~/.config/tehsil_agent/openai.env`, per memory).
+- [ ] **Step 1: Ask the owner to approve the spend and confirm `OPENAI_API_KEY` is sourced** (`~/.config/elmify/openai.env`, per memory).
 - [ ] **Step 2: Run against a throwaway database**, as the register rehearsal did:
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && set -a && . ~/.config/tehsil_agent/openai.env && set +a && POSTGRES_DB=tehsil_funding_rehearsal DATABASE_ROLE=migration uv run python manage.py migrate -v0 && POSTGRES_DB=tehsil_funding_rehearsal DATABASE_ROLE=migration uv run python manage.py discover --field "any" --country XX --tenant <an Agency id created in that DB> --max-leads 200 --cycle 2027 --funding 2>&1 | tee /tmp/claude-1000/-home-orkhan-Desktop-tehsil-agent/469516b4-7d85-40ac-a0f8-3cf42af46343/scratchpad/eacea-funding-run.log
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && set -a && . ~/.config/elmify/openai.env && set +a && POSTGRES_DB=elmify_funding_rehearsal DATABASE_ROLE=migration uv run python manage.py migrate -v0 && POSTGRES_DB=elmify_funding_rehearsal DATABASE_ROLE=migration uv run python manage.py discover --field "any" --country XX --tenant <an Agency id created in that DB> --max-leads 200 --cycle 2027 --funding 2>&1 | tee /tmp/claude-1000/-home-orkhan-Desktop-elmify/469516b4-7d85-40ac-a0f8-3cf42af46343/scratchpad/eacea-funding-run.log
 ```
 (The EACEA seed ignores `--country`; a placeholder is fine. Create the tenant with `manage.py shell -c "from apps.tenancy.models import Agency; print(Agency.objects.create(name='rehearsal', brand_logo_url='https://x.example/l.svg', brand_primary_color='#123456').id)"` first. Use the S3 rehearsal bucket from the register rehearsal, or `--dry-run` first to count leads.)
 
@@ -1732,7 +1732,7 @@ cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && set -a && . ~/
 - [ ] **Step 4: Commit the note**
 
 ```bash
-cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && git add docs/superpowers/research/ && uv run git commit -m "research: first live funding read over the EACEA consortium sites, measured
+cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && git add docs/superpowers/research/ && uv run git commit -m "research: first live funding read over the EACEA consortium sites, measured
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
@@ -1740,5 +1740,5 @@ Claude-Session: https://claude.ai/code/session_01D8xtPAanBXyUfuUhtqiQdp"
 
 - [ ] **Step 5: Full suite, then hand over**
 
-Run: `cd /home/orkhan/Desktop/tehsil_agent/.worktrees/funding-reader && uv run ruff check . && uv run mypy apps config && POSTGRES_DB=tehsil_funding_reader uv run pytest -q`
+Run: `cd /home/orkhan/Desktop/elmify/.worktrees/funding-reader && uv run ruff check . && uv run mypy apps config && POSTGRES_DB=elmify_funding_reader uv run pytest -q`
 Expected: green. Then use `superpowers:finishing-a-development-branch` to decide merge or PR. The plan for increments 4–7 (registers, guided navigation with Common Crawl and crt.sh, seeds beyond EACEA, coverage report and stopping rule) is written after this task's numbers exist.

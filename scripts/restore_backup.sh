@@ -59,7 +59,7 @@ restore_instance() {
     --target-db-instance-identifier "$RESTORE_INSTANCE_ID" \
     --restore-time "$RESTORE_TIME" \
     --no-publicly-accessible \
-    --tags Key=Project,Value=tehsil-agent Key=Purpose,Value=restore-drill >/dev/null
+    --tags Key=Project,Value=elmify Key=Purpose,Value=restore-drill >/dev/null
   aws rds wait db-instance-available --db-instance-identifier "$RESTORE_INSTANCE_ID"
 }
 
@@ -69,7 +69,7 @@ run_integrity_queries() {
     --query 'DBInstances[0].Endpoint.Address' --output text)"
   echo "Restore: running read-only integrity queries against ${endpoint}"
   PGPASSWORD="${RESTORE_DB_PASSWORD:?RESTORE_DB_PASSWORD is required for the integrity check}" \
-    psql "host=${endpoint} dbname=${RESTORE_DB_NAME:-tehsil} user=${RESTORE_DB_USER:-tehsil_admin} sslmode=require" \
+    psql "host=${endpoint} dbname=${RESTORE_DB_NAME:-elmify} user=${RESTORE_DB_USER:-elmify_admin} sslmode=require" \
     -v ON_ERROR_STOP=1 -c "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public';"
 }
 

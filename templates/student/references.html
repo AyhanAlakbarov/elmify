@@ -11,7 +11,16 @@
   <span class="soon soon-lg">Coming soon</span>
 </div>
 
-<p class="note note-ok">Requests are not sent yet. You can see how this will work, but nothing on this page is saved or emailed.</p>
+<div class="write-callout">
+  <div class="write-callout-copy">
+    <strong>Your referee workspace is live</strong>
+    <p class="muted">Requests are not sent yet. You can see how this will work, but nothing on this page is saved or emailed. You can already <a href="{% url 'student-referees' %}">list your referees</a> and <a href="{% url 'student-referee-plan' %}">plan who writes for which application</a>.</p>
+  </div>
+  <div class="write-callout-actions">
+    <a href="{% url 'student-referees' %}" class="btn btn-primary btn-small">Manage your referees</a>
+    <a href="{% url 'student-referee-plan' %}" class="btn btn-quiet btn-small">Open referee plan</a>
+  </div>
+</div>
 
 <div class="ref-layout">
   <section class="panel" aria-labelledby="ask-heading">

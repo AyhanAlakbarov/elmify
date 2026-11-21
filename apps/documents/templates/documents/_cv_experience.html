@@ -3,10 +3,10 @@
 <table class="grid">
   {% for entry in experience_rows %}
   <tr>
-    <td class="when">{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</td>
+    <td class="when">{% date_range entry.start_date entry.end_date %}</td>
     {% if entry.statement %}<td>{{ entry.statement }}</td>
     {% else %}<td><strong>{{ entry.title }}</strong><br>
-    {% if entry.group %}{{ entry.group }}, {% endif %}{{ entry.employer }}{% if entry.city or entry.country %}, {% include "documents/_cv_place.html" with entry=entry only %}{% endif %}{% if entry.distinct_supervisor %} — Supervisor: {{ entry.distinct_supervisor }}{% endif %}<br>
+    {% if entry.group %}{{ entry.group }}, {% endif %}{{ entry.employer }}{% if entry.city or entry.country %}, {% include "documents/_cv_place.html" with entry=entry only %}{% endif %}{% if entry.distinct_supervisor %} — Supervisor: {{ entry.distinct_supervisor }}{% endif %}{% if "experience.project" in include_targets and entry.project %}<div class="gloss">Project: {{ entry.project }}</div>{% else %}<br>{% endif %}
     {% include "documents/_cv_bullets.html" with entry=entry only %}</td>{% endif %}
   </tr>
   {% endfor %}
@@ -28,7 +28,7 @@
      ExperienceEntry ever gains a `statement` field, this branch is what
      breaks -- add an explicit flag then.
   {% endcomment %}
-  <div class="entry-header"><strong>{{ entry.statement }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+  <div class="entry-header"><strong>{{ entry.statement }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
 </div>
 {% else %}
 <div class="entry">
@@ -63,8 +63,9 @@
      in one run a long title wrapped and left "organocatalyst design, EPFL"
      burying the one fact a reader scans an experience entry for.
   {% endcomment %}
-  <div class="entry-header"><strong>{{ entry.title }}</strong><span>{{ entry.start_date|month_year }} – {{ entry.end_date|month_year:"present" }}</span></div>
+  <div class="entry-header"><strong>{{ entry.title }}</strong><span>{% date_range entry.start_date entry.end_date %}</span></div>
   <div>{% if entry.group %}{{ entry.group }}, {% endif %}{{ entry.employer }}{% if entry.city or entry.country %}, {% include "documents/_cv_place.html" with entry=entry only %}{% endif %}{% if entry.distinct_supervisor %} — Supervisor: {{ entry.distinct_supervisor }}{% endif %}</div>
+  {% if "experience.project" in include_targets and entry.project %}<div class="gloss">Project: {{ entry.project }}</div>{% endif %}
   {% include "documents/_cv_bullets.html" with entry=entry only %}
 </div>
 {% endif %}

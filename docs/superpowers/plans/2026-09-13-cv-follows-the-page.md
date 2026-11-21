@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Test database per checkout: `POSTGRES_DB=tehsil_master uv run pytest ...`. Never a bare `pytest`.
+- Test database per checkout: `POSTGRES_DB=elmify_master uv run pytest ...`. Never a bare `pytest`.
 - Every commit must leave `uv run ruff check .`, `uv run mypy apps config` (strict) and the full suite green. **Never `ruff format`** — it churns 26 unrelated files.
 - Commit with `uv run git commit` (pre-commit hooks need the uv environment). Never `git add -A`: `DESIGN.md`, `skill-observations/log.md`, `.agents/product-marketing.md` and `website-proposal.md` are the owner's uncommitted work and must not be staged.
 - Every model call: DATA labelled as data in the developer message, `text_format=` a Pydantic model with `extra="forbid"`, `max_output_tokens` capped, `store=False`, `safety_identifier=privacy_safe_identifier(...)`.
@@ -98,7 +98,7 @@ Add the imports the file lacks (`OfficialSource`, `OfficialSourceSnapshot` from 
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/funding/test_catalog_models.py -q -k "undecided or unreadable"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/funding/test_catalog_models.py -q -k "undecided or unreadable"`
 Expected: FAIL — the check constraint rejects `UNDECIDED`; `TypeError: unexpected keyword 'unreadable'`.
 
 - [ ] **Step 3: Change the models**
@@ -198,11 +198,11 @@ class Migration(migrations.Migration):
     ]
 ```
 
-Run `POSTGRES_DB=tehsil_master uv run python manage.py makemigrations --check --dry-run funding` and confirm it reports no missing changes. If it wants a different `AlterField` shape, take its version of that one operation and keep the rest.
+Run `POSTGRES_DB=elmify_master uv run python manage.py makemigrations --check --dry-run funding` and confirm it reports no missing changes. If it wants a different `AlterField` shape, take its version of that one operation and keep the rest.
 
 - [ ] **Step 5: Run the model tests**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/funding/test_catalog_models.py -q -k "undecided or unreadable"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/funding/test_catalog_models.py -q -k "undecided or unreadable"`
 Expected: PASS.
 
 - [ ] **Step 6: Write the failing constraints tests**
@@ -266,7 +266,7 @@ def test_a_surfaced_rule_reaches_the_counsellor_with_the_pages_sentence():
 
 - [ ] **Step 7: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_constraints.py tests/documents/test_catalog_rules.py tests/documents/test_render.py -q -k "surfaced"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_constraints.py tests/documents/test_catalog_rules.py tests/documents/test_render.py -q -k "surfaced"`
 Expected: FAIL — `ValidationError` on the key; one `unapplied` rule resolved; `detail` is `"no pre-flight check for 'unapplied'"`.
 
 - [ ] **Step 8: Add the keys, the multi-valued merge and the checker**
@@ -333,7 +333,7 @@ and add to `_CHECKERS`:
 
 - [ ] **Step 9: Run the three test files**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_constraints.py tests/documents/test_catalog_rules.py tests/documents/test_render.py tests/funding/test_catalog_models.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_constraints.py tests/documents/test_catalog_rules.py tests/documents/test_render.py tests/funding/test_catalog_models.py -q`
 Expected: PASS.
 
 - [ ] **Step 10: Lint, type-check, commit**
@@ -405,7 +405,7 @@ def test_a_cache_hit_carries_no_page_text_and_no_snapshot(program):
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/research/test_reader.py -q -k "unreadable or small_page or cache_hit"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/research/test_reader.py -q -k "unreadable or small_page or cache_hit"`
 Expected: FAIL — `ReadResult` has no `snapshot`/`page_text`.
 
 - [ ] **Step 3: Extend `ReadResult` and add the floor**
@@ -468,7 +468,7 @@ Then thread `page_text=page_text, snapshot=result.snapshot` into the three later
 
 - [ ] **Step 4: Run the reader tests**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/research/test_reader.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/research/test_reader.py -q`
 Expected: PASS (the pre-existing tests are unaffected: their pages are far below 20,000 bytes).
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -539,7 +539,7 @@ def test_a_page_with_no_cv_or_europass_line_has_no_candidates():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q -k "candidate"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q -k "candidate"`
 Expected: FAIL — `ImportError: cannot import name 'Candidate'`.
 
 - [ ] **Step 3: Implement**
@@ -595,7 +595,7 @@ def candidates(page_text: str, statements: Iterable[str]) -> tuple[Candidate, ..
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q -k "candidate"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q -k "candidate"`
 Expected: PASS.
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -724,7 +724,7 @@ def test_the_judge_raises_when_no_sample_answered():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q -k "judge or directive or include_target"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q -k "judge or directive or include_target"`
 Expected: FAIL — `ImportError`.
 
 - [ ] **Step 3: Implement the schema and the judge**
@@ -900,7 +900,7 @@ Raise `_DERIVE_MAX_OUTPUT_TOKENS` to `4_000` (three lists of up to 40 entries). 
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q`
 Expected: PASS (old tests still green: `Derivations` keeps `rules`).
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -1094,7 +1094,7 @@ def test_outcomes_are_per_candidate_and_carry_what_disagreed():
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q -k "decide or outcome or unanimous or abstain or surfaced or directive"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q -k "decide or outcome or unanimous or abstain or surfaced or directive"`
 Expected: FAIL — `ImportError: cannot import name 'decide'`.
 
 - [ ] **Step 3: Implement**
@@ -1305,7 +1305,7 @@ Note the `test_a_format_verdict_for_a_non_cv_non_europass_index_is_ignored` case
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q`
 Expected: PASS. If `test_other_template_is_surfaced_not_resolved_to_nothing` fails on `kind`, check that the `OTHER` branch runs before the `EUROPASS` one (it does above) and that `format_votes` for a non-europass candidate is honoured (the `or format_votes` clause).
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -1507,7 +1507,7 @@ Keep `test_the_page_rule_reaches_a_render_as_an_advisory_violation_with_the_sent
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q`
 Expected: the new `read_and_derive` tests FAIL (`derive_cv_constraints` still called with the old signature; call counts off).
 
 - [ ] **Step 3: Implement `derive_page_rules`; delete the keyword rule**
@@ -1584,8 +1584,8 @@ Update its docstring: derivation runs on every read that persisted a readable sn
 
 - [ ] **Step 4: Run the module, then the suite**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q` → PASS.
-Run: `POSTGRES_DB=tehsil_master uv run pytest -q` → PASS. Anything else that imported the deleted names shows up here; fix it the same way.
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q` → PASS.
+Run: `POSTGRES_DB=elmify_master uv run pytest -q` → PASS. Anything else that imported the deleted names shows up here; fix it the same way.
 
 - [ ] **Step 5: Lint, type-check, commit**
 
@@ -1664,7 +1664,7 @@ Use whatever PDF-text helper the file already uses for `_check_final_page_fill`-
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_render.py -q -k "directive or emphasis"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_render.py -q -k "directive or emphasis"`
 Expected: FAIL — `ImportError: PageDirective`.
 
 - [ ] **Step 3: Implement `PageDirective` and the render side**
@@ -1742,7 +1742,7 @@ In `render_cv_with_warnings`, add `directives: tuple[PageDirective, ...] = ()` a
 
 - [ ] **Step 4: Run the render tests**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_render.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_render.py -q`
 Expected: PASS.
 
 - [ ] **Step 5: Write the failing generation test**
@@ -1768,7 +1768,7 @@ If `_student` requires more setup (identity fact, application email) copy exactl
 
 - [ ] **Step 6: Run to verify it fails**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_generation.py -q -k include_directive`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_generation.py -q -k include_directive`
 Expected: FAIL — the prompt does not mention the field.
 
 - [ ] **Step 7: Implement the generation side**
@@ -1800,8 +1800,8 @@ and pass `required_fields=required_fields` to both `_call_model` calls. Import `
 
 - [ ] **Step 8: Run generation and render tests, then the suite**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_generation.py tests/documents/test_render.py -q` → PASS.
-Run: `POSTGRES_DB=tehsil_master uv run pytest -q` → PASS.
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_generation.py tests/documents/test_render.py -q` → PASS.
+Run: `POSTGRES_DB=elmify_master uv run pytest -q` → PASS.
 
 - [ ] **Step 9: Lint, type-check, commit**
 
@@ -1876,7 +1876,7 @@ def test_gap_questions_include_the_programmes_questions_when_one_is_given(studen
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_gaps.py -q -k "programme"`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_gaps.py -q -k "programme"`
 Expected: FAIL — `ImportError`.
 
 - [ ] **Step 3: Implement**
@@ -1949,7 +1949,7 @@ Imports: `from apps.funding.models import Program`; `from .constraints import di
 
 - [ ] **Step 4: Run the tests**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_interview_view.py tests/documents/test_gap_intake.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_gaps.py tests/documents/test_gap_interview_view.py tests/documents/test_gap_intake.py -q`
 Expected: PASS (the view calls `gap_questions(student)` with no programme and is unaffected).
 
 - [ ] **Step 5: Lint, type-check, commit**
@@ -2090,12 +2090,12 @@ Add `import csv` and `import pathlib` at the top of the module.
 
 - [ ] **Step 3: Run the live gate once**
 
-Run: `set -a; . ~/.config/tehsil_agent/openai.env; set +a; POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -m live -k eval_corpus -s`
+Run: `set -a; . ~/.config/elmify/openai.env; set +a; POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -m live -k eval_corpus -s`
 Expected: PASS with `48/48`. Three model calls. If a `d*` row fails, the model disagrees with a hand label on a directive sentence: print the outcome, decide whether the label or the prompt is wrong, fix that one thing, and re-run once. If a europass/standard row fails, stop — that is a regression against the spike and the phrasings in Task 4 need looking at before anything ships.
 
 - [ ] **Step 4: Confirm the default suite excludes it**
 
-Run: `POSTGRES_DB=tehsil_master uv run pytest tests/documents/test_derive.py -q`
+Run: `POSTGRES_DB=elmify_master uv run pytest tests/documents/test_derive.py -q`
 Expected: the live test shows as deselected; everything else PASS.
 
 - [ ] **Step 5: Commit**
@@ -2165,7 +2165,7 @@ In the spec: status line → `Status: **implemented 2026-09-13** (plan: docs/sup
 Run, in order, and paste the tail of each into the commit message body:
 
 ```
-POSTGRES_DB=tehsil_master uv run pytest -q
+POSTGRES_DB=elmify_master uv run pytest -q
 uv run ruff check .
 uv run mypy apps config
 uv run bandit -c pyproject.toml -r apps config

@@ -15,8 +15,8 @@
 ## Global Constraints
 
 - Work in `/home/orkhan/Desktop/transcript-redesign` (branch `claude/transcript-reader-redesign`). The shell's cwd resets between calls: prefix commands with `cd /home/orkhan/Desktop/transcript-redesign &&` and use `git -C /home/orkhan/Desktop/transcript-redesign` for git.
-- Test database: `POSTGRES_DB=tehsil_transcript` on every app pytest run.
-- Never run `ruff format` (lint-only gate). Gates after every task: `uv run ruff check .`, `uv run mypy apps config`, `POSTGRES_DB=tehsil_transcript uv run pytest -q`, `uv run python manage.py makemigrations --check --dry-run`; when `ocr/` changed: `uv sync --project ocr --frozen && uv run --project ocr pytest ocr -q`; when `infra/` changed: `uv run pytest tests/infra -q`.
+- Test database: `POSTGRES_DB=elmify_transcript` on every app pytest run.
+- Never run `ruff format` (lint-only gate). Gates after every task: `uv run ruff check .`, `uv run mypy apps config`, `POSTGRES_DB=elmify_transcript uv run pytest -q`, `uv run python manage.py makemigrations --check --dry-run`; when `ocr/` changed: `uv sync --project ocr --frozen && uv run --project ocr pytest ocr -q`; when `infra/` changed: `uv run pytest tests/infra -q`.
 - **No generative model writes a stored value**: Azure is an OCR service; its text is copied, never rewritten. Jev still only picks.
 - **The worker never parses an uploaded file**: it reads bytes from the evidence bucket and forwards them to Azure; counting pages, measuring resolution and reading text layers happen in the Lambda only (spec §4.1).
 - **Launch gate**: `settings.TRANSCRIPT_AZURE_ENABLED` (default `False`) — no transcript bytes reach Azure while it is off (spec §4).
@@ -84,19 +84,19 @@ def _public_dns(monkeypatch):
 def test_returns_the_operation_location_on_202():
     seen = []
     location = start_json_operation(
-        "https://tehsil.cognitiveservices.azure.com/x:analyze?api-version=2024-11-30",
+        "https://elmify.cognitiveservices.azure.com/x:analyze?api-version=2024-11-30",
         payload={"base64Source": "QUJD"},
         headers={"Ocp-Apim-Subscription-Key": "k"},
-        transport=_transport(202, {"Operation-Location": "https://tehsil.cognitiveservices.azure.com/op/1"}, seen),
+        transport=_transport(202, {"Operation-Location": "https://elmify.cognitiveservices.azure.com/op/1"}, seen),
     )
-    assert location == "https://tehsil.cognitiveservices.azure.com/op/1"
+    assert location == "https://elmify.cognitiveservices.azure.com/op/1"
     assert seen[0][2] == "POST" and seen[0][4]["Content-Type"] == "application/json"
 
 
 def test_any_other_status_is_blocked():
     with pytest.raises(SourceBlocked, match="HTTP 400"):
         start_json_operation(
-            "https://tehsil.cognitiveservices.azure.com/x", payload={}, headers={},
+            "https://elmify.cognitiveservices.azure.com/x", payload={}, headers={},
             transport=_transport(400, {}, []),
         )
 
@@ -104,7 +104,7 @@ def test_any_other_status_is_blocked():
 def test_a_location_on_another_host_is_refused():
     with pytest.raises(SourceBlocked, match="another host"):
         start_json_operation(
-            "https://tehsil.cognitiveservices.azure.com/x", payload={}, headers={},
+            "https://elmify.cognitiveservices.azure.com/x", payload={}, headers={},
             transport=_transport(202, {"Operation-Location": "https://evil.example/op"}, []),
         )
 
@@ -112,14 +112,14 @@ def test_a_location_on_another_host_is_refused():
 def test_a_missing_location_is_refused():
     with pytest.raises(SourceBlocked, match="no Operation-Location"):
         start_json_operation(
-            "https://tehsil.cognitiveservices.azure.com/x", payload={}, headers={},
+            "https://elmify.cognitiveservices.azure.com/x", payload={}, headers={},
             transport=_transport(202, {}, []),
         )
 ```
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/research/test_egress_operation.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/research/test_egress_operation.py -q`
 Expected: FAIL — `ImportError: cannot import name 'start_json_operation'`
 
 - [ ] **Step 3: Implement**
@@ -171,7 +171,7 @@ def start_json_operation(
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/research/test_egress_operation.py tests/research -q -k egress`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/research/test_egress_operation.py tests/research -q -k egress`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -235,7 +235,7 @@ _RESULT = {
 
 @pytest.fixture(autouse=True)
 def _configured(settings):
-    settings.AZURE_DI_ENDPOINT = "https://tehsil.cognitiveservices.azure.com"
+    settings.AZURE_DI_ENDPOINT = "https://elmify.cognitiveservices.azure.com"
     settings.AZURE_DI_KEY = "test-key"
     settings.AZURE_DI_API_VERSION = "2024-11-30"
 
@@ -243,7 +243,7 @@ def _configured(settings):
 def _start_ok(calls):
     def start(url, *, payload, headers):
         calls.append((url, payload, headers))
-        return "https://tehsil.cognitiveservices.azure.com/op/1"
+        return "https://elmify.cognitiveservices.azure.com/op/1"
     return start
 
 
@@ -288,7 +288,7 @@ def test_no_endpoint_configured_is_unavailable(settings):
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_azure_layout.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_azure_layout.py -q`
 Expected: FAIL — `ModuleNotFoundError: apps.documents.azure_layout`
 
 - [ ] **Step 3: Add the settings**
@@ -310,7 +310,7 @@ TRANSCRIPT_AZURE_ENABLED = os.getenv("TRANSCRIPT_AZURE_ENABLED", "") == "1"
 
 - [ ] **Step 4: Move the two exceptions, then implement the client**
 
-Create `apps/documents/ocr_errors.py` holding the `PageRefused` and `OcrUnavailable` classes exactly as they are in `apps/documents/ocr.py` today (docstrings included), delete them from `ocr.py`, and import them back there with `from .ocr_errors import OcrUnavailable, PageRefused  # noqa: F401 - re-exported`. Run `POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_ocr.py -q` — still green.
+Create `apps/documents/ocr_errors.py` holding the `PageRefused` and `OcrUnavailable` classes exactly as they are in `apps/documents/ocr.py` today (docstrings included), delete them from `ocr.py`, and import them back there with `from .ocr_errors import OcrUnavailable, PageRefused  # noqa: F401 - re-exported`. Run `POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_ocr.py -q` — still green.
 
 Create `apps/documents/azure_layout.py`:
 
@@ -452,7 +452,7 @@ def analyze_layout(
 
 - [ ] **Step 5: Run to verify they pass, then lint and type-check**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_azure_layout.py -q && uv run ruff check apps/documents/azure_layout.py && uv run mypy apps/documents/azure_layout.py`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_azure_layout.py -q && uv run ruff check apps/documents/azure_layout.py && uv run mypy apps/documents/azure_layout.py`
 Expected: 5 passed; no lint or type errors. (If mypy rejects the `pydantic` field names in camelCase as style, they are Azure's wire names — keep them; ruff's `N815` may need a per-file `# noqa: N815` on those lines if the repo enables it.)
 
 - [ ] **Step 6: Commit**
@@ -781,12 +781,12 @@ In `ocr/Dockerfile`: delete the `dnf install` line, the `ENV PADDLE_PDX_CACHE_HO
 In `.github/workflows/ci.yml`, replace the `ocr-image` job's smoke command with:
 
 ```yaml
-            --entrypoint python tehsil-ocr:ci -c "import io, read_pages as rp; from PIL import Image; b = io.BytesIO(); Image.new('RGB', (800, 1100), 'white').save(b, format='PNG'); out = rp.inventory(b.getvalue()); assert out['pages'][0]['source'] == 'image', out; print('inventory', out)"
+            --entrypoint python elmify-ocr:ci -c "import io, read_pages as rp; from PIL import Image; b = io.BytesIO(); Image.new('RGB', (800, 1100), 'white').save(b, format='PNG'); out = rp.inventory(b.getvalue()); assert out['pages'][0]['source'] == 'image', out; print('inventory', out)"
 ```
 
 - [ ] **Step 7: Run to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && uv run --project ocr pytest ocr -q && uv run bandit -c pyproject.toml -r ocr/read_pages.py && docker build --platform linux/amd64 --provenance=false -t tehsil-ocr:local ocr/`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && uv run --project ocr pytest ocr -q && uv run bandit -c pyproject.toml -r ocr/read_pages.py && docker build --platform linux/amd64 --provenance=false -t elmify-ocr:local ocr/`
 Expected: all ocr tests pass; bandit clean; the image builds (if Docker is unavailable locally, record that and rely on CI's `ocr-image` job).
 
 - [ ] **Step 8: Commit**
@@ -914,7 +914,7 @@ def test_a_scanned_pdf_measures_text_height_in_its_own_pixels(tmp_path, monkeypa
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_ocr.py -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_ocr.py -q`
 Expected: FAIL — `TypeError: read_pages() got an unexpected keyword argument 'analyze'`
 
 - [ ] **Step 3: Implement**
@@ -1109,7 +1109,7 @@ Update `PageRefused`'s docstring (now in `ocr_errors.py`) list of reasons to: `l
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_ocr.py tests/documents/test_azure_layout.py -q && uv run mypy apps/documents/ocr.py apps/documents/azure_layout.py`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_ocr.py tests/documents/test_azure_layout.py -q && uv run mypy apps/documents/ocr.py apps/documents/azure_layout.py`
 Expected: PASS; no type errors.
 
 - [ ] **Step 5: Commit**
@@ -1231,7 +1231,7 @@ If `"Student name: Aysel Mammadova"` is not dropped by `_minimised` (check `_PER
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript.py -q -k "doubtful or blank_cells or aligned or text_layer_cells or azure_launch_gate"`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript.py -q -k "doubtful or blank_cells or aligned or text_layer_cells or azure_launch_gate"`
 Expected: FAIL — `low_confidence` is not a valid `Highlight.kind`.
 
 - [ ] **Step 3: Implement**
@@ -1315,7 +1315,7 @@ then `lines, tables, confidences = _minimised(read_pages(document, content), nam
 
 - [ ] **Step 4: Run to verify they pass**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript.py tests/documents/test_transcript_checks.py tests/documents/test_transcript_worker.py tests/accounts -q && uv run mypy apps config`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript.py tests/documents/test_transcript_checks.py tests/documents/test_transcript_worker.py tests/accounts -q && uv run mypy apps config`
 Expected: PASS. If `tests/documents/test_transcript_worker.py` fails because the worker test settings leave `TRANSCRIPT_AZURE_ENABLED` off, set it on in that module's existing settings fixture next to `TRANSCRIPT_JEV_ENABLED`.
 
 - [ ] **Step 5: Commit**
@@ -1415,11 +1415,11 @@ Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: The live test reads through Azure**
 
-Read `tests/documents/test_transcript_live.py`. Make its sample run with `TRANSCRIPT_AZURE_ENABLED = True`, `AZURE_DI_ENDPOINT`/`AZURE_DI_KEY` taken from `~/.config/tehsil_agent/ocr.env` (skip with a clear reason when absent), and the real child-process inventory (`OCR_FUNCTION_NAME = ""`, `OCR_PYTHON` the OCR venv's interpreter). Assert at least five course rows, every page's `source` reported, and print the number of `low_confidence` highlights. Use only the published samples already used by that test — never the owner's real transcript.
+Read `tests/documents/test_transcript_live.py`. Make its sample run with `TRANSCRIPT_AZURE_ENABLED = True`, `AZURE_DI_ENDPOINT`/`AZURE_DI_KEY` taken from `~/.config/elmify/ocr.env` (skip with a clear reason when absent), and the real child-process inventory (`OCR_FUNCTION_NAME = ""`, `OCR_PYTHON` the OCR venv's interpreter). Assert at least five course rows, every page's `source` reported, and print the number of `low_confidence` highlights. Use only the published samples already used by that test — never the owner's real transcript.
 
 - [ ] **Step 2: Run it**
 
-Run: `cd /home/orkhan/Desktop/transcript-redesign && set -a && . ~/.config/tehsil_agent/ocr.env && . ~/.config/tehsil_agent/openrouter.env && set +a && POSTGRES_DB=tehsil_transcript uv run pytest tests/documents/test_transcript_live.py -m live -s -q`
+Run: `cd /home/orkhan/Desktop/transcript-redesign && set -a && . ~/.config/elmify/ocr.env && . ~/.config/elmify/openrouter.env && set +a && POSTGRES_DB=elmify_transcript uv run pytest tests/documents/test_transcript_live.py -m live -s -q`
 Expected: PASS, printing rows read and flags raised. Paste the printed lines into the commit message. If either key file is missing, report it and stop — do not fake the run.
 
 - [ ] **Step 3: The pointer in the older spec**
@@ -1430,7 +1430,7 @@ At the start of the "**OCR first (owner, 2026-09-25).**" paragraph in `2026-09-2
 
 Run:
 ```bash
-cd /home/orkhan/Desktop/transcript-redesign && uv run ruff check . && uv run mypy apps config && POSTGRES_DB=tehsil_transcript uv run pytest -q && uv run python manage.py makemigrations --check --dry-run && uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py && uv sync --project ocr --frozen && uv run --project ocr pytest ocr -q && uv run pip-audit && uv export --project ocr --frozen --no-hashes --no-dev -o /tmp/ocr-req.txt && uv run pip-audit -r /tmp/ocr-req.txt --no-deps --disable-pip
+cd /home/orkhan/Desktop/transcript-redesign && uv run ruff check . && uv run mypy apps config && POSTGRES_DB=elmify_transcript uv run pytest -q && uv run python manage.py makemigrations --check --dry-run && uv run bandit -c pyproject.toml -r apps config ocr/read_pages.py && uv sync --project ocr --frozen && uv run --project ocr pytest ocr -q && uv run pip-audit && uv export --project ocr --frozen --no-hashes --no-dev -o /tmp/ocr-req.txt && uv run pip-audit -r /tmp/ocr-req.txt --no-deps --disable-pip
 ```
 Expected: every command clean. `grep -rn -i "paddle" apps config ocr tests infra .github` prints nothing except historical prose in docs.
 

@@ -118,6 +118,8 @@ class MailSignal(TenantScopedModel):
         DECISION = "DECISION", "A decision"
         VERIFICATION = "VERIFICATION", "Verify your address"
         FEE = "FEE", "A fee is due"
+        FEE_PAID = "FEE_PAID", "Fee payment received"
+        REFEREE_SUBMITTED = "REFEREE_SUBMITTED", "Your referee has submitted"
         OTHER = "OTHER", "Something else"
 
     id = models.UUIDField(primary_key=True, default=uuid4, editable=False)

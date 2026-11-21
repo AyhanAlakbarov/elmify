@@ -32,15 +32,10 @@ from apps.funding.models import ApplicationPrompt, Program, update_exactly
 
 from .constraints import ConstraintRule, Enforcement
 from .letter_defaults import DefaultRow
-from .letter_gates import script_of
+from .letter_gates import CHARACTER_COUNTED_LANGUAGES
 from .prompt_resolution import _FALLBACK_LANGUAGE
 
 logger = logging.getLogger(__name__)
-
-DOCUMENT_REQUIRED = ("REQUIRED", "NOT_REQUIRED", "UNSTATED")
-FORMS = ("ESSAY", "FORMAL_LETTER", "PORTAL_FORM")
-NAMING = ("REQUIRED", "INVITED", "FORBIDDEN", "UNSTATED")
-FILE_BUNDLES = ("SEPARATE", "WITH_CV", "SINGLE_PDF_ALL")
 
 #: Letters, digits, spaces, apostrophes and hyphens only -- every real font
 #: name ("Times New Roman", "Liberation Sans", "O'Malley Serif") fits inside
@@ -352,13 +347,12 @@ _WORDS_PER_PAGE_MAX_DEFAULT = 720
 
 
 def counts_characters(document_language: str) -> bool:
-    """A script whose pages state lengths in characters, never in words.
+    """Whether this language's length is counted in characters (CJK), not words.
 
-    One reading of the language, shared with `letter_gates.script_of`, so an
-    exemption here and the script check there can never disagree about what
-    "ja-JP" is.
+    Read from `letter_gates.CHARACTER_COUNTED_LANGUAGES`, the primary subtag
+    only, so "ja-JP" and "zh-Hans" count characters like "ja" and "zh".
     """
-    return script_of(document_language) is not None
+    return document_language.lower().split("-")[0] in CHARACTER_COUNTED_LANGUAGES
 
 
 def _effective_pages(shape: LetterShape) -> int:
@@ -546,7 +540,8 @@ def target_characters(shape: LetterShape) -> int:
     characters." because this branch never entered `target_word_count`, where
     that refusal lives (third probe).
     """
-    target = int((shape.max_chars or 0) * 0.85)
+    cap = shape.max_chars or 0
+    target = min(max(int(cap * 0.85), shape.min_chars or 0), cap)
     if target < 1:
         raise NotGeneratable(
             "letter shape unsatisfiable: the stated bounds leave room for 0 characters"
