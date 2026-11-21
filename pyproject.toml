@@ -14,7 +14,7 @@ dependencies = [
   "pillow>=13,<14",
   "psycopg[binary]>=3.3.6,<4",
   "pydantic>=2.13.5,<3",
-  "tldextract>=5.3.2,<6",
+  "tldextract>=5.4.0,<6",
   # apps/research/names.py: romanise every script before a name meets a
   # domain label. ISC; unidecode (GPL) was the measured prototype's choice.
   "anyascii>=0.3.2,<0.4",
