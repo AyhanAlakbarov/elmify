@@ -4,6 +4,7 @@ import pytest
 from pypdf import PdfReader
 
 from apps.documents.entry_selection import select_best_entries
+from apps.documents.funder_templates.australia_awards import _DEFAULT_DOCX_PATH as _AA_TEMPLATE
 from apps.documents.funder_templates.rhodes import render_rhodes
 from apps.documents.funder_templates.sisgp import render_sisgp
 from apps.documents.render import render_cv_with_warnings
@@ -411,6 +412,11 @@ def test_australia_awards_renders_mandated_headings_and_computes_duration():
     assert "Green Baku" in text
 
 
+@pytest.mark.skipif(
+    not _AA_TEMPLATE.is_file(),
+    reason="the DFAT Australia Awards .docx lives only in Orkhan's gitignored .superpowers/ "
+    "folder; commit it (or point _DEFAULT_DOCX_PATH at a tracked copy) to run this test",
+)
 def test_fill_australia_awards_docx_populates_formtext_and_split_date_fields():
     from datetime import date
 

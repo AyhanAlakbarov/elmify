@@ -58,6 +58,15 @@ def _offers(agency, student):
                                                home=board.home)}
 
 
+def _in_days(days: int) -> str:
+    """A deadline relative to today, so "open" stays open whenever the suite runs."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    return (timezone.now().date() + timedelta(days=days)).isoformat()
+
+
 def _budget(agency, student, amount, stretch=None):
     snapshot = {
         "country_of_residence": "AZ",
@@ -313,7 +322,7 @@ def test_score_unlocked_and_boosted_programmes_and_scholarships_appear_in_new_fo
             funding_card={
                 "scope": "GLOBAL",
                 "route": "STUDENT_APPLIES_SEPARATELY",
-                "deadline": "2026-12-15",
+                "deadline": _in_days(30),
             },
             calibration_features={"score_boosted": True, "previous_chance_pct": "42.00"},
         )
@@ -323,7 +332,7 @@ def test_score_unlocked_and_boosted_programmes_and_scholarships_appear_in_new_fo
     assert "MSc Unlocked Free" in offers
     assert offers["MSc Unlocked Free"].kind == "UNLOCKED"
     assert "unlocked by your updated scores" in offers["MSc Unlocked Free"].text
-    assert "DAAD Study Scholarship" in offers["MSc Unlocked Free"].text
+    assert "DAAD Merit Scholarship" in offers["MSc Unlocked Free"].text
     assert "DAAD Merit Scholarship" in offers
     assert offers["DAAD Merit Scholarship"].kind == "UNLOCKED"
     assert "updated scores" in offers["DAAD Merit Scholarship"].text
@@ -352,7 +361,7 @@ def test_score_unlocked_programme_requires_viable_related_pack_scholarship_and_o
                 "tuition": "FULL",
                 "living": "FULL",
                 "amounts": ["934 EUR a month"],
-                "deadline": "2026-11-15",
+                "deadline": _in_days(30),
             },
         )
         v2 = PackVersion.objects.create(
@@ -410,7 +419,7 @@ def test_score_unlocked_programme_requires_viable_related_pack_scholarship_and_o
             rank=3,
             calibration_features={
                 "score_unlocked": True,
-                "application_deadline": "2027-01-15",
+                "application_deadline": _in_days(60),
             },
         )
         PackCandidate.objects.create(pack_version=v2, candidate=viable_de)
@@ -517,7 +526,7 @@ def test_pass3_b1_b2_b3_b6_paid_score_offers_reserved_budget_and_award_viability
                 "tuition": "FULL",
                 "living": "FULL",
                 "amounts": ["934 EUR a month"],
-                "deadline": "2026-12-15",
+                "deadline": _in_days(30),
             },
         )
         v2 = PackVersion.objects.create(
@@ -541,7 +550,7 @@ def test_pass3_b1_b2_b3_b6_paid_score_offers_reserved_budget_and_award_viability
             rank=2,
             calibration_features={
                 "score_unlocked": True,
-                "application_deadline": "2027-01-15",
+                "application_deadline": _in_days(60),
             },
         )
         PackCandidate.objects.create(pack_version=v2, candidate=paid_unlocked_de)
@@ -597,7 +606,7 @@ def test_pass3_b1_b2_b3_b6_paid_score_offers_reserved_budget_and_award_viability
             rank=3,
             calibration_features={
                 "score_unlocked": True,
-                "application_deadline": "2027-01-15",
+                "application_deadline": _in_days(60),
             },
         )
         PackCandidate.objects.create(pack_version=v2, candidate=se_prog)
