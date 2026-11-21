@@ -87,9 +87,13 @@ def test_an_ambiguous_currency_form_names_no_currency():
 
 def test_long_runs_of_digits_stay_linear():
     for line in ("1 " * 2000, "1.2.3.4.5.6.7.8.9." * 230, "1 000 EUR, " * 400):
-        started = time.perf_counter()
-        find_amounts(line)
-        assert time.perf_counter() - started < 0.05, line[:20]
+        # Best of three: a quadratic scan is slow every time, a busy CI machine only once.
+        best = float("inf")
+        for _ in range(3):
+            started = time.perf_counter()
+            find_amounts(line)
+            best = min(best, time.perf_counter() - started)
+        assert best < 0.05, line[:20]
 
 
 def test_a_year_span_before_an_amount_is_not_an_amount():
