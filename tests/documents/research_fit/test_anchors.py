@@ -97,6 +97,29 @@ def test_experience_beats_bare_skill_and_thesis_education_beats_bare_education()
     assert chosen_reading.rung == 2
     assert "graph neural networks" in chosen_reading.text.lower()
 
+    # Confirmed AWARD beats bare SKILL and EDUCATION, and portfolio reading is Rung 2 rank 0.
+    award = _fact(
+        "AWARD",
+        {"name": "Jessup International Law Moot Court", "description": "Treaty interpretation"},
+    )
+    chosen_award = pick_anchor({skill.id: skill, bare_edu.id: bare_edu, award.id: award}, None)
+    assert chosen_award.fact_id == award.id
+    assert chosen_award.rung == 2
+    portfolio = UsableReading(
+        source="upload",
+        url=None,
+        document_id=None,
+        summary="Architectural timber pavilion portfolio.",
+        kind="portfolio",
+        names=(),
+        first_commit=None,
+        last_commit=None,
+        bullets=(UsableBullet("Designed reciprocal timber joint.", ("timber",), "supported"),),
+    )
+    chosen_portfolio = pick_anchor({skill.id: skill}, None, readings=(portfolio,))
+    assert chosen_portfolio.rung == 2
+    assert "timber pavilion" in chosen_portfolio.text.lower()
+
 
 def test_the_storyline_theme_is_the_last_rung():
     theme = Storyline(theme="grid integration of renewable energy", theme_kind="MATCH",

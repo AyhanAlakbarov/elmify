@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Log in — Elmify{% endblock %}
-{% block meta_description %}Sign in to your Elmify student or counsellor workspace to review your matched master's programmes, scholarship deadlines, CV, motivation letters, and referee briefs.{% endblock %}
+{% block meta_description %}Sign in to your Elmify student or counsellor workspace to review your matched master's programmes and scholarships across 50+ countries, tailored CVs, motivation letters, referee briefs, and portal autofill kits.{% endblock %}
 {% block content %}
   <h1>Log in</h1>
-  <p class="muted">Welcome back. Pick up your master&rsquo;s and scholarship applications where you left them.</p>
+  <p class="muted">Welcome back. Pick up your matched master&rsquo;s programmes, scholarship applications, and tailored documents right where you left them.</p>
   {% if rate_limited %}<p role="alert">Too many attempts. Try again in a few minutes.</p>{% endif %}
   {% for error in form.non_field_errors %}<p role="alert">{{ error }}</p>{% endfor %}
   <form method="post" action="{% url 'accounts-login' %}">
@@ -14,7 +14,13 @@
     </p>
     <p>
       <label for="id_password">Password</label>
-      <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+      <span class="password-field">
+        <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+        <button type="button" class="password-toggle" data-password-toggle aria-label="Show password" aria-pressed="false">
+          <svg class="ico-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <svg class="ico-eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" hidden><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
+        </button>
+      </span>
     </p>
     <input type="hidden" name="next" value="{{ next }}">
     <button type="submit">Log in</button>

@@ -15,8 +15,9 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-#: Terminal punctuation followed by whitespace and an uppercase/digit start.
-_BOUNDARY = re.compile(r"(?<=[.!?])\s+(?=[A-ZÀ-ÝĞİÖÜŞÇ0-9\"'(])")
+_UPPER = r"A-ZÀ-ÝĞİÖÜŞÇƏŁŚŹŻĆŃČŘŠŽĎŤŇŐŰĀĒĪŌŪĢĶĻŅА-ЯЁІЇЄҐӘҒҚҢӨҰҮҺ"
+#: Terminal punctuation followed by whitespace and uppercase/digit start, or CJK sentence end.
+_BOUNDARY = re.compile(rf"(?:(?<=[.!?])\s+(?=[{_UPPER}0-9\"'(])|(?<=[。！？])\s*)")
 #: Tokens that end in a dot but never end a sentence. Lowercase compare.
 _ABBREVIATIONS = frozenset(
     {
@@ -26,7 +27,7 @@ _ABBREVIATIONS = frozenset(
         "dipl", "habil", "med", "rer", "nat", "phil", "jun", "sen", "ca", "bzw", "z.b", "u.a",
     }
 )
-_INITIAL = re.compile(r"^[A-ZÀ-ÝĞİÖÜŞÇ]\.$")
+_INITIAL = re.compile(rf"^[{_UPPER}]\.$")
 _MARKER = re.compile(r"^(#+\s*|-\s+|\*\s+|\d+[.)]\s+)")
 _MIN_SENTENCE_CHARS = 12
 

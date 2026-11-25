@@ -16,7 +16,7 @@
     <tr>
       <td>{{ entry.language }}{% if entry.mother_tongue %} (native){% endif %}</td>
       {% for label, level in entry.self_assessment %}<td>{{ level|default:"" }}</td>{% endfor %}
-      <td>{% if entry.test_name %}{{ entry.test_name }}{% if entry.test_score %} {{ entry.test_score }}{% endif %}{% endif %}</td>
+      <td>{% if entry.test_name %}{{ entry.test_name }}{% if entry.test_score %} {{ entry.test_score }}{% endif %}{% elif entry.test_score %}{{ entry.test_score }}{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>

@@ -34,7 +34,15 @@ from uuid import UUID
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    model_serializer,
+    model_validator,
+)
 
 from apps.concierge.models import DocumentVersion
 from apps.documents import document_reading
@@ -186,6 +194,17 @@ class PacketField(BaseModel):
     #: Filled from a value a document read proved: "passport", "diploma" or
     #: "certificate". The mark says "From your passport". "" for anything else.
     source_kind: str = ""
+    #: The control's label text learned from the snapshot, so the extension can
+    #: verify unseen-language labels against the control it learned when no
+    #: static token matches.
+    expected_label: str = ""
+
+    @model_serializer(mode="wrap")
+    def _serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, object]:
+        data: dict[str, object] = dict(handler(self))
+        if not self.expected_label:
+            data.pop("expected_label", None)
+        return data
 
 
 class PacketOffer(BaseModel):
@@ -304,6 +323,10 @@ class FillPacket(BaseModel):
     #: PortalForm.readback_equivalences: field class -> the one rule the bench
     #: taught for this portal. Empty means read-back is exact.
     equivalences: dict[str, str] = Field(default_factory=dict)
+    #: Every upload slot selector the FieldMap already learned, including slots
+    #: for document kinds the student does not hold yet, so the extension does
+    #: not treat an already-learned file slot as an unmapped control.
+    slot_selectors: tuple[str, ...] = ()
 
 
 def _not_fillable_reason(form: PortalForm | None, field_map: FieldMap | None) -> str:
@@ -376,12 +399,18 @@ def _fit_entry_limits(
     field: str, value: str, max_length: object, description: str = ""
 ) -> str:
     """Apply explicit HTML ``max_length`` and any character/word cap in ``description``."""
-    out = _fit_max_length(field, value, max_length) if isinstance(max_length, int) else value
-    if description:
-        if char_match := _DESC_CHAR_LIMIT_RE.search(description):
-            out = _fit_max_length(field, out, int(char_match.group(1)))
-        if word_match := _DESC_WORD_LIMIT_RE.search(description):
-            out = _fit_word_limit(field, out, int(word_match.group(1)))
+    word_match = _DESC_WORD_LIMIT_RE.search(description) if description else None
+    char_match = _DESC_CHAR_LIMIT_RE.search(description) if description else None
+    out = value
+    if word_match is not None:
+        word_cap = int(word_match.group(1))
+        out = _fit_word_limit(field, out, word_cap)
+        if isinstance(max_length, int) and max_length != word_cap * 5:
+            out = _fit_max_length(field, out, max_length)
+    elif isinstance(max_length, int):
+        out = _fit_max_length(field, out, max_length)
+    if char_match is not None:
+        out = _fit_max_length(field, out, int(char_match.group(1)))
     return out
 
 
@@ -944,7 +973,6 @@ def build_kits_for_board(
             field_maps[form_id] = FieldMap.pick_current(pform, shared, scoped)
 
     with tenant_transaction(student.tenant_id):
-        raw_values = verified_values(student)
         inputs = list(NarrativeInput.objects.filter(student=student).order_by("created_at"))
         drafts = list(
             DocumentDraft.objects.filter(
@@ -953,6 +981,10 @@ def build_kits_for_board(
                 status=DocumentDraft.Status.APPROVED,
             ).order_by("version", "created_at")
         )
+        try:
+            raw_values = verified_values(student, _inputs=inputs, _drafts=drafts)
+        except TypeError:
+            raw_values = verified_values(student)
         unscoped_narrative = narrative_values(student, _inputs=inputs, _drafts=drafts)
         accounts_by_host = {
             acc.portal_host: acc
@@ -1301,6 +1333,9 @@ def _resolve_packet_entries(
         formatted = _fit_entry_limits(
             field, formatted, raw.get("max_length"), action.description
         )
+        expected_label = str(
+            raw.get("expected_label") or action.description or ""
+        ).strip()
         entries.append(
             PacketField(
                 selector=action.selector,
@@ -1308,6 +1343,7 @@ def _resolve_packet_entries(
                 value=formatted,
                 profile_field=field,
                 source_kind=sources.get(field, ""),
+                expected_label=expected_label,
             )
         )
     missing = sorted(
@@ -1461,6 +1497,9 @@ def mint_packet(application: Application) -> FillPacket:
         ),
         plain_email=plain_email,
         equivalences=dict(form.readback_equivalences or {}),
+        slot_selectors=tuple(
+            slot.selector for slot in parse_slots(field_map.slots) if slot.selector
+        ),
     )
     _record_packet(application, packet, missing)
     if missing:

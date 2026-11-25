@@ -304,3 +304,50 @@ def test_an_agreeing_report_is_not_a_dispute(agency_a, membership_a, caplog):
 
     assert _status() == {"KEEPS", "UNKNOWN"}
     assert "TagStatusDisputed" not in caplog.text
+
+
+def test_promote_tag_status_consensus_promotes_only_when_two_tenants_agree(
+    agency_a, membership_a, agency_b, membership_b
+):
+    from apps.portals.models import PortalForm
+    from apps.portals.tags import promote_tag_status_consensus, record_tag_outcome
+
+    _form()
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        acc_a = _account(agency_a, membership_a)
+        assert record_tag_outcome(acc_a, PortalForm.TagStatus.KEEPS)
+
+    # Single tenant: no consensus promotion yet
+    assert promote_tag_status_consensus(HOST) is None
+    assert _status() == {"UNKNOWN"}
+
+    with tenant_scope(agency_b.id), tenant_transaction(agency_b.id):
+        acc_b = _account(
+            agency_b, membership_b, address="hasan.apply+zz99yy@outlook.com", host=HOST
+        )
+        assert record_tag_outcome(acc_b, PortalForm.TagStatus.KEEPS)
+
+    # Two distinct tenants agree on KEEPS with zero dissenting tenants
+    assert promote_tag_status_consensus(HOST) == PortalForm.TagStatus.KEEPS
+    assert _status() == {"KEEPS"}
+
+
+def test_promote_tag_status_consensus_refuses_when_tenants_disagree(
+    agency_a, membership_a, agency_b, membership_b
+):
+    from apps.portals.models import PortalForm
+    from apps.portals.tags import promote_tag_status_consensus, record_tag_outcome
+
+    _form()
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        acc_a = _account(agency_a, membership_a)
+        assert record_tag_outcome(acc_a, PortalForm.TagStatus.KEEPS)
+    with tenant_scope(agency_b.id), tenant_transaction(agency_b.id):
+        acc_b = _account(
+            agency_b, membership_b, address="hasan.apply+zz99yy@outlook.com", host=HOST
+        )
+        assert record_tag_outcome(acc_b, PortalForm.TagStatus.REJECTS)
+
+    assert promote_tag_status_consensus(HOST) is None
+    assert _status() == {"UNKNOWN"}
+

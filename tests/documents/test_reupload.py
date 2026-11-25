@@ -332,3 +332,35 @@ def test_a_third_upload_is_shown_against_what_the_student_last_confirmed(
         )
         [change] = pending_changes(student)
     assert change.fact.id == third.id and change.kept.id == old.id
+
+
+def test_cv_identity_does_not_match_passport_authoritative_or_one_key_correction_rows(
+    agency_a, django_user_model
+):
+    ident = VerifiedFact.Category.IDENTITY
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "passport_first")
+        passport_cit = _fact(
+            student,
+            {"citizenship": "AZ"},
+            category=ident,
+            tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            ref="document:11111111-1111-1111-1111-111111111111",
+        )
+        passport_corr = _fact(
+            student,
+            {"surname": "Abdullayev"},
+            category=ident,
+            tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            ref="document:11111111-1111-1111-1111-111111111111",
+        )
+        writes = plan_upload(
+            ident,
+            [{"full_name": "Orkhan Abdullayev", "phone": "+994501234567"}],
+            chains(student, ident),
+        )
+    assert len(writes) == 1
+    assert writes[0].supersedes is None
+    assert writes[0].payload["full_name"] == "Orkhan Abdullayev"
+    assert passport_cit.id is not None and passport_corr.id is not None
+

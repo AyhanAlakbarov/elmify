@@ -90,4 +90,87 @@ REGIONS: dict[str, Region] = {
         ),
         "https://www.oic-oci.org/states/?lan=en",
     ),
+    "MERCOSUR": Region(
+        "Southern Common Market",
+        ("AR", "BO", "BR", "CL", "CO", "EC", "GY", "PE", "PY", "SR", "UY", "VE"),
+        "https://www.mercosur.int/quienes-somos/paises-del-mercosur/",
+    ),
+    "CARICOM": Region(
+        "Caribbean Community",
+        (
+            "AG", "BB", "BS", "BZ", "DM", "GD", "GY", "HT", "JM", "KN", "LC", "SR", "TT", "VC",
+        ),
+        "https://caricom.org/member-states-and-associate-members/",
+    ),
+    "GCC": Region(
+        "Gulf Cooperation Council",
+        ("AE", "BH", "KW", "OM", "QA", "SA"),
+        "https://www.gcc-sg.org/en/AboutUs/MemberStates",
+    ),
+    "SAARC": Region(
+        "South Asian Association for Regional Cooperation",
+        ("AF", "BD", "BT", "IN", "LK", "MV", "NP", "PK"),
+        "https://www.saarc-sec.org/index.php/about-saarc/member-states",
+    ),
+    "SADC": Region(
+        "Southern African Development Community",
+        (
+            "AO", "BW", "CD", "KM", "LS", "MG", "MU", "MW", "MZ", "NA", "SC", "SZ", "TZ", "ZA",
+            "ZM", "ZW",
+        ),
+        "https://www.sadc.int/member-states",
+    ),
+    "ECOWAS": Region(
+        "Economic Community of West African States",
+        (
+            "BF", "BJ", "CI", "CV", "GH", "GM", "GN", "GW", "LR", "ML", "NE", "NG", "SL", "SN",
+            "TG",
+        ),
+        "https://www.ecowas.int/member-states/",
+    ),
+    "MENA": Region(
+        "Middle East and North Africa",
+        (
+            "AE", "BH", "DJ", "DZ", "EG", "IL", "IQ", "IR", "JO", "KW", "LB", "LY", "MA", "MT",
+            "OM", "PS", "QA", "SA", "SD", "SY", "TN", "TR", "YE",
+        ),
+        "https://data.worldbank.org/region/middle-east-and-north-africa",
+    ),
+    "LATAM": Region(
+        "Latin America and the Caribbean",
+        (
+            "AR", "BO", "BR", "BZ", "CL", "CO", "CR", "CU", "DO", "EC", "GT", "GY", "HN", "HT",
+            "JM", "MX", "NI", "PA", "PE", "PY", "SR", "SV", "TT", "UY", "VE",
+        ),
+        "https://data.worldbank.org/region/latin-america-and-caribbean",
+    ),
+    "NORDIC": Region(
+        "Nordic Countries",
+        ("DK", "FI", "IS", "NO", "SE"),
+        "https://www.norden.org/en/information/nordic-countries",
+    ),
+    "VISEGRAD": Region(
+        "Visegrad Group",
+        ("CZ", "HU", "PL", "SK"),
+        "https://www.visegradgroup.eu/about",
+    ),
+    "BENELUX": Region(
+        "Benelux Union",
+        ("BE", "LU", "NL"),
+        "https://www.benelux.int/",
+    ),
+    "EFTA": Region(
+        "European Free Trade Association",
+        ("CH", "IS", "LI", "NO"),
+        "https://www.efta.int/about-efta/efta-states",
+    ),
+    "FRANCOPHONE": Region(
+        "Organisation internationale de la Francophonie",
+        (
+            "BE", "BF", "BI", "BJ", "CA", "CD", "CF", "CG", "CH", "CI", "CM", "DJ", "DZ", "FR",
+            "GA", "GN", "HT", "KM", "LB", "LU", "MA", "MC", "MG", "ML", "MR", "MU", "NE", "RW",
+            "SC", "SN", "TD", "TG", "TN", "VU",
+        ),
+        "https://www.francophonie.org/88-etats-et-gouvernements-125",
+    ),
 }

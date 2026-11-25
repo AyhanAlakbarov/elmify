@@ -19,11 +19,22 @@ from __future__ import annotations
 
 import calendar
 import re
+import unicodedata
+from collections import deque
 from dataclasses import dataclass, replace
 from datetime import date as _date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
+from apps.accounts.field_taxonomy import (
+    _ADJECTIVAL_DOMAIN_MAP,
+    _DISCIPLINE_BY_SYNONYM,
+    _DISCIPLINE_NODES,
+    _decompose_morphological_compound,
+    _lookup_discipline_node,
+    localized_field_terms,
+    resolve_field_taxonomy,
+)
 from apps.documents.credits import to_ects
 from apps.funding.regions import REGIONS
 
@@ -54,6 +65,8 @@ class NormalizedCourse:
     degree_index: int = 0
     degree_field: str = ""
     description: str | None = None
+    code: str = ""
+    subject_hint: str = ""
 
 
 @dataclass(frozen=True)
@@ -77,6 +90,7 @@ class SubjectBucketRule:
     min_courses: int | None = None
     allowed_deficit_ects: Decimal = _ZERO
     required_topics: tuple[str, ...] = ()
+    required_topic_clauses: tuple[tuple[str, ...], ...] = ()
     is_subfloor_of_pool: bool = False
 
 
@@ -153,7 +167,36 @@ def _parse_decimal(raw: str | None) -> Decimal | None:
         return None
 
 
+def _inverted_scale_bounds(
+    grading_scale: str, country_code: str = ""
+) -> tuple[Decimal, Decimal, Decimal] | None:
+    """Return `(best_grade, min_pass_grade, fail_grade)` for non-German inverted scales
+    where `1.0` is highest and higher numbers are worse (`CZ`/`SK` `1.0–4.0` with `3.0` pass;
+    `PH` `1.0–5.0` with `3.0` pass)."""
+    s = grading_scale.casefold().strip()
+    cc = country_code.strip().upper()
+    if any(tok in s for tok in ("czech", "slovak")) or (
+        cc in {"CZ", "SK"}
+        and (
+            s in {"4", "4.0", "1-4", "1.0-4.0", "1,0-4,0"}
+            or any(tok in s for tok in ("1-4", "1.0-4.0", "1,0-4,0"))
+        )
+    ):
+        return (Decimal("1.0"), Decimal("3.0"), Decimal("4.0"))
+    if "philippine" in s or (
+        cc == "PH"
+        and (
+            s in {"5", "5.0", "1-5", "1.0-5.0", "1,0-5,0"}
+            or any(tok in s for tok in ("1-5", "1.0-5.0", "1,0-5,0"))
+        )
+    ):
+        return (Decimal("1.0"), Decimal("3.0"), Decimal("5.0"))
+    return None
+
+
 def _is_german_inverted_scale(grading_scale: str, country_code: str = "") -> bool:
+    if _inverted_scale_bounds(grading_scale, country_code) is not None:
+        return False
     s = grading_scale.casefold().strip()
     cc = country_code.strip().upper()
     if any(
@@ -170,7 +213,20 @@ def _is_german_inverted_scale(grading_scale: str, country_code: str = "") -> boo
         )
     ):
         return True
-    if "1-5" in s and cc not in {"RU", "KZ", "BY", "UA", "UZ", "KG", "TJ", "TM", "NG", "SA"}:
+    if "1-5" in s and cc not in {
+        "RU",
+        "KZ",
+        "BY",
+        "UA",
+        "UZ",
+        "KG",
+        "TJ",
+        "TM",
+        "NG",
+        "SA",
+        "PH",
+        "HU",
+    }:
         return True
     return cc in {"DE", "AT"} and s in {"5", "5.0", "4", "4.0"}
 
@@ -237,6 +293,9 @@ def is_failing_or_withdrawn_grade(
     if num is not None:
         if num <= _ZERO:
             return True
+        inv_bounds = _inverted_scale_bounds(eff_scale, cc)
+        if inv_bounds is not None:
+            return num > inv_bounds[1]
         if _is_german_inverted_scale(eff_scale, cc):
             return num > Decimal("4.0")
         bounds = _parse_scale_bounds(eff_scale, cc)
@@ -308,6 +367,20 @@ def normalize_transcript_courses(profile: object) -> tuple[NormalizedCourse, ...
                 else None
             )
 
+            raw_code = str(
+                getattr(raw, "code", None) or getattr(raw, "course_code", None) or ""
+            ).strip()
+            raw_subj = str(
+                getattr(raw, "subject", None) or getattr(raw, "department", None) or ""
+            ).strip()
+            if not raw_code:
+                m_code = re.match(
+                    r"^\s*([A-Za-zÄÖÜäöü]{2,6})\s*[-/:]?\s*\d{2,4}[A-Za-z]?\b",
+                    title,
+                )
+                if m_code:
+                    raw_code = m_code.group(0).strip()
+
             candidate = NormalizedCourse(
                 title=_RETAKE_TAG_RE.sub("", title).strip() or title,
                 ects=ects_val,
@@ -316,6 +389,8 @@ def normalize_transcript_courses(profile: object) -> tuple[NormalizedCourse, ...
                 degree_index=deg_idx,
                 degree_field=degree_field,
                 description=desc_str,
+                code=raw_code,
+                subject_hint=raw_subj,
             )
 
             dedup_key = _course_dedup_key(title)
@@ -381,7 +456,8 @@ _SUBJECT_TAXONOMY: tuple[_SubjectTaxonomyEntry, ...] = (
             "theoretische informatik", "automaten", "formale sprachen", "berechenbarkeit",
             "komplexität", "komplexitaet", "algorithmen", "datenstrukturen",
             "diskrete mathematik", "diskrete strukturen", "graphentheorie", "kombinatorik",
-            "logik", "formale methoden", "formale verifikation", "modellprüfung",
+            "logik", "aussagenlogik", "prädikatenlogik", "praedikatenlogik",
+            "formale methoden", "formale verifikation", "modellprüfung",
             "kryptographie", "kryptologie", "codierungstheorie", "informationstheorie",
             "compilerbau", "übersetzerbau",
             # Russian
@@ -444,10 +520,9 @@ _SUBJECT_TAXONOMY: tuple[_SubjectTaxonomyEntry, ...] = (
             "bilgi güvenliği",
         ),
         borderline_patterns=(
-            "bachelor thesis", "bachelor's thesis", "bachelorarbeit", "senior project",
-            "capstone project", "graduation project", "выпускная квалификационная работа",
-            "дипломная работа", "buraxılış işi", "bitirme projesi", "information systems",
-            "digital systems", "bioinformatics",
+            "information systems",
+            "digital systems",
+            "bioinformatics",
         ),
     ),
     _SubjectTaxonomyEntry(
@@ -461,8 +536,8 @@ _SUBJECT_TAXONOMY: tuple[_SubjectTaxonomyEntry, ...] = (
         definite_patterns=(
             "mathematics", "calculus", "real analysis", "complex analysis",
             "mathematical analysis", "analysis i", "analysis ii", "analysis iii",
-            "analysis 1", "analysis 2", "linear algebra", "abstract algebra", "algebra",
-            "differential equations", "ordinary differential equations",
+            "analysis 1", "analysis 2", "linear algebra", "matrix theory", "abstract algebra",
+            "algebra", "differential equations", "ordinary differential equations",
             "partial differential equations", "probability", "mathematical statistics",
             "stochastics", "stochastic processes", "numerical analysis", "numerical methods",
             "discrete mathematics", "discrete structures", "graph theory", "combinatorics",
@@ -596,21 +671,2086 @@ _TAXONOMY_BY_KEY: dict[str, _SubjectTaxonomyEntry] = {
     entry.key: entry for entry in _SUBJECT_TAXONOMY
 }
 
-_LETTER_BOUNDARY_LEFT = r"(?<![a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞ])"
-_LETTER_BOUNDARY_RIGHT = r"(?![a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞ])"
+_LETTER_BOUNDARY_LEFT = r"(?<![^\W\d_])"
+_LETTER_BOUNDARY_RIGHT = r"(?![^\W\d_])"
+
+_INFLECTION_SUFFIX_RE = (
+    r"(?:lar|lər|ları|ləri|ların|lərin|ın|in|un|ün|nın|nin|nun|nün|dan|dən|da|də|ya|yə|"
+    r"sı|si|su|sü|ы|и|а|я|у|ю|е|о|ов|ев|ей|ам|ям|ами|ями|ах|ях|ии|ию|ией|ого|его|ому|"
+    r"ему|ым|им|ом|ем|ую|юю|en|er|es|e|n|s|ing|ed|al|ic|ical)"
+)
+
+_CUSTOM_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "and",
+        "or",
+        "for",
+        "the",
+        "with",
+        "from",
+        "that",
+        "this",
+        "not",
+        "are",
+        "was",
+        "any",
+        "all",
+        "one",
+        "two",
+        "und",
+        "oder",
+        "der",
+        "die",
+        "das",
+        "von",
+        "aus",
+        "courses",
+        "course",
+        "subject",
+        "subjects",
+        "studies",
+        "study",
+        "field",
+        "fields",
+        "area",
+        "areas",
+        "module",
+        "modules",
+        "discipline",
+        "disciplines",
+        "related",
+    }
+)
+
+_NON_MAJOR_LITERACY_RE = re.compile(
+    r"\b(?:computer\s+literacy|basic\s+computer\s+skills|office\s+applications|"
+    r"word\s+processing(?:\s+and\s+spreadsheets)?|for\s+non[- ]?majors|"
+    r"for\s+humanities(?:\s+students)?|icdl|ecdl)\b",
+    re.IGNORECASE,
+)
+
+_META_DISCIPLINARY_STEM_RE = re.compile(
+    r"\b(?:history|philosophy|sociology|anthropology|ethics|geschichte|philosophie|"
+    r"soziologie|история|философия|социология)\s+(?:of|der|des|von)\s+[a-zа-яёəıöüçşğäöß]"
+    r"|\b(?:история|философия)\s+[a-zа-яё]{4,}"
+    r"|\b[a-zəıöüçşğ]{4,}\s+(?:tarihi|felsefesi|tarixi|fəlsəfəsi)\b",
+    re.IGNORECASE,
+)
+
+_GENERIC_CAPSTONE_OR_THESIS_RE = re.compile(
+    r"\b(?:bachelor(?:'s)?\s+thesis|master(?:'s)?\s+thesis|honou?rs\s+thesis|senior\s+thesis|"
+    r"undergraduate\s+thesis|bachelorarbeit|masterarbeit|diplomarbeit|studienarbeit|"
+    r"abschlussarbeit|senior\s+project|capstone(?:\s+project)?|graduation\s+project|"
+    r"final\s+year\s+project|research\s+practicum|выпускная\s+квалификационная\s+работа|"
+    r"дипломная\s+работа|дипломный\s+проект|buraxılış\s+işi|diplom\s+işi|bitirme\s+projesi|"
+    r"bitirme\s+ödevi|mezuniyet\s+projesi|mémoire\s+de\s+fin\s+d'études|tesi\s+di\s+laurea|"
+    r"trabajo\s+de\s+fin\s+de\s+grado)\b",
+    re.IGNORECASE,
+)
+
+_STEM_ROOT_FACULTIES: frozenset[str] = frozenset(
+    {
+        "mathematics",
+        "statistics",
+        "computer science",
+        "informatics",
+        "software engineering",
+        "data science",
+        "artificial intelligence",
+        "cybersecurity",
+        "engineering",
+        "mechanical engineering",
+        "electrical engineering",
+        "civil engineering",
+        "chemical engineering",
+        "materials science",
+        "aerospace engineering",
+        "biomedical engineering",
+        "industrial engineering",
+        "environmental engineering",
+        "robotics",
+        "natural sciences",
+        "life sciences",
+        "health sciences",
+        "physics",
+        "astronomy",
+        "chemistry",
+        "biology",
+        "biotechnology",
+        "bioinformatics",
+        "earth sciences",
+        "geology",
+        "environmental science",
+        "medicine",
+        "pharmacology",
+        "nursing",
+        "dentistry",
+        "veterinary medicine",
+        "agriculture",
+    }
+)
+
+_TAXONOMY_KEY_TO_CANONICAL: dict[str, tuple[str, ...]] = {
+    "THEORETICAL_CS": ("computer science",),
+    "COMPUTER_SCIENCE": (
+        "computer science",
+        "software engineering",
+        "data science",
+        "artificial intelligence",
+        "cybersecurity",
+        "information science",
+        "computer engineering",
+    ),
+    "MATHEMATICS": ("mathematics", "operations research", "actuarial science"),
+    "STATISTICS_ECONOMETRICS": ("statistics", "data science", "actuarial science"),
+    "ECONOMICS_BUSINESS": (
+        "economics",
+        "business administration",
+        "finance",
+        "accounting",
+        "marketing",
+        "human resource management",
+        "supply chain management",
+        "entrepreneurship",
+        "international business",
+    ),
+    "PHYSICS": ("physics", "astronomy", "nanotechnology"),
+    "CHEMISTRY": ("chemistry", "biochemistry", "chemical engineering"),
+    "BIOLOGY_LIFE_SCIENCES": (
+        "biology",
+        "molecular biology",
+        "genetics",
+        "microbiology",
+        "biochemistry",
+        "biotechnology",
+        "neuroscience",
+        "ecology",
+        "zoology",
+        "botany",
+    ),
+    "ELECTRICAL_ENGINEERING": (
+        "electrical engineering",
+        "telecommunications engineering",
+        "computer engineering",
+        "robotics",
+    ),
+}
+
+#: Standard international university department/subject code prefixes mapped to canonical
+#: ISCED-F disciplines so courses like 'PHIL 201: Quine', 'HIST 304: The Silk Road',
+#: 'MECH 420: Tribology', 'MUSC 110: Counterpoint', or 'AGRI 205' match structurally.
+_DEPT_CODE_TO_DISCIPLINE: dict[str, str] = {
+    "cs": "computer science",
+    "csc": "computer science",
+    "csci": "computer science",
+    "comp": "computer science",
+    "cmps": "computer science",
+    "cmpsc": "computer science",
+    "cis": "computer science",
+    "inf": "computer science",
+    "info": "information science",
+    "isy": "information science",
+    "isys": "information science",
+    "swe": "software engineering",
+    "soft": "software engineering",
+    "ds": "data science",
+    "dsc": "data science",
+    "dsci": "data science",
+    "ai": "artificial intelligence",
+    "cybr": "cybersecurity",
+    "csec": "cybersecurity",
+    "math": "mathematics",
+    "mat": "mathematics",
+    "mth": "mathematics",
+    "ma": "mathematics",
+    "stat": "statistics",
+    "sta": "statistics",
+    "st": "statistics",
+    "phys": "physics",
+    "phy": "physics",
+    "ph": "physics",
+    "astr": "astronomy",
+    "ast": "astronomy",
+    "chem": "chemistry",
+    "chm": "chemistry",
+    "ch": "chemistry",
+    "bchm": "biochemistry",
+    "bioc": "biochemistry",
+    "biol": "biology",
+    "bio": "biology",
+    "btec": "biotechnology",
+    "binf": "bioinformatics",
+    "neur": "neuroscience",
+    "nbio": "neuroscience",
+    "gene": "genetics",
+    "micr": "microbiology",
+    "mcdb": "molecular biology",
+    "zool": "zoology",
+    "bot": "botany",
+    "plsc": "botany",
+    "econ": "economics",
+    "eco": "economics",
+    "ec": "economics",
+    "vwl": "economics",
+    "fin": "finance",
+    "finc": "finance",
+    "acct": "accounting",
+    "acc": "accounting",
+    "acg": "accounting",
+    "bwl": "business administration",
+    "bus": "business administration",
+    "busi": "business administration",
+    "badm": "business administration",
+    "mgmt": "business administration",
+    "mgt": "business administration",
+    "mktg": "marketing",
+    "mkt": "marketing",
+    "mar": "marketing",
+    "hrm": "human resource management",
+    "scm": "supply chain management",
+    "log": "supply chain management",
+    "entr": "entrepreneurship",
+    "ibus": "international business",
+    "ee": "electrical engineering",
+    "ece": "electrical engineering",
+    "elc": "electrical engineering",
+    "elen": "electrical engineering",
+    "elec": "electrical engineering",
+    "eecs": "electrical engineering",
+    "mech": "mechanical engineering",
+    "me": "mechanical engineering",
+    "meng": "mechanical engineering",
+    "mae": "mechanical engineering",
+    "civ": "civil engineering",
+    "ce": "civil engineering",
+    "cive": "civil engineering",
+    "cee": "civil engineering",
+    "chen": "chemical engineering",
+    "che": "chemical engineering",
+    "chbe": "chemical engineering",
+    "matl": "materials science",
+    "mse": "materials science",
+    "matsc": "materials science",
+    "aero": "aerospace engineering",
+    "ae": "aerospace engineering",
+    "asen": "aerospace engineering",
+    "bme": "biomedical engineering",
+    "bmen": "biomedical engineering",
+    "bioe": "biomedical engineering",
+    "ie": "industrial engineering",
+    "ise": "industrial engineering",
+    "indu": "industrial engineering",
+    "iend": "industrial engineering",
+    "or": "operations research",
+    "opns": "operations research",
+    "enve": "environmental engineering",
+    "env": "environmental science",
+    "envs": "environmental science",
+    "esci": "environmental science",
+    "ecol": "ecology",
+    "robo": "robotics",
+    "arch": "architecture",
+    "arc": "architecture",
+    "urp": "urban planning",
+    "plan": "urban planning",
+    "cplan": "urban planning",
+    "law": "law",
+    "laws": "law",
+    "jur": "law",
+    "jura": "law",
+    "huk": "law",
+    "psyc": "psychology",
+    "psy": "psychology",
+    "cogs": "cognitive science",
+    "cog": "cognitive science",
+    "pol": "political science",
+    "poli": "political science",
+    "posc": "political science",
+    "pols": "political science",
+    "gov": "political science",
+    "govt": "political science",
+    "ir": "international relations",
+    "intl": "international relations",
+    "inta": "international relations",
+    "soc": "sociology",
+    "soci": "sociology",
+    "anth": "anthropology",
+    "ant": "anthropology",
+    "arky": "archaeology",
+    "archl": "archaeology",
+    "crim": "criminology",
+    "cj": "criminology",
+    "crju": "criminology",
+    "padm": "public administration",
+    "pa": "public administration",
+    "pubp": "public policy",
+    "ppol": "public policy",
+    "swk": "social work",
+    "socw": "social work",
+    "sowk": "social work",
+    "phil": "philosophy",
+    "phl": "philosophy",
+    "phi": "philosophy",
+    "hist": "history",
+    "his": "history",
+    "hst": "history",
+    "ling": "linguistics",
+    "lin": "linguistics",
+    "educ": "education",
+    "edu": "education",
+    "ed": "education",
+    "ped": "education",
+    "sped": "special education",
+    "agri": "agriculture",
+    "agr": "agriculture",
+    "agro": "agriculture",
+    "ag": "agriculture",
+    "hort": "agriculture",
+    "crop": "agriculture",
+    "soil": "agriculture",
+    "ansc": "agriculture",
+    "for": "forestry",
+    "frst": "forestry",
+    "fosc": "food science",
+    "fdsc": "food science",
+    "nutr": "nutrition",
+    "vet": "veterinary medicine",
+    "vetm": "veterinary medicine",
+    "dvm": "veterinary medicine",
+    "med": "medicine",
+    "medi": "medicine",
+    "clin": "medicine",
+    "nurs": "nursing",
+    "nur": "nursing",
+    "nsg": "nursing",
+    "dent": "dentistry",
+    "dds": "dentistry",
+    "dmd": "dentistry",
+    "phar": "pharmacology",
+    "phrm": "pharmacology",
+    "pharm": "pharmacology",
+    "toxi": "toxicology",
+    "pubh": "public health",
+    "phlt": "public health",
+    "epi": "epidemiology",
+    "epid": "epidemiology",
+    "pt": "physiotherapy",
+    "phth": "physiotherapy",
+    "kine": "sports science",
+    "spmt": "sports science",
+    "geol": "geology",
+    "geo": "earth sciences",
+    "eart": "earth sciences",
+    "erth": "earth sciences",
+    "geog": "geography",
+    "metr": "meteorology",
+    "atmo": "meteorology",
+    "hydr": "hydrology",
+    "mus": "music",
+    "musc": "music",
+    "mu": "music",
+    "mhl": "music",
+    "muth": "music",
+    "art": "fine arts",
+    "arts": "fine arts",
+    "arth": "fine arts",
+    "vis": "fine arts",
+    "des": "design",
+    "gdes": "graphic design",
+    "ides": "interior design",
+    "fash": "fashion design",
+    "thea": "performing arts",
+    "dram": "performing arts",
+    "danc": "performing arts",
+    "film": "media studies",
+    "cine": "media studies",
+    "meds": "media studies",
+    "comm": "media studies",
+    "com": "media studies",
+    "jour": "journalism",
+    "jrn": "journalism",
+    "pr": "public relations",
+}
+
+#: Universal Greek/Latin/international morphological root stems (length >= 5) per canonical
+#: discipline. Matched at left word boundaries (`_LETTER_BOUNDARY_LEFT + re.escape(stem)`),
+#: allowing any derivational/inflectional suffix across EN/DE/FR/IT/ES/NL/TR/AZ/RU.
+_DISCIPLINE_ROOT_STEMS: dict[str, tuple[str, ...]] = {
+    "philosophy": (
+        "philosoph",
+        "filosof",
+        "fəlsəf",
+        "felsef",
+        "философ",
+        "epistem",
+        "эпистемолог",
+        "metaphys",
+        "metafizik",
+        "метафизик",
+        "ontolog",
+        "онтолог",
+        "phenomenolog",
+        "phänomenolog",
+        "феноменолог",
+        "hermeneut",
+        "герменевт",
+        "deontolog",
+        "utilitarian",
+        "syllogis",
+        "dialectic",
+        "dialektik",
+        "диалектик",
+        "axiolog",
+        "аксиолог",
+        "aestheti",
+        "ästhetik",
+        "эстетик",
+        "estetik",
+        "bioethic",
+        "metaethic",
+        "aristotel",
+        "kantian",
+        "hegel",
+        "existentialis",
+    ),
+    "history": (
+        "historiograph",
+        "историограф",
+        "paleograph",
+        "палеограф",
+        "epigraph",
+        "эпиграфик",
+        "numismat",
+        "нумизмат",
+        "medieval",
+        "mittelalter",
+        "средневеков",
+        "antiquit",
+        "antike",
+        "античност",
+        "ottoman",
+        "osmanl",
+        "byzantin",
+        "византи",
+        "renaissanc",
+        "ренессанс",
+        "imperialism",
+        "decoloniz",
+        "prehistor",
+        "archival",
+        "архивовед",
+        "zeitgeschichte",
+    ),
+    "education": (
+        "pedagog",
+        "pädagog",
+        "педагог",
+        "pedaqog",
+        "pedagoj",
+        "didactic",
+        "didaktik",
+        "дидактик",
+        "didaktika",
+        "andragog",
+        "curricul",
+        "lehrplan",
+        "docimolog",
+        "schulwesen",
+        "unterricht",
+    ),
+    "agriculture": (
+        "agronom",
+        "агроном",
+        "aqronom",
+        "horticult",
+        "gartenbau",
+        "плодоводств",
+        "овощеводств",
+        "silvicult",
+        "viticult",
+        "виноградарств",
+        "pedolog",
+        "почвовед",
+        "torpaqşünas",
+        "bodenkunde",
+        "phytopathol",
+        "фитопатолог",
+        "entomolog",
+        "энтомолог",
+        "agroecolog",
+        "агроэколог",
+        "agribusin",
+        "agrochem",
+        "агрохим",
+        "pflanzenbau",
+        "растениеводств",
+        "животноводств",
+        "zootekni",
+        "зоотехн",
+        "heyvandarlıq",
+        "bitkiçilik",
+        "tarla bitkileri",
+        "bahçe bitkileri",
+    ),
+    "forestry": (
+        "silvicult",
+        "forstwiss",
+        "waldbau",
+        "лесоводств",
+        "лесоустройств",
+        "dendrolog",
+        "дендролог",
+        "meşəçilik",
+        "ormancılık",
+    ),
+    "veterinary medicine": (
+        "veterinar",
+        "ветеринар",
+        "baytar",
+        "tiermedizin",
+        "tierärzt",
+        "zoonos",
+        "зооноз",
+        "theriogenol",
+        "epizootol",
+        "эпизоотолог",
+    ),
+    "environmental science": (
+        "ecolog",
+        "ökolog",
+        "эколог",
+        "ekolog",
+        "ekoloj",
+        "biodivers",
+        "биоразнообраз",
+        "climatol",
+        "климатолог",
+        "ecotoxicol",
+        "экотоксиколог",
+        "biogeochem",
+        "биогеохим",
+        "decarboni",
+        "umweltwiss",
+        "umweltschutz",
+        "природопользован",
+    ),
+    "earth sciences": (
+        "geodes",
+        "геодез",
+        "geodeziya",
+        "jeodezi",
+        "cartograph",
+        "картограф",
+        "photogrammetr",
+        "фотограмметр",
+        "seismol",
+        "сейсмолог",
+        "volcanol",
+        "вулканолог",
+        "limnol",
+        "glaciol",
+        "гляциолог",
+        "mineralog",
+        "минералог",
+        "petrolog",
+        "петролог",
+        "sedimentol",
+        "седиментолог",
+        "stratigraph",
+        "стратиграф",
+        "paleontol",
+        "палеонтолог",
+        "geomorphol",
+        "геоморфолог",
+        "hydrogeol",
+        "гидрогеолог",
+        "geophys",
+        "геофизик",
+        "geochem",
+        "геохим",
+        "oceanograph",
+        "океанограф",
+    ),
+    "geology": (
+        "mineralog",
+        "минералог",
+        "petrolog",
+        "петролог",
+        "sedimentol",
+        "stratigraph",
+        "стратиграф",
+        "paleontol",
+        "палеонтолог",
+        "geomorphol",
+        "геоморфолог",
+        "hydrogeol",
+        "гидрогеолог",
+        "seismol",
+        "сейсмолог",
+        "tectonic",
+        "тектоник",
+    ),
+    "medicine": (
+        "anatom",
+        "анатом",
+        "physiol",
+        "физиолог",
+        "pathol",
+        "патолог",
+        "pathophysiol",
+        "патофизиолог",
+        "histol",
+        "гистолог",
+        "embryol",
+        "эмбриолог",
+        "immunol",
+        "иммунолог",
+        "epidemiol",
+        "эпидемиолог",
+        "geriatr",
+        "гериатр",
+        "pediatr",
+        "педиатр",
+        "obstetr",
+        "акушерств",
+        "gynecol",
+        "gynäkol",
+        "гинеколог",
+        "chirurg",
+        "хирург",
+        "endocrin",
+        "эндокринолог",
+        "gastroenter",
+        "гастроэнтеролог",
+        "nephrol",
+        "нефролог",
+        "pulmonol",
+        "пульмонолог",
+        "hematol",
+        "гематолог",
+        "dermatol",
+        "дерматолог",
+        "ophthalmol",
+        "офтальмолог",
+        "orthoped",
+        "ортопед",
+        "anesthesiol",
+        "анестезиолог",
+        "cardiol",
+        "кардиолог",
+        "oncolog",
+        "онколог",
+        "radiol",
+        "радиолог",
+        "рентгенолог",
+        "психиатр",
+        "psychiatr",
+        "невролог",
+    ),
+    "nursing": (
+        "nursing",
+        "krankenpflege",
+        "pflegewiss",
+        "сестринск",
+        "hemşirelik",
+        "tibb bacısı",
+        "midwif",
+        "hebammen",
+        "акушерск",
+        "ebelik",
+        "mamalıq",
+    ),
+    "dentistry": (
+        "odontol",
+        "одонтолог",
+        "stomatol",
+        "стоматолог",
+        "zahnmedizin",
+        "zahnheilkund",
+        "diş hekim",
+        "periodont",
+        "пародонтолог",
+        "endodont",
+        "эндодонт",
+        "orthodont",
+        "ортодонт",
+        "prosthodont",
+        "ортопедическая стоматология",
+        "kariolog",
+    ),
+    "pharmacology": (
+        "pharmacol",
+        "фармаколог",
+        "farmakol",
+        "pharmaceut",
+        "фармацевт",
+        "əczaçılıq",
+        "eczacılık",
+        "pharmacokinet",
+        "фармакокинет",
+        "pharmacodynam",
+        "фармакодинам",
+        "pharmacognos",
+        "фармакогноз",
+        "pharmacovigilan",
+        "biopharmaceut",
+        "toxicol",
+        "токсиколог",
+    ),
+    "music": (
+        "musicolog",
+        "musikwissenschaft",
+        "музыковед",
+        "musiqişünas",
+        "müzikoloj",
+        "ethnomusicol",
+        "counterpoint",
+        "kontrapunkt",
+        "контрапункт",
+        "polifoniya",
+        "polyphon",
+        "полифони",
+        "solfeg",
+        "сольфеджио",
+        "solfec",
+        "orchestrat",
+        "оркестровк",
+        "instrumentat",
+        "гармони",
+        "harmonielehre",
+        "gehörbildung",
+    ),
+    "fine arts": (
+        "iconograph",
+        "иконограф",
+        "museol",
+        "музеевед",
+        "kunstgeschichte",
+        "искусствовед",
+        "искусствознан",
+        "sənətşünas",
+        "sanat tarihi",
+        "sculptur",
+        "скульптур",
+        "heykəltəraş",
+        "printmak",
+    ),
+    "performing arts": (
+        "scenograph",
+        "сценограф",
+        "dramaturg",
+        "драматург",
+        "choreograph",
+        "хореограф",
+        "theaterwiss",
+        "театровед",
+        "schauspiel",
+        "актерск",
+        "режиссур",
+    ),
+    "media studies": (
+        "cinematograph",
+        "кинематограф",
+        "medienwiss",
+        "медиаисследован",
+        "semiotic",
+        "семиотик",
+        "audiovisu",
+        "rundfunk",
+        "телерадио",
+    ),
+    "journalism": (
+        "journalis",
+        "журналистик",
+        "jurnalistika",
+        "gazetecilik",
+        "publizistik",
+        "редактирован",
+        "репортаж",
+    ),
+    "anthropology": (
+        "anthropol",
+        "антрополог",
+        "antropol",
+        "ethnograph",
+        "этнограф",
+        "etnoqraf",
+        "etnograf",
+        "ethnolog",
+        "этнолог",
+        "paleoanthropol",
+    ),
+    "archaeology": (
+        "archaeol",
+        "archäol",
+        "археолог",
+        "arxeol",
+        "arkeol",
+        "stratigraph",
+        "osteolog",
+        "zooarchaeol",
+        "paleolith",
+        "neolith",
+        "палеолит",
+        "неолит",
+    ),
+    "criminology": (
+        "criminol",
+        "kriminol",
+        "криминолог",
+        "penolog",
+        "пенолог",
+        "victimolog",
+        "виктимолог",
+        "kriminalistik",
+        "криминалистик",
+        "delinquenc",
+        "recidivis",
+    ),
+    "public administration": (
+        "public administration",
+        "verwaltungswiss",
+        "государственное управление",
+        "муниципальное управление",
+        "kamu yönetimi",
+        "dövlət idarəetməsi",
+        "bureaucra",
+        "бюрократ",
+    ),
+    "social work": (
+        "social work",
+        "soziale arbeit",
+        "sozialpädagog",
+        "социальная работа",
+        "sosyal hizmet",
+        "sosial iş",
+    ),
+    "mechanical engineering": (
+        "thermodynam",
+        "термодинам",
+        "termodinam",
+        "tribolog",
+        "триболог",
+        "turbomachin",
+        "турбомашин",
+        "mechatron",
+        "мехатрон",
+        "mexatron",
+        "mekatron",
+        "strömungsmechanik",
+        "festigkeitslehre",
+        "maschinenelemente",
+        "сопромат",
+        "mukavemet",
+    ),
+    "aerospace engineering": (
+        "aerodynam",
+        "аэродинам",
+        "aerodinam",
+        "aeroelastic",
+        "аэроупруг",
+        "astrodynam",
+        "астродинам",
+        "avionics",
+        "авионик",
+        "raumfahrt",
+        "flugmechanik",
+    ),
+    "materials science": (
+        "metallurg",
+        "металлург",
+        "metallurq",
+        "metalurj",
+        "crystallograph",
+        "кристаллограф",
+        "kristalloqraf",
+        "nanomaterial",
+        "наноматериал",
+        "biomaterial",
+        "биоматериал",
+        "werkstoff",
+        "материаловед",
+        "materialşünas",
+        "piezoelectr",
+    ),
+    "chemical engineering": (
+        "rheolog",
+        "реолог",
+        "petrochem",
+        "нефтехим",
+        "neft-kimya",
+        "petrokimya",
+        "verfahrenstechnik",
+        "bioprocess",
+        "биопроцесс",
+        "hydrometallurg",
+    ),
+    "civil engineering": (
+        "geotechnic",
+        "геотехник",
+        "geotexnik",
+        "baustatik",
+        "stahlbau",
+        "massivbau",
+        "железобетон",
+        "dəmir-beton",
+        "betonarme",
+        "строймех",
+    ),
+}
+
+#: Standardized curricular Knowledge Units (KUs) per ISCED-F 2013 canonical discipline
+#: (Khan et al., 2025, DOI: 10.55214/25768484.v9i3.5859), augmenting the 65 multilingual
+#: `DisciplineNode` entries in `apps/accounts/field_taxonomy.py`.
+_ISCED_KNOWLEDGE_UNITS: dict[str, tuple[str, ...]] = {
+    "mechanical engineering": (
+        "thermodynamics",
+        "fluid mechanics",
+        "fluid dynamics",
+        "heat transfer",
+        "mass transfer",
+        "heat and mass transfer",
+        "strength of materials",
+        "mechanics of materials",
+        "solid mechanics",
+        "continuum mechanics",
+        "statics",
+        "dynamics",
+        "engineering mechanics",
+        "kinematics",
+        "machine design",
+        "machine elements",
+        "turbomachinery",
+        "internal combustion",
+        "mechanical vibrations",
+        "vibrations",
+        "finite element",
+        "computer-aided design",
+        "manufacturing processes",
+        "mechatronics",
+        "technische mechanik",
+        "strömungsmechanik",
+        "wärmeübertragung",
+        "festigkeitslehre",
+        "maschinenelemente",
+        "термодинамика",
+        "механика жидкости",
+        "сопротивление материалов",
+        "детали машин",
+        "теоретическая механика",
+        "termodinamika",
+        "materialların müqaviməti",
+        "nəzəri mexanika",
+        "mukavemet",
+        "akışkanlar mekaniği",
+        "ısı transferi",
+        "makine elemanları",
+    ),
+    "civil engineering": (
+        "structural analysis",
+        "structural engineering",
+        "structural mechanics",
+        "structural dynamics",
+        "reinforced concrete",
+        "steel structures",
+        "timber structures",
+        "soil mechanics",
+        "geotechnical engineering",
+        "geotechnics",
+        "foundation engineering",
+        "hydraulics",
+        "open channel flow",
+        "hydrology",
+        "water resources",
+        "transportation engineering",
+        "highway engineering",
+        "traffic engineering",
+        "pavement design",
+        "construction management",
+        "building materials",
+        "construction materials",
+        "surveying",
+        "geodesy",
+        "bridge engineering",
+        "earthquake engineering",
+        "baustatik",
+        "massivbau",
+        "stahlbau",
+        "bodenmechanik",
+        "wasserbau",
+        "строительная механика",
+        "железобетонные конструкции",
+        "механика грунтов",
+        "гидравлика",
+        "inşaat mexanikası",
+        "qruntlar mexanikası",
+        "yapı statiği",
+        "betonarme",
+        "zemin mekaniği",
+        "hidrolik",
+    ),
+    "chemical engineering": (
+        "chemical reaction engineering",
+        "reaction kinetics",
+        "reactor design",
+        "unit operations",
+        "mass transfer",
+        "heat and mass transfer",
+        "transport phenomena",
+        "process control",
+        "process dynamics",
+        "process design",
+        "chemical process",
+        "separation processes",
+        "distillation",
+        "chemical engineering thermodynamics",
+        "fluidization",
+        "polymer engineering",
+        "bioprocess engineering",
+        "biochemical engineering",
+        "catalysis",
+        "plant design",
+        "process safety",
+        "verfahrenstechnik",
+        "reaktionstechnik",
+        "thermische verfahrenstechnik",
+        "mechanische verfahrenstechnik",
+        "процессы и аппараты",
+        "химическая технология",
+        "kimya texnologiyası",
+        "temel işlemler",
+        "proses kontrol",
+    ),
+    "aerospace engineering": (
+        "aerodynamics",
+        "flight mechanics",
+        "aircraft design",
+        "spacecraft dynamics",
+        "orbital mechanics",
+        "astrodynamics",
+        "propulsion",
+        "jet propulsion",
+        "rocket propulsion",
+        "aeroelasticity",
+        "aerospace structures",
+        "avionics",
+        "flight control",
+        "compressible flow",
+        "gas dynamics",
+    ),
+    "materials science": (
+        "physical metallurgy",
+        "mechanical behavior of materials",
+        "crystallography",
+        "phase transformations",
+        "ceramics",
+        "polymer science",
+        "composite materials",
+        "nanomaterials",
+        "nanotechnology",
+        "corrosion",
+        "biomaterials",
+        "electronic materials",
+        "semiconductor materials",
+        "strength of materials",
+    ),
+    "law": (
+        "law",
+        "legal",
+        "jurisprudence",
+        "constitutional law",
+        "criminal law",
+        "criminal procedure",
+        "civil law",
+        "civil procedure",
+        "contract law",
+        "contracts",
+        "tort law",
+        "torts",
+        "civil obligations",
+        "obligations",
+        "property law",
+        "administrative law",
+        "international law",
+        "public international law",
+        "private international law",
+        "commercial law",
+        "corporate law",
+        "company law",
+        "tax law",
+        "labor law",
+        "labour law",
+        "employment law",
+        "european union law",
+        "eu law",
+        "human rights law",
+        "legal theory",
+        "legal methods",
+        "roman law",
+        "intellectual property",
+        "family law",
+        "environmental law",
+        "maritime law",
+        "competition law",
+        "antitrust",
+        "arbitration",
+        "bürgerliches recht",
+        "strafrecht",
+        "öffentliches recht",
+        "verfassungsrecht",
+        "verwaltungsrecht",
+        "handelsrecht",
+        "völkerrecht",
+        "europarecht",
+        "zivilrecht",
+        "droit civil",
+        "droit pénal",
+        "droit constitutionnel",
+        "droit administratif",
+        "diritto privato",
+        "diritto pubblico",
+        "diritto penale",
+        "diritto costituzionale",
+        "гражданское право",
+        "уголовное право",
+        "конституционное право",
+        "административное право",
+        "международное право",
+        "теория государства и права",
+        "mülki hüquq",
+        "cinayət hüququ",
+        "konstitusiya hüququ",
+        "inzibati hüquq",
+        "beynəlxalq hüquq",
+        "hüquq nəzəriyyəsi",
+        "medeni hukuk",
+        "ceza hukuku",
+        "anayasa hukuku",
+        "idare hukuku",
+        "borçlar hukuku",
+        "ticaret hukuku",
+    ),
+    "psychology": (
+        "psychology",
+        "cognitive psychology",
+        "developmental psychology",
+        "social psychology",
+        "abnormal psychology",
+        "clinical psychology",
+        "psychopathology",
+        "psychometrics",
+        "psychological assessment",
+        "psychological testing",
+        "personality psychology",
+        "biological psychology",
+        "biopsychology",
+        "behavioral neuroscience",
+        "neuropsychology",
+        "experimental psychology",
+        "educational psychology",
+        "organizational psychology",
+        "health psychology",
+        "counseling psychology",
+        "psychotherapy",
+        "kognitive psychologie",
+        "entwicklungspsychologie",
+        "sozialpsychologie",
+        "klinische psychologie",
+        "psychologische diagnostik",
+        "allgemeine psychologie",
+        "когнитивная психология",
+        "возрастная психология",
+        "социальная психология",
+        "клиническая психология",
+        "психодиагностика",
+        "psixodiagnostika",
+        "inkişaf psixologiyası",
+        "sosial psixologiya",
+        "klinik psixologiya",
+        "bilişsel psikoloji",
+        "gelişim psikolojisi",
+        "sosyal psikoloji",
+        "klinik psikoloji",
+        "psikometri",
+    ),
+    "political science": (
+        "political science",
+        "comparative politics",
+        "international relations",
+        "political theory",
+        "political philosophy",
+        "public policy",
+        "public administration",
+        "international politics",
+        "foreign policy",
+        "diplomacy",
+        "international security",
+        "security studies",
+        "conflict resolution",
+        "geopolitics",
+        "global governance",
+        "international organizations",
+        "european integration",
+        "political economy",
+        "electoral systems",
+        "political parties",
+        "democratic theory",
+        "politikwissenschaft",
+        "internationale beziehungen",
+        "политология",
+        "международные отношения",
+        "мировая политика",
+        "дипломатия",
+        "siyasi elmlər",
+        "beynəlxalq münasibətlər",
+        "diplomatiya",
+        "siyaset bilimi",
+        "uluslararası ilişkiler",
+        "kamu yönetimi",
+    ),
+    "international relations": (
+        "international relations",
+        "international politics",
+        "foreign policy",
+        "diplomacy",
+        "international security",
+        "security studies",
+        "geopolitics",
+        "global governance",
+        "international organizations",
+        "european integration",
+        "international political economy",
+        "public international law",
+        "conflict resolution",
+        "comparative politics",
+    ),
+    "sociology": (
+        "sociology",
+        "sociological theory",
+        "social theory",
+        "social stratification",
+        "social inequality",
+        "urban sociology",
+        "rural sociology",
+        "economic sociology",
+        "political sociology",
+        "medical sociology",
+        "demography",
+        "social research methods",
+        "ethnography",
+        "migration studies",
+        "criminology",
+    ),
+    "medicine": (
+        "anatomy",
+        "human anatomy",
+        "physiology",
+        "human physiology",
+        "pathology",
+        "pathophysiology",
+        "pharmacology",
+        "toxicology",
+        "histology",
+        "embryology",
+        "immunology",
+        "medical microbiology",
+        "epidemiology",
+        "internal medicine",
+        "surgery",
+        "pediatrics",
+        "neurology",
+        "psychiatry",
+        "radiology",
+        "oncology",
+        "cardiology",
+    ),
+    "public health": (
+        "public health",
+        "epidemiology",
+        "biostatistics",
+        "global health",
+        "health policy",
+        "health economics",
+        "environmental health",
+        "occupational health",
+        "health promotion",
+        "infectious disease",
+    ),
+    "pharmacology": (
+        "pharmacology",
+        "pharmacy",
+        "medicinal chemistry",
+        "pharmaceutical chemistry",
+        "pharmaceutics",
+        "pharmacokinetics",
+        "pharmacodynamics",
+        "pharmacognosy",
+        "clinical pharmacy",
+        "biopharmaceutics",
+        "drug delivery",
+        "toxicology",
+    ),
+    "earth sciences": (
+        "geology",
+        "mineralogy",
+        "petrology",
+        "sedimentology",
+        "stratigraphy",
+        "structural geology",
+        "tectonics",
+        "plate tectonics",
+        "geophysics",
+        "seismology",
+        "geochemistry",
+        "hydrogeology",
+        "hydrology",
+        "paleontology",
+        "geomorphology",
+        "climatology",
+        "meteorology",
+        "oceanography",
+        "remote sensing",
+        "geographic information systems",
+    ),
+    "geology": (
+        "geology",
+        "mineralogy",
+        "petrology",
+        "sedimentology",
+        "stratigraphy",
+        "structural geology",
+        "tectonics",
+        "geophysics",
+        "seismology",
+        "geochemistry",
+        "hydrogeology",
+        "paleontology",
+        "geomorphology",
+    ),
+    "architecture": (
+        "architectural design",
+        "design studio",
+        "architectural studio",
+        "urban design",
+        "urban planning",
+        "spatial planning",
+        "landscape architecture",
+        "architectural history",
+        "history of architecture",
+        "theory of architecture",
+        "building construction",
+        "building technology",
+        "building physics",
+        "architectural structures",
+        "sustainable architecture",
+    ),
+    "linguistics": (
+        "linguistics",
+        "phonetics",
+        "phonology",
+        "morphology",
+        "syntax",
+        "semantics",
+        "pragmatics",
+        "sociolinguistics",
+        "psycholinguistics",
+        "historical linguistics",
+        "comparative linguistics",
+        "corpus linguistics",
+        "computational linguistics",
+        "discourse analysis",
+        "second language acquisition",
+        "applied linguistics",
+        "translation studies",
+    ),
+    "bioinformatics": (
+        "bioinformatics",
+        "computational biology",
+        "genomics",
+        "proteomics",
+        "transcriptomics",
+        "sequence analysis",
+        "biological databases",
+        "systems biology",
+        "structural bioinformatics",
+        "phylogenetics",
+        "biostatistics",
+        "next-generation sequencing",
+    ),
+    "philosophy": (
+        "philosophy",
+        "epistemology",
+        "erkenntnistheorie",
+        "metaphysics",
+        "ontology",
+        "ethics",
+        "moral philosophy",
+        "metaethics",
+        "normative ethics",
+        "bioethics",
+        "applied ethics",
+        "phenomenology",
+        "existentialism",
+        "hermeneutics",
+        "philosophy of mind",
+        "philosophy of language",
+        "philosophy of science",
+        "continental philosophy",
+        "analytic philosophy",
+        "ancient philosophy",
+        "modern philosophy",
+        "aesthetics",
+        "philosophical logic",
+        "deontology",
+        "utilitarianism",
+    ),
+    "history": (
+        "history",
+        "historiography",
+        "ancient history",
+        "medieval history",
+        "early modern history",
+        "modern history",
+        "contemporary history",
+        "world history",
+        "global history",
+        "social history",
+        "economic history",
+        "cultural history",
+        "intellectual history",
+        "diplomatic history",
+        "military history",
+        "ottoman history",
+        "byzantine history",
+        "european history",
+        "middle eastern history",
+        "archival studies",
+        "source criticism",
+        "paleography",
+        "epigraphy",
+        "numismatics",
+    ),
+    "education": (
+        "pedagogy",
+        "didactics",
+        "curriculum development",
+        "curriculum and instruction",
+        "instructional design",
+        "educational psychology",
+        "classroom management",
+        "educational assessment",
+        "educational measurement",
+        "educational policy",
+        "educational leadership",
+        "school administration",
+        "comparative education",
+        "early childhood education",
+        "primary education",
+        "secondary education",
+        "higher education",
+        "adult education",
+        "andragogy",
+        "special education",
+        "inclusive education",
+        "teacher education",
+    ),
+    "agriculture": (
+        "agronomy",
+        "crop science",
+        "soil science",
+        "pedology",
+        "horticulture",
+        "plant breeding",
+        "plant pathology",
+        "phytopathology",
+        "entomology",
+        "weed science",
+        "animal science",
+        "animal husbandry",
+        "livestock production",
+        "animal nutrition",
+        "agricultural economics",
+        "agribusiness",
+        "irrigation",
+        "agricultural engineering",
+        "agroecology",
+        "sustainable agriculture",
+        "viticulture",
+    ),
+    "forestry": (
+        "forestry",
+        "silviculture",
+        "forest management",
+        "forest ecology",
+        "dendrology",
+        "agroforestry",
+        "forest inventory",
+        "wood science",
+        "wildlife management",
+    ),
+    "veterinary medicine": (
+        "veterinary medicine",
+        "veterinary anatomy",
+        "veterinary physiology",
+        "veterinary pathology",
+        "veterinary pharmacology",
+        "veterinary surgery",
+        "animal reproduction",
+        "theriogenology",
+        "zoonoses",
+        "veterinary parasitology",
+        "veterinary microbiology",
+        "livestock health",
+    ),
+    "environmental science": (
+        "environmental science",
+        "ecology",
+        "ecosystem",
+        "biodiversity",
+        "conservation biology",
+        "climate change",
+        "climatology",
+        "environmental chemistry",
+        "environmental toxicology",
+        "ecotoxicology",
+        "environmental impact assessment",
+        "environmental policy",
+        "environmental management",
+        "sustainability",
+        "biogeochemistry",
+        "remote sensing",
+        "limnology",
+    ),
+    "nursing": (
+        "nursing",
+        "clinical nursing",
+        "medical-surgical nursing",
+        "pediatric nursing",
+        "maternal and child health",
+        "midwifery",
+        "psychiatric nursing",
+        "mental health nursing",
+        "community health nursing",
+        "critical care nursing",
+        "geriatric nursing",
+        "patient care",
+        "nursing ethics",
+    ),
+    "dentistry": (
+        "dentistry",
+        "dental medicine",
+        "stomatology",
+        "odontology",
+        "oral surgery",
+        "maxillofacial surgery",
+        "periodontology",
+        "periodontics",
+        "endodontics",
+        "orthodontics",
+        "prosthodontics",
+        "pediatric dentistry",
+        "cariology",
+        "dental materials",
+        "oral pathology",
+    ),
+    "fine arts": (
+        "fine arts",
+        "art history",
+        "history of art",
+        "visual arts",
+        "studio art",
+        "painting",
+        "sculpture",
+        "printmaking",
+        "drawing",
+        "ceramics",
+        "iconography",
+        "museology",
+        "curatorial studies",
+        "contemporary art",
+    ),
+    "music": (
+        "musicology",
+        "ethnomusicology",
+        "music theory",
+        "harmony",
+        "counterpoint",
+        "polyphony",
+        "solfege",
+        "ear training",
+        "orchestration",
+        "instrumentation",
+        "musical form",
+        "musical composition",
+        "conducting",
+        "chamber music",
+        "history of music",
+        "music history",
+    ),
+    "performing arts": (
+        "performing arts",
+        "theatre studies",
+        "theater studies",
+        "dramaturgy",
+        "scenography",
+        "stage directing",
+        "acting",
+        "choreography",
+        "dance studies",
+        "performance studies",
+    ),
+    "design": (
+        "industrial design",
+        "product design",
+        "interaction design",
+        "user experience design",
+        "user interface design",
+        "visual communication",
+        "graphic design",
+        "typography",
+        "interior design",
+        "spatial design",
+        "design thinking",
+        "ergonomics",
+    ),
+    "media studies": (
+        "media studies",
+        "communication studies",
+        "mass communication",
+        "film studies",
+        "cinema studies",
+        "cinematography",
+        "screenwriting",
+        "television studies",
+        "digital media",
+        "new media",
+        "media theory",
+        "semiotics",
+        "audiovisual production",
+    ),
+    "journalism": (
+        "journalism",
+        "news reporting",
+        "investigative journalism",
+        "broadcast journalism",
+        "photojournalism",
+        "data journalism",
+        "media ethics",
+        "media law",
+        "editorial writing",
+    ),
+    "anthropology": (
+        "anthropology",
+        "cultural anthropology",
+        "social anthropology",
+        "biological anthropology",
+        "physical anthropology",
+        "linguistic anthropology",
+        "ethnography",
+        "ethnology",
+        "kinship",
+        "paleoanthropology",
+        "medical anthropology",
+    ),
+    "archaeology": (
+        "archaeology",
+        "prehistoric archaeology",
+        "classical archaeology",
+        "near eastern archaeology",
+        "excavation",
+        "material culture",
+        "bioarchaeology",
+        "zooarchaeology",
+        "archaeometry",
+        "cultural heritage",
+    ),
+    "criminology": (
+        "criminology",
+        "criminal justice",
+        "penology",
+        "victimology",
+        "juvenile delinquency",
+        "policing",
+        "corrections",
+        "criminalistics",
+        "forensic psychology",
+        "crime prevention",
+    ),
+    "public administration": (
+        "public administration",
+        "public management",
+        "public governance",
+        "local government",
+        "municipal administration",
+        "civil service",
+        "public budgeting",
+        "public sector reform",
+        "administrative theory",
+        "e-governance",
+    ),
+    "public policy": (
+        "public policy",
+        "policy analysis",
+        "policy evaluation",
+        "social policy",
+        "economic policy",
+        "health policy",
+        "environmental policy",
+        "regulatory policy",
+        "welfare state",
+        "cost-benefit analysis",
+    ),
+    "social work": (
+        "social work",
+        "social welfare",
+        "casework",
+        "child welfare",
+        "family therapy",
+        "community organization",
+        "social services",
+        "clinical social work",
+        "human services",
+    ),
+    "astronomy": (
+        "astronomy",
+        "astrophysics",
+        "cosmology",
+        "planetary science",
+        "stellar evolution",
+        "galactic astronomy",
+        "observational astronomy",
+        "radio astronomy",
+        "celestial mechanics",
+        "exoplanets",
+    ),
+    "cognitive science": (
+        "cognitive science",
+        "cognitive psychology",
+        "cognitive neuroscience",
+        "computational neuroscience",
+        "psycholinguistics",
+        "perception and action",
+        "neural computation",
+        "philosophy of mind",
+    ),
+    "finance": (
+        "corporate finance",
+        "financial markets",
+        "investments",
+        "portfolio management",
+        "asset pricing",
+        "derivatives",
+        "fixed income",
+        "financial econometrics",
+        "risk management",
+        "banking",
+        "international finance",
+        "quantitative finance",
+        "mergers and acquisitions",
+        "valuation",
+    ),
+    "accounting": (
+        "financial accounting",
+        "managerial accounting",
+        "management accounting",
+        "cost accounting",
+        "auditing",
+        "taxation",
+        "tax accounting",
+        "financial reporting",
+        "financial statement analysis",
+        "international accounting",
+        "ifrs",
+        "bookkeeping",
+    ),
+    "marketing": (
+        "marketing management",
+        "consumer behavior",
+        "market research",
+        "marketing research",
+        "digital marketing",
+        "brand management",
+        "advertising",
+        "retailing",
+        "sales management",
+        "international marketing",
+        "services marketing",
+    ),
+    "business administration": (
+        "business administration",
+        "strategic management",
+        "operations management",
+        "organizational behavior",
+        "human resource management",
+        "supply chain management",
+        "entrepreneurship",
+        "corporate governance",
+        "business ethics",
+        "business law",
+        "international business",
+        "project management",
+    ),
+    "industrial engineering": (
+        "industrial engineering",
+        "operations research",
+        "production planning",
+        "inventory control",
+        "supply chain engineering",
+        "quality control",
+        "statistical process control",
+        "six sigma",
+        "ergonomics",
+        "human factors",
+        "work study",
+        "facility layout",
+        "discrete event simulation",
+        "queuing theory",
+    ),
+    "biomedical engineering": (
+        "biomedical engineering",
+        "bioengineering",
+        "biomechanics",
+        "biomaterials",
+        "tissue engineering",
+        "medical imaging",
+        "bioinstrumentation",
+        "biosensors",
+        "prosthetics",
+        "rehabilitation engineering",
+        "physiological modeling",
+    ),
+    "robotics": (
+        "robotics",
+        "robot kinematics",
+        "robot dynamics",
+        "mobile robotics",
+        "autonomous systems",
+        "mechatronics",
+        "motion planning",
+        "simultaneous localization and mapping",
+        "manipulators",
+        "human-robot interaction",
+    ),
+    "data science": (
+        "data science",
+        "data mining",
+        "machine learning",
+        "big data analytics",
+        "statistical learning",
+        "predictive modeling",
+        "data visualization",
+        "feature engineering",
+        "time series forecasting",
+        "natural language processing",
+    ),
+    "artificial intelligence": (
+        "artificial intelligence",
+        "machine learning",
+        "deep learning",
+        "neural networks",
+        "reinforcement learning",
+        "computer vision",
+        "natural language processing",
+        "knowledge representation",
+        "automated reasoning",
+        "multi-agent systems",
+    ),
+    "cybersecurity": (
+        "cybersecurity",
+        "information security",
+        "network security",
+        "cryptography",
+        "cryptology",
+        "penetration testing",
+        "digital forensics",
+        "malware analysis",
+        "secure software development",
+        "access control",
+    ),
+    "information science": (
+        "information systems",
+        "management information systems",
+        "information retrieval",
+        "knowledge management",
+        "enterprise architecture",
+        "business intelligence",
+        "library science",
+        "archival science",
+    ),
+}
+
+_GENERIC_PARENT_TERMS: frozenset[str] = frozenset(
+    {
+        "science",
+        "sciences",
+        "natural sciences",
+        "social sciences",
+        "humanities",
+        "engineering",
+        "studies",
+        "arts",
+        "design",
+        "health sciences",
+    }
+)
+
+_ISCED_PATTERN_CACHE: dict[
+    str, tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]
+] = {}
+_TOPIC_LOCALIZED_CACHE: dict[str, tuple[str, ...]] = {}
+
+
+def _fold_course_text(text: str) -> str:
+    return " ".join(
+        unicodedata.normalize("NFKC", text).casefold().replace("\u0307", "").split()
+    )
+
+
+def _stem_in_title(title_folded: str, stem: str) -> bool:
+    s = _fold_course_text(stem)
+    if len(s) < 5 or not title_folded:
+        return False
+    return bool(re.search(_LETTER_BOUNDARY_LEFT + re.escape(s), title_folded))
+
+
+def _resolve_nodes_for_phrase(folded: str) -> list[object]:
+    matched_nodes: list[object] = []
+    direct_node = _lookup_discipline_node(folded)
+    if direct_node is not None:
+        matched_nodes.append(direct_node)
+    else:
+        comp = _decompose_morphological_compound(folded)
+        if comp is not None:
+            dom_a, dom_b, _ = comp
+            for d in (dom_a, dom_b):
+                d_node = _lookup_discipline_node(d)
+                if d_node is not None and d_node not in matched_nodes:
+                    matched_nodes.append(d_node)
+        for part in re.split(r"\s+(?:or|and|oder|und)\s+|[,/]", folded):
+            part_clean = part.strip()
+            if part_clean:
+                p_node = _lookup_discipline_node(part_clean)
+                if p_node is not None and p_node not in matched_nodes:
+                    matched_nodes.append(p_node)
+
+    if not matched_nodes:
+        res = resolve_field_taxonomy(folded)
+        for cand in (*res.canonical_degree_titles[:4], *res.parent_fields[:2]):
+            c_node = _DISCIPLINE_BY_SYNONYM.get(_fold_course_text(cand))
+            if c_node is not None and c_node not in matched_nodes:
+                matched_nodes.append(c_node)
+    return matched_nodes
+
+
+def _get_isced_patterns_for_phrase(
+    custom_phrase: str,
+) -> tuple[tuple[str, ...], tuple[str, ...], tuple[str, ...]]:
+    """Resolve `custom_phrase` against the 65-discipline ISCED-F graph in
+    `apps/accounts/field_taxonomy.py`, `_ISCED_KNOWLEDGE_UNITS`, and
+    `_DISCIPLINE_ROOT_STEMS`, returning `(definite_patterns, borderline_patterns, root_stems)`."""
+    folded = _fold_course_text(custom_phrase)
+    if not folded:
+        return (), (), ()
+    cached = _ISCED_PATTERN_CACHE.get(folded)
+    if cached is not None:
+        return cached
+
+    matched_nodes = _resolve_nodes_for_phrase(folded)
+    if not matched_nodes:
+        _ISCED_PATTERN_CACHE[folded] = ((), (), ())
+        return (), (), ()
+
+    definite: list[str] = []
+    borderline: list[str] = []
+    stems: list[str] = []
+
+    def _add_def(term: str) -> None:
+        t = _fold_course_text(term)
+        if (
+            len(t) >= 3
+            and t not in ("law", "laws")
+            and t not in _GENERIC_PARENT_TERMS
+            and t not in definite
+        ):
+            definite.append(t)
+
+    def _add_bord(term: str) -> None:
+        t = _fold_course_text(term)
+        if (
+            len(t) >= 3
+            and t not in ("law", "laws")
+            and t not in _GENERIC_PARENT_TERMS
+            and t not in definite
+            and t not in borderline
+        ):
+            borderline.append(t)
+
+    def _add_stem(stem_val: str) -> None:
+        s = _fold_course_text(stem_val)
+        if len(s) >= 5 and s not in stems:
+            stems.append(s)
+
+    for node in matched_nodes:
+        canon = getattr(node, "canonical", "")
+        if canon != "law":
+            _add_def(canon)
+        for syn in getattr(node, "synonyms", ()):
+            if canon == "law" and syn in ("law", "laws"):
+                continue
+            _add_def(syn)
+        for lang_terms in getattr(node, "translations", {}).values():
+            for term in lang_terms:
+                _add_def(term)
+        for ku in _ISCED_KNOWLEDGE_UNITS.get(canon, ()):
+            _add_def(ku)
+        for st in _DISCIPLINE_ROOT_STEMS.get(canon, ()):
+            _add_stem(st)
+
+        # Child disciplines in the ISCED-F DAG whose parent_fields include `canon`
+        for child in _DISCIPLINE_NODES:
+            if canon in child.parent_fields and child.canonical != canon:
+                _add_def(child.canonical)
+                for syn in child.synonyms:
+                    _add_def(syn)
+                for lang_terms in child.translations.values():
+                    for term in lang_terms:
+                        _add_def(term)
+                for ku in _ISCED_KNOWLEDGE_UNITS.get(child.canonical, ()):
+                    _add_def(ku)
+                for st in _DISCIPLINE_ROOT_STEMS.get(child.canonical, ()):
+                    _add_stem(st)
+
+        # Parent and immediate sibling disciplines become BORDERLINE matches
+        for parent_name in getattr(node, "parent_fields", ()):
+            p_folded = _fold_course_text(parent_name)
+            if p_folded in _GENERIC_PARENT_TERMS:
+                continue
+            _add_bord(p_folded)
+            p_node = _DISCIPLINE_BY_SYNONYM.get(p_folded)
+            if p_node is not None:
+                for syn in p_node.synonyms[:4]:
+                    _add_bord(syn)
+                for ku in _ISCED_KNOWLEDGE_UNITS.get(p_node.canonical, ())[:8]:
+                    _add_bord(ku)
+
+    result = (tuple(definite), tuple(borderline), tuple(stems))
+    _ISCED_PATTERN_CACHE[folded] = result
+    return result
 
 
 def resolve_subject_keys(subject_phrase: str) -> tuple[str, ...]:
     """Map a natural-language subject phrase (e.g. 'theoretical computer science',
     'mathematics or statistics') to one or more canonical taxonomy keys, or a normalized
     custom phrase token when outside the predefined table."""
-    cleaned = " ".join(subject_phrase.strip().split()).casefold()
+    cleaned = _fold_course_text(subject_phrase)
     if not cleaned:
         return ()
 
     matched_keys: list[str] = []
     all_alias_pairs: list[tuple[str, str]] = [
-        (alias, entry.key) for entry in _SUBJECT_TAXONOMY for alias in entry.aliases
+        (_fold_course_text(alias), entry.key)
+        for entry in _SUBJECT_TAXONOMY
+        for alias in entry.aliases
     ]
     all_alias_pairs.sort(key=lambda pair: len(pair[0]), reverse=True)
 
@@ -623,13 +2763,148 @@ def resolve_subject_keys(subject_phrase: str) -> tuple[str, ...]:
             remaining = re.sub(pattern, " ", remaining)
 
     if matched_keys:
+        # Check if `remaining` still names an additional distinct ISCED-F discipline
+        # (e.g. "Computer Science or Mechanical Engineering").
+        for part in re.split(r"\s+(?:or|and|oder|und)\s+|[,/]", remaining):
+            part_tokens = [
+                w for w in part.strip().split() if w not in _CUSTOM_STOPWORDS and len(w) >= 3
+            ]
+            part_clean = " ".join(part_tokens)
+            if part_clean and _lookup_discipline_node(part_clean) is not None:
+                extra_key = f"CUSTOM:{part_clean}"
+                if extra_key not in matched_keys:
+                    matched_keys.append(extra_key)
         return tuple(matched_keys)
     return (f"CUSTOM:{cleaned}",)
 
 
 def _pattern_in_title(title_folded: str, pattern: str) -> bool:
-    regex = _LETTER_BOUNDARY_LEFT + re.escape(pattern) + _LETTER_BOUNDARY_RIGHT
-    return bool(re.search(regex, title_folded))
+    pat_folded = _fold_course_text(pattern)
+    if not pat_folded or not title_folded:
+        return False
+    regex = _LETTER_BOUNDARY_LEFT + re.escape(pat_folded) + _LETTER_BOUNDARY_RIGHT
+    if re.search(regex, title_folded):
+        return True
+    if len(pat_folded) >= 6:
+        inflected = (
+            _LETTER_BOUNDARY_LEFT
+            + re.escape(pat_folded)
+            + _INFLECTION_SUFFIX_RE
+            + _LETTER_BOUNDARY_RIGHT
+        )
+        if re.search(inflected, title_folded):
+            return True
+        last_word = pat_folded.rsplit(" ", 1)[-1]
+        if len(last_word) >= 7:
+            for ending in ("ие", "ия", "ая", "ые", "ий", "ый", "ı", "i", "u", "ü", "e", "a"):
+                if pat_folded.endswith(ending) and len(last_word) - len(ending) >= 6:
+                    stem = pat_folded[: -len(ending)]
+                    stem_regex = (
+                        _LETTER_BOUNDARY_LEFT
+                        + re.escape(stem)
+                        + _INFLECTION_SUFFIX_RE
+                        + _LETTER_BOUNDARY_RIGHT
+                    )
+                    if re.search(stem_regex, title_folded):
+                        return True
+                    break
+    return False
+
+
+def _is_stem_or_quantitative_bucket(subject_keys: tuple[str, ...]) -> bool:
+    """Dynamically determine whether `subject_keys` represents a STEM, quantitative,
+    or medical/natural-science prerequisite bucket via ISCED-F graph ancestry."""
+    for k in subject_keys:
+        if k in _TAXONOMY_BY_KEY and k != "ECONOMICS_BUSINESS":
+            return True
+        if k not in _TAXONOMY_BY_KEY:
+            phrase = _fold_course_text(k.removeprefix("CUSTOM:"))
+            nodes = _resolve_nodes_for_phrase(phrase)
+            for node in nodes:
+                canon = getattr(node, "canonical", "")
+                parents = set(getattr(node, "parent_fields", ()))
+                if canon in {
+                    "history",
+                    "philosophy",
+                    "sociology",
+                    "anthropology",
+                    "ethics",
+                    "literature",
+                    "religious studies",
+                    "fine arts",
+                    "music",
+                    "performing arts",
+                }:
+                    continue
+                if canon in _STEM_ROOT_FACULTIES or (parents & _STEM_ROOT_FACULTIES):
+                    return True
+            if any(
+                kw in phrase
+                for kw in (
+                    "engineering",
+                    "mathematics",
+                    "math",
+                    "physics",
+                    "chemistry",
+                    "biology",
+                    "computer",
+                    "informatics",
+                    "software",
+                    "statistics",
+                    "astronomy",
+                )
+            ):
+                return True
+    return False
+
+
+def _is_disqualified_by_level_or_meta_guard(
+    text_folded: str,
+    subject_keys: tuple[str, ...],
+) -> bool:
+    """Prevent non-major computer literacy courses and meta-historical/philosophical
+    courses ('History of Mathematics', 'Philosophy of Science', 'History of Astronomy')
+    from satisfying hard quantitative/STEM prerequisite buckets (Ferreira et al., 2008)."""
+    if _NON_MAJOR_LITERACY_RE.search(text_folded):
+        if _is_stem_or_quantitative_bucket(subject_keys):
+            return True
+    if _META_DISCIPLINARY_STEM_RE.search(text_folded):
+        # Allow if the target bucket itself is History, Philosophy, Sociology, or Ethics
+        if any(
+            any(
+                hum in k.casefold()
+                for hum in ("history", "philosophy", "sociology", "anthropology", "ethics")
+            )
+            for k in subject_keys
+        ):
+            return False
+        if _is_stem_or_quantitative_bucket(subject_keys) or "ECONOMICS_BUSINESS" in subject_keys:
+            return True
+    return False
+
+
+def _text_matches_compound_for_disciplines(
+    text_folded: str,
+    target_canonicals: set[str],
+) -> bool:
+    """Check whether any compound word in `text_folded` (e.g. 'pharmacovigilance',
+    'neurobiology', 'geoinformatics', 'biostatistics', 'astrophysics', 'econometrics')
+    morphologically decomposes via `_decompose_morphological_compound` into a discipline
+    in `target_canonicals`."""
+    if not target_canonicals:
+        return False
+    for tok in re.findall(r"[a-z]+(?:-[a-z]+)?", text_folded):
+        if len(tok) < 7:
+            continue
+        comp = _decompose_morphological_compound(tok)
+        if comp is not None:
+            dom_a, dom_b, _ = comp
+            for dom in (dom_a, dom_b):
+                node = _lookup_discipline_node(dom)
+                canon = node.canonical if node is not None else dom
+                if canon in target_canonicals:
+                    return True
+    return False
 
 
 def _classify_text_for_subject(
@@ -639,17 +2914,43 @@ def _classify_text_for_subject(
     if not text_folded:
         return "UNRELATED"
 
+    if _is_disqualified_by_level_or_meta_guard(text_folded, subject_keys):
+        return "UNRELATED"
+
     best: CourseMatchStrength = "UNRELATED"
 
     for key in subject_keys:
-        if key.startswith("CUSTOM:"):
-            custom_phrase = key.removeprefix("CUSTOM:").strip()
-            if custom_phrase and _pattern_in_title(text_folded, custom_phrase):
+        if key.startswith("CUSTOM:") or key not in _TAXONOMY_BY_KEY:
+            custom_phrase = _fold_course_text(key.removeprefix("CUSTOM:"))
+            if (
+                custom_phrase
+                and custom_phrase not in ("law", "laws")
+                and _pattern_in_title(text_folded, custom_phrase)
+            ):
                 return "DEFINITE"
+
+            isced_def, isced_bord, isced_stems = _get_isced_patterns_for_phrase(custom_phrase)
+            if isced_def and any(_pattern_in_title(text_folded, pat) for pat in isced_def):
+                return "DEFINITE"
+            if isced_stems and any(_stem_in_title(text_folded, st) for st in isced_stems):
+                return "DEFINITE"
+            nodes = _resolve_nodes_for_phrase(custom_phrase)
+            target_canons = {
+                getattr(n, "canonical", "") for n in nodes if getattr(n, "canonical", "")
+            }
+            if target_canons and _text_matches_compound_for_disciplines(
+                text_folded, target_canons
+            ):
+                return "DEFINITE"
+            if isced_bord and any(_pattern_in_title(text_folded, pat) for pat in isced_bord):
+                best = "BORDERLINE"
+            if isced_def or isced_bord or isced_stems:
+                continue
+
             words = [
                 w
-                for w in re.split(r"\W+", custom_phrase)
-                if len(w) >= 4 and w not in {"courses", "course", "subject", "studies", "field"}
+                for w in re.split(r"[^\w]+", custom_phrase)
+                if len(w) >= 3 and w not in _CUSTOM_STOPWORDS
             ]
             if words and all(_pattern_in_title(text_folded, w) for w in words):
                 return "DEFINITE"
@@ -671,10 +2972,73 @@ def _classify_text_for_subject(
                 ):
                     return "DEFINITE"
 
+        if key != "THEORETICAL_CS":
+            mapped_canons = _TAXONOMY_KEY_TO_CANONICAL.get(key, ())
+            for canon in mapped_canons:
+                stems_for_canon = _DISCIPLINE_ROOT_STEMS.get(canon, ())
+                if any(_stem_in_title(text_folded, st) for st in stems_for_canon):
+                    return "DEFINITE"
+            if mapped_canons and _text_matches_compound_for_disciplines(
+                text_folded, set(mapped_canons)
+            ):
+                return "DEFINITE"
+
         if any(_pattern_in_title(text_folded, pat) for pat in entry.borderline_patterns):
             best = "BORDERLINE"
 
     return best
+
+
+def _course_metadata_matches_subject(
+    course: NormalizedCourse,
+    subject_keys: tuple[str, ...],
+) -> CourseMatchStrength:
+    """Layer 1: Check explicit `course.subject_hint` and academic course-code department
+    prefixes (e.g. 'PHIL 201', 'HIST-304', 'MECH 420', 'MUSC 110') against `subject_keys`."""
+    candidate_disciplines: list[str] = []
+    if course.subject_hint:
+        hint_folded = _fold_course_text(course.subject_hint)
+        if hint_folded:
+            candidate_disciplines.append(hint_folded)
+
+    code_source = course.code or course.title
+    m_prefix = re.match(
+        r"^\s*([A-Za-zÄÖÜäöü]{2,6})\s*(?:[-/:]\s*)?\d{2,4}[A-Za-z]?\b",
+        code_source,
+    )
+    if m_prefix:
+        prefix = m_prefix.group(1).casefold()
+        mapped_disc = _DEPT_CODE_TO_DISCIPLINE.get(prefix)
+        if mapped_disc:
+            candidate_disciplines.append(mapped_disc)
+
+    for disc in candidate_disciplines:
+        if "THEORETICAL_CS" in subject_keys and disc == "computer science":
+            continue
+        strength = _classify_text_for_subject(disc, subject_keys)
+        if strength == "DEFINITE":
+            return "DEFINITE"
+        if strength == "BORDERLINE":
+            return "BORDERLINE"
+    return "UNRELATED"
+
+
+def _is_degree_contextual_capstone_or_thesis(
+    course: NormalizedCourse,
+    title_folded: str,
+    subject_keys: tuple[str, ...],
+) -> bool:
+    """Layer 6: A generic thesis, capstone, or graduation project ('Bachelor Thesis',
+    'Bachelorarbeit', 'Дипломная работа', 'Bitirme projesi') counts as `BORDERLINE` for
+    the student's `degree_field` across all 65 academic disciplines."""
+    if not _GENERIC_CAPSTONE_OR_THESIS_RE.search(title_folded):
+        return False
+    deg_field = _fold_course_text(course.degree_field)
+    if not deg_field:
+        return "COMPUTER_SCIENCE" in subject_keys
+    if "THEORETICAL_CS" in subject_keys and "theoretical" not in deg_field:
+        return False
+    return _classify_text_for_subject(deg_field, subject_keys) in ("DEFINITE", "BORDERLINE")
 
 
 def classify_course_for_subject(
@@ -685,17 +3049,36 @@ def classify_course_for_subject(
     `BORDERLINE` (omnibus/broad/thesis course), or `UNRELATED`. When a course title
     is opaque or borderline (e.g. 'Special Topics in CS I' or 'Elective Module 3') and
     `course.description` is present, syllabus/description topics can upgrade the match."""
-    title_folded = " ".join(course.title.strip().split()).casefold()
-    title_strength = _classify_text_for_subject(title_folded, subject_keys)
-    if title_strength == "DEFINITE" or not course.description:
-        return title_strength
+    title_folded = _fold_course_text(course.title)
+    if _is_disqualified_by_level_or_meta_guard(title_folded, subject_keys):
+        return "UNRELATED"
+    if course.description:
+        desc_folded_check = _fold_course_text(course.description)
+        if _is_disqualified_by_level_or_meta_guard(desc_folded_check, subject_keys):
+            return "UNRELATED"
 
-    desc_folded = " ".join(course.description.strip().split()).casefold()
-    desc_strength = _classify_text_for_subject(desc_folded, subject_keys)
-    if desc_strength == "DEFINITE":
+    title_strength = _classify_text_for_subject(title_folded, subject_keys)
+    if title_strength == "DEFINITE":
         return "DEFINITE"
-    if title_strength == "BORDERLINE" or desc_strength == "BORDERLINE":
+
+    meta_strength = _course_metadata_matches_subject(course, subject_keys)
+    if meta_strength == "DEFINITE":
+        return "DEFINITE"
+
+    if course.description:
+        desc_folded = _fold_course_text(course.description)
+        desc_strength = _classify_text_for_subject(desc_folded, subject_keys)
+        if desc_strength == "DEFINITE":
+            return "DEFINITE"
+        if desc_strength == "BORDERLINE":
+            title_strength = "BORDERLINE"
+
+    if title_strength == "BORDERLINE" or meta_strength == "BORDERLINE":
         return "BORDERLINE"
+
+    if _is_degree_contextual_capstone_or_thesis(course, title_folded, subject_keys):
+        return "BORDERLINE"
+
     return "UNRELATED"
 
 
@@ -740,13 +3123,40 @@ _TOPIC_SYNONYMS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _localized_variants_for_topic(topic_folded: str) -> tuple[str, ...]:
+    cached = _TOPIC_LOCALIZED_CACHE.get(topic_folded)
+    if cached is not None:
+        return cached
+    variants: list[str] = []
+    mapped = _ADJECTIVAL_DOMAIN_MAP.get(topic_folded, topic_folded)
+    node = _lookup_discipline_node(mapped)
+    if node is not None:
+        for syn in node.synonyms:
+            s_fold = _fold_course_text(syn)
+            if s_fold and s_fold not in variants:
+                variants.append(s_fold)
+        for lang_terms in node.translations.values():
+            for t in lang_terms:
+                t_fold = _fold_course_text(t)
+                if t_fold and t_fold not in variants:
+                    variants.append(t_fold)
+    for lang in ("de", "fr", "it", "es", "nl", "tr", "az", "ru"):
+        for term in localized_field_terms(topic_folded, lang):
+            t_fold = _fold_course_text(term)
+            if t_fold and t_fold not in variants:
+                variants.append(t_fold)
+    res = tuple(variants)
+    _TOPIC_LOCALIZED_CACHE[topic_folded] = res
+    return res
+
+
 def course_matches_topic(course: NormalizedCourse, topic: str) -> bool:
-    """Check whether `course` satisfies a named sub-topic (e.g. 'Linear Algebra', 'Probability')
-    via its title or optional syllabus `description`."""
+    """Check whether `course` satisfies a named sub-topic (e.g. 'Linear Algebra', 'Probability',
+    'Thermodynamics', 'Epistemology') via its title, code, or optional syllabus `description`."""
     topic_keys = resolve_subject_keys(topic)
-    topic_folded = " ".join(topic.strip().split()).casefold()
+    topic_folded = _fold_course_text(topic)
     combined = f"{course.title} {course.description or ''}".strip()
-    text_folded = " ".join(combined.split()).casefold()
+    text_folded = _fold_course_text(combined)
     if not topic_folded or not text_folded:
         return False
     if _pattern_in_title(text_folded, topic_folded):
@@ -757,8 +3167,14 @@ def course_matches_topic(course: NormalizedCourse, topic: str) -> bool:
                 _pattern_in_title(text_folded, s) for s in syns
             ):
                 return True
+    for loc_variant in _localized_variants_for_topic(topic_folded):
+        if _pattern_in_title(text_folded, loc_variant):
+            return True
     if len(topic_keys) == 1 and not topic_keys[0].startswith("CUSTOM:"):
         if topic_folded in _TAXONOMY_BY_KEY[topic_keys[0]].aliases:
+            return classify_course_for_subject(course, topic_keys) == "DEFINITE"
+    elif len(topic_keys) == 1 and topic_keys[0].startswith("CUSTOM:"):
+        if _lookup_discipline_node(topic_folded) is not None:
             return classify_course_for_subject(course, topic_keys) == "DEFINITE"
     return False
 
@@ -797,10 +3213,16 @@ _TOTAL_DEGREE_CREDITS_RE = re.compile(
 )
 
 _UNIT_PAT = (
-    r"((?:ects|cats|cp|lp|zet|зет|sch)(?:\s+credits?)?|"
-    r"(?:us\s+)?quarter\s+(?:credits?|hours?)|"
-    r"us\s+(?:semester\s+)?credits?(?:\s+hours?)?|"
-    r"semester\s+(?:credit\s+)?hours?|credits?)"
+    r"((?:ects|akts|cfu|eap|cats|scqf|sws|semesterwochenstunden|leistungspunkte|"
+    r"högskolepoäng|kredītpunkti|fce|kp|hp|ec|cp|lp|zet|зет|sch|eftsl|cbcs)"
+    r"(?:\s+semester)?(?:\s+(?:credits?|points?|units?|hours?))?|"
+    r"full[- ]course\s+equivalents?|"
+    r"(?:us\s+)?quarter\s+(?:credits?|hours?|units?)|"
+    r"us\s+(?:semester\s+)?(?:credits?(?:\s+hours?)?|units?)|"
+    r"semester\s+(?:credit\s+)?(?:hours?|units?)|"
+    r"(?:academic|contact)\s+hours?|"
+    r"академических\s+часов|часов|saat|"
+    r"credit\s+(?:points?|hours?|units?)|credits?)"
 )
 
 _POOL_WITH_SUBFLOOR_RE = re.compile(
@@ -816,8 +3238,8 @@ _BUCKET_ITEM_RE = re.compile(
     r"(?:at\s+least|minimum\s+of|min\.?\s*|mindestens\s+)?\s*(\d{1,3}(?:[.,]\d+)?)\s*"
     + _UNIT_PAT
     + r"\s*(?:must\s+be\s+)?(?:in|of|from|im\s+bereich|aus\s+dem\s+bereich|aus)\s+"
-    r"([a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞ][a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞ\s/,&-]{2,90}?"
-    r"(?:\s*\([^)]{3,120}\))?)"
+    r"([a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞäÄß][a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞäÄß\s/,&-]{2,90}?"
+    r"(?:\s*\([^)]{3,140}\))?)"
     r"(?=(?:\s*(?:,\s*(?:and\b|or\b|oder\b|at\s+least\b|mindestens\b|\d|"
     r"a\b|an\b|the\b|with\b|minimum\b|min\b|gpa\b|cgpa\b|grade\b|overall\b|ielts\b|toefl\b)"
     r"|\s+(?:and|or|oder)\s+(?:at\s+least\s+|min\.?\s*|mindestens\s+|\d)"
@@ -826,7 +3248,7 @@ _BUCKET_ITEM_RE = re.compile(
 )
 
 _SUBJECT_FIRST_BUCKET_RE = re.compile(
-    r"\b([a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞ][a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞ\s/&-]{2,70}?)\s*"
+    r"\b([a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞäÄß][a-zA-Zа-яА-ЯёЁəƏıİöÖüÜçÇşŞğĞäÄß\s/&-]{2,70}?)\s*"
     r"(?::|—|–|-|\()\s*(?:at\s+least|minimum\s+of|min\.?\s*|mindestens\s*)?\s*"
     r"(\d{1,3}(?:[.,]\d+)?)\s*"
     + _UNIT_PAT
@@ -842,14 +3264,28 @@ _TRAILING_VERB_RE = re.compile(
 )
 
 _TOPICS_PAREN_RE = re.compile(
-    r"(?:\(\s*)?(?:covering|including|such\s+as|specifically|in\s+particular|namely)\s*"
-    r"([a-zA-Z][a-zA-Z\s,/&-]{4,120}?)(?:\)|\.|$)"
-    r"|\(\s*([a-zA-Z][a-zA-Z\s,/&-]{4,120}?)\s*\)",
+    r"(?:\(\s*)?(covering|including|such\s+as|specifically|in\s+particular|namely|"
+    r"for\s+example|e\.g\.?,?|z\.?\s*b\.?,?)\s+"
+    r"([a-zA-Z][a-zA-Z0-9\s,/&+-]{4,140}?)(?:\)|\.|$)"
+    r"|\(\s*(?:(covering|including|such\s+as|specifically|in\s+particular|namely|"
+    r"for\s+example|e\.g\.?,?|z\.?\s*b\.?,?)\s+)?"
+    r"([a-zA-Z][a-zA-Z0-9\s,/&+-]{4,140}?)\s*\)",
     re.IGNORECASE,
 )
 
 _LEADING_TOPIC_INTRO_RE = re.compile(
-    r"^(?:covering|including|such\s+as|specifically|in\s+particular|namely|e\.g\.?,?)\s+",
+    r"^(?:covering|including|such\s+as|specifically|in\s+particular|namely|"
+    r"for\s+example|e\.g\.?,?|z\.?\s*b\.?,?)\s+",
+    re.IGNORECASE,
+)
+
+_ILLUSTRATIVE_INTRO_RE = re.compile(
+    r"^(?:such\s+as|for\s+example|e\.g\.?,?|z\.?\s*b\.?,?)$",
+    re.IGNORECASE,
+)
+
+_LEADING_CONJ_RE = re.compile(
+    r"^(?:and|or|oder|und)\s+",
     re.IGNORECASE,
 )
 
@@ -864,7 +3300,7 @@ _COURSE_COUNT_RE = re.compile(
 
 def _convert_stated_credits_to_ects(amount: Decimal, unit_token: str) -> Decimal:
     u = " ".join(unit_token.strip().split()).casefold()
-    if "cats" in u:
+    if "cats" in u or "scqf" in u:
         converted = to_ects(amount, "UK_CATS")
         return converted if converted is not None else amount
     if "quarter" in u:
@@ -873,30 +3309,106 @@ def _convert_stated_credits_to_ects(amount: Decimal, unit_token: str) -> Decimal
     if "zet" in u or "зет" in u:
         converted = to_ects(amount, "RU_ZET")
         return converted if converted is not None else amount
+    if "sws" in u or "semesterwochenstunden" in u:
+        converted = to_ects(amount, "DE_SWS")
+        return converted if converted is not None else amount
+    if u in ("kp", "kp credits", "kp points", "kp units") or "kredītpunkti" in u:
+        converted = to_ects(amount, "LV_KP")
+        return converted if converted is not None else amount
+    if "fce" in u or "full-course equivalent" in u or "full course equivalent" in u:
+        converted = to_ects(amount, "CA_FCE")
+        return converted if converted is not None else amount
     if "eftsl" in u:
         converted = to_ects(amount, "AU_EFTSL")
         return converted if converted is not None else amount
     if "cbcs" in u:
         converted = to_ects(amount, "IN_CBCS")
         return converted if converted is not None else amount
-    if "us " in u or "semester" in u or u in ("sch", "sch credits"):
+    if (
+        "academic hour" in u
+        or "contact hour" in u
+        or "часов" in u
+        or u == "saat"
+    ):
+        converted = to_ects(amount, "ACADEMIC_HOUR")
+        return converted if converted is not None else amount
+    if (
+        "us " in u or "semester" in u or u in ("sch", "sch credits", "sch units")
+    ) and not any(
+        eu_tok in u
+        for eu_tok in (
+            "ects",
+            "akts",
+            "cfu",
+            "eap",
+            "leistungspunkte",
+            "högskolepoäng",
+        )
+    ):
         converted = to_ects(amount, "US_SEMESTER_HOUR")
         return converted if converted is not None else amount
     return amount.quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
-def _clean_subject_label_and_topics(raw_subject: str) -> tuple[str, tuple[str, ...]]:
-    text = raw_subject.strip().rstrip(".,;:")
+def _clean_single_topic(raw_part: str) -> str:
+    cleaned = _LEADING_TOPIC_INTRO_RE.sub("", raw_part.strip().strip("().")).strip()
+    cleaned = _LEADING_CONJ_RE.sub("", cleaned).strip()
+    return cleaned
+
+
+def _extract_topics_and_clauses_from_match(
+    m_topic: re.Match[str],
+) -> tuple[tuple[str, ...], tuple[tuple[str, ...], ...]]:
+    intro = (m_topic.group(1) or m_topic.group(3) or "").strip()
+    raw_topics = (m_topic.group(2) or m_topic.group(4) or "").strip()
+    if not raw_topics:
+        return (), ()
+
+    is_illustrative = bool(intro and _ILLUSTRATIVE_INTRO_RE.match(intro))
+    has_or = bool(re.search(r"\b(?:or|oder)\b", raw_topics, re.IGNORECASE))
+    has_and = bool(re.search(r"\b(?:and|und)\b", raw_topics, re.IGNORECASE))
+
     topics: list[str] = []
+    clauses: list[tuple[str, ...]] = []
+
+    if is_illustrative or (has_or and not has_and):
+        for part in re.split(r",|\b(?:or|oder|and|und)\b", raw_topics, flags=re.IGNORECASE):
+            cleaned_topic = _clean_single_topic(part)
+            if cleaned_topic and len(cleaned_topic) >= 3:
+                topics.append(cleaned_topic)
+        if topics:
+            clauses.append(tuple(topics))
+    elif has_or and has_and:
+        for conj_seg in re.split(r"(?:,\s*)?\b(?:and|und)\b", raw_topics, flags=re.IGNORECASE):
+            seg_topics: list[str] = []
+            for part in re.split(r",|\b(?:or|oder)\b", conj_seg, flags=re.IGNORECASE):
+                cleaned_topic = _clean_single_topic(part)
+                if cleaned_topic and len(cleaned_topic) >= 3:
+                    topics.append(cleaned_topic)
+                    seg_topics.append(cleaned_topic)
+            if seg_topics:
+                clauses.append(tuple(seg_topics))
+    else:
+        for part in re.split(r",|\b(?:and|und)\b", raw_topics, flags=re.IGNORECASE):
+            cleaned_topic = _clean_single_topic(part)
+            if cleaned_topic and len(cleaned_topic) >= 3:
+                topics.append(cleaned_topic)
+                clauses.append((cleaned_topic,))
+
+    return tuple(topics), tuple(clauses)
+
+
+def _clean_subject_label_and_topic_clauses(
+    raw_subject: str,
+) -> tuple[str, tuple[str, ...], tuple[tuple[str, ...], ...]]:
+    text = raw_subject.strip().rstrip(".,;:")
+    topics: tuple[str, ...] = ()
+    clauses: tuple[tuple[str, ...], ...] = ()
 
     m_topic = _TOPICS_PAREN_RE.search(text)
     if m_topic:
-        raw_topics = m_topic.group(1) or m_topic.group(2) or ""
+        topics, clauses = _extract_topics_and_clauses_from_match(m_topic)
         text = text[: m_topic.start()].strip().rstrip(",(").strip()
-        for part in re.split(r",|\band\b", raw_topics, flags=re.IGNORECASE):
-            cleaned_topic = _LEADING_TOPIC_INTRO_RE.sub("", part.strip().strip("().")).strip()
-            if cleaned_topic and len(cleaned_topic) >= 3:
-                topics.append(cleaned_topic)
 
     text = _TRAILING_VERB_RE.sub("", text).strip()
     text = re.sub(
@@ -905,7 +3417,12 @@ def _clean_subject_label_and_topics(raw_subject: str) -> tuple[str, tuple[str, .
         text,
         flags=re.IGNORECASE,
     ).strip()
-    return text, tuple(topics)
+    return text, topics, clauses
+
+
+def _clean_subject_label_and_topics(raw_subject: str) -> tuple[str, tuple[str, ...]]:
+    label, topics, _ = _clean_subject_label_and_topic_clauses(raw_subject)
+    return label, topics
 
 
 def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
@@ -960,7 +3477,7 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
                 if b_amt is None:
                     continue
                 b_ects = _convert_stated_credits_to_ects(b_amt, b_unit)
-                b_label, b_topics = _clean_subject_label_and_topics(b_subj_raw)
+                b_label, b_topics, b_clauses = _clean_subject_label_and_topic_clauses(b_subj_raw)
                 b_keys = resolve_subject_keys(b_label)
                 if b_keys:
                     sub_buckets.append(
@@ -970,6 +3487,7 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
                             min_ects=b_ects,
                             allowed_deficit_ects=deficit,
                             required_topics=b_topics,
+                            required_topic_clauses=b_clauses,
                             is_subfloor_of_pool=True,
                         )
                     )
@@ -986,7 +3504,7 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
     buckets: list[SubjectBucketRule] = []
     for m_b in bucket_matches:
         b_amt_str, b_unit, b_subj_raw = m_b.group(1), m_b.group(2), m_b.group(3)
-        b_amt = _parse_decimal(b_amt_str)
+        b_amt = _parse_decimal(m_b.group(1))
         if b_amt is None:
             continue
         if b_amt in (Decimal("180"), Decimal("210"), Decimal("240")) and re.search(
@@ -994,16 +3512,11 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
         ):
             continue
         b_ects = _convert_stated_credits_to_ects(b_amt, b_unit)
-        b_label, b_topics = _clean_subject_label_and_topics(b_subj_raw)
+        b_label, b_topics, b_clauses = _clean_subject_label_and_topic_clauses(b_subj_raw)
         if not b_topics:
             m_paren = _TOPICS_PAREN_RE.search(text[m_b.start() :])
             if m_paren and len(bucket_matches) == 1:
-                raw_t = m_paren.group(1)
-                b_topics = tuple(
-                    p.strip().strip("().")
-                    for p in re.split(r",|\band\b", raw_t, flags=re.IGNORECASE)
-                    if len(p.strip().strip("().")) >= 3
-                )
+                b_topics, b_clauses = _extract_topics_and_clauses_from_match(m_paren)
         b_keys = resolve_subject_keys(b_label)
         if b_keys:
             buckets.append(
@@ -1013,6 +3526,7 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
                     min_ects=b_ects,
                     allowed_deficit_ects=deficit,
                     required_topics=b_topics,
+                    required_topic_clauses=b_clauses,
                 )
             )
 
@@ -1034,7 +3548,7 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
         sf_amt = _parse_decimal(sf_amt_str)
         if sf_amt is None or sf_amt in (Decimal("180"), Decimal("210"), Decimal("240")):
             continue
-        sf_label, sf_topics = _clean_subject_label_and_topics(sf_subj_raw)
+        sf_label, sf_topics, sf_clauses = _clean_subject_label_and_topic_clauses(sf_subj_raw)
         if re.search(
             r"\b(?:bachelor|master|degree|programme|program|total|minimum|applicants)\b",
             sf_label,
@@ -1050,6 +3564,7 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
                     min_ects=_convert_stated_credits_to_ects(sf_amt, sf_unit),
                     allowed_deficit_ects=deficit,
                     required_topics=sf_topics,
+                    required_topic_clauses=sf_clauses,
                 )
             )
     if buckets:
@@ -1061,7 +3576,7 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
             count_val = int(count_str)
         except ValueError:
             continue
-        c_label, c_topics = _clean_subject_label_and_topics(c_subj_raw)
+        c_label, c_topics, c_clauses = _clean_subject_label_and_topic_clauses(c_subj_raw)
         c_keys = resolve_subject_keys(c_label)
         if c_keys and count_val > 0:
             buckets.append(
@@ -1070,6 +3585,7 @@ def parse_subject_pool_rule(statement_text: str) -> SubjectPoolRule | None:
                     subject_keys=c_keys,
                     min_courses=count_val,
                     required_topics=c_topics,
+                    required_topic_clauses=c_clauses,
                 )
             )
     if buckets:
@@ -1186,84 +3702,327 @@ def evaluate_subject_pool_rule(
 
     bucket_order = sorted(range(len(rule.buckets)), key=_bucket_sort_key)
     bucket_allocations: list[list[CountedCourse]] = [[] for _ in rule.buckets]
+    course_pos_in_bucket: dict[tuple[int, int], int] = {}
 
-    for stage_mode in ("EXCLUSIVE_DEFINITE", "SHARED_DEFINITE", "BORDERLINE"):
-        for b_idx in bucket_order:
-            bucket = rule.buckets[b_idx]
-            for c_idx, course in enumerate(courses):
-                strength = matrix[(c_idx, b_idx)]
-                if stage_mode in ("EXCLUSIVE_DEFINITE", "SHARED_DEFINITE"):
-                    if strength != "DEFINITE":
-                        continue
-                    definite_bucket_count = sum(
-                        1
-                        for other_b in range(len(rule.buckets))
-                        if matrix[(c_idx, other_b)] == "DEFINITE"
-                    )
-                    if stage_mode == "EXCLUSIVE_DEFINITE" and definite_bucket_count > 1:
-                        continue
-                    if stage_mode == "SHARED_DEFINITE" and definite_bucket_count <= 1:
-                        continue
-                else:
-                    if strength != "BORDERLINE":
-                        continue
+    def _record_allocation(
+        b_idx: int,
+        c_idx: int,
+        course: NormalizedCourse,
+        take: Decimal,
+        strength: Literal["DEFINITE", "BORDERLINE"],
+    ) -> None:
+        key = (b_idx, c_idx)
+        if key in course_pos_in_bucket and course.ects is not None:
+            pos = course_pos_in_bucket[key]
+            existing = bucket_allocations[b_idx][pos]
+            bucket_allocations[b_idx][pos] = CountedCourse(
+                title=existing.title,
+                ects=existing.ects,
+                allocated_ects=existing.allocated_ects + take,
+                strength=existing.strength,
+                in_progress=existing.in_progress,
+            )
+            return
+        course_pos_in_bucket[key] = len(bucket_allocations[b_idx])
+        bucket_allocations[b_idx].append(
+            CountedCourse(
+                title=course.title,
+                ects=course.ects,
+                allocated_ects=take,
+                strength=strength,
+                in_progress=course.in_progress,
+            )
+        )
 
-                if course.ects is None:
-                    if c_idx not in used_uncredited_indices:
-                        used_uncredited_indices.add(c_idx)
-                        bucket_allocations[b_idx].append(
-                            CountedCourse(
-                                title=course.title,
-                                ects=None,
-                                allocated_ects=_ZERO,
-                                strength="DEFINITE" if strength == "DEFINITE" else "BORDERLINE",
-                                in_progress=course.in_progress,
-                            )
-                        )
-                    continue
+    def _run_edmonds_karp(
+        num_nodes: int,
+        source: int,
+        sink: int,
+        adj: list[list[int]],
+        cap: dict[tuple[int, int], int],
+    ) -> dict[tuple[int, int], int]:
+        flow: dict[tuple[int, int], int] = {}
+        while True:
+            parent = [-1] * num_nodes
+            parent[source] = source
+            queue: deque[int] = deque([source])
+            while queue and parent[sink] == -1:
+                u = queue.popleft()
+                for v in adj[u]:
+                    if parent[v] == -1 and cap.get((u, v), 0) - flow.get((u, v), 0) > 0:
+                        parent[v] = u
+                        if v == sink:
+                            break
+                        queue.append(v)
+            if parent[sink] == -1:
+                break
+            push = 10**12
+            curr = sink
+            while curr != source:
+                prev = parent[curr]
+                rem = cap.get((prev, curr), 0) - flow.get((prev, curr), 0)
+                if rem < push:
+                    push = rem
+                curr = prev
+            curr = sink
+            while curr != source:
+                prev = parent[curr]
+                flow[(prev, curr)] = flow.get((prev, curr), 0) + push
+                flow[(curr, prev)] = flow.get((curr, prev), 0) - push
+                curr = prev
+        return flow
 
-                avail = remaining_ects[c_idx]
-                if avail <= _ZERO:
-                    continue
+    # Stage 1: EXCLUSIVE_DEFINITE (courses matching exactly 1 bucket as DEFINITE)
+    for b_idx in bucket_order:
+        for c_idx, course in enumerate(courses):
+            if matrix[(c_idx, b_idx)] != "DEFINITE":
+                continue
+            definite_bucket_count = sum(
+                1 for other_b in range(len(rule.buckets)) if matrix[(c_idx, other_b)] == "DEFINITE"
+            )
+            if definite_bucket_count > 1:
+                continue
+            if course.ects is None:
+                if c_idx not in used_uncredited_indices:
+                    used_uncredited_indices.add(c_idx)
+                    _record_allocation(b_idx, c_idx, course, _ZERO, "DEFINITE")
+                continue
+            avail = remaining_ects[c_idx]
+            if avail > _ZERO:
+                remaining_ects[c_idx] = _ZERO
+                _record_allocation(b_idx, c_idx, course, avail, "DEFINITE")
 
-                other_siblings_need = any(
-                    other_b != b_idx
-                    and matrix[(c_idx, other_b)] == "DEFINITE"
-                    and (rule.buckets[other_b].min_ects or _ZERO)
-                    > sum(
-                        item.allocated_ects
-                        for item in bucket_allocations[other_b]
-                        if (course.in_progress or not item.in_progress)
-                        and item.strength == "DEFINITE"
-                    )
-                    for other_b in range(len(rule.buckets))
+    # Stage 2: SHARED_DEFINITE (courses matching >= 2 buckets as DEFINITE)
+    # Run completed courses first (in_progress_flag=False), then in-progress courses (True).
+    for in_progress_flag in (False, True):
+        # 2a. Credit-based buckets (`min_ects is not None`): Edmonds-Karp max-flow in centi-ECTS
+        shared_credit_courses = [
+            c_idx
+            for c_idx, c in enumerate(courses)
+            if c.in_progress == in_progress_flag
+            and c.ects is not None
+            and remaining_ects[c_idx] > _ZERO
+            and sum(1 for ob in range(len(rule.buckets)) if matrix[(c_idx, ob)] == "DEFINITE") > 1
+        ]
+        ects_bucket_indices = [
+            b_idx for b_idx in bucket_order if rule.buckets[b_idx].min_ects is not None
+        ]
+        if shared_credit_courses and ects_bucket_indices:
+            n_c = len(shared_credit_courses)
+            n_b = len(ects_bucket_indices)
+            source = 0
+            sink = n_c + n_b + 1
+            num_nodes = sink + 1
+            adj: list[list[int]] = [[] for _ in range(num_nodes)]
+            cap: dict[tuple[int, int], int] = {}
+
+            def _add_edge(u: int, v: int, capacity: int) -> None:
+                if v not in adj[u]:
+                    adj[u].append(v)
+                if u not in adj[v]:
+                    adj[v].append(u)
+                cap[(u, v)] = capacity
+
+            for i_c, c_idx in enumerate(shared_credit_courses):
+                c_node = 1 + i_c
+                c_units = int(
+                    (remaining_ects[c_idx] * 100).to_integral_value(rounding=ROUND_HALF_UP)
                 )
+                if c_units > 0:
+                    _add_edge(source, c_node, c_units)
+                for i_b, b_idx in enumerate(ects_bucket_indices):
+                    if matrix[(c_idx, b_idx)] == "DEFINITE" and c_units > 0:
+                        b_node = 1 + n_c + i_b
+                        _add_edge(c_node, b_node, c_units)
+
+            for i_b, b_idx in enumerate(ects_bucket_indices):
+                b_node = 1 + n_c + i_b
                 current_def = sum(
                     item.allocated_ects
                     for item in bucket_allocations[b_idx]
-                    if (course.in_progress or not item.in_progress)
-                    and item.strength == "DEFINITE"
+                    if (in_progress_flag or not item.in_progress) and item.strength == "DEFINITE"
                 )
-                deficit_needed = max(_ZERO, (bucket.min_ects or _ZERO) - current_def)
-                is_shared = stage_mode == "SHARED_DEFINITE" and other_siblings_need
-                if is_shared and deficit_needed > _ZERO:
-                    take = min(avail, deficit_needed)
-                elif is_shared and deficit_needed == _ZERO:
-                    continue
-                else:
-                    take = avail
+                req_b = rule.buckets[b_idx].min_ects or _ZERO
+                deficit_b = max(_ZERO, req_b - current_def)
+                b_units = int((deficit_b * 100).to_integral_value(rounding=ROUND_HALF_UP))
+                if b_units > 0:
+                    _add_edge(b_node, sink, b_units)
 
-                if take > _ZERO:
-                    remaining_ects[c_idx] -= take
-                    bucket_allocations[b_idx].append(
-                        CountedCourse(
-                            title=course.title,
-                            ects=course.ects,
-                            allocated_ects=take,
-                            strength="DEFINITE" if strength == "DEFINITE" else "BORDERLINE",
-                            in_progress=course.in_progress,
+            flow = _run_edmonds_karp(num_nodes, source, sink, adj, cap)
+            flow_recipients_by_course: dict[int, list[int]] = {
+                c_idx: [] for c_idx in shared_credit_courses
+            }
+            for i_b, b_idx in enumerate(ects_bucket_indices):
+                b_node = 1 + n_c + i_b
+                for i_c, c_idx in enumerate(shared_credit_courses):
+                    c_node = 1 + i_c
+                    f_units = flow.get((c_node, b_node), 0)
+                    if f_units > 0:
+                        take = (Decimal(f_units) / Decimal(100)).quantize(
+                            _CENT, rounding=ROUND_HALF_UP
                         )
+                        take = min(take, remaining_ects[c_idx])
+                        if take > _ZERO:
+                            remaining_ects[c_idx] -= take
+                            _record_allocation(b_idx, c_idx, courses[c_idx], take, "DEFINITE")
+                            flow_recipients_by_course[c_idx].append(b_idx)
+
+            # Distribute any remaining surplus on shared courses (when all reachable ECTS bucket
+            # demands are satisfied and no `min_courses` bucket needs the course).
+            for c_idx in shared_credit_courses:
+                avail = remaining_ects[c_idx]
+                if avail <= _ZERO:
+                    continue
+                needed_by_course_count_bucket = any(
+                    rule.buckets[ob].min_courses is not None
+                    and rule.buckets[ob].min_ects is None
+                    and matrix[(c_idx, ob)] == "DEFINITE"
+                    and sum(
+                        1
+                        for item in bucket_allocations[ob]
+                        if (in_progress_flag or not item.in_progress)
+                        and item.strength == "DEFINITE"
                     )
+                    < (rule.buckets[ob].min_courses or 0)
+                    for ob in bucket_order
+                )
+                if needed_by_course_count_bucket:
+                    continue
+                recipients = flow_recipients_by_course.get(c_idx, [])
+                if recipients:
+                    target_b = recipients[-1]
+                else:
+                    matching_b = [
+                        b_idx
+                        for b_idx in ects_bucket_indices
+                        if matrix[(c_idx, b_idx)] == "DEFINITE"
+                    ]
+                    if not matching_b:
+                        continue
+                    target_b = matching_b[0]
+                remaining_ects[c_idx] = _ZERO
+                _record_allocation(target_b, c_idx, courses[c_idx], avail, "DEFINITE")
+
+        # 2b. Course-count buckets (`min_courses is not None and min_ects is None`) & uncredited
+        course_count_buckets = [
+            b_idx
+            for b_idx in bucket_order
+            if rule.buckets[b_idx].min_courses is not None and rule.buckets[b_idx].min_ects is None
+        ]
+        shared_for_count = [
+            c_idx
+            for c_idx, c in enumerate(courses)
+            if c.in_progress == in_progress_flag
+            and (
+                (c.ects is None and c_idx not in used_uncredited_indices)
+                or (c.ects is not None and remaining_ects[c_idx] > _ZERO)
+            )
+            and sum(1 for ob in range(len(rule.buckets)) if matrix[(c_idx, ob)] == "DEFINITE") > 1
+        ]
+        if shared_for_count and course_count_buckets:
+            n_c2 = len(shared_for_count)
+            n_b2 = len(course_count_buckets)
+            s2 = 0
+            t2 = n_c2 + n_b2 + 1
+            num2 = t2 + 1
+            adj2: list[list[int]] = [[] for _ in range(num2)]
+            cap2: dict[tuple[int, int], int] = {}
+
+            def _add_edge2(u: int, v: int, capacity: int) -> None:
+                if v not in adj2[u]:
+                    adj2[u].append(v)
+                if u not in adj2[v]:
+                    adj2[v].append(u)
+                cap2[(u, v)] = capacity
+
+            for i_c, c_idx in enumerate(shared_for_count):
+                c_node = 1 + i_c
+                _add_edge2(s2, c_node, 1)
+                for i_b, b_idx in enumerate(course_count_buckets):
+                    if matrix[(c_idx, b_idx)] == "DEFINITE":
+                        _add_edge2(c_node, 1 + n_c2 + i_b, 1)
+
+            for i_b, b_idx in enumerate(course_count_buckets):
+                b_node = 1 + n_c2 + i_b
+                have_n = sum(
+                    1
+                    for item in bucket_allocations[b_idx]
+                    if (in_progress_flag or not item.in_progress) and item.strength == "DEFINITE"
+                )
+                need_n = max(0, (rule.buckets[b_idx].min_courses or 0) - have_n)
+                if need_n > 0:
+                    _add_edge2(b_node, t2, need_n)
+
+            flow2 = _run_edmonds_karp(num2, s2, t2, adj2, cap2)
+            for i_b, b_idx in enumerate(course_count_buckets):
+                b_node = 1 + n_c2 + i_b
+                for i_c, c_idx in enumerate(shared_for_count):
+                    c_node = 1 + i_c
+                    if flow2.get((c_node, b_node), 0) > 0:
+                        course = courses[c_idx]
+                        if course.ects is None:
+                            used_uncredited_indices.add(c_idx)
+                            _record_allocation(b_idx, c_idx, course, _ZERO, "DEFINITE")
+                        else:
+                            avail = remaining_ects[c_idx]
+                            remaining_ects[c_idx] = _ZERO
+                            _record_allocation(b_idx, c_idx, course, avail, "DEFINITE")
+
+        # Any remaining uncredited shared DEFINITE courses
+        for b_idx in bucket_order:
+            for c_idx, course in enumerate(courses):
+                if (
+                    course.in_progress == in_progress_flag
+                    and course.ects is None
+                    and c_idx not in used_uncredited_indices
+                    and matrix[(c_idx, b_idx)] == "DEFINITE"
+                ):
+                    used_uncredited_indices.add(c_idx)
+                    _record_allocation(b_idx, c_idx, course, _ZERO, "DEFINITE")
+
+    # Stage 3: BORDERLINE (courses matching as BORDERLINE, with deficit-aware sharing)
+    for b_idx in bucket_order:
+        bucket = rule.buckets[b_idx]
+        for c_idx, course in enumerate(courses):
+            if matrix[(c_idx, b_idx)] != "BORDERLINE":
+                continue
+            if course.ects is None:
+                if c_idx not in used_uncredited_indices:
+                    used_uncredited_indices.add(c_idx)
+                    _record_allocation(b_idx, c_idx, course, _ZERO, "BORDERLINE")
+                continue
+
+            avail = remaining_ects[c_idx]
+            if avail <= _ZERO:
+                continue
+
+            other_bord_siblings_need = any(
+                other_b != b_idx
+                and matrix[(c_idx, other_b)] == "BORDERLINE"
+                and (rule.buckets[other_b].min_ects or _ZERO)
+                > sum(
+                    item.allocated_ects
+                    for item in bucket_allocations[other_b]
+                    if (course.in_progress or not item.in_progress)
+                )
+                for other_b in range(len(rule.buckets))
+            )
+            current_poss = sum(
+                item.allocated_ects
+                for item in bucket_allocations[b_idx]
+                if (course.in_progress or not item.in_progress)
+            )
+            bord_deficit_needed = max(_ZERO, (bucket.min_ects or _ZERO) - current_poss)
+            if other_bord_siblings_need and bord_deficit_needed > _ZERO:
+                take = min(avail, bord_deficit_needed)
+            elif other_bord_siblings_need and bord_deficit_needed == _ZERO:
+                continue
+            else:
+                take = avail
+
+            if take > _ZERO:
+                remaining_ects[c_idx] -= take
+                _record_allocation(b_idx, c_idx, course, take, "BORDERLINE")
 
     bucket_evals: list[StatementEvaluation] = []
     all_counted: list[CountedCourse] = []
@@ -1368,10 +4127,18 @@ def _evaluate_single_bucket(
     poss_ects = def_ects + bord_ects
     ip_ects = sum((c.allocated_ects for c in in_prog), _ZERO)
 
+    clauses = (
+        bucket.required_topic_clauses
+        if bucket.required_topic_clauses
+        else tuple((t,) for t in bucket.required_topics)
+    )
     missing_topics: list[str] = [
-        topic
-        for topic in bucket.required_topics
-        if not any(course_matches_topic(c, topic) for c in all_courses)
+        " or ".join(clause)
+        for clause in clauses
+        if clause
+        and not any(
+            course_matches_topic(c, topic) for topic in clause for c in all_courses
+        )
     ]
 
     if bucket.min_courses is not None and bucket.min_ects is None:
@@ -1442,7 +4209,11 @@ def _evaluate_single_bucket(
         )
         if comp_bord:
             summary += f" Borderline: {_format_course_list(comp_bord)}."
-    elif uncredited and (def_ects + Decimal(len(uncredited) * 6)) >= req_ects:
+    elif uncredited and (
+        all(c.ects is None for c in all_courses)
+        or (def_ects == _ZERO and bord_ects == _ZERO and ip_ects == _ZERO)
+        or (poss_ects + ip_ects + Decimal(len(uncredited) * 12)) >= req_ects
+    ):
         outcome = "UNDECIDABLE"
         summary = (
             f"Needs credit verification ({label}) — counted {_fmt_num(def_ects)} / "
@@ -1498,11 +4269,11 @@ def _evaluate_single_bucket(
 # ---------------------------------------------------------------------------
 
 _GPA_BAR_RE = re.compile(
-    r"(?:minimum\s+(?:c?gpa|grade(?:\s+point\s+average)?|average(?:\s+grade|\s+mark)?)"
+    r"(?:minimum\s+(?:grade\s*/\s*c?gpa|c?gpa|grade(?:\s+point\s+average)?|average(?:\s+grade|\s+mark)?)"
     r"(?:\s+of(?:\s+at\s+least)?)?|"
     r"c?gpa\s+of(?:\s+at\s+least)?|overall\s+(?:grade|average)\s+of|"
-    r"grade\s+of\s+at\s+least)\s*:?\s*"
-    r"(\d+(?:[.,]\d+)?)\s*(?:(%)|(?:/|out\s+of|on\s+a)\s*(\d+(?:[.,]\d+)?))?",
+    r"grade\s+of\s+at\s+least)\s*:?\s*\(?\s*"
+    r"(\d+(?:[.,]\d+)?)\s*(?:(%)|(?:/|out\s+of|on\s+a)\s*(\d+(?:[.,]\d+)?)|\(\s*(\d+(?:[.,]\d+)?)\s*\))?",
     re.IGNORECASE,
 )
 
@@ -1513,9 +4284,11 @@ _GERMAN_GRADE_BAR_RE = re.compile(
 )
 
 _UK_HONOURS_BAR_RE = re.compile(
-    r"\b(first-?class\s+honou?rs|1st\s+class(?:\s+honou?rs)?|"
-    r"upper\s+second-?class(?:\s+honou?rs)?|2\s*[:.]\s*1(?:\s+honou?rs|\s+degree|\b)|"
-    r"lower\s+second-?class(?:\s+honou?rs)?|2\s*[:.]\s*2(?:\s+honou?rs|\s+degree|\b))",
+    r"\b(first(?:-|\s+)class(?:\s+honou?rs)?|1st\s+class(?:\s+honou?rs)?|"
+    r"upper\s+second(?:(?:-|\s+)class)?(?:\s*\(\s*2\s*[:.]\s*1\s*\))?(?:\s+honou?rs)?|"
+    r"2\s*[:.]\s*1(?:\s+honou?rs|\s+degree|\b)|"
+    r"lower\s+second(?:(?:-|\s+)class)?(?:\s*\(\s*2\s*[:.]\s*2\s*\))?(?:\s+honou?rs)?|"
+    r"2\s*[:.]\s*2(?:\s+honou?rs|\s+degree|\b))",
     re.IGNORECASE,
 )
 
@@ -1581,7 +4354,10 @@ _GRE_QUANT_RE = re.compile(
     r"\bgre\b[^.]{0,40}?\b(?:quantitative|quant)\b[^0-9]{0,20}?(1[3-7]\d)\b",
     re.IGNORECASE,
 )
-_GMAT_BAR_RE = re.compile(r"\bgmat\b[^0-9]{0,25}?([4-8]\d0)\b", re.IGNORECASE)
+_GMAT_BAR_RE = re.compile(
+    r"\bgmat(?:\s+focus(?:\s+edition)?)?\b[^0-9]{0,35}?([4-8]\d[05])\b",
+    re.IGNORECASE,
+)
 _WORK_EXP_BAR_RE = re.compile(
     r"(?:at\s+least|minimum\s+of|min\.?\s*)\s*(\d{1,2})\s*(months?|years?)\s+of\s+"
     r"(?:(post-graduation|postgraduate)\s+)?(?:relevant\s+|full-time\s+|professional\s+)*"
@@ -1852,7 +4628,9 @@ _STATUTORY_SCALE_BOUNDS: dict[Decimal, tuple[Decimal, Decimal]] = {
     Decimal("5"): (Decimal("5.0"), Decimal("3.0")),
     Decimal("6"): (Decimal("6.0"), Decimal("4.0")),
     Decimal("7"): (Decimal("7.0"), Decimal("4.0")),
+    Decimal("9"): (Decimal("9.0"), Decimal("2.0")),
     Decimal("10"): (Decimal("10.0"), Decimal("5.0")),
+    Decimal("12"): (Decimal("12.0"), Decimal("2.0")),
     Decimal("20"): (Decimal("20.0"), Decimal("10.0")),
     Decimal("30"): (Decimal("30.0"), Decimal("18.0")),
     Decimal("100"): (Decimal("100.0"), Decimal("50.0")),
@@ -1866,6 +4644,8 @@ def _extract_scale_max(scale_str: str) -> Decimal | None:
     s = " ".join(scale_str.strip().split()).casefold()
     if not s:
         return None
+    if "danish" in s or re.search(r"-3\s*(?:to|[-–—])\s*12\b", s):
+        return Decimal("12")
     m_range = re.search(
         r"(?<![\d.,])(\d+(?:[.,]\d+)?)\s*[-–—]\s*(\d+(?:[.,]\d+)?)(?![\d.,])", s
     )
@@ -1900,10 +4680,15 @@ def _parse_scale_bounds(
     country_code: str = "",
 ) -> tuple[Decimal, Decimal, bool] | None:
     """Return `(max_grade, min_passing_grade, has_explicit_min)` for an ascending grading scale."""
-    if _is_german_inverted_scale(scale_str, country_code):
+    if (
+        _is_german_inverted_scale(scale_str, country_code)
+        or _inverted_scale_bounds(scale_str, country_code) is not None
+    ):
         return None
     s = " ".join(scale_str.strip().split()).casefold()
     cc = country_code.strip().upper()
+    if "danish" in s or re.search(r"-3\s*(?:to|[-–—])\s*12\b", s):
+        return (Decimal("12.0"), Decimal("2.0"), False)
     explicit_low: Decimal | None = None
     scale_num: Decimal | None = None
 
@@ -1915,7 +4700,12 @@ def _parse_scale_bounds(
         high = _parse_decimal(m_range.group(2))
         if low is not None and high is not None and high > low:
             scale_num = high
-            if low > Decimal("1"):
+            # On a 5-point scale (e.g. Polish/Russian "2-5" or "2.0-5.0") or Bulgarian
+            # 6-point scale ("2-6" or "2.0-6.0"), 2.0 is the failing grade, whereas 3.0
+            # is the minimum passing grade.
+            if low > Decimal("1") and not (
+                high in (Decimal("5"), Decimal("6")) and low == Decimal("2")
+            ):
                 explicit_low = low
     if scale_num is None:
         scale_num = _extract_scale_max(scale_str)
@@ -1927,7 +4717,13 @@ def _parse_scale_bounds(
     if explicit_low is not None:
         return (bounds[0], explicit_low, True)
     max_g, min_pass = bounds
-    if max_g == Decimal("100"):
+    if max_g == Decimal("6.0") and (
+        cc == "BG" or (m_range is not None and _parse_decimal(m_range.group(1)) == Decimal("2"))
+    ):
+        min_pass = Decimal("3.0")
+    elif max_g == Decimal("5.0") and cc == "HU":
+        min_pass = Decimal("2.0")
+    elif max_g == Decimal("100"):
         if cc == "CN":
             min_pass = Decimal("60.0")
         elif cc == "AZ":
@@ -2031,14 +4827,30 @@ def _infer_unstated_scale(
         return "20"
     if cc == "CH" and Decimal("4.0") < probe <= Decimal("6.0"):
         return "1.0-6.0"
+    if cc == "BG" and Decimal("3.0") <= probe <= Decimal("6.0"):
+        return "2.0-6.0"
+    if cc == "AU" and Decimal("4.0") <= probe <= Decimal("7.0"):
+        return "7.0"
+    if cc == "NZ" and Decimal("2.0") <= probe <= Decimal("9.0"):
+        return "9.0"
+    if cc == "DK" and Decimal("-3") <= probe <= Decimal("12"):
+        return "02-12"
     if Decimal("5.0") < probe <= Decimal("10.0"):
         return "10.0"
     if Decimal("4.0") < probe <= Decimal("5.0"):
+        if cc == "PH":
+            return "1.0-5.0"
         return "5.0"
     if Decimal("0.7") <= probe <= Decimal("4.0"):
         if cc in {"DE", "AT"}:
             return "1.0-5.0"
-        if cc not in {"CH", "RU", "BY"}:
+        if cc in {"CZ", "SK"}:
+            return "1.0-4.0"
+        if cc == "PH":
+            return "1.0-5.0"
+        if cc == "HU":
+            return "1-5"
+        if cc not in {"CH", "RU", "BY", "PL"}:
             return "4.0"
     return ""
 
@@ -2112,15 +4924,88 @@ def _resolve_record_grade_and_scale(
     return None, eff_scale, ""
 
 
-def _uk_honours_tier(raw: str) -> tuple[int, str] | None:
+def _uk_honours_tier(raw: str, country_code: str = "") -> tuple[int, str] | None:
     cf = " ".join(raw.strip().split()).casefold()
-    if re.search(r"\b(?:first-?class|1st(?:\s+class)?)\b", cf):
+    cc = country_code.strip().upper()
+    if cc in {"IN", "PK", "BD", "NP", "LK"} or "division" in cf:
+        m_pct = re.search(r"(\d+(?:[.,]\d+)?)\s*%", cf)
+        pct_val = _parse_decimal(m_pct.group(1)) if m_pct else None
+        if pct_val is not None:
+            if pct_val >= Decimal("70"):
+                return 3, "First Class with Distinction (1st equivalent)"
+            if pct_val >= Decimal("60"):
+                return 2, "First Class / First Division (2:1 equivalent)"
+            if pct_val >= Decimal("50"):
+                return 1, "Second Class / Second Division (2:2 equivalent)"
+        if "distinction" in cf:
+            return 3, "First Class with Distinction (1st equivalent)"
+        if re.search(
+            r"\b(?:first(?:-|\s+)class|1st\s+class|first\s+division|1st\s+division)\b", cf
+        ):
+            return 2, "First Class / First Division (2:1 equivalent)"
+        if re.search(
+            r"\b(?:second(?:-|\s+)class|2nd\s+class|second\s+division|2nd\s+division|"
+            r"upper\s+second|2\s*[:.]\s*2)\b",
+            cf,
+        ):
+            return 1, "Second Class / Second Division (2:2 equivalent)"
+        return None
+    if re.search(r"\b(?:first(?:-|\s+)class|1st(?:\s+class|\s+honou?rs)?)\b", cf):
         return 3, "First-Class Honours (1st)"
-    if re.search(r"\b(?:upper\s+second-?class|2\s*[:.]\s*1)\b", cf):
+    if re.search(r"\b(?:upper\s+second(?:(?:-|\s+)class)?|2\s*[:.]\s*1)\b", cf):
         return 2, "Upper Second-Class Honours (2:1)"
-    if re.search(r"\b(?:lower\s+second-?class|2\s*[:.]\s*2)\b", cf):
+    if re.search(r"\b(?:lower\s+second(?:(?:-|\s+)class)?|2\s*[:.]\s*2)\b", cf):
         return 1, "Lower Second-Class Honours (2:2)"
     return None
+
+
+_UK_CW_100_BAVARIAN_KNOTS: tuple[tuple[Decimal, Decimal], ...] = (
+    (Decimal("100"), Decimal("1.0")),
+    (Decimal("70"), Decimal("1.6")),
+    (Decimal("60"), Decimal("2.3")),
+    (Decimal("50"), Decimal("3.0")),
+    (Decimal("40"), Decimal("4.0")),
+)
+_FR_20_BAVARIAN_KNOTS: tuple[tuple[Decimal, Decimal], ...] = (
+    (Decimal("20"), Decimal("1.0")),
+    (Decimal("16"), Decimal("1.0")),
+    (Decimal("14"), Decimal("1.5")),
+    (Decimal("12"), Decimal("2.3")),
+    (Decimal("10"), Decimal("4.0")),
+)
+_NL_10_BAVARIAN_KNOTS: tuple[tuple[Decimal, Decimal], ...] = (
+    (Decimal("10"), Decimal("1.0")),
+    (Decimal("8.5"), Decimal("1.0")),
+    (Decimal("5.5"), Decimal("4.0")),
+)
+_DK_12_BAVARIAN_KNOTS: tuple[tuple[Decimal, Decimal], ...] = (
+    (Decimal("12"), Decimal("1.0")),
+    (Decimal("10"), Decimal("1.6")),
+    (Decimal("7"), Decimal("2.5")),
+    (Decimal("4"), Decimal("3.4")),
+    (Decimal("2"), Decimal("4.0")),
+)
+
+
+def _piecewise_bavarian(
+    grade_val: Decimal,
+    knots: tuple[tuple[Decimal, Decimal], ...],
+) -> Decimal | None:
+    """Piecewise-linear equipercentile interpolation onto the German Bavarian scale
+    (`1.0` best .. `4.0` minimum pass, `5.0` fail) over descending grade knots `(g_k, b_k)`."""
+    max_g = knots[0][0]
+    min_pass = knots[-1][0]
+    if grade_val > max_g or grade_val < _ZERO:
+        return None
+    if grade_val < min_pass:
+        return Decimal("5.0")
+    for (g_hi, b_hi), (g_lo, b_lo) in zip(knots, knots[1:], strict=False):
+        if grade_val >= g_lo:
+            if g_hi == g_lo:
+                return b_hi.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+            raw = b_hi + (b_lo - b_hi) * (g_hi - grade_val) / (g_hi - g_lo)
+            return raw.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+    return Decimal("4.0")
 
 
 def _bavarian_from_record(
@@ -2131,20 +5016,30 @@ def _bavarian_from_record(
     raw_grade_str: str = "",
 ) -> Decimal | None:
     cc = country_code.strip().upper()
+    inv_bounds = _inverted_scale_bounds(scale_str, cc)
+    if grade_val is not None and inv_bounds is not None:
+        best_g, pass_g, max_fail = inv_bounds
+        if grade_val < Decimal("1.0") or grade_val > max_fail:
+            return None
+        if grade_val > pass_g:
+            return Decimal("5.0")
+        raw_bav = Decimal("1.0") + Decimal("3.0") * (grade_val - best_g) / (pass_g - best_g)
+        return raw_bav.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+
     if grade_val is not None and _is_german_inverted_scale(scale_str, cc):
         if Decimal("0.7") <= grade_val <= Decimal("5.0"):
             return max(Decimal("1.0"), grade_val).quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
         return None
 
     if grade_val is None:
-        hon = _uk_honours_tier(raw_grade_str) or _uk_honours_tier(scale_str)
+        hon = _uk_honours_tier(raw_grade_str, cc) or _uk_honours_tier(scale_str, cc)
         if hon is not None:
             return {3: Decimal("1.3"), 2: Decimal("2.0"), 1: Decimal("2.7")}[hon[0]]
         return None
 
     parsed_bounds = _parse_scale_bounds(scale_str, cc)
     if parsed_bounds is None:
-        hon = _uk_honours_tier(raw_grade_str) or _uk_honours_tier(scale_str)
+        hon = _uk_honours_tier(raw_grade_str, cc) or _uk_honours_tier(scale_str, cc)
         if hon is not None:
             return {3: Decimal("1.3"), 2: Decimal("2.0"), 1: Decimal("2.7")}[hon[0]]
         return None
@@ -2152,39 +5047,13 @@ def _bavarian_from_record(
     max_g, min_pass, has_explicit_min = parsed_bounds
     if not has_explicit_min:
         if max_g == Decimal("100") and cc in {"GB", "UK", "IE", "AU", "NZ"}:
-            if grade_val > Decimal("100") or grade_val < _ZERO:
-                return None
-            if grade_val >= Decimal("70"):
-                raw = (
-                    Decimal("1.0")
-                    + Decimal("0.5") * (Decimal("100") - grade_val) / Decimal("30")
-                )
-            elif grade_val >= Decimal("60"):
-                raw = (
-                    Decimal("1.6")
-                    + Decimal("0.7") * (Decimal("70") - grade_val) / Decimal("10")
-                )
-            elif grade_val >= Decimal("50"):
-                raw = (
-                    Decimal("2.4")
-                    + Decimal("0.6") * (Decimal("60") - grade_val) / Decimal("10")
-                )
-            elif grade_val >= Decimal("40"):
-                raw = (
-                    Decimal("3.1")
-                    + Decimal("0.9") * (Decimal("50") - grade_val) / Decimal("10")
-                )
-            else:
-                return Decimal("5.0")
-            return raw.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
+            return _piecewise_bavarian(grade_val, _UK_CW_100_BAVARIAN_KNOTS)
         if max_g == Decimal("10") and cc == "NL":
-            if grade_val > Decimal("10") or grade_val < _ZERO:
-                return None
-            return convert_to_german_bavarian_grade(
-                min(grade_val, Decimal("8.5")),
-                Decimal("8.5"),
-                Decimal("5.5"),
-            )
+            return _piecewise_bavarian(grade_val, _NL_10_BAVARIAN_KNOTS)
+        if max_g == Decimal("12") and (cc == "DK" or "danish" in scale_str.casefold()):
+            return _piecewise_bavarian(grade_val, _DK_12_BAVARIAN_KNOTS)
+    if max_g == Decimal("20") and (cc == "FR" or "french" in scale_str.casefold()):
+        return _piecewise_bavarian(grade_val, _FR_20_BAVARIAN_KNOTS)
 
     return convert_to_german_bavarian_grade(grade_val, max_g, min_pass)
 
@@ -2228,7 +5097,9 @@ def _evaluate_uk_honours_for_record(
     scale_str = str(getattr(rec, "grading_scale", "") or "").strip()
     country_code = str(getattr(rec, "country_code", "") or "").upper()
 
-    held_hon = _uk_honours_tier(grade_str) or _uk_honours_tier(scale_str)
+    held_hon = _uk_honours_tier(grade_str, country_code) or _uk_honours_tier(
+        scale_str, country_code
+    )
     if held_hon is not None:
         sat = held_hon[0] >= req_tier
         return StatementEvaluation(
@@ -2256,7 +5127,18 @@ def _evaluate_uk_honours_for_record(
         )
 
     scale_num = _extract_scale_max(eff_scale_str)
-    if scale_num == Decimal("100") and country_code in {"GB", "UK", "IE", "AU", "NZ"}:
+    if scale_num == Decimal("100") and country_code in {
+        "GB",
+        "UK",
+        "IE",
+        "AU",
+        "NZ",
+        "IN",
+        "PK",
+        "BD",
+        "NP",
+        "LK",
+    }:
         uk_pct_bar = {3: Decimal("70"), 2: Decimal("60"), 1: Decimal("50")}[req_tier]
         sat = grade_val >= uk_pct_bar
         return StatementEvaluation(
@@ -2306,6 +5188,7 @@ def _evaluate_total_degree_credits(
     ip_ects = sum((c.ects or _ZERO for c in courses if c.in_progress), _ZERO)
     comp_count = sum(1 for c in courses if not c.in_progress and c.ects is not None)
     ip_count = sum(1 for c in courses if c.in_progress and c.ects is not None)
+    uncredited_count = sum(1 for c in courses if c.ects is None)
 
     if comp_ects >= required_ects:
         return StatementEvaluation(
@@ -2326,6 +5209,22 @@ def _evaluate_total_degree_credits(
                 f"Conditional (in progress) — counted {_fmt_num(comp_ects)} / "
                 f"{_fmt_num(required_ects)} total ECTS completed ({comp_count} courses) + "
                 f"{_fmt_num(ip_ects)} ECTS in progress ({ip_count} courses)."
+            ),
+            completed_definite_ects=comp_ects,
+            completed_possible_ects=comp_ects,
+            in_progress_ects=ip_ects,
+            required_ects=required_ects,
+        )
+    if uncredited_count > 0 and (
+        (comp_count == 0 and ip_count == 0)
+        or (comp_ects + ip_ects + Decimal(uncredited_count * 10)) >= required_ects
+    ):
+        return StatementEvaluation(
+            outcome="UNDECIDABLE",
+            status_text=(
+                f"Needs credit verification — counted {_fmt_num(comp_ects)} / "
+                f"{_fmt_num(required_ects)} total ECTS across {comp_count} credited courses "
+                f"plus {uncredited_count} course(s) without stated credits."
             ),
             completed_definite_ects=comp_ects,
             completed_possible_ects=comp_ects,
@@ -2387,7 +5286,7 @@ def _evaluate_grade_or_gpa_statement(text: str, profile: object) -> StatementEva
                         else (raw_grade_str or scale_str)
                     )
                     held_disp = held_lbl if custom_lbl else f"grade {held_lbl}"
-                    if bav <= bar_de - Decimal("0.2"):
+                    if bav <= bar_de:
                         de_evals.append(
                             StatementEvaluation(
                                 outcome="SATISFIED",
@@ -2397,7 +5296,7 @@ def _evaluate_grade_or_gpa_statement(text: str, profile: object) -> StatementEva
                                 ),
                             )
                         )
-                    elif bav <= bar_de + Decimal("0.2"):
+                    elif bav <= bar_de + Decimal("0.15"):
                         de_evals.append(
                             StatementEvaluation(
                                 outcome="BORDERLINE",
@@ -2441,7 +5340,8 @@ def _evaluate_grade_or_gpa_statement(text: str, profile: object) -> StatementEva
     if m_gpa:
         bar_val = _parse_decimal(m_gpa.group(1))
         pct_tok = m_gpa.group(2)
-        scale_val = _parse_decimal(m_gpa.group(3)) if m_gpa.group(3) else None
+        raw_scale_group = m_gpa.group(3) or m_gpa.group(4)
+        scale_val = _parse_decimal(raw_scale_group) if raw_scale_group else None
         if bar_val is not None:
             if pct_tok:
                 scale_val = Decimal("100")
@@ -2465,7 +5365,10 @@ def _evaluate_grade_or_gpa_statement(text: str, profile: object) -> StatementEva
             raw_grade_str = str(getattr(rec, "grade", "") or "").strip()
             country_code = str(getattr(rec, "country_code", "") or "").strip().upper()
             rec_grade, rec_scale_str, custom_lbl = _resolve_record_grade_and_scale(rec)
-            rec_is_inverted = _is_german_inverted_scale(rec_scale_str, country_code)
+            rec_is_inverted = (
+                _is_german_inverted_scale(rec_scale_str, country_code)
+                or _inverted_scale_bounds(rec_scale_str, country_code) is not None
+            )
             rec_bounds = (
                 None
                 if rec_is_inverted
@@ -2513,7 +5416,7 @@ def _evaluate_grade_or_gpa_statement(text: str, profile: object) -> StatementEva
                         else (raw_grade_str or rec_scale_str)
                     )
                     prefix_lbl = held_lbl if custom_lbl else f"GPA/grade {held_lbl}"
-                    if bav_rec <= bav_bar - Decimal("0.2"):
+                    if bav_rec <= bav_bar:
                         gpa_evals.append(
                             StatementEvaluation(
                                 outcome="SATISFIED",
@@ -2524,7 +5427,7 @@ def _evaluate_grade_or_gpa_statement(text: str, profile: object) -> StatementEva
                                 ),
                             )
                         )
-                    elif bav_rec <= bav_bar + Decimal("0.2"):
+                    elif bav_rec <= bav_bar + Decimal("0.15"):
                         gpa_evals.append(
                             StatementEvaluation(
                                 outcome="BORDERLINE",
@@ -2623,8 +5526,10 @@ def evaluate_program_statement(
     grade_check_text = text
     if m_gre or m_gmat:
         m_waiver_gpa = re.search(
-            r"waived\s+(?:for\s+applicants\s+)?(?:with|if)\s+(?:a\s+)?(?:cumulative\s+)?gpa\s+"
-            r"(?:of\s+)?(?:at\s+least\s+|>=?\s*)?(\d[.,]\d)(?:\s*(?:/|out\s+of|on\s+a)\s*"
+            r"waived\s+(?:for\s+(?:applicants|students|candidates)\s+)?(?:with|if|for|having)?\s*"
+            r"(?:a\s+|an\s+)?(?:(?:minimum|overall|cumulative|undergraduate)\s+)*"
+            r"(?:c?gpa|grade(?:\s+point\s+average)?)\s+"
+            r"(?:is\s+|of\s+)?(?:at\s+least\s+|>=?\s*)?(\d+(?:[.,]\d+)?)(?:\s*(?:/|out\s+of|on\s+a)\s*"
             r"(\d+(?:[.,]\d+)?))?",
             text,
             re.IGNORECASE,
@@ -3162,6 +6067,110 @@ def _parse_testdaf_tdn_level(text: str) -> int | None:
     return None
 
 
+_ANGLOPHONE_MOI_COUNTRIES: frozenset[str] = frozenset(
+    {"GB", "UK", "US", "CA", "AU", "IE", "NZ", "MT", "SG", "BB", "JM", "TT", "BS", "GY", "BZ"}
+)
+
+_SKILL_LIST_AFTER_SCORE_RE = re.compile(
+    r"(\d{1,3}(?:[.,]\d)?)\s*(?:or\s+higher\s+|or\s+above\s+|minimum\s+)?"
+    r"(?:in|for)\s+((?:(?:listening|reading|writing|speaking)"
+    r"(?:\s*(?:,|and|or|&|/)\s*)?)+)",
+    re.IGNORECASE,
+)
+_SKILL_BEFORE_SCORE_RE = re.compile(
+    r"\b(listening|reading|writing|speaking)\b"
+    r"(?:\s*(?:band|section|component|score|skill|sub-?score))?\s*"
+    r"(?::|(?:(?:must|should)\s+be\s+)?(?:at\s+least|minimum(?:\s+of)?|min\.?|"
+    r"no\s+(?:less|lower)\s+than)|\s+)\s*(\d{1,3}(?:[.,]\d)?)",
+    re.IGNORECASE,
+)
+_GENERAL_SUBSCORE_FLOOR_RE = re.compile(
+    r"(?:no\s+(?:other\s+)?(?:communicative\s+)?(?:band|section|sub-?score|component|skill)\s+"
+    r"(?:below|less\s+than|under|lower\s+than)\s*(\d{1,3}(?:[.,]\d)?)|"
+    r"(?:at\s+least|minimum(?:\s+of)?|min\.?)\s*(\d{1,3}(?:[.,]\d)?)\s+in\s+"
+    r"(?:each|all|every)|"
+    r"(\d{1,3}(?:[.,]\d)?)\s+in\s+(?:all\s+other|each\s+of\s+the\s+other|"
+    r"each|all|every)\s+(?:communicative\s+)?(?:components?|sections?|bands?|skills?|sub-?scores?|parts?))",
+    re.IGNORECASE,
+)
+_HELD_SKILL_SCORE_RE = re.compile(
+    r"\b(listening|reading|writing|speaking|l|r|w|s)\s*[:=-]?\s*(\d{1,3}(?:[.,]\d)?)\b",
+    re.IGNORECASE,
+)
+_SKILL_ABBR_MAP: dict[str, str] = {
+    "l": "listening",
+    "listening": "listening",
+    "r": "reading",
+    "reading": "reading",
+    "w": "writing",
+    "writing": "writing",
+    "s": "speaking",
+    "speaking": "speaking",
+}
+
+
+def _extract_exam_subscore_floors(
+    text: str, *, min_valid: Decimal, max_valid: Decimal
+) -> tuple[Decimal | None, dict[str, Decimal]]:
+    default_floor: Decimal | None = None
+    for m in _GENERAL_SUBSCORE_FLOOR_RE.finditer(text):
+        val = _parse_decimal(m.group(1) or m.group(2) or m.group(3))
+        if val is not None and min_valid <= val <= max_valid:
+            default_floor = val
+            break
+    skill_floors: dict[str, Decimal] = {}
+    for m in _SKILL_LIST_AFTER_SCORE_RE.finditer(text):
+        val = _parse_decimal(m.group(1))
+        if val is None or not (min_valid <= val <= max_valid):
+            continue
+        for sk in re.findall(r"listening|reading|writing|speaking", m.group(2), re.IGNORECASE):
+            skill_floors[sk.casefold()] = val
+    for m in _SKILL_BEFORE_SCORE_RE.finditer(text):
+        val = _parse_decimal(m.group(2))
+        if val is None or not (min_valid <= val <= max_valid):
+            continue
+        skill_floors[m.group(1).casefold()] = val
+    return default_floor, skill_floors
+
+
+def _find_subscore_violation(
+    lvl_str: str,
+    fallback_subscores: list[Decimal],
+    default_floor: Decimal | None,
+    skill_floors: dict[str, Decimal],
+    *,
+    min_valid: Decimal,
+    max_valid: Decimal,
+) -> tuple[Decimal, Decimal, str] | None:
+    """Return `(held_sub, req_sub, label)` when a subscore fails its required floor."""
+    if default_floor is None and not skill_floors:
+        return None
+    if not fallback_subscores:
+        return None
+    held_by_skill: dict[str, Decimal] = {}
+    for m in _HELD_SKILL_SCORE_RE.finditer(lvl_str):
+        sk = _SKILL_ABBR_MAP.get(m.group(1).casefold())
+        val = _parse_decimal(m.group(2))
+        if sk and val is not None and min_valid <= val <= max_valid:
+            held_by_skill[sk] = val
+    if not held_by_skill and skill_floors and len(fallback_subscores) == 4:
+        for sk, val in zip(
+            ("listening", "reading", "writing", "speaking"), fallback_subscores, strict=False
+        ):
+            held_by_skill[sk] = val
+    if skill_floors and held_by_skill:
+        for sk in ("listening", "reading", "writing", "speaking"):
+            req_f = skill_floors.get(sk, default_floor)
+            held_v = held_by_skill.get(sk)
+            if req_f is not None and held_v is not None and held_v < req_f:
+                return (held_v, req_f, sk)
+        return None
+    eff_floor = default_floor or (min(skill_floors.values()) if skill_floors else None)
+    if eff_floor is not None and min(fallback_subscores) < eff_floor:
+        return (min(fallback_subscores), eff_floor, "")
+    return None
+
+
 def _evaluate_language_statement(
     text: str,
     profile: object,
@@ -3218,11 +6227,10 @@ def _evaluate_language_statement(
                 ),
             )
         acad = tuple(getattr(profile, "academic_history", ()) or ())
-        anglophone = {"GB", "UK", "US", "CA", "AU", "IE", "NZ"}
         held_cc = [
             str(getattr(r, "country_code", "") or "").upper()
             for r in acad
-            if str(getattr(r, "country_code", "") or "").upper() in anglophone
+            if str(getattr(r, "country_code", "") or "").upper() in _ANGLOPHONE_MOI_COUNTRIES
         ]
         if held_cc:
             if ungraduated_degree_completion(profile, ref_date) is not None:
@@ -3250,16 +6258,21 @@ def _evaluate_language_statement(
             ),
         )
 
-    subscore_candidates = [
-        val
-        for m in _IELTS_SUBSCORE_RE.finditer(text)
-        if (val := _parse_decimal(m.group(1) or m.group(2))) is not None
-    ]
-    req_ielts_sub = next(
-        (v for v in subscore_candidates if Decimal("0") < v <= Decimal("9")), None
+    req_ielts_sub, req_ielts_skill_subs = _extract_exam_subscore_floors(
+        text, min_valid=Decimal("0.5"), max_valid=Decimal("9.0")
     )
-    req_toefl_sub = next(
-        (v for v in subscore_candidates if Decimal("10") <= v <= Decimal("30")), None
+    req_toefl_sub, req_toefl_skill_subs = _extract_exam_subscore_floors(
+        text, min_valid=Decimal("10"), max_valid=Decimal("30")
+    )
+    req_pte_sub, req_pte_skill_subs = _extract_exam_subscore_floors(
+        text,
+        min_valid=Decimal("31") if m_toefl else Decimal("10"),
+        max_valid=Decimal("90"),
+    )
+    req_duo_sub, req_duo_skill_subs = _extract_exam_subscore_floors(
+        text,
+        min_valid=Decimal("91") if m_pte else (Decimal("31") if m_toefl else Decimal("10")),
+        max_valid=Decimal("160"),
     )
 
     candidate_evals: list[StatementEvaluation] = []
@@ -3281,6 +6294,14 @@ def _evaluate_language_statement(
             ]
             held_ielts = nums[0] if nums else None
             if req_ielts is not None and held_ielts is not None:
+                ielts_violation = _find_subscore_violation(
+                    lvl_str,
+                    nums[1:],
+                    req_ielts_sub,
+                    req_ielts_skill_subs,
+                    min_valid=Decimal("0"),
+                    max_valid=Decimal("9"),
+                )
                 if held_ielts < req_ielts:
                     candidate_evals.append(
                         StatementEvaluation(
@@ -3290,19 +6311,20 @@ def _evaluate_language_statement(
                             ),
                         )
                     )
-                elif (
-                    req_ielts_sub is not None
-                    and len(nums) > 1
-                    and (subscores := nums[1:])
-                    and min(subscores) < req_ielts_sub
-                ):
+                elif ielts_violation is not None:
+                    v_held, v_req, v_skill = ielts_violation
+                    sub_lbl = (
+                        f"{v_skill.capitalize()} subscore {v_held}"
+                        if v_skill
+                        else f"lowest subscore {v_held}"
+                    )
                     candidate_evals.append(
                         StatementEvaluation(
                             outcome="FAILED",
                             status_text=(
                                 f"Not met — counted {lvl_str} (overall {held_ielts} meets "
-                                f"{req_ielts}, but lowest subscore {min(subscores)} is below "
-                                f"required {req_ielts_sub})."
+                                f"{req_ielts}, but {sub_lbl} is below "
+                                f"required {v_req})."
                             ),
                         )
                     )
@@ -3343,6 +6365,14 @@ def _evaluate_language_statement(
                 else []
             )
             if req_toefl is not None and held_toefl is not None:
+                toefl_violation = _find_subscore_violation(
+                    lvl_str,
+                    toefl_subscores,
+                    req_toefl_sub,
+                    req_toefl_skill_subs,
+                    min_valid=Decimal("0"),
+                    max_valid=Decimal("30"),
+                )
                 if held_toefl < req_toefl:
                     candidate_evals.append(
                         StatementEvaluation(
@@ -3353,18 +6383,20 @@ def _evaluate_language_statement(
                             ),
                         )
                     )
-                elif (
-                    req_toefl_sub is not None
-                    and toefl_subscores
-                    and min(toefl_subscores) < req_toefl_sub
-                ):
+                elif toefl_violation is not None:
+                    v_held, v_req, v_skill = toefl_violation
+                    sec_lbl = (
+                        f"{v_skill.capitalize()} section {int(v_held)}"
+                        if v_skill
+                        else f"lowest section {int(v_held)}"
+                    )
                     candidate_evals.append(
                         StatementEvaluation(
                             outcome="FAILED",
                             status_text=(
                                 f"Not met — counted {lvl_str} (overall {int(held_toefl)} meets "
-                                f"{int(req_toefl)}, but lowest section {int(min(toefl_subscores))} "
-                                f"is below required {int(req_toefl_sub)})."
+                                f"{int(req_toefl)}, but {sec_lbl} "
+                                f"is below required {int(v_req)})."
                             ),
                         )
                     )
@@ -3400,31 +6432,77 @@ def _evaluate_language_statement(
 
         if m_pte and "pte" in lvl_lower:
             req_pte = _parse_decimal(m_pte.group(1))
-            held_pte = next(
-                (
-                    n
-                    for tok in re.findall(r"\d+(?:[.,]\d+)?", cleaned_score_str)
-                    if (n := _parse_decimal(tok)) is not None
-                    and Decimal("10") <= n <= Decimal("90")
-                ),
-                None,
-            )
+            pte_nums = [
+                n
+                for tok in re.findall(r"\d+(?:[.,]\d+)?", cleaned_score_str)
+                if (n := _parse_decimal(tok)) is not None
+                and Decimal("10") <= n <= Decimal("90")
+            ]
+            held_pte = pte_nums[0] if pte_nums else None
             if req_pte is not None and held_pte is not None:
-                _append_exam_verdict(held_pte, req_pte, f"PTE {int(req_pte)}")
+                pte_violation = _find_subscore_violation(
+                    lvl_str,
+                    pte_nums[1:],
+                    req_pte_sub,
+                    req_pte_skill_subs,
+                    min_valid=Decimal("10"),
+                    max_valid=Decimal("90"),
+                )
+                if held_pte < req_pte or pte_violation is None:
+                    _append_exam_verdict(held_pte, req_pte, f"PTE {int(req_pte)}")
+                else:
+                    v_held, v_req, v_skill = pte_violation
+                    sub_lbl = (
+                        f"{v_skill.capitalize()} subscore {int(v_held)}"
+                        if v_skill
+                        else f"lowest subscore {int(v_held)}"
+                    )
+                    candidate_evals.append(
+                        StatementEvaluation(
+                            outcome="FAILED",
+                            status_text=(
+                                f"Not met — counted {lvl_str} (overall {int(held_pte)} meets "
+                                f"{int(req_pte)}, but {sub_lbl} is below required {int(v_req)})."
+                            ),
+                        )
+                    )
 
         if m_duolingo and ("duolingo" in lvl_lower or re.search(r"\bdet\b", lvl_lower)):
             req_duo = _parse_decimal(m_duolingo.group(1))
-            held_duo = next(
-                (
-                    n
-                    for tok in re.findall(r"\d+", cleaned_score_str)
-                    if (n := _parse_decimal(tok)) is not None
-                    and Decimal("10") <= n <= Decimal("160")
-                ),
-                None,
-            )
+            duo_nums = [
+                n
+                for tok in re.findall(r"\d+", cleaned_score_str)
+                if (n := _parse_decimal(tok)) is not None
+                and Decimal("10") <= n <= Decimal("160")
+            ]
+            held_duo = duo_nums[0] if duo_nums else None
             if req_duo is not None and held_duo is not None:
-                _append_exam_verdict(held_duo, req_duo, f"Duolingo {int(req_duo)}")
+                duo_violation = _find_subscore_violation(
+                    lvl_str,
+                    duo_nums[1:],
+                    req_duo_sub,
+                    req_duo_skill_subs,
+                    min_valid=Decimal("10"),
+                    max_valid=Decimal("160"),
+                )
+                if held_duo < req_duo or duo_violation is None:
+                    _append_exam_verdict(held_duo, req_duo, f"Duolingo {int(req_duo)}")
+                else:
+                    v_held, v_req, v_skill = duo_violation
+                    sub_lbl = (
+                        f"{v_skill.capitalize()} subscore {int(v_held)}"
+                        if v_skill
+                        else f"lowest subscore {int(v_held)}"
+                    )
+                    candidate_evals.append(
+                        StatementEvaluation(
+                            outcome="FAILED",
+                            status_text=(
+                                f"Not met — counted {lvl_str} (overall {int(held_duo)} meets "
+                                f"{int(req_duo)}, but {sub_lbl} is below required {int(v_req)})."
+                            ),
+                        )
+                    )
 
         if m_testdaf and ("testdaf" in lvl_lower or "tdn" in lvl_lower):
             req_tdn = _parse_testdaf_tdn_level(m_testdaf.group(0))

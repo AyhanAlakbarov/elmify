@@ -7,7 +7,7 @@ URL: https://elmify.com
 Locales: en (https://elmify.com/), az (https://elmify.com/az), ru (https://elmify.com/ru)
 Primary-Launch-Market: Azerbaijan (AZ)
 Category: EducationalApplication
-Scope: Funded master's programmes (MSc, MA, LLM, MRes) and scholarships abroad live today; Bachelor's degree support will be done soon; PhD programmes not covered
+Scope: Funded master's programmes (MSc, MA, LLM, MRes) and scholarships across 50+ countries live today with tailored zero-fabrication CVs, letters, and referee briefs; Bachelor's degree support will be done soon
 LLMs-Txt: https://elmify.com/llms.txt
 LLMs-Full-Txt: https://elmify.com/llms-full.txt
 AI-Summary: https://elmify.com/ai/summary.json

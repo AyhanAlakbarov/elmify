@@ -1,6 +1,15 @@
 {% load dashboard %}<section aria-labelledby="board-heading" class="board-section">
   <div class="board-head">
-    <h2 id="board-heading">Your applications</h2>
+    <div class="board-head-left">
+      <h2 id="board-heading">Your applications</h2>
+      {% if board.open_cards %}
+      <div class="board-filter-bar" role="group" aria-label="Filter applications by type">
+        <button type="button" class="board-filter-pill is-active" data-board-filter="all" aria-pressed="true">All <span class="board-filter-count">{{ board.open_cards|length }}</span></button>
+        <button type="button" class="board-filter-pill" data-board-filter="programme" aria-pressed="false">Programmes <span class="board-filter-count">{{ board.programme_count }}</span></button>
+        <button type="button" class="board-filter-pill" data-board-filter="scholarship" aria-pressed="false">Scholarships <span class="board-filter-count">{{ board.scholarship_count }}</span></button>
+      </div>
+      {% endif %}
+    </div>
     {% if not counselor_view and not read_only and request.path == "/student/" %}
       <a class="text-link" href="/student/applications/">Manage by country</a>
     {% endif %}
@@ -15,32 +24,50 @@
     {% if board.rate_note %}<p>{{ board.rate_note }}</p>{% endif %}
   </div>
   {% endif %}
+  {% if board.pack_chance_pct is not None or board.shared_funder_warning or board.open_cards %}
+  <div class="board-pack-outlook" role="region" aria-label="Pack outlook">
+    {% if board.pack_chance_pct is not None %}
+      <p class="board-pack-chance"><strong>Overall outlook:</strong> About a {{ board.pack_chance_pct }}% chance of getting at least one offer across your {{ board.programme_count }} active programme{{ board.programme_count|pluralize }}</p>
+    {% endif %}
+    {% if board.shared_funder_warning %}
+      <p class="board-funder-notice">{{ board.shared_funder_warning }}</p>
+    {% endif %}
+    {% if not counselor_view and not read_only %}
+      <p class="board-auto-note"><strong>How this board updates:</strong> Cards move to <em>In progress</em> when you start applying with the browser extension, and fee receipts, submission confirmations, and admission decisions update automatically from your <a href="/student/settings/">connected email</a>.</p>
+    {% endif %}
+  </div>
+  {% endif %}
   {% if not board.cards %}
     <div class="empty-state">
       <p>No applications yet. Add one from Programmes &amp; funding.</p>
       {% if not read_only %}<a class="btn" href="/student/recommendation/">Review matches</a>{% endif %}
     </div>
   {% else %}
-    <div class="board">
-      {% for lane in board.lanes %}
-        <section id="lane-{{ lane.key }}" class="lane lane-{{ lane.lead.column.key|default:'to_start' }}" aria-labelledby="lane-title-{{ lane.key }}">
-          <h3 id="lane-title-{{ lane.key }}">{% if lane.lead.country %}{{ lane.lead.country|flag }}{% endif %}{% if lane.page_url %}<a href="{{ lane.page_url }}">{{ lane.title }}</a>{% else %}{{ lane.title }}{% endif %}</h3>
-          <p class="lane-status">{{ lane.status }}</p>
-          {% for line in lane.also_funded %}<p class="lane-meta">{{ line }}</p>{% endfor %}
-          {% if lane.programmes %}<p class="lane-meta">For: {{ lane.programmes|join:", " }}</p>{% endif %}
-          {% include "student/_award_lines.html" %}
-          {% for column, cards in lane.columns %}{% if cards %}
-            <h4>{{ column }}</h4>
-            {% for card in cards %}{% include "student/_card.html" %}{% endfor %}
-          {% endif %}{% endfor %}
+    <div class="board" id="applications-kanban">
+      {% for stage in board.kanban_stages %}
+        <section id="stage-{{ stage.key }}" class="lane kanban-col lane-{{ stage.key }}" aria-labelledby="stage-title-{{ stage.key }}">
+          <div class="kanban-col-head">
+            <h3 id="stage-title-{{ stage.key }}">
+              <span>{{ stage.title }}</span>
+              <span class="badge count" data-stage-count>{{ stage.items|length }}</span>
+            </h3>
+            <p class="kanban-col-sub">{{ stage.subtitle }}</p>
+          </div>
+          <div class="kanban-col-cards">
+            {% for item in stage.items %}
+              {% include "student/_card.html" with card=item.card item=item %}
+            {% empty %}
+              <p class="lane-empty">No applications in this stage.</p>
+            {% endfor %}
+          </div>
         </section>
       {% endfor %}
     </div>
   {% endif %}
   {% if board.done %}
-    <section aria-labelledby="done-heading">
-      <h3 id="done-heading">Done</h3>
-      <ul>{% for lane in board.done %}<li>{% if lane.lead.country %}{{ lane.lead.country|flag }}{% endif %}{% if lane.page_url %}<a href="{{ lane.page_url }}">{{ lane.title }}</a>{% else %}{{ lane.title }}{% endif %}: {{ lane.done_line }}</li>{% endfor %}</ul>
+    <section class="board-done-section" aria-labelledby="done-heading">
+      <h3 id="done-heading">Archived / Closed</h3>
+      <ul class="board-done-list">{% for lane in board.done %}<li>{% if lane.lead.country %}{{ lane.lead.country|flag }}{% endif %}{% if lane.page_url %}<a href="{{ lane.page_url }}">{{ lane.title }}</a>{% else %}{{ lane.title }}{% endif %}: {{ lane.done_line }}</li>{% endfor %}</ul>
     </section>
   {% endif %}
 </section>

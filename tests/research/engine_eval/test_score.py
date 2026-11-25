@@ -25,9 +25,33 @@ def test_ltt_keeps_the_loosest_bar_whose_test_rejects():
 
 
 def test_ltt_stops_at_the_first_failure_even_if_a_looser_bar_would_pass():
-    # strictest bar has too few items to reject; fixed-sequence testing must stop there
-    rows = [(0.995, True)] * 10 + [(0.9, True)] * 1000
+    # Strictest admissible bar (n=300 >= 299) has 5 errors and fails; fixed-sequence testing
+    # must stop there even though the looser bar (5 errors in 3300) would pass on its own.
+    rows = [(0.995, True)] * 295 + [(0.995, False)] * 5 + [(0.9, True)] * 3000
     assert ltt_bar(rows, delta=0.01, grid=(0.99, 0.9)) is None
+
+
+def test_ltt_covariate_ancillary_subgrid_skips_sample_starved_top_bars():
+    # Proposition 3: 10 rows at 0.999 is below min_admissible_n(0.01, 0.05) == 299;
+    # covariate-ancillary subgrid restriction skips 0.999 and certifies 0.95 (360 clean rows).
+    from apps.research.engine_eval.score import (
+        clopper_pearson_upper,
+        ltt_negative_bar,
+        min_admissible_n,
+    )
+
+    assert min_admissible_n(0.01) == 299
+    assert min_admissible_n(0.002) == 1497
+    rows = [(0.999, True)] * 10 + [(0.95, True)] * 350 + [(0.93, False)] * 50
+    assert ltt_bar(rows, delta=0.01) == 0.95
+
+    # Exact zero-error Clopper-Pearson upper bound matches 1 - alpha**(1/n)
+    assert clopper_pearson_upper(0, 299, alpha=0.05) <= 0.01
+    assert clopper_pearson_upper(0, 298, alpha=0.05) > 0.01
+
+    # Negative-branch LTT calibrates False Omission Rate P(truth=True | score <= tau_neg) <= delta
+    neg_rows = [(0.005, False)] * 10 + [(0.04, False)] * 300 + [(0.06, True)] * 50
+    assert ltt_negative_bar(neg_rows, delta=0.01) == 0.05
 
 
 def test_joint_is_the_minimum_and_missing_is_missing():

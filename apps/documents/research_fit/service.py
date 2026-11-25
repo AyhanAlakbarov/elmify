@@ -71,6 +71,7 @@ from .papers import (
     discover_literature_person_on_page,
     lookup_group_paper,
     lookup_person_paper,
+    normalize_inverted_person_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -217,6 +218,48 @@ def _reusable(
     return None
 
 
+_BINARY_OR_BITSTREAM_EXTENSIONS = (
+    ".pdf",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".doc",
+    ".docx",
+    ".ppt",
+    ".pptx",
+    ".xls",
+    ".xlsx",
+    ".xml",
+    ".ris",
+    ".bib",
+)
+
+
+def _is_repository_bitstream_or_binary_url(url: str) -> bool:
+    """Return True when `url` points to a raw repository bitstream or binary
+    document download endpoint rather than an HTML faculty/group/programme page."""
+    try:
+        path = (urlsplit(url).path or "").lower().rstrip("/")
+    except ValueError:
+        return False
+    if not path:
+        return False
+    if path.endswith(_BINARY_OR_BITSTREAM_EXTENSIONS):
+        return True
+    if "/bitstream/" in path or "/bitstreams/" in path:
+        return True
+    if path.endswith("/download") or "/api/core/bitstreams/" in path:
+        return True
+    return False
+
+
+def _prioritize_web_page_urls(urls: tuple[str, ...]) -> tuple[str, ...]:
+    """Filter out raw binary/bitstream download endpoints before slicing `[:TOP_PAGES]`."""
+    return tuple(
+        dict.fromkeys(u for u in urls if not _is_repository_bitstream_or_binary_url(u))
+    )
+
+
 def _search_urls(
     query: str, domain: str, *, search: SiteSearch, fallback: SiteSearch | None
 ) -> SiteSearchResult:
@@ -231,9 +274,17 @@ def _search_urls(
         )
         if fallback is None:
             raise
-        return fallback(query=query, domain=domain)
-    if result.urls or fallback is None:
-        return result
+        fb_res = fallback(query=query, domain=domain)
+        return SiteSearchResult(
+            urls=_prioritize_web_page_urls(fb_res.urls),
+            cost_usd=fb_res.cost_usd,
+            provider=fb_res.provider,
+        )
+    prioritized = _prioritize_web_page_urls(result.urls)
+    if prioritized or fallback is None:
+        return SiteSearchResult(
+            urls=prioritized, cost_usd=result.cost_usd, provider=result.provider
+        )
     try:
         second = fallback(query=query, domain=domain)
     except ProviderUnavailable as exc:
@@ -243,9 +294,14 @@ def _search_urls(
             type(exc).__name__,
             exc,
         )
-        return result
+        return SiteSearchResult(
+            urls=prioritized, cost_usd=result.cost_usd, provider=result.provider
+        )
+    merged_urls = _prioritize_web_page_urls((*second.urls, *prioritized))
     return SiteSearchResult(
-        urls=second.urls, cost_usd=result.cost_usd + second.cost_usd, provider=second.provider
+        urls=merged_urls,
+        cost_usd=result.cost_usd + second.cost_usd,
+        provider=second.provider if second.urls else result.provider,
     )
 
 
@@ -300,6 +356,15 @@ def _classify_safely(
         return ()
 
 
+def _format_judge_sentence(sentence: str, paper: PaperMatch | None) -> str:
+    if paper is None:
+        return sentence
+    details = f"{paper.title}: {paper.finding}"
+    if paper.method_or_question and paper.method_or_question not in paper.finding:
+        details = f"{details}; {paper.method_or_question}"
+    return f"{sentence} ({details})"
+
+
 def _lookup_matched_paper(
     best: ClassifiedSentence,
     classified: tuple[ClassifiedSentence, ...],
@@ -311,8 +376,10 @@ def _lookup_matched_paper(
     domain_ordered: tuple[str, ...],
     profile_terms: tuple[str, ...],
 ) -> PaperMatch | None:
+    if prefetched_paper is not None:
+        return prefetched_paper
     if best.kind == "named_person" and best.entity:
-        return prefetched_paper or paper_lookup(
+        return paper_lookup(
             entity=best.entity,
             topic=phrase,
             institution_name=inst_name,
@@ -368,10 +435,15 @@ def _record_matched_fit(
     profile_terms: tuple[str, ...],
     storyline: Storyline | None,
 ) -> NarrativeInput:
+    entity_name = (
+        normalize_inverted_person_name(best.entity)
+        if best.kind == "named_person" and best.entity
+        else best.entity
+    )
     provenance: dict[str, object] = {
         "program_id": str(program.pk),
         "sentence": sentence,
-        "entity": best.entity,
+        "entity": entity_name,
         "source_url": page_url,
         "page_digest": page_digest,
         # Empty for a live read; a `%Y-%m-%d` date when the
@@ -404,6 +476,27 @@ def _record_matched_fit(
         provenance["paper_url"] = paper.url
         provenance["paper_finding"] = paper.finding
         provenance["paper_author_role"] = paper.author_role
+        if paper.method_or_question:
+            provenance["paper_method_or_question"] = paper.method_or_question
+        if paper.active_topic:
+            provenance["paper_active_topic"] = paper.active_topic
+    from ..letter_exemplars import resolve_field_orientation_profile
+
+    orientation_profile = resolve_field_orientation_profile(
+        programme_name=program.name,
+        storyline=storyline,
+        student=student,
+        research_interests=(
+            anchor.text,
+            sentence,
+            str(provenance.get("paper_title") or ""),
+            str(provenance.get("paper_finding") or ""),
+            str(provenance.get("paper_method_or_question") or ""),
+        ),
+    )
+    if orientation_profile.active_orientation is not None:
+        provenance["orientation_slug"] = orientation_profile.active_orientation.slug
+        provenance["orientation_label"] = orientation_profile.active_orientation.label
     provenance["fit_mode"] = infer_fit_mode(
         anchor_rung=anchor.rung,
         anchor_text=anchor.text,
@@ -411,7 +504,9 @@ def _record_matched_fit(
         kind=best.kind,
         storyline=storyline,
         paper_finding=(
-            f"{provenance.get('paper_title') or ''} {provenance.get('paper_finding') or ''}"
+            f"{provenance.get('paper_title') or ''} "
+            f"{provenance.get('paper_finding') or ''} "
+            f"{provenance.get('paper_method_or_question') or ''}"
         ).strip(),
     )
     return NarrativeInput.objects.create(
@@ -478,7 +573,13 @@ def propose_research_fit(
         classifier = FrontierClassifier(parser, student_id=str(student.id))
     student_id = str(student.id)
     banned = banned_terms(facts)
-    profile_terms = student_profile_terms(facts, storyline, readings=readings)
+    profile_terms = student_profile_terms(
+        facts,
+        storyline,
+        readings=readings,
+        student=student,
+        programme_name=program.name,
+    )
     language = site_language(program)
 
     cost = 0.0
@@ -605,7 +706,9 @@ def propose_research_fit(
                         profile_terms=profile_terms,
                     )
                     prefetched_paper: PaperMatch | None = None
+                    tried_lit_discovery = False
                     if best is None and not forbidden_naming:
+                        tried_lit_discovery = True
                         lit_found = discover_literature_person_on_page(
                             page.sentences,
                             topic=phrase,
@@ -617,17 +720,22 @@ def propose_research_fit(
                             best, prefetched_paper = lit_found
                     if best is None:
                         continue
+                    if prefetched_paper is None and best.kind in {"named_person", "research_group"}:
+                        prefetched_paper = _lookup_matched_paper(
+                            best,
+                            classified,
+                            prefetched_paper=None,
+                            paper_lookup=paper_lookup,
+                            phrase=phrase,
+                            inst_name=inst_name,
+                            domain_ordered=domain_ordered,
+                            profile_terms=profile_terms,
+                        )
                     sentence = page.sentences[best.index]
-                    judge_sentence = (
-                        f"{sentence} ({prefetched_paper.title}: {prefetched_paper.finding})"
-                        if prefetched_paper is not None
-                        else sentence
-                    )
+                    judge_sentence = _format_judge_sentence(sentence, prefetched_paper)
                     judge_anchor_text = (
                         f"{anchor.text} (target training gap: {storyline.gap})"
-                        if best.kind == "module_or_track"
-                        and storyline is not None
-                        and storyline.gap
+                        if storyline is not None and storyline.gap
                         else anchor.text
                     )
                     alignment = judge_alignment(
@@ -638,6 +746,34 @@ def propose_research_fit(
                         sentence=judge_sentence,
                     )
                     model_calls += _judge_calls(claude)
+                    if (
+                        not is_strong(alignment)
+                        and not forbidden_naming
+                        and not tried_lit_discovery
+                        and model_calls < MAX_MODEL_CALLS
+                    ):
+                        lit_found = discover_literature_person_on_page(
+                            page.sentences,
+                            topic=phrase,
+                            institution_name=inst_name,
+                            domains=domain_ordered,
+                            profile_terms=profile_terms,
+                        )
+                        if lit_found is not None:
+                            lit_best, lit_paper = lit_found
+                            if lit_best.entity != best.entity or lit_best.index != best.index:
+                                best = lit_best
+                                prefetched_paper = lit_paper
+                                sentence = page.sentences[best.index]
+                                judge_sentence = _format_judge_sentence(sentence, prefetched_paper)
+                                alignment = judge_alignment(
+                                    parser=parser,
+                                    claude=claude,
+                                    student_id=student_id,
+                                    anchor_text=judge_anchor_text,
+                                    sentence=judge_sentence,
+                                )
+                                model_calls += _judge_calls(claude)
                     if not is_strong(alignment):
                         continue
                     row = _record_matched_fit(

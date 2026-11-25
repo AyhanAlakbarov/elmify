@@ -61,17 +61,49 @@ def test_the_workspace_shows_the_rules_beside_the_letter(
     assert "Approve this letter" in body
 
 
-def test_the_answers_form_is_disabled_and_posts_nowhere(
+def test_saving_letter_notes_persists_confirmed_narrative_inputs(
     client, agency_a, domain_a, user_a, membership_a, pack
 ) -> None:
+    from apps.documents.models import NarrativeInput
+
     programme, _award = pack
     with tenant_scope(agency_a.id):
         application = add_card(agency_a, membership_a, programme)
     client.force_login(user_a)
     body = client.get(_url(application), HTTP_HOST=domain_a.host).content.decode()
-    assert "Coming soon" in body
-    assert '<form class="ws-q-form" aria-describedby="questions-heading">' in body
-    assert "<fieldset disabled>" in body
+    assert (
+        "Which courses, labs, or professors at this university match your research or study plan?"
+        in body
+    )
+    assert f'action="/student/writing/letters/{application.id}/notes/"' in body
+    assert "Save letter notes" in body
+
+    response = client.post(
+        f"/student/writing/letters/{application.id}/notes/",
+        {
+            "research_plan": "Prof. Weber's Catalysis Group and the Advanced Synthesis Lab module.",
+            "career_goal": "R&D process chemist in sustainable industrial catalysis.",
+        },
+        HTTP_HOST=domain_a.host,
+    )
+    assert response.status_code == 302
+    assert response["Location"] == _url(application, "letter")
+    with tenant_scope(agency_a.id):
+        saved = {
+            row.kind: row.text
+            for row in NarrativeInput.objects.filter(student=membership_a)
+        }
+    assert saved == {
+        NarrativeInput.Kind.RESEARCH_PLAN: (
+            "Prof. Weber's Catalysis Group and the Advanced Synthesis Lab module."
+        ),
+        NarrativeInput.Kind.DEVELOPMENT_IMPACT: (
+            "R&D process chemist in sustainable industrial catalysis."
+        ),
+    }
+    updated_body = client.get(_url(application), HTTP_HOST=domain_a.host).content.decode()
+    assert "2 saved" in updated_body
+    assert "R&amp;D process chemist in sustainable industrial catalysis." in updated_body
 
 
 @pytest.mark.parametrize("doc", ["references", "essay"])
@@ -235,3 +267,31 @@ def test_a_student_cannot_open_the_review_list(
 ) -> None:
     client.force_login(user_a)
     assert client.get("/counselor/letters/", HTTP_HOST=domain_a.host).status_code == 403
+
+
+def test_refining_a_letter_saves_a_new_draft_version(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        application = add_card(agency_a, membership_a, programme)
+        _identity(agency_a, membership_a)
+        draft = _letter(agency_a, membership_a, programme.program_id)
+    client.force_login(user_a)
+    response = client.post(
+        f"/student/writing/letters/{draft.id}/refine/",
+        {
+            "refined_text": (
+                "I am applying to the MSc Informatics programme with a focus on graph search.\n\n"
+                "My BSc thesis achieved a 38% reduction in query expansions."
+            ),
+            "next": _url(application, "letter"),
+        },
+        HTTP_HOST=domain_a.host,
+    )
+    assert response.status_code == 302
+    assert response["Location"] == _url(application, "letter")
+    body = client.get(_url(application, "letter"), HTTP_HOST=domain_a.host).content.decode()
+    assert "My BSc thesis achieved a 38% reduction in query expansions." in body
+    assert "Motivation letter, version 2" in body
+

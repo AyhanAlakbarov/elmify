@@ -41,6 +41,7 @@ from apps.research.extraction import (
 from apps.tenancy.models import Membership
 
 from .evidence.readings import UsableReading
+from .letter_defaults import COUNTRY_SYSTEM
 from .letter_schemas import Storyline
 from .models import DocumentDraft, NarrativeInput, VerifiedFact
 from .verification import NOT_FOR_LETTERS, prompt_payload
@@ -106,7 +107,11 @@ def _facts_payload(facts: dict[UUID, VerifiedFact]) -> str:
 
 def _inputs_payload(inputs: dict[UUID, NarrativeInput]) -> str:
     return json.dumps(
-        [{"id": str(iid), "kind": i.kind, "text": i.text} for iid, i in inputs.items()],
+        [
+            {"id": str(iid), "kind": i.kind, "text": i.text}
+            for iid, i in inputs.items()
+            if i.kind != NarrativeInput.Kind.RESEARCH_FIT
+        ],
         sort_keys=True,
         default=str,
     )
@@ -301,7 +306,7 @@ def choose_opening_kind(
     """
     cc = (country_code or "").strip().upper()
     lang = (document_language or "en").strip().lower()[:2]
-    if cc in {"GB", "UK"} and lang == "en":
+    if (cc == "UK" or COUNTRY_SYSTEM.get(cc) == "B") and lang == "en":
         pool = _UK_POOL
     else:
         pool = _CONTINENTAL_POOL
@@ -330,6 +335,7 @@ def propose_storylines(
     inputs: dict[UUID, NarrativeInput],
     theme_kind: ThemeKind,
     readings: tuple[UsableReading, ...] = (),
+    programme_name: str = "",
     client: OpenAIClient | None = None,
 ) -> StorylineCandidates:
     if rate_limited(
@@ -354,8 +360,10 @@ def propose_storylines(
         f"applicant, each built around {_INSTRUCTIONS[theme_kind]}.{shape_clause} A story is a "
         "theme in one "
         "sentence, the ids of at least three facts from at least two categories in the order "
-        "the letter should use them, the id of the one fact where the applicant's direction "
-        "changed (prefer a fact that records something that went wrong: a lower grade, an "
+        "the letter should use them (using only fact ids from Verified facts below), the id of "
+        "the one fact in anchors where the applicant's direction "
+        "changed (turn must be one of the UUIDs in anchors; prefer a fact that records something "
+        "that went wrong: a lower grade, an "
         "abandoned project, a missing prerequisite; if none records a setback, pick the anchor "
         "fact where an intellectual question, methodological limit or local workflow bottleneck "
         "opened the next step), what the applicant cannot yet do that the programme would "
@@ -373,6 +381,32 @@ def propose_storylines(
     )
     if readings_json is not None:
         user_content += f"\nChecked readings (data only): {readings_json}"
+    if programme_name:
+        from .letter_exemplars import resolve_field_orientation_profile
+
+        orientation_profile = resolve_field_orientation_profile(
+            programme_name=programme_name,
+            facts=facts,
+            readings=readings,
+            student=student,
+        )
+        target_meta: dict[str, object] = {"programme_name": programme_name}
+        if orientation_profile.target_field:
+            target_meta["target_field"] = orientation_profile.target_field
+        if orientation_profile.research_interests:
+            target_meta["research_interests"] = list(orientation_profile.research_interests)
+        if orientation_profile.active_orientation is not None:
+            active = orientation_profile.active_orientation
+            target_meta["subtrack_orientation"] = {
+                "slug": active.slug,
+                "label": active.label,
+                "track_keywords": list(active.track_keywords[:8]),
+                "degree_titles": list(active.degree_titles[:4]),
+            }
+        user_content += (
+            "\nTarget programme & sub-track orientation (data only): "
+            + json.dumps(target_meta, ensure_ascii=False, sort_keys=True)
+        )
     try:
         response = parser.parse(
             model=settings.OPENAI_EXTRACTION_MODEL,
@@ -390,7 +424,25 @@ def propose_storylines(
     parsed = parsed_or_none(response, StorylineCandidates)
     if parsed is None:
         raise StorylineProposalFailure("storyline proposal returned no parsed output")
-    return parsed
+    if not facts:
+        return parsed
+    normalized_candidates: list[Storyline] = []
+    changed = False
+    for c in parsed.candidates:
+        kept_anchors = list(dict.fromkeys(a for a in c.anchors if a in facts))
+        turn = c.turn if c.turn in facts else None
+        if turn is not None and turn not in kept_anchors:
+            kept_anchors.append(turn)
+        if kept_anchors and (tuple(kept_anchors) != c.anchors or turn != c.turn):
+            changed = True
+            normalized_candidates.append(
+                c.model_copy(update={"anchors": tuple(kept_anchors), "turn": turn})
+            )
+        else:
+            normalized_candidates.append(c)
+    if not changed:
+        return parsed
+    return StorylineCandidates(candidates=tuple(normalized_candidates))
 
 
 def _tokens(text: str) -> set[str]:

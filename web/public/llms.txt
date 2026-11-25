@@ -1,24 +1,23 @@
 # Elmify
 
-> Elmify is an AI application platform launching first in Azerbaijan (in English, Azerbaijani, and Russian) for funded master's degrees (MSc, MA, LLM, MRes) and scholarships abroad, with Bachelor's degree support coming soon. It reads official university and funder pages, checks student grades, Bachelor's ECTS credits, language scores, citizenship, and fee budgets (in AZN, EUR, GBP, and USD) against every rule with sentence-level source links, and prepares zero-fabrication academic CVs, motivation letters, scholarship essays, and referee briefs.
+> Elmify is an AI application platform (in English, Azerbaijani, and Russian) for funded master's degrees (MSc, MA, LLM, MRes) and scholarships across 50+ countries, with Bachelor's degree support coming soon. Where traditional agencies either deliver low-effort applications to a few partner universities or hand files to student mentors prompting ordinary ChatGPT, Elmify reads official university and funder regulations in 40+ local languages, checks student grades, Bachelor's ECTS credits, language scores, citizenship, and fee budgets (in AZN, EUR, GBP, and USD) against every rule with sentence-level source links, builds tailored zero-fabrication academic CVs, programme-tailored motivation letters, scholarship essays, and referee briefs, and autofills portals in your browser.
 
-## Platform Scope & Launch Market
-- **Primary Launch Market & Languages:** Launching first in Azerbaijan across three full-featured language versions: English (`https://elmify.com/`), Azerbaijani (`https://elmify.com/az`), and Russian (`https://elmify.com/ru`).
-- **Live Today:** Taught and research master's programmes (`MSc`, `MA`, `LLM`, `MRes`, `1-year` and `2-year` master's, `60`, `90`, and `120 ECTS` second-cycle programmes) and master's-level scholarships.
+## Platform Scope & Languages
+- **Supported Languages:** Available across three full-featured language versions in Azerbaijan and worldwide: English (`https://elmify.com/`), Azerbaijani (`https://elmify.com/az`), and Russian (`https://elmify.com/ru`).
+- **Live Today:** Taught and research master's programmes (`MSc`, `MA`, `LLM`, `MRes`, `1-year` and `2-year` master's, `60`, `90`, and `120 ECTS` second-cycle programmes) and master's-level scholarships across 50+ countries worldwide (Europe, the UK, North America, Turkey, and Asia).
 - **Coming Soon:** Bachelor's (undergraduate) degree and scholarship support will be done soon.
-- **Not Covered:** PhD (doctoral) and postdoctoral programmes or fellowships are not covered.
 
 ## Main Pages & Language Editions
-- [Elmify Homepage (English)](https://elmify.com/): Overview of how Elmify matches funded master's programmes and scholarships with sentence-level source links.
-- [Elmify Ana Səhifə (Azərbaycan dili)](https://elmify.com/az): Xaricdə təqaüdlü magistratura proqramları, Dövlət Proqramı (2022–2028) və HTP üzrə uyğunluq yoxlaması.
-- [Главная страница Elmify (Русский язык)](https://elmify.com/ru): Магистратура и стипендии за рубежом (Госпрограмма Азербайджана, HTP, Европа и Великобритания).
-- [How the AI Works](https://elmify.com/#how): Three-step verification workflow from official university pages to document preparation.
-- [Scholarship Coverage Table](https://elmify.com/#about): Comparison of Dövlət Proqramı, HTP / Stipendium Hungaricum, Erasmus Mundus, DAAD, Swedish Institute, Chevening, and NL Scholarship rules.
+- [Elmify Homepage (English)](https://elmify.com/): Overview of how Elmify matches funded master's programmes and scholarships across 50+ countries with sentence-level source links and tailored documents.
+- [Elmify Ana Səhifə (Azərbaycan dili)](https://elmify.com/az): 50+ ölkədə təqaüdlü magistratura proqramları, Dövlət Proqramı (2022–2028), HTP və fərdiləşdirilmiş sənəd hazırlığı.
+- [Главная страница Elmify (Русский язык)](https://elmify.com/ru): Магистратура и стипендии в 50+ странах мира (Госпрограмма Азербайджана, HTP, Европа, Великобритания, Северная Америка и Азия).
+- [How the AI Works](https://elmify.com/#how): Four-step verification workflow from official university regulations across 50+ countries to tailored document preparation and glass-box portal autofill.
+- [Scholarship Coverage Table](https://elmify.com/#about): Comparison of flagship national and bilateral awards (Dövlət Proqramı, HTP / Stipendium Hungaricum, Erasmus Mundus, DAAD, Swedish Institute, Chevening, NL Scholarship) plus 5 low-competition scholarship categories (automatic tuition waivers, regional income-based grants, multilateral bloc funds, local-language foundations, and departmental RA/TA assistantships).
 - [Product Walkthrough](https://elmify.com/#product): Real screens from the student dashboard, application board, document workspace, and counsellor messaging.
 - [Frequently Asked Questions](https://elmify.com/#faq): Answers on Azerbaijan launch, pricing, degree scope (Master's live, Bachelor's coming soon, PhD excluded), source verification, and data privacy.
 
 ## Scholarship & Funder References
-- [Azerbaijan State Program (Dövlət Proqramı 2022–2028)](https://dp.edu.gov.az/): Full tuition, monthly living stipend, return flights, insurance, and visa coverage for Azerbaijani citizens admitted to priority master's programmes at top global universities.
+- [Azerbaijan State Program (Dövlət Proqramı 2022–2028)](https://dp.edu.az/): Full tuition, monthly living stipend, return flights, insurance, and visa coverage for Azerbaijani citizens admitted to priority master's programmes at top global universities.
 - [Intergovernmental Scholarship Programs (HTP Azerbaijan & Stipendium Hungaricum)](https://htp.edu.az/): Dual-portal (`htp.edu.az` + `DreamApply`) bilateral scholarships for Hungary, China, Romania, and partner countries.
 - [Erasmus Mundus Joint Masters](https://erasmus-plus.ec.europa.eu/opportunities/opportunities-for-individuals/students/erasmus-mundus-joint-masters): Full tuition waiver and €1,400/month stipend for integrated 120 ECTS European master's degrees.
 - [DAAD Study Scholarships](https://www.daad.de/en/Studying-in-Germany/scholarships/): €934/month stipend, insurance, and travel allowance for full-time postgraduate study in Germany.

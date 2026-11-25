@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block lang %}{{ form.language.value|default:'en' }}{% endblock %}
 {% block title %}Sign up — Elmify{% endblock %}
-{% block meta_description %}Create a free Elmify account in Azerbaijan or worldwide to match your grades, Bachelor's ECTS credits, and IELTS or TOEFL scores against funded master's programmes (MSc, MA, LLM, MRes) and scholarships abroad (Bachelor's support coming soon).{% endblock %}
+{% block meta_description %}Create a free Elmify account in Azerbaijan or worldwide to match your GPA, Bachelor's ECTS credits, and IELTS or TOEFL scores against funded master's programmes (MSc, MA, LLM, MRes) and scholarships across 50+ countries, and generate tailored CVs and motivation letters from your verified record (Bachelor's support coming soon).{% endblock %}
 {% block content %}
   <h1>Sign up</h1>
-  <p class="muted">Create your free account to get master&rsquo;s programmes (MSc, MA, LLM, MRes) and scholarships matched to your profile (Bachelor&rsquo;s support coming soon).</p>
+  <p class="muted">Create your free account to match your GPA, ECTS credits, and test scores against funded master&rsquo;s programmes (MSc, MA, LLM, MRes) and scholarships across 50+ countries — and build tailored CVs, motivation letters, and referee briefs strictly from your verified record (Bachelor&rsquo;s support coming soon).</p>
   <form method="post">
     {% csrf_token %}
     {{ form.non_field_errors }}

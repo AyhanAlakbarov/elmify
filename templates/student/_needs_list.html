@@ -1,7 +1,7 @@
 <ul class="needs-list">
   {% for item in needs %}
     <li>
-      <p>{{ item.text }}{% if item.deadline %} — due <span class="due">{% if item.deadline_text %}{{ item.deadline_text }}{% else %}{{ item.deadline|date:"j M Y" }}{% endif %}</span>{% endif %}</p>
+      <p>{{ item.text }}{% if item.deadline %} <span class="due">Due {% if item.deadline_text %}{{ item.deadline_text }}{% else %}{{ item.deadline|date:"j M Y" }}{% endif %}</span>{% endif %}</p>
       <div class="row-actions">
         {% if item.url %}
           {% if item.apply and apply_blocker %}

@@ -94,6 +94,8 @@ export interface FillPacket {
   notes?: PacketNote[];
   /** Field class -> the one read-back rule the bench taught for this portal. */
   equivalences?: Record<string, string>;
+  /** Every upload slot selector the FieldMap already learned. */
+  slot_selectors?: string[];
 }
 
 /** How the extension knows a portal refused the tagged address. Mirrors

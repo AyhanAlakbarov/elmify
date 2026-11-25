@@ -214,6 +214,12 @@ def _content(**overrides):
 def test_name_splits_on_the_last_token():
     assert _name_parts("Leyla Memmedova") == ("Leyla", "Memmedova")
     assert _name_parts("Maria del Carmen Garcia") == ("Maria del Carmen", "Garcia")
+    assert _name_parts("Johannes van der Waals") == ("Johannes", "van der Waals")
+    assert _name_parts(
+        "Gabriel José García Márquez",
+        given_name="Gabriel José",
+        surname="García Márquez",
+    ) == ("Gabriel José", "García Márquez")
 
 
 def test_a_single_token_name_keeps_an_empty_family_name():
@@ -992,4 +998,46 @@ def test_certifications_ride_in_honours_awards_under_a_certificate_label():
     assert titles == ["Debate prize", "Certificate: First Aid, Red Crescent"]
     orders = [e["order"] for e in europass_payload(content)["profile"]["honoursAwards"]]
     assert orders == [0, 1]
+
+
+def test_undated_entries_are_not_marked_ongoing_and_language_exonyms_and_cefr_normalize():
+    content = _content(
+        education=(
+            EducationEntry(
+                degree_as_awarded="BSc Computer Science",
+                institution_original="Baku State University",
+                start_date=None,
+                end_date=None,
+            ),
+        ),
+        experience=(
+            ExperienceEntry(
+                employer="Acme",
+                title="Intern",
+                start_date=None,
+                end_date=None,
+                bullets=("Built tools.",),
+            ),
+        ),
+        languages=(
+            LanguageEntry(language="Azərbaycan dili", mother_tongue=True),
+            LanguageEntry(language="İngilizce (Fluent)", cefr_level="C1", reading="Native"),
+            LanguageEntry(language="Fransızca", cefr_level="B2"),
+            LanguageEntry(language="Mandarin Chinese", cefr_level="A2"),
+        ),
+    )
+    payload = europass_payload(content)["profile"]
+    assert payload["educationTrainings"][0]["ongoing"] is False
+    assert (
+        payload["workExperiences"]["solidWorkExperiences"][0]["workExperience"]["ongoing"]
+        is False
+    )
+    lang_skills = payload["languageSkills"]
+    assert [e["language"] for e in lang_skills["nativeLanguages"]] == ["aze"]
+    assert [e["language"] for e in lang_skills["otherLanguages"]] == ["eng", "fra", "zho"]
+    eng_entry = lang_skills["otherLanguages"][0]
+    assert eng_entry["listening"] == "C1"
+    # Non-CEFR word "Native" in reading is omitted rather than sent to Europass
+    assert "reading" not in eng_entry
+
 

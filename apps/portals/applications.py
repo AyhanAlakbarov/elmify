@@ -9,13 +9,20 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
+import re
+import unicodedata
+from collections import defaultdict
 from datetime import timedelta
 from functools import partial
+from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from django.conf import settings
-from django.db import IntegrityError, transaction
+from django.core.cache import cache
+from django.db import IntegrityError, connection, transaction
+from django.db.models.signals import post_delete, post_save
 from django.utils import timezone
 
 from apps.concierge.models import Notification, RoadmapItem
@@ -52,6 +59,340 @@ logger = logging.getLogger(__name__)
 DEVICE_ACTION_LIMIT = 20
 DEVICE_ACTION_WINDOW_SECONDS = 3600
 _PORTAL_TASK_SLA = timedelta(days=3)
+
+_SHARED_PROGRAM_PORTALS: dict[UUID, UUID] = {}
+_KNOWN_PORTAL_PLATFORMS = (
+    "uni-assist.de",
+    "studielink.nl",
+    "dreamapply.com",
+    "moveon4.de",
+    "smapply.io",
+    "smapply.org",
+    "smapply.ca",
+    "embark.com",
+    "applyweb.com",
+    "commonapp.org",
+    "ucas.com",
+    "parcoursup.fr",
+    "osiris-student.nl",
+    "mobility-online.com",
+    "fullfabric.com",
+    "submittable.com",
+)
+
+_SHARED_PORTAL_HOSTS_CACHE_KEY = "portals:shared_platform_hosts:v1"
+_SHARED_PORTAL_HOSTS_CACHE_TTL = 300
+
+
+def _registrable_host(raw: str) -> str:
+    """Extract the registrable domain (`eTLD+1`) from a URL or hostname."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    host = (
+        (urlsplit(text).hostname or "")
+        if "://" in text
+        else text.split("/")[0].split(":")[0]
+    ).strip().casefold().rstrip(".")
+    if not host or host.endswith(
+        (".test", ".internal", ".example", ".invalid", ".localhost", ".arpa")
+    ):
+        return ""
+    return registrable_domain(host)
+
+
+def _host_matches_institution_names(host: str, inst_names: set[str]) -> bool:
+    """Whether ``host``'s primary domain label matches a word or acronym of any associated
+    institution name (so two name variants of the same institution, e.g. ``"TU Munich"``
+    and ``"Technical University of Munich"``, never promote ``tum.de`` as a shared platform
+    when ``Institution`` could not be queried)."""
+    if not host or not inst_names:
+        return False
+    primary = host.split(".")[0].casefold()
+    primary_compact = re.sub(r"[^a-z0-9]+", "", primary)
+    primary_tokens = {tok for tok in re.split(r"[^a-z0-9]+", primary) if len(tok) >= 3}
+    if len(primary_compact) >= 2:
+        primary_tokens.add(primary_compact)
+    if not primary_tokens:
+        return False
+
+    for raw_name in inst_names:
+        folded = "".join(
+            ch
+            for ch in unicodedata.normalize("NFKD", raw_name)
+            if not unicodedata.combining(ch)
+        ).casefold()
+        words = [w for w in re.split(r"[^a-z0-9]+", folded) if w]
+        if not words:
+            continue
+        stopwords = {
+            "the", "and", "for", "und", "der", "die", "das", "von", "van", "les", "des", "del",
+        }
+        content_words = [w for w in words if len(w) > 2 and w not in stopwords]
+        name_tokens = {w for w in words if len(w) >= 2}
+        if len(words) >= 2:
+            name_tokens.add("".join(w[0] for w in words))
+            name_tokens.add("".join(words))
+        if len(content_words) >= 2:
+            name_tokens.add("".join(w[0] for w in content_words))
+            name_tokens.add("".join(content_words))
+        if len(words) >= 2 and len(words[0]) <= 4:
+            name_tokens.add(words[0] + "".join(w[0] for w in words[1:]))
+            rest_content = [w for w in content_words if w != words[0]]
+            if rest_content:
+                name_tokens.add(words[0] + "".join(w[0] for w in rest_content))
+        if primary_tokens & name_tokens:
+            return True
+    return False
+
+
+def catalogue_shared_portal_hosts() -> frozenset[str]:
+    """Discover registrable portal hosts shared by >= 2 distinct Institutions
+    where the host is not the institution's own `official_website` domain.
+
+    Cached in Django `cache` under `"portals:shared_platform_hosts:v1"` for 300s,
+    and returns `frozenset()` gracefully when database tables are not ready or
+    accessible under the active connection role.
+    """
+    cached = cache.get(_SHARED_PORTAL_HOSTS_CACHE_KEY)
+    if isinstance(cached, frozenset):
+        return cached
+    if getattr(connection.ensure_connection, "__name__", "") == "_blocking_wrapper":
+        return frozenset()
+
+    try:
+        own_domains_by_inst: dict[Any, set[str]] = defaultdict(set)
+        all_own_domains: set[str] = set()
+        inst_by_slug: dict[str, Any] = {}
+        prog_to_inst: dict[Any, Any] = {}
+        institutions_by_host: dict[str, set[Any]] = defaultdict(set)
+        inst_names_by_host: dict[str, set[str]] = defaultdict(set)
+
+        def _record(inst_key: Any, raw_url: str, inst_name: str | None = None) -> None:
+            if not inst_key:
+                return
+            host = _registrable_host(raw_url)
+            if not host:
+                return
+            if host in own_domains_by_inst.get(inst_key, set()) or host in all_own_domains:
+                return
+            institutions_by_host[host].add(inst_key)
+            if isinstance(inst_name, str) and inst_name.strip():
+                inst_names_by_host[host].add(inst_name.strip().casefold())
+            elif isinstance(inst_key, str) and inst_key.strip():
+                inst_names_by_host[host].add(inst_key.strip().casefold())
+
+        skip_catalogue = bool(
+            getattr(connection, "force_debug_cursor", False)
+            or os.environ.get("DATABASE_ROLE") == "runtime_web"
+            or "runtime_web" in str(connection.settings_dict.get("USER") or "")
+        )
+        catalogue_read = False
+        if not skip_catalogue:
+            from apps.funding.models import Institution, Program, ProgramEvidenceClaim
+
+            inst_ok = False
+            prog_ok = False
+            try:
+                with transaction.atomic():
+                    for inst in Institution.objects.all():
+                        inst_id = inst.id
+                        own = _registrable_host(getattr(inst, "official_website", "") or "")
+                        if own:
+                            own_domains_by_inst[inst_id].add(own)
+                            all_own_domains.add(own)
+                            stem = own.split(".")[0]
+                            if len(stem) >= 2:
+                                inst_by_slug.setdefault(stem, inst_id)
+                        ckey = (getattr(inst, "canonical_key", "") or "").strip().casefold()
+                        if ckey:
+                            inst_by_slug.setdefault(ckey, inst_id)
+                            for tok in re.split(r"[^a-z0-9]+", ckey):
+                                if len(tok) >= 3:
+                                    inst_by_slug.setdefault(tok, inst_id)
+                inst_ok = True
+            except Exception as exc:
+                logger.debug("shared portal institution scan degraded: %s", exc)
+
+            try:
+                with transaction.atomic():
+                    for prog in Program.objects.all():
+                        prog_inst_id = getattr(prog, "institution_id", None)
+                        if not prog_inst_id:
+                            continue
+                        prog_to_inst[prog.id] = prog_inst_id
+                        for attr in (
+                            "application_url",
+                            "source_url",
+                            "cv_format_source_url",
+                            "origin_domain",
+                            "evidence_domain",
+                        ):
+                            val = getattr(prog, attr, "") or ""
+                            if isinstance(val, str) and val.strip():
+                                _record(prog_inst_id, val)
+                    for claim_inst_id, canonical_url in ProgramEvidenceClaim.objects.values_list(
+                        "program__institution_id", "evidence_claim__source__canonical_url"
+                    ):
+                        if claim_inst_id and canonical_url:
+                            _record(claim_inst_id, canonical_url)
+                prog_ok = True
+            except Exception as exc:
+                logger.debug("shared portal programme scan degraded: %s", exc)
+            catalogue_read = inst_ok and prog_ok
+
+        try:
+            with transaction.atomic():
+                for form in PortalForm.objects.all():
+                    raw_url = (
+                        getattr(form, "base_url", "")
+                        or getattr(form, "form_url", "")
+                        or getattr(form, "portal_host", "")
+                    )
+                    if not raw_url:
+                        continue
+                    explicit_inst = getattr(form, "institution_id", None)
+                    if explicit_inst:
+                        _record(explicit_inst, raw_url)
+                    haystack = " ".join(
+                        filter(
+                            None,
+                            [
+                                getattr(form, "portal_host", ""),
+                                getattr(form, "form_key", ""),
+                                getattr(form, "form_url", ""),
+                                getattr(form, "base_url", ""),
+                            ],
+                        )
+                    ).casefold()
+                    tokens = {t for t in re.split(r"[^a-z0-9]+", haystack) if len(t) >= 2}
+                    for slug, inst_id in inst_by_slug.items():
+                        if slug in tokens:
+                            _record(inst_id, raw_url)
+        except Exception as exc:
+            logger.debug("shared portal form scan degraded: %s", exc)
+
+        try:
+            with transaction.atomic():
+                for (
+                    prog_id,
+                    portal_host,
+                    form_url,
+                    cand_inst_id,
+                    cand_inst_name,
+                ) in Application.objects.filter(portal_form__isnull=False).values_list(
+                    "program_id",
+                    "portal_form__portal_host",
+                    "portal_form__form_url",
+                    "candidate__institution_id",
+                    "candidate__institution_name",
+                ):
+                    inst_key = (
+                        prog_to_inst.get(prog_id)
+                        or cand_inst_id
+                        or (cand_inst_name.strip().casefold() if cand_inst_name else None)
+                    )
+                    if inst_key:
+                        _record(inst_key, form_url or portal_host, cand_inst_name)
+        except Exception as exc:
+            logger.debug("shared portal application scan degraded: %s", exc)
+
+        try:
+            with transaction.atomic():
+                for (
+                    cand_inst_name,
+                    prog_id,
+                    details,
+                    funding_card,
+                    evidence,
+                ) in RecommendationCandidate.objects.values_list(
+                    "institution_name",
+                    "program_id",
+                    "details",
+                    "funding_card",
+                    "evidence",
+                ):
+                    inst_key = (
+                        prog_to_inst.get(prog_id)
+                        or (cand_inst_name.strip().casefold() if cand_inst_name else None)
+                    )
+                    if not inst_key:
+                        continue
+                    for mapping in (details, funding_card, evidence):
+                        if isinstance(mapping, dict):
+                            for key in ("portal_url", "apply_url", "source_url"):
+                                raw = mapping.get(key)
+                                if isinstance(raw, str) and raw.strip():
+                                    _record(inst_key, raw, cand_inst_name)
+        except Exception as exc:
+            logger.debug("shared portal candidate scan degraded: %s", exc)
+
+        discovered = frozenset(
+            host
+            for host, insts in institutions_by_host.items()
+            if len(insts) >= 2
+            and (
+                all_own_domains
+                or not _host_matches_institution_names(host, inst_names_by_host.get(host, set()))
+            )
+        )
+        if catalogue_read:
+            cache.set(
+                _SHARED_PORTAL_HOSTS_CACHE_KEY, discovered, timeout=_SHARED_PORTAL_HOSTS_CACHE_TTL
+            )
+        return discovered
+    except BaseException as exc:
+        if isinstance(exc, (KeyboardInterrupt, SystemExit, GeneratorExit)):
+            raise
+        logger.debug("catalogue_shared_portal_hosts degraded: %s", exc)
+        return frozenset()
+
+
+_CATALOGUE_PORTAL_SENDERS = frozenset({
+    "Institution",
+    "Program",
+    "ProgramEvidenceClaim",
+    "PortalForm",
+    "Application",
+    "RecommendationCandidate",
+})
+
+
+def _invalidate_shared_portal_hosts_cache(sender: object = None, **_kwargs: object) -> None:
+    sender_name = getattr(sender, "__name__", "")
+    if sender_name and sender_name not in _CATALOGUE_PORTAL_SENDERS:
+        return
+    try:
+        cache.delete(_SHARED_PORTAL_HOSTS_CACHE_KEY)
+    except Exception as exc:
+        logger.debug("shared portal cache delete degraded: %s", exc)
+
+
+for _sig in (post_save, post_delete):
+    _sig.connect(
+        _invalidate_shared_portal_hosts_cache,
+        dispatch_uid=f"portals_shared_platform_hosts_{id(_sig)}",
+    )
+
+
+def known_portal_platforms() -> frozenset[str]:
+    """Union of baseline `_KNOWN_PORTAL_PLATFORMS` and catalogue-discovered shared portal hosts."""
+    return frozenset(_KNOWN_PORTAL_PLATFORMS) | catalogue_shared_portal_hosts()
+
+
+def _is_shared_portal_platform(url: str) -> bool:
+    """Whether ``url`` (or hostname) sits on a baseline or catalogue-discovered shared platform."""
+    text = (url or "").strip()
+    if not text:
+        return False
+    host = (
+        (urlsplit(text).hostname or "")
+        if "://" in text
+        else text.split("/")[0].split(":")[0]
+    ).strip().casefold().rstrip(".")
+    if not host:
+        return False
+    return bool(host_in(host, known_portal_platforms()))
 
 REFUSALS = {
     "not_found": "That programme is not in your list.",
@@ -112,14 +453,85 @@ def _queue_capture(tenant_id: UUID, student_id: UUID, application_id: UUID) -> N
         )
 
 
-def _known_portal(target: UUID) -> PortalForm | None:
-    """A portal someone in this agency already recorded for the programme."""
+def _parse_portal_url(form_url: str) -> tuple[str, str, str] | None:
+    url = https_only(form_url)
+    if not url or len(url) > 500:
+        return None
+    parts = urlsplit(url)
+    host = (parts.hostname or "").casefold()
+    try:
+        form_key = _form_key(parts.port, parts.path, parts.query, parts.fragment)
+    except ValueError:
+        return None
+    if not registrable_domain(host) or host.rstrip(".").endswith(".arpa"):
+        return None
+    return host, form_key, url
+
+
+def _portal_from_candidate(candidate: RecommendationCandidate | None) -> PortalForm | None:
+    """Resolve or create a PortalForm from candidate metadata or a portal evidence URL."""
+    if candidate is None:
+        return None
+    details = candidate.details if isinstance(candidate.details, dict) else {}
+    funding_card = candidate.funding_card if isinstance(candidate.funding_card, dict) else {}
+    for raw in (
+        details.get("portal_url"),
+        details.get("apply_url"),
+        funding_card.get("portal_url"),
+        funding_card.get("apply_url"),
+    ):
+        if isinstance(raw, str) and raw.strip():
+            parsed = _parse_portal_url(raw.strip())
+            if parsed is not None:
+                host, form_key, url = parsed
+                form, _ = PortalForm.objects.get_or_create(
+                    portal_host=host, form_key=form_key, defaults={"form_url": url}
+                )
+                return form
+    if candidate.evidence_id is not None:
+        source_url = (candidate.evidence.source_url or "").strip()
+        parsed = _parse_portal_url(source_url)
+        if parsed is not None:
+            host, form_key, url = parsed
+            if not host.endswith(
+                (".test", ".internal", ".example", ".invalid", ".localhost")
+            ) and not host_in(host, ("example.edu", "example.com", "example.org", "example.net")):
+                path = (urlsplit(url).path or "/").casefold()
+                if _is_shared_portal_platform(url) or path.startswith(
+                    ("/apply", "/portal", "/bewerbung")
+                ):
+                    form, _ = PortalForm.objects.get_or_create(
+                        portal_host=host, form_key=form_key, defaults={"form_url": url}
+                    )
+                    return form
+    return None
+
+
+def _known_portal(
+    target: UUID, candidate: RecommendationCandidate | None = None
+) -> PortalForm | None:
+    """A portal someone in this agency already recorded, cached cross-tenant, or on candidate."""
     form_id = (
         Application.objects.filter(program_id=target, portal_form__isnull=False)
         .values_list("portal_form_id", flat=True)
         .first()
     )
-    return PortalForm.objects.filter(id=form_id).first() if form_id else None
+    if form_id is not None:
+        portal = PortalForm.objects.filter(id=form_id).first()
+        if portal is not None:
+            _SHARED_PROGRAM_PORTALS[target] = portal.id
+            return portal
+    shared_id = _SHARED_PROGRAM_PORTALS.get(target)
+    if shared_id is not None:
+        portal = PortalForm.objects.filter(id=shared_id).first()
+        if portal is not None:
+            return portal
+        _SHARED_PROGRAM_PORTALS.pop(target, None)
+    portal = _portal_from_candidate(candidate)
+    if portal is not None:
+        _SHARED_PROGRAM_PORTALS[target] = portal.id
+        return portal
+    return None
 
 
 def _ask_for_portal(application: Application, programme_name: str) -> None:
@@ -147,11 +559,15 @@ def _ask_for_portal(application: Application, programme_name: str) -> None:
 
 def own_candidate(student: Membership, candidate_id: UUID) -> RecommendationCandidate | None:
     """A reviewed candidate from one of this student's own runs, or None."""
-    return RecommendationCandidate.objects.filter(
-        id=candidate_id,
-        run__profile_version__student=student,
-        state=RecommendationCandidate.State.VISIBLE,
-    ).first()
+    return (
+        RecommendationCandidate.objects.select_related("evidence")
+        .filter(
+            id=candidate_id,
+            run__profile_version__student=student,
+            state=RecommendationCandidate.State.VISIBLE,
+        )
+        .first()
+    )
 
 
 def add_application(*, student: Membership, candidate_id: UUID, actor: Membership) -> Application:
@@ -194,7 +610,8 @@ def add_application(*, student: Membership, candidate_id: UUID, actor: Membershi
         with transaction.atomic():
             card = _create(
                 student, program_id=target, candidate=candidate, name="",
-                portal=_known_portal(target), actor=actor, event="application.added",
+                portal=_known_portal(target, candidate=candidate), actor=actor,
+                event="application.added",
                 capture=True,
             )
     except IntegrityError:
@@ -234,6 +651,8 @@ def _create(
     )
     if portal is None:
         _ask_for_portal(application, application.title)
+    elif program_id:
+        _SHARED_PROGRAM_PORTALS[program_id] = portal.id
     _audit(actor, event, application)
     if capture:
         transaction.on_commit(
@@ -466,20 +885,15 @@ def record_portal(application: Application, form_url: str, *, actor: Membership)
     """
     if pack_command_rate_limited(application.student_id):
         raise ApplicationRefused("rate_limited")
-    url = https_only(form_url)
-    if not url or len(url) > 500:
+    parsed = _parse_portal_url(form_url)
+    if parsed is None:
         raise ApplicationRefused("bad_url")
-    parts = urlsplit(url)
-    host = (parts.hostname or "").casefold()
-    try:
-        form_key = _form_key(parts.port, parts.path, parts.query, parts.fragment)
-    except ValueError as error:  # a port urlsplit cannot read
-        raise ApplicationRefused("bad_url") from error
-    if not registrable_domain(host) or host.rstrip(".").endswith(".arpa"):
-        raise ApplicationRefused("bad_url")
+    host, form_key, url = parsed
     form, _created = PortalForm.objects.get_or_create(
         portal_host=host, form_key=form_key, defaults={"form_url": url}
     )
+    if application.program_id:
+        _SHARED_PROGRAM_PORTALS[application.program_id] = form.id
     application.portal_form = form
     application.route_snapshot = snapshot_from_portal(form)
     application.save(update_fields=["portal_form", "route_snapshot"])

@@ -285,7 +285,15 @@ def _sweep_student(student: Membership, *, now: datetime, cycle: timedelta) -> _
     )
     candidates = (
         RecommendationCandidate.objects.filter(run_id=pack.run_id)
-        .filter(Q(state=RecommendationCandidate.State.VISIBLE) | Q(id__in=members))
+        .filter(
+            Q(state=RecommendationCandidate.State.VISIBLE)
+            | Q(
+                state=RecommendationCandidate.State.CHECKING,
+                program__isnull=True,
+                opportunity__isnull=True,
+            )
+            | Q(id__in=members)
+        )
         .select_related("program", "opportunity", "evidence")
         .order_by("program_name", "id")
     )
@@ -295,6 +303,16 @@ def _sweep_student(student: Membership, *, now: datetime, cycle: timedelta) -> _
     named: list[ResearchMessage] = []
     unchecked: set[UUID] = set()
     for candidate in candidates:
+        if candidate.state == RecommendationCandidate.State.CHECKING:
+            named.append(
+                ResearchMessage(
+                    kind="check_named_program",
+                    tenant_id=student.tenant_id,
+                    run_id=candidate.run_id,
+                    candidate_id=candidate.id,
+                )
+            )
+            continue
         old = candidate.provenance_reason_code
         fresh = _fresh(candidate)
         if fresh is None:

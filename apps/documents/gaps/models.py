@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
 from apps.documents.models import VerifiedFact
-from apps.documents.verification import unsuperseded_facts
+from apps.documents.verification import has_full_name, unsuperseded_facts
 from apps.tenancy.models import Membership
 
 
@@ -303,14 +305,56 @@ def _group_questions(slug: str, kind: Kind, evidence: str) -> tuple[GapQuestion,
     )
 
 
+@contextlib.contextmanager
+def preload_gap_facts(student: Membership) -> Iterator[tuple[VerifiedFact, ...]]:
+    """Preload `unsuperseded_facts(student)` once across all detectors in a pass."""
+    depth = getattr(student, "_gap_facts_depth", 0)
+    if depth == 0:
+        student._gap_facts_cache = tuple(unsuperseded_facts(student))  # type: ignore[attr-defined]
+    student._gap_facts_depth = depth + 1  # type: ignore[attr-defined]
+    try:
+        yield student._gap_facts_cache  # type: ignore[attr-defined]
+    finally:
+        student._gap_facts_depth -= 1  # type: ignore[attr-defined]
+        if student._gap_facts_depth <= 0:  # type: ignore[attr-defined]
+            for attr in (
+                "_gap_facts_cache",
+                "_gap_facts_depth",
+                "_disowned_refs_cache",
+                "_retired_refs_cache",
+                "_current_pack_cache",
+            ):
+                if hasattr(student, attr):
+                    delattr(student, attr)
+
+
+def _identity_with_full_name(student: Membership) -> list[VerifiedFact]:
+    cached: tuple[VerifiedFact, ...] | None = getattr(student, "_gap_facts_cache", None)
+    if cached is not None:
+        return [
+            f
+            for f in cached
+            if f.category == VerifiedFact.Category.IDENTITY
+            and isinstance(f.payload, dict)
+            and "full_name" in f.payload
+        ]
+    return list(has_full_name(unsuperseded_facts(student)))
+
+
 def _cv_on_file(student: Membership) -> bool:
     """Whether there is a CV to ask about. A passport read writes facts too
     (source_ref "document:..."), and a student who uploaded only a passport has
     no CV whose gaps we could name."""
+    cached: tuple[VerifiedFact, ...] | None = getattr(student, "_gap_facts_cache", None)
+    if cached is not None:
+        return any(not f.source_ref.startswith("document:") for f in cached)
     return unsuperseded_facts(student).exclude(source_ref__startswith="document:").exists()
 
 
 def _current(student: Membership, category: str) -> list[VerifiedFact]:
+    cached: tuple[VerifiedFact, ...] | None = getattr(student, "_gap_facts_cache", None)
+    if cached is not None:
+        return [f for f in cached if f.category == category]
     return list(unsuperseded_facts(student).filter(category=category))
 
 
@@ -327,4 +371,8 @@ def _already_created(student: Membership, slug: str) -> bool:
     Without it a create-path question re-fires on every page load forever,
     which is nagging, and nagging is how a form gets abandoned.
     """
-    return unsuperseded_facts(student).filter(source_ref=f"gap-interview:{slug}").exists()
+    target_ref = f"gap-interview:{slug}"
+    cached: tuple[VerifiedFact, ...] | None = getattr(student, "_gap_facts_cache", None)
+    if cached is not None:
+        return any(f.source_ref == target_ref for f in cached)
+    return unsuperseded_facts(student).filter(source_ref=target_ref).exists()

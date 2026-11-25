@@ -145,3 +145,46 @@ def test_an_open_row_is_still_the_general_date_for_select_deadline():
     evidence = Evidence(deadlines=((dt.date(2026, 12, 15), whose),))
     chosen = select_deadline(evidence, {"nationality": "IN"})
     assert chosen is not None and chosen.date == dt.date(2026, 12, 15)
+
+
+def test_wp3_applies_to_student_supports_residence_ch_eea_regions_and_negations():
+    from types import SimpleNamespace
+
+    from apps.funding.deadline_conditions import applies_to_student
+
+    az_student_in_de = SimpleNamespace(
+        nationality="AZ", country_of_residence="DE", funding_preference="ANY"
+    )
+    ch_student = SimpleNamespace(
+        nationality="CH", country_of_residence="CH", funding_preference="ANY"
+    )
+    ae_student = SimpleNamespace(
+        nationality="AE", country_of_residence="AE", funding_preference="ANY"
+    )
+
+    # 1. RESIDENCE conditions match against country_of_residence
+    assert applies_to_student("RESIDENCE:EU", az_student_in_de, program_country="DE") is True
+    assert applies_to_student("NATIONALITY:EU", az_student_in_de, program_country="DE") is False
+
+    # 2. Swiss (CH) / EEA parity on EU/NON_EU deadline conditions
+    assert applies_to_student("NATIONALITY:EU", ch_student, program_country="DE") is True
+    assert applies_to_student("APPLICANT_CLASS:NON_EU", ch_student, program_country="DE") is False
+
+    # 3. Non-European regions and country groups (GCC, CIS)
+    assert applies_to_student("NATIONALITY:GCC", ae_student, program_country="GB") is True
+    assert applies_to_student("NATIONALITY:CIS", az_student_in_de, program_country="GB") is True
+
+    # 4. Negated region/country prose conditions
+    assert (
+        applies_to_student(
+            "OTHER:Applicants from outside the EU/EEA", az_student_in_de, program_country="DE"
+        )
+        is True
+    )
+    assert (
+        applies_to_student(
+            "OTHER:Applicants from outside the EU/EEA", ch_student, program_country="DE"
+        )
+        is False
+    )
+

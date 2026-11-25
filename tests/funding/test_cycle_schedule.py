@@ -49,3 +49,38 @@ def test_the_weekly_checks_begin_a_month_before_a_projected_opening():
 def test_the_weekly_checks_begin_two_months_before_last_cycles_call_date():
     assert next_check(today=TODAY, deadlines=(), last_call_open=dt.date(2025, 12, 10),
                       projected_open=None) == dt.date(2026, 10, 10)
+
+
+def test_circular_mean_doy_handles_december_january_wrap_around():
+    from apps.funding.cycle_schedule import circular_mean_doy
+
+    # Dec 28 (DOY 362) and Jan 3 (DOY 3) wrap across New Year's Day -> ~Dec 31 (DOY 365)
+    mean_doy, kappa = circular_mean_doy([dt.date(2024, 12, 28), dt.date(2025, 1, 3)])
+    assert mean_doy is not None
+    assert mean_doy >= 360.0 or mean_doy <= 2.0
+    assert kappa > 0.0
+
+
+def test_seasonal_hazard_and_square_root_allocation_compress_interval_near_peak():
+    from apps.funding.cycle_schedule import _month_center_doy, hazard_interval_days, seasonal_hazard
+
+    # Peak around October (open_month=10) vs quiescent April
+    oct_date = dt.date(2026, 10, 15)
+    apr_date = dt.date(2026, 4, 15)
+    oct_doy = _month_center_doy(10)
+    h_oct = seasonal_hazard(oct_doy, open_doy=oct_doy)
+    h_apr = seasonal_hazard(_month_center_doy(4), open_doy=oct_doy)
+    assert h_oct > h_apr * 3.0
+    assert hazard_interval_days(oct_date, open_month=10) < hazard_interval_days(
+        apr_date, open_month=10
+    )
+    # next_check with open_month=10 on Oct 15 schedules a shorter interval than 30 days
+    scheduled = next_check(
+        today=oct_date,
+        deadlines=(),
+        last_call_open=None,
+        projected_open=None,
+        open_month=10,
+    )
+    assert (scheduled - oct_date).days <= 14
+

@@ -99,3 +99,136 @@ def test_the_widget_renders_labelled_inputs():
     html = str(question_field("application_budget").widget.render("value", None))
     assert '<label for="id_value_amount">' in html
     assert '<select id="id_value_currency" name="value_currency">' in html
+
+
+def test_global_country_to_currency_and_money_widget_full_iso4217():
+    from uuid import uuid4
+
+    from apps.accounts.consultation import ConsultationDraft, default_currency_for_draft
+    from apps.reference_data import COUNTRY_TO_CURRENCY, ISO_4217_CODES
+
+    expected = {
+        "DE": "EUR",
+        "US": "USD",
+        "GB": "GBP",
+        "IN": "INR",
+        "NG": "NGN",
+        "BR": "BRL",
+        "JP": "JPY",
+        "PK": "PKR",
+        "CN": "CNY",
+        "CA": "CAD",
+        "AU": "AUD",
+        "CH": "CHF",
+        "PL": "PLN",
+        "SE": "SEK",
+        "NO": "NOK",
+        "AZ": "AZN",
+        "KZ": "KZT",
+        "UZ": "UZS",
+        "KG": "KGS",
+        "TJ": "TJS",
+        "GE": "GEL",
+        "TR": "TRY",
+        "BG": "EUR",
+    }
+    for country, curr in expected.items():
+        assert COUNTRY_TO_CURRENCY[country] == curr
+        draft = ConsultationDraft(uuid4(), uuid4(), {"country_of_residence": country})
+        assert default_currency_for_draft(draft) == curr
+
+    html = str(
+        question_field("application_budget").widget.render(
+            "value", {"amount": 1200, "currency": "CAD"}
+        )
+    )
+    assert '<option value="CAD" selected>' in html
+    for code in ("CHF", "PLN", "SEK", "NOK", "JPY", "BRL", "NGN", "AUD", "GEL"):
+        assert code in ISO_4217_CODES
+        assert f'<option value="{code}"' in html
+
+
+@pytest.mark.parametrize(
+    ("typed", "expected"),
+    [
+        ("İtalya", "IT"),
+        ("İspaniya", "ES"),
+        ("Türkiye", "TR"),
+        ("Turkiye", "TR"),
+        ("Azərbaycan", "AZ"),
+        ("Azərbaycan Respublikası", "AZ"),
+        ("Allemagne", "DE"),
+        ("Alemania", "DE"),
+        ("Almanya", "DE"),
+        ("Almaniya", "DE"),
+        ("Германия", "DE"),
+        ("Österreich", "AT"),
+        ("Osterreich", "AT"),
+        ("Schweiz", "CH"),
+        ("Suisse", "CH"),
+        ("Svizzera", "CH"),
+        ("Polska", "PL"),
+        ("Nederland", "NL"),
+        ("España", "ES"),
+        ("Espana", "ES"),
+    ],
+)
+def test_multilingual_and_turkish_dotted_i_country_resolution(typed, expected):
+    from apps.accounts.forms import normalize_country_code
+
+    assert normalize_country_code(typed) == expected
+    assert country_code(typed) == expected
+
+
+def test_language_evidence_supports_more_than_three_languages():
+    four_langs = [
+        {
+            "language": "English",
+            "level": "C1",
+            "evidence_type": "TEST",
+            "available_by": "2026-03-01",
+        },
+        {
+            "language": "German",
+            "level": "B2",
+            "evidence_type": "TEST",
+            "available_by": "2026-04-01",
+        },
+        {
+            "language": "French",
+            "level": "B2",
+            "evidence_type": "ATTESTED",
+            "available_by": "2026-05-01",
+        },
+        {
+            "language": "Turkish",
+            "level": "C1",
+            "evidence_type": "DEGREE",
+            "available_by": "2026-06-01",
+        },
+    ]
+    cleaned_json = _clean("language_evidence", {"value": json.dumps(four_langs)})
+    assert len(cleaned_json) == 4
+    assert [row["language"] for row in cleaned_json] == [
+        "English",
+        "German",
+        "French",
+        "Turkish",
+    ]
+
+    flat_post = {}
+    for idx, row in enumerate(four_langs):
+        for part, val in row.items():
+            flat_post[f"value_{idx}_{part}"] = val
+    cleaned_parts = _clean("language_evidence", flat_post)
+    assert len(cleaned_parts) == 4
+    assert cleaned_parts[3]["language"] == "Turkish"
+
+    rendered_form = ConsultationQuestionForm(
+        key="language_evidence",
+        field=question_field("language_evidence"),
+        initial_value=four_langs,
+    )
+    html = str(rendered_form["value"])
+    assert "Turkish" in html
+

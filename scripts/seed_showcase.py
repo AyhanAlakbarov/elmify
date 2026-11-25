@@ -60,52 +60,52 @@ if settings.DATABASES["default"]["HOST"] not in {"127.0.0.1", "localhost"}:
 
 
 # --------------------------------------------------------------------------
-# The catalogue. Every name here is invented.
+# The catalogue. Real flagship universities and scholarships for showcase.
 # --------------------------------------------------------------------------
 
 #: (institution, city, country, programme, months, tuition, currency, housing a month)
 PROGRAMMES = (
-    ("Isar Technical University", "Munich", "DE", "MSc Chemistry", 24, "0", "EUR", "650"),
-    ("Neckar University", "Heidelberg", "DE", "MSc Molecular Chemistry", 24, "3000", "EUR", "520"),
-    ("Northsea University", "Groningen", "NL", "MSc Sustainable Chemistry", 24, "16500", "EUR", "600"),
-    ("Danube University of Technology", "Budapest", "HU", "MSc Applied Chemistry", 24, "5200", "EUR", "380"),
-    ("Euganea University", "Padua", "IT", "MSc Industrial Chemistry", 24, "2600", "EUR", "420"),
-    ("Hanbit Institute of Science", "Daejeon", "KR", "MSc Chemistry and Materials", 24, "4800", "EUR", "350"),
-    ("Bosphorus Science University", "Istanbul", "TR", "MSc Organic Chemistry", 24, "3500", "EUR", "300"),
-    ("Caledonian University", "Edinburgh", "GB", "MSc Chemistry with Data Science", 12, "26000", "EUR", "900"),
+    ("Technical University of Munich (TUM)", "Munich", "DE", "MSc Chemistry", 24, "0", "EUR", "650"),
+    ("Heidelberg University", "Heidelberg", "DE", "MSc Molecular Chemistry", 24, "3000", "EUR", "520"),
+    ("University of Groningen", "Groningen", "NL", "MSc Sustainable Chemistry", 24, "16500", "EUR", "600"),
+    ("BME Budapest", "Budapest", "HU", "MSc Applied Chemistry", 24, "5200", "EUR", "380"),
+    ("University of Padua", "Padua", "IT", "MSc Industrial Chemistry", 24, "2600", "EUR", "420"),
+    ("KAIST", "Daejeon", "KR", "MSc Chemistry and Materials", 24, "4800", "EUR", "350"),
+    ("Boğaziçi University", "Istanbul", "TR", "MSc Organic Chemistry", 24, "3500", "EUR", "300"),
+    ("University of Edinburgh", "Edinburgh", "GB", "MSc Chemistry with Data Science", 12, "26000", "EUR", "900"),
 )
 
 #: Programme-attached funding: (programme name, award name, kind, amount, period).
 ATTACHED = (
-    ("MSc Sustainable Chemistry", "Northsea Excellence Waiver", "TUITION", "8250", "ANNUAL"),
-    ("MSc Molecular Chemistry", "Neckar Tuition Waiver", "TUITION", "3000", "ANNUAL"),
-    ("MSc Chemistry", "Isar Graduate Stipend", "STIPEND", "750", "MONTHLY"),
-    ("MSc Applied Chemistry", "Danube Merit Waiver", "TUITION", "5200", "ANNUAL"),
-    ("MSc Industrial Chemistry", "Euganea Regional Study Grant", "STIPEND", "560", "MONTHLY"),
-    ("MSc Chemistry with Data Science", "Caledonian International Award", "TUITION", "6000", "ANNUAL"),
-    ("MSc Chemistry and Materials", "Hanbit Lab Assistantship", "ASSISTANTSHIP", "700", "MONTHLY"),
-    ("MSc Organic Chemistry", "Bosphorus Merit Scholarship", "TUITION", "3500", "ANNUAL"),
+    ("MSc Sustainable Chemistry", "Groningen Talent Grant", "TUITION", "8250", "ANNUAL"),
+    ("MSc Molecular Chemistry", "Heidelberg Tuition Waiver", "TUITION", "3000", "ANNUAL"),
+    ("MSc Chemistry", "TUM Graduate Research Stipend", "STIPEND", "750", "MONTHLY"),
+    ("MSc Applied Chemistry", "BME Merit Tuition Waiver", "TUITION", "5200", "ANNUAL"),
+    ("MSc Industrial Chemistry", "Padua International Excellence Grant", "STIPEND", "560", "MONTHLY"),
+    ("MSc Chemistry with Data Science", "Edinburgh Global Master's Award", "TUITION", "6000", "ANNUAL"),
+    ("MSc Chemistry and Materials", "KAIST Graduate Research Assistantship (RA)", "ASSISTANTSHIP", "700", "MONTHLY"),
+    ("MSc Organic Chemistry", "Boğaziçi Merit Tuition Waiver", "TUITION", "3500", "ANNUAL"),
 )
 
 #: Official websites used for demo provenance links so clicking "Open programme page"
 #: or "Official source" resolves in a browser instead of failing DNS lookup.
 INSTITUTION_URLS = {
-    "Isar Technical University": "https://www.tum.de/en/",
-    "Neckar University": "https://www.uni-heidelberg.de/en",
-    "Northsea University": "https://www.rug.nl/",
-    "Danube University of Technology": "https://www.bme.hu/?language=en",
-    "Euganea University": "https://www.unipd.it/en/",
-    "Hanbit Institute of Science": "https://www.kaist.ac.kr/en/",
-    "Bosphorus Science University": "https://bogazici.edu.tr/en-US/Index",
-    "Caledonian University": "https://www.ed.ac.uk/",
+    "Technical University of Munich (TUM)": "https://www.tum.de/en/",
+    "Heidelberg University": "https://www.uni-heidelberg.de/en",
+    "University of Groningen": "https://www.rug.nl/",
+    "BME Budapest": "https://www.bme.hu/?language=en",
+    "University of Padua": "https://www.unipd.it/en/",
+    "KAIST": "https://www.kaist.ac.kr/en/",
+    "Boğaziçi University": "https://bogazici.edu.tr/en-US/Index",
+    "University of Edinburgh": "https://www.ed.ac.uk/",
 }
 
 #: Scholarships a student applies for on their own.
 AWARDS = (
     {
-        "name": "Danubia Government Scholarship",
-        "holder": "Danube Education Agency",
-        "domain": "stipendiumhungaricum.hu",
+        "name": "Stipendium Hungaricum (HTP)",
+        "holder": "Tempus Public Foundation & HTP",
+        "domain": "htp.edu.az",
         "country": "HU",
         "family": "GOVERNMENT_SCHOLARSHIP",
         "timing": "PRE_ARRIVAL",
@@ -127,11 +127,11 @@ AWARDS = (
         "bond": None,
     },
     {
-        "name": "Hanbit Global Scholars Programme",
-        "holder": "Hanbit Science Foundation",
+        "name": "Global Korea Scholarship (GKS)",
+        "holder": "NIIED — National Institute for International Education",
         "domain": "www.studyinkorea.go.kr",
         "country": "KR",
-        "family": "PRIVATE_FOUNDATION",
+        "family": "GOVERNMENT_SCHOLARSHIP",
         "timing": "PRE_ARRIVAL",
         "cycle": "ANNUAL_FIXED",
         "months": 24,
@@ -150,11 +150,11 @@ AWARDS = (
         "bond": None,
     },
     {
-        "name": "Rhine Talent Scholarship",
-        "holder": "Rhine Talent Foundation",
+        "name": "DAAD Study Scholarships",
+        "holder": "German Academic Exchange Service (DAAD)",
         "domain": "www.daad.de",
         "country": "DE",
-        "family": "PRIVATE_FOUNDATION",
+        "family": "GOVERNMENT_SCHOLARSHIP",
         "timing": "EITHER",
         "cycle": "ANNUAL_FIXED",
         "months": 24,
@@ -171,8 +171,8 @@ AWARDS = (
         "bond": None,
     },
     {
-        "name": "Anatolia Science Scholarship",
-        "holder": "Anatolia Research Council",
+        "name": "Türkiye Bursları",
+        "holder": "YTB — Presidency for Turks Abroad",
         "domain": "www.turkiyeburslari.gov.tr",
         "country": "TR",
         "family": "GOVERNMENT_SCHOLARSHIP",
@@ -182,7 +182,7 @@ AWARDS = (
         "tuition": "FULL",
         "living": "PARTIAL",
         "benefits": (
-            ("TUITION", None, "Tuition fees are paid by the council."),
+            ("TUITION", None, "Tuition fees are paid in full."),
             ("STIPEND", "600", "600 EUR a month."),
         ),
         "conditions": (
@@ -192,8 +192,8 @@ AWARDS = (
         "bond": None,
     },
     {
-        "name": "Caspian Futures Fellowship",
-        "holder": "Caspian Futures Fund",
+        "name": "State Program (Dövlət Proqramı)",
+        "holder": "State Program Management Group",
         "domain": "dp.edu.az",
         "country": "AZ",
         "family": "GOVERNMENT_SCHOLARSHIP",
@@ -203,14 +203,20 @@ AWARDS = (
         "tuition": "FULL",
         "living": "FULL",
         "benefits": (
-            ("TUITION", None, "Tuition anywhere on the fund's university list."),
-            ("STIPEND", "1100", "1,100 EUR a month while abroad."),
+            ("TUITION", None, "Full tuition at approved top-ranked international universities."),
+            ("STIPEND", "934", "934 EUR a month for living costs in Germany.", "EUR", "DE"),
+            ("STIPEND", "1150", "1,150 EUR a month for living costs in the Netherlands.", "EUR", "NL"),
+            ("STIPEND", "550", "550 EUR a month for living costs in Hungary.", "EUR", "HU"),
+            ("STIPEND", "1100", "1,100 EUR a month for living costs in Italy.", "EUR", "IT"),
+            ("STIPEND", "950", "950 EUR a month for living costs in South Korea.", "EUR", "KR"),
+            ("STIPEND", "600", "600 EUR a month for living costs in Türkiye.", "EUR", "TR"),
+            ("STIPEND", "1350", "1,350 GBP a month for living costs in the United Kingdom.", "GBP", "GB"),
         ),
         "conditions": (
             ("CITIZENSHIP", "IN", "AZ", "Citizens of Azerbaijan only."),
             ("GRADE", "GTE", "81 100", "A bachelor's average of at least 81 out of 100."),
         ),
-        "bond": (60, "Fellows must return and work in Azerbaijan for five years after graduating."),
+        "bond": (60, "Graduates return and work in Azerbaijan for five years after completing the degree."),
     },
 )
 
@@ -413,16 +419,27 @@ def _seed_catalogue() -> None:
             duration_months=award["months"],
         )
         first = None
-        for kind, amount, text in award["benefits"]:
+        for benefit_row in award["benefits"]:
+            kind, amount, text = benefit_row[0], benefit_row[1], benefit_row[2]
+            b_currency = benefit_row[3] if len(benefit_row) > 3 else ("EUR" if amount else None)
+            b_country = benefit_row[4] if len(benefit_row) > 4 else None
             benefit = FundingBenefit.objects.create(
                 opportunity=opportunity, kind=kind,
-                amount=Decimal(amount) if amount else None, currency="EUR" if amount else None,
+                amount=Decimal(amount) if amount else None, currency=b_currency if amount else None,
                 period="MONTHLY" if kind in ("STIPEND", "HOUSING", "INSURANCE") else (
                     "ONE_OFF" if kind == "TRAVEL" else "ANNUAL"
                 ),
                 description=text,
-                amount_text=f"{amount} EUR" if amount else "",
+                amount_text=f"{amount} {b_currency}/month" if (amount and kind in ("STIPEND", "HOUSING", "INSURANCE")) else (f"{amount} {b_currency}" if amount else ""),
             )
+            if b_country:
+                BenefitRule.objects.create(
+                    benefit=benefit,
+                    kind="GEOGRAPHIC_SCOPE",
+                    scope_type="COUNTRY",
+                    country_code=b_country,
+                    rule_text=text,
+                )
             first = first or benefit
         for key, operator, value, text in award["conditions"]:
             BenefitRule.objects.create(
@@ -500,13 +517,34 @@ def _choose_everything(student, agency) -> None:
     from apps.funding.models import RecommendationCandidate
     from apps.tenancy.context import tenant_scope
 
+    preferred_ranks = {
+        "MSc Chemistry": 1,
+        "MSc Applied Chemistry": 2,
+        "MSc Chemistry with Data Science": 3,
+        "MSc Industrial Chemistry": 4,
+        "MSc Molecular Chemistry": 5,
+        "MSc Sustainable Chemistry": 6,
+        "MSc Chemistry and Materials": 7,
+        "MSc Organic Chemistry": 8,
+    }
     client = Client()
     client.force_login(student)
     with tenant_scope(agency.id):
+        from apps.funding.models import PackCandidate, PackVersion
+
+        RecommendationCandidate.objects.filter(opportunity_id__isnull=False).update(rank=None)
+        for name, rank in preferred_ranks.items():
+            RecommendationCandidate.objects.filter(program_name=name).update(rank=rank)
+        pack = PackVersion.objects.order_by("-version").first()
+        if pack is not None:
+            for top_name in ("State Program (Dövlət Proqramı)", "Stipendium Hungaricum (HTP)", "DAAD Study Scholarships", "MSc Chemistry"):
+                cand = RecommendationCandidate.objects.filter(run_id=pack.run_id, program_name=top_name, eligible=True).first()
+                if cand is not None:
+                    PackCandidate.objects.get_or_create(pack_version=pack, candidate=cand)
         ids = list(
             RecommendationCandidate.objects.filter(
                 state=RecommendationCandidate.State.VISIBLE, eligible=True
-            ).values_list("id", flat=True)
+            ).order_by("rank", "program_name").values_list("id", flat=True)
         )
     added = 0
     for candidate_id in ids:
@@ -556,7 +594,7 @@ _KIT_BY_NAME: dict[str, list[str]] = {
     ],
     "MSc Applied Chemistry": [
         "Europass or academic CV in English listing analytical and industrial chemistry coursework.",
-        "Motivation letter (1–2 pages) tailored to Budapest's applied chemical engineering faculty.",
+        "Motivation letter (1–2 pages) tailored to BME Budapest's applied chemical engineering faculty.",
         "Two academic recommendation letters on official university letterhead.",
         "Official bachelor's transcript of records with credit hours and grade key.",
         "Copy of your passport photo and signature page.",
@@ -564,7 +602,7 @@ _KIT_BY_NAME: dict[str, list[str]] = {
     ],
     "MSc Industrial Chemistry": [
         "Academic CV in English detailing polymer, process, or catalysis laboratory training.",
-        "Motivation statement (max 2 pages) for the Padua Department of Chemical Sciences.",
+        "Motivation statement (max 2 pages) for the University of Padua Department of Chemical Sciences.",
         "Two recommendation letters from academic referees.",
         "Official transcript of records with Diploma Supplement or course descriptions.",
         "Copy of your valid passport.",
@@ -572,15 +610,15 @@ _KIT_BY_NAME: dict[str, list[str]] = {
     ],
     "MSc Chemistry and Materials": [
         "Research-focused CV in English listing laboratory instrumentation, synthesis techniques, and thesis title.",
-        "Motivation letter & Daejeon Graduate School study plan (max 2 pages) naming target catalysis or materials labs at Hanbit.",
-        "Two confidential recommendation letters from chemistry faculty submitted through the Hanbit portal.",
+        "Motivation letter & KAIST study plan (max 2 pages) naming target catalysis or materials labs in Daejeon.",
+        "Two confidential recommendation letters from chemistry faculty submitted through the KAIST portal.",
         "Official bachelor's transcript of records with 100-point grading scale conversion.",
         "Copy of your international passport identification page.",
         "Official English score report: IELTS Academic 6.5, TOEFL iBT 83, or TEPS 326.",
     ],
     "MSc Organic Chemistry": [
         "Academic CV in English including organic synthesis and spectroscopy laboratory experience.",
-        "Statement of purpose (1–2 pages) outlining your proposed master's thesis direction in Istanbul.",
+        "Statement of purpose (1–2 pages) outlining your proposed master's thesis direction at Boğaziçi University.",
         "Two academic reference letters from chemistry professors.",
         "Official undergraduate transcript of records.",
         "Copy of your passport identification page.",
@@ -588,35 +626,50 @@ _KIT_BY_NAME: dict[str, list[str]] = {
     ],
     "MSc Chemistry with Data Science": [
         "Academic CV in English highlighting quantitative, programming, and wet-lab chemistry training.",
-        "Personal statement (500–750 words) on combining machine learning and data science with molecular chemistry in Edinburgh.",
+        "Personal statement (500–750 words) on combining machine learning and data science with molecular chemistry at Edinburgh.",
         "Two academic references from university faculty familiar with your research potential.",
         "Official bachelor's transcript of records (UK 2:1 equivalent, 80/100 or above).",
         "Copy of your passport identification page.",
         "Proof of English at C1 level: IELTS Academic 7.0 (at least 6.5 in each component).",
     ],
-    "Hanbit Global Scholars Programme": [
+    "Global Korea Scholarship (GKS)": [
         "Full academic CV in English listing honours, research projects, and laboratory skills.",
-        "Hanbit Global Scholars personal statement & study plan in South Korea (max 2 pages).",
+        "GKS personal statement & study plan in South Korea (max 2 pages).",
         "Two sealed or portal-submitted academic recommendation letters.",
         "Official bachelor's transcript of records.",
         "Copy of your passport proving citizenship eligibility.",
         "Proof of English proficiency: IELTS Academic 6.5 or TOEFL iBT 83.",
     ],
-    "Danubia Government Scholarship": [
-        "Europass CV in English for the Stipendium Hungaricum / Danubia online system.",
+    "Stipendium Hungaricum (HTP)": [
+        "Europass CV in English for the Stipendium Hungaricum / HTP online system.",
         "One-page motivation letter addressed to the Hungarian host university and Tempus Public Foundation.",
         "Two academic recommendation letters signed by university faculty.",
         "Official bachelor's transcript of records.",
         "Copy of your valid international passport.",
         "Proof of English proficiency at B2 level (IELTS 6.5 or equivalent).",
     ],
-    "Rhine Talent Scholarship": [
+    "DAAD Study Scholarships": [
         "Tabular CV in English highlighting academic merit and civic/community engagement.",
-        "Scholarship motivation essay (1–2 pages) for the Rhine Talent Foundation selection committee.",
+        "DAAD scholarship motivation letter (1–2 pages) for the selection committee.",
         "Two academic letters of recommendation from university professors.",
         "Official bachelor's transcript of records showing an average of 85/100 or higher.",
         "Copy of your passport identification page.",
         "Proof of English proficiency (IELTS Academic 6.5 or equivalent).",
+    ],
+    "State Program (Dövlət Proqramı)": [
+        "State Program scholarship motivation statement & five-year return-service plan in Azerbaijan.",
+        "Official bachelor's diploma and transcript of records (minimum 81/100 GPA).",
+        "Copy of your Azerbaijani national ID and international passport.",
+        "Official English proficiency certificate (IELTS Academic 6.5 or TOEFL iBT 85).",
+        "Curriculum vitae (CV) in English submitted via portal.edu.az.",
+    ],
+    "Türkiye Bursları": [
+        "Türkiye Bursları letter of intent & study proposal for the YTB selection committee.",
+        "Two academic recommendation letters uploaded to the TBBS scholarship portal.",
+        "Official bachelor's transcript of records (minimum 70/100 average).",
+        "Copy of your valid international passport.",
+        "Proof of English proficiency (IELTS 6.5 or TOEFL iBT 80) for English-taught tracks.",
+        "Academic CV in English listing research, honours, and extracurricular activities.",
     ],
 }
 
@@ -639,7 +692,7 @@ def _stage_the_applications(agency, student) -> None:
             (21, "PREPARING", False, ""),
             (12, "PREPARING", True, ""),
             (48, "PREPARING", False, ""),
-            (-10, "SUBMITTED", True, ""),
+            (18, "SUBMITTED", True, ""),
             (-40, "CONFIRMED", True, "ADMITTED"),
             (33, "PREPARING", False, ""),
             (60, "PREPARING", False, ""),
@@ -666,6 +719,7 @@ def _stage_the_applications(agency, student) -> None:
             application.kit_requirements = list(_KIT_BY_NAME.get(prog_name, _KIT))
             if started:
                 application.started_at = now - timedelta(days=7)
+            if application.portal_form is None:
                 source_url = (
                     application.candidate.evidence.source_url
                     if application.candidate and application.candidate.evidence
@@ -680,6 +734,13 @@ def _stage_the_applications(agency, student) -> None:
                     portal_host=source_domain, form_key=f"k-{uuid4()}",
                     form_url=source_url,
                 )
+            if application.exception_item_id is not None:
+                from apps.concierge.models import RoadmapItem
+
+                RoadmapItem.objects.filter(id=application.exception_item_id).update(
+                    state=RoadmapItem.State.DONE
+                )
+                application.exception_item = None
             if state != "PREPARING":
                 application.state = state
             if outcome:
@@ -688,49 +749,57 @@ def _stage_the_applications(agency, student) -> None:
                 application.outcome_recorded_at = now - timedelta(days=3)
             application.save()
             if application.candidate is not None:
+                has_referee_req = any(
+                    "recommendation" in req.lower() or "reference" in req.lower()
+                    for req in (application.kit_requirements or ())
+                )
                 src_url = (
                     application.candidate.evidence.source_url
                     if application.candidate.evidence
                     else "https://www.tum.de/en/"
                 )
-                application.candidate.referee_requirements = [
-                    {
-                        "field": "count",
-                        "value": "TWO",
-                        "date": "",
-                        "conditional": False,
-                        "condition": "",
-                        "rule_text": "Two academic letters of recommendation.",
-                        "source_url": src_url,
-                    },
-                    {
-                        "field": "kind",
-                        "value": "ACADEMIC",
-                        "date": "",
-                        "conditional": False,
-                        "condition": "",
-                        "rule_text": "From university professors or thesis supervisors.",
-                        "source_url": src_url,
-                    },
-                    {
-                        "field": "mode",
-                        "value": "PORTAL_INVITE",
-                        "date": "",
-                        "conditional": False,
-                        "condition": "",
-                        "rule_text": "Invited through the online portal or uploaded as signed PDF.",
-                        "source_url": src_url,
-                    },
-                    {
-                        "field": "institutional_email_required",
-                        "value": "YES",
-                        "date": "",
-                        "conditional": False,
-                        "condition": "",
-                        "rule_text": "Institutional university email address required.",
-                        "source_url": src_url,
-                    },
-                ]
+                application.candidate.referee_requirements = (
+                    [
+                        {
+                            "field": "count",
+                            "value": "TWO",
+                            "date": "",
+                            "conditional": False,
+                            "condition": "",
+                            "rule_text": "Two academic letters of recommendation.",
+                            "source_url": src_url,
+                        },
+                        {
+                            "field": "kind",
+                            "value": "ACADEMIC",
+                            "date": "",
+                            "conditional": False,
+                            "condition": "",
+                            "rule_text": "From university professors or thesis supervisors.",
+                            "source_url": src_url,
+                        },
+                        {
+                            "field": "mode",
+                            "value": "PORTAL_INVITE",
+                            "date": "",
+                            "conditional": False,
+                            "condition": "",
+                            "rule_text": "Invited through the online portal or uploaded as signed PDF.",
+                            "source_url": src_url,
+                        },
+                        {
+                            "field": "institutional_email_required",
+                            "value": "YES",
+                            "date": "",
+                            "conditional": False,
+                            "condition": "",
+                            "rule_text": "Institutional university email address required.",
+                            "source_url": src_url,
+                        },
+                    ]
+                    if has_referee_req
+                    else []
+                )
                 application.candidate.save(update_fields=["referee_requirements"])
         print(f"Staged {len(applications)} applications")
 
@@ -827,9 +896,9 @@ def _facts_and_documents(agency, student) -> None:
             if a.candidate is not None and a.candidate.program_id is not None
         ]
         tailored_cv_specs = [
-            (0, "GERMAN_TABULAR", "Aysel-Mammadova-CV-Isar-Tabular.pdf"),
-            (2, "EUROPASS", "Aysel-Mammadova-CV-Euganea-Europass.pdf"),
-            (1, "STANDARD", "Aysel-Mammadova-CV-Hanbit-Research.pdf"),
+            (0, "GERMAN_TABULAR", "Aysel-Mammadova-CV-TUM-Tabular.pdf"),
+            (2, "EUROPASS", "Aysel-Mammadova-CV-Padua-Europass.pdf"),
+            (1, "STANDARD", "Aysel-Mammadova-CV-KAIST-Research.pdf"),
         ]
         for cv_ver, (prog_idx, variant, cv_fname) in enumerate(tailored_cv_specs, start=2):
             if prog_idx < len(programmes):
@@ -928,19 +997,19 @@ def _store_pdfs(drafts) -> None:  # type: ignore[no-untyped-def]
 def _cv_content(target: str = "") -> dict:
     from apps.documents.schemas import CVContent
 
-    if "Isar" in target or "Neckar" in target:
+    if "Munich" in target or "TUM" in target or "Heidelberg" in target:
         grade_conversion = "1.6 German Bavarian scale"
         ects_credits = 240
         coursework = "Heterogeneous Catalysis, Organometallic Synthesis, Physical Chemistry, Instrumental Analysis"
         methods = "Bench-scale catalytic oxidation reactors, FTIR & GC-MS reaction monitoring."
         outcomes = "Quantified selectivity across 14 substituted aromatic substrates (grade 94/100)."
-    elif "Euganea" in target or "Danube" in target:
+    elif "Padua" in target or "BME" in target or "Budapest" in target:
         grade_conversion = "105/110 Italian Laurea equivalent"
         ects_credits = 240
         coursework = "Industrial Process Chemistry, Polymer Characterisation, Analytical Spectroscopy, Reaction Engineering"
         methods = "FTIR vibrational spectroscopy and chromatographic purity profiling."
         outcomes = "Validated catalyst recyclability over five consecutive batch cycles."
-    elif "Hanbit" in target:
+    elif "KAIST" in target:
         grade_conversion = "4.0/4.5 Korean GPA scale"
         ects_credits = 240
         coursework = "Solid-State & Materials Chemistry, Catalytic Surface Science, Spectroscopic Methods"
@@ -1005,27 +1074,87 @@ def _cv_content(target: str = "") -> dict:
     }).model_dump(mode="json")
 
 
+_PROGRAMME_FOCUS = {
+    "MSc Chemistry": (
+        "homogeneous and heterogeneous catalysis, organometallic synthesis, and sustainable reaction engineering at the Munich campus",
+        "the second-year catalysis research internship and TUMonline thesis track",
+    ),
+    "MSc Molecular Chemistry": (
+        "mechanistic organic chemistry, spectroscopic structure elucidation, and molecular catalyst design in Heidelberg",
+        "the advanced molecular synthesis practicals and interdisciplinary catalysis colloquia",
+    ),
+    "MSc Sustainable Chemistry": (
+        "green synthesis, bio-based polymer feedstocks, and life-cycle assessment of industrial chemical processes in Groningen",
+        "the green catalysis laboratory modules and industrial sustainability thesis project",
+    ),
+    "MSc Applied Chemistry": (
+        "industrial process intensification, analytical instrumentation, and catalytic materials engineering in Budapest",
+        "the process chemistry pilot-lab coursework and applied thesis project",
+    ),
+    "MSc Industrial Chemistry": (
+        "polymer reaction engineering, heterogeneous catalysis, and industrial scale-up methodologies in Padua",
+        "the industrial macromolecular chemistry track and laboratory thesis",
+    ),
+    "MSc Chemistry and Materials": (
+        "functional catalytic materials, polymer nanocomposites, and surface spectroscopy in Daejeon",
+        "the graduate catalysis and materials characterization laboratories",
+    ),
+    "MSc Organic Chemistry": (
+        "transition-metal-catalysed selective oxidation, heterocyclic synthesis, and mechanistic physical-organic chemistry in Istanbul",
+        "the advanced organic synthesis seminar and thesis research group",
+    ),
+    "MSc Chemistry with Data Science": (
+        "chemoinformatics, reaction-yield modelling, and automated spectroscopic data analysis in Edinburgh",
+        "the data-driven reaction optimization coursework and computational-experimental thesis project",
+    ),
+}
+
+
 def _letter(programme: str, institution: str) -> dict:
     where = institution or "your university"
+    focus, modules = _PROGRAMME_FOCUS.get(
+        programme,
+        (
+            "catalysis, polymer characterization, and sustainable chemical synthesis",
+            "the second-year research thesis and advanced catalysis modules",
+        ),
+    )
     return {"language": "en", "units": [
         {"archetype": "opening", "text": (
-            f"I am applying to the {programme} at {where} because I want to turn four years "
-            "of chemistry training into research on cleaner industrial processes."
+            f"I am writing to apply for admission to the {programme} at {where}. Completing my "
+            "BSc in Chemistry at Baku State University (2022–2026, cumulative grade 88/100) — "
+            "with top marks in Organic Chemistry (94/100), Catalysis (93/100), Polymer Chemistry "
+            "(92/100), Analytical Chemistry (91/100), and Physical Chemistry (90/100), alongside "
+            "a Third Prize in the 2024 Republican Chemistry Olympiad — has shaped my commitment "
+            "to quantitative, mechanism-driven research on cleaner catalytic and polymer processes."
         )},
         {"archetype": "evidence", "text": (
-            "During my internship at the Institute of Petrochemical Processes in Baku I "
-            "prepared and characterised polymer samples with FTIR spectroscopy, and kept the "
-            "sample log for a team of six. That work showed me how much a careful method "
-            "matters before any result does."
+            "In my undergraduate thesis at Baku State University, 'Catalytic oxidation of "
+            "substituted aromatics' supervised by Prof. Rauf Aliyev, I investigated selective "
+            "oxidation pathways using an iron-porphyrin catalyst under Schlenk-line conditions "
+            "and quantified reaction products by GC-MS across 12 systematic runs, achieving 91% "
+            "conversion at 80 °C. Complementing this academic research, during my summer 2025 "
+            "internship at the Institute of Petrochemical Processes in Baku, I prepared and "
+            "characterised more than 40 polymer samples using FTIR spectroscopy and maintained "
+            "the analytical sample log for a six-person research group."
+        )},
+        {"archetype": "experience", "text": (
+            "Beyond the laboratory, serving as Volunteer Coordinator for the Green Caspian "
+            "Society (2023–2024) — where I organised 14 shoreline water-sampling campaigns with "
+            "25 student volunteers and tracked environmental water-quality indicators — taught "
+            "me how rigorous analytical chemistry directly informs environmental stewardship "
+            "and reproducible data pipelines in Python and OriginLab."
         )},
         {"archetype": "fit", "text": (
-            "Your programme's focus on catalysis and sustainable synthesis is the next step "
-            "for me, and its research project in the second year is where I hope to begin "
-            "the work I want to continue in a PhD."
+            f"The {programme} at {where} is my ideal next step because of its emphasis on "
+            f"{focus}. I am particularly eager to contribute my GC-MS, FTIR, and Schlenk-line "
+            f"experience to {modules}, building the experimental foundation for a future PhD "
+            "in sustainable catalysis."
         )},
         {"archetype": "closing", "text": (
-            "I would bring discipline, curiosity and a clear reason to be there. Thank you "
-            "for considering my application."
+            f"With verified C1 English proficiency (IELTS Academic 7.0) and four years of "
+            f"intensive laboratory training, I am ready to contribute from day one at {where}. "
+            "Thank you for considering my application."
         )},
     ]}
 
@@ -1034,22 +1163,33 @@ def _scholarship_essay(award_name: str, holder: str) -> dict:
     sponsor = holder or "the Selection Committee"
     return {"language": "en", "units": [
         {"archetype": "opening", "text": (
-            f"I am applying for the {award_name} awarded by {sponsor} to support my graduate "
-            "studies in sustainable polymer chemistry and catalytic materials."
+            f"I am applying for the {award_name} awarded by {sponsor} to support my Master's "
+            "studies in sustainable catalysis and polymer chemistry. Over four years in the "
+            "BSc Chemistry programme at Baku State University (cumulative GPA 88/100; Organic "
+            "Chemistry 94, Catalysis 93, Polymer Chemistry 92, Analytical Chemistry 91) and as "
+            "a 2024 Republican Chemistry Olympiad Third Prize laureate, I have focused my "
+            "academic and laboratory training on replacing energy-intensive petrochemical steps "
+            "with selective, earth-abundant catalytic processes."
         )},
         {"archetype": "evidence", "text": (
-            "During my BSc in Chemistry at Baku State University (GPA 88/100) and my research "
-            "internship at the Institute of Petrochemical Processes, I synthesised and "
-            "characterised biodegradable polyesters using FTIR spectroscopy and maintained the "
-            "analytical sample log for a six-member research group."
+            "In my BSc thesis ('Catalytic oxidation of substituted aromatics', supervised by "
+            "Prof. Rauf Aliyev), I executed 12 controlled oxidation runs using an iron-porphyrin "
+            "catalyst and GC-MS product quantification, reaching 91% conversion at 80 °C. "
+            "Subsequently, as a Research Intern at the Institute of Petrochemical Processes "
+            "(June–September 2025), I characterised 40+ polymer formulations by FTIR spectroscopy "
+            "and managed the sample-tracking log for a six-member research team. In parallel, "
+            "leading 14 Caspian shoreline water-sampling trips with 25 volunteers for the Green "
+            "Caspian Society reinforced my commitment to environmental impact."
         )},
         {"archetype": "fit", "text": (
-            f"Support from the {award_name} will allow me to dedicate my full time to laboratory "
-            "research on recyclable catalyst systems and bring modern green-chemistry methods "
-            "back to industrial materials development after graduation."
+            f"Receiving the {award_name} from {sponsor} will enable me to dedicate my full "
+            "time to advanced laboratory research on recyclable catalyst systems and green "
+            "polymer synthesis without financial barriers, preparing me to pursue a PhD and "
+            "contribute modern clean-process methodologies to industrial materials research."
         )},
         {"archetype": "closing", "text": (
-            f"Thank you to {sponsor} for considering my scholarship essay and study plan."
+            f"Thank you to {sponsor} for reviewing my scholarship application, academic "
+            "record, and research plan."
         )},
     ]}
 
@@ -1068,19 +1208,19 @@ def _messages(student, counselor, agency, student_m) -> None:
     conversation = (
         (
             you,
-            "Hi Leyla! Should I retake IELTS (7.0 overall, 6.5 writing) before the Danubia and Neckar scholarship deadlines?",
+            "Hi Leyla! Should I retake IELTS (7.0 overall, 6.5 writing) before the Stipendium Hungaricum (HTP) and TUM MSc Chemistry deadlines?",
         ),
         (
             staff,
-            "Your 7.0 overall (with 6.5 in every band) already clears every MSc Chemistry programme and scholarship on your shortlist. Spend this week refining your motivation letters instead.",
+            "Your 7.0 overall (with 6.5 in every band) already clears every MSc Chemistry programme and scholarship on your shortlist. Focus this week on your TUM and DAAD motivation letters instead.",
         ),
         (
             you,
-            "Got it — I confirmed my FTIR spectroscopy internship facts. Who should I ask for the two academic reference letters?",
+            "Got it — I uploaded my transcript and internship certificate. Which two professors should I invite for the academic reference letters?",
         ),
         (
             staff,
-            "Ask your BSc thesis supervisor to cover your catalysis coursework and your lab head to cover your FTIR polymer work. I just reviewed and approved both referee briefs in your workspace.",
+            "Invite Prof. Aliyev to cover your BSc catalysis thesis and Assoc. Prof. Hasanova to cover your analytical spectroscopy lab work. You can send each of them their tailored referee brief directly from the Referees tab.",
         ),
     )
     for client, body in conversation:
@@ -1089,6 +1229,15 @@ def _messages(student, counselor, agency, student_m) -> None:
             else f"/counselor/students/{student_m.id}/messages/send/"
         )
         client.post(url, {"body": body}, HTTP_HOST=HOST)
+    from apps.concierge.models import ConversationMessage
+    from apps.tenancy.context import tenant_scope
+    from apps.tenancy.db import tenant_transaction
+
+    with tenant_scope(agency.id), tenant_transaction(agency.id):
+        base_day = (timezone.now() - timedelta(days=1)).replace(hour=14, minute=12, second=0, microsecond=0)
+        offsets = (0, 16, 23, 37)
+        for msg, mins in zip(ConversationMessage.objects.order_by("created_at", "id"), offsets, strict=False):
+            ConversationMessage.objects.filter(id=msg.id).update(created_at=base_day + timedelta(minutes=mins))
     print("Messages added")
     from apps.tenancy.context import tenant_scope
     from apps.tenancy.db import tenant_transaction
@@ -1100,64 +1249,75 @@ def _messages(student, counselor, agency, student_m) -> None:
 def _seed_referees(agency, student_m) -> None:
     from apps.documents.models import Referee, RefereeRequest
     from apps.portals.models import Application
+    from apps.tenancy.context import tenant_scope
+    from apps.tenancy.db import tenant_transaction
 
-    r1 = Referee.objects.create(
-        tenant=agency,
-        student=student_m,
-        title="Prof.",
-        name="Rauf Aliyev",
-        institution="Baku State University",
-        email="r.aliyev@bsu.edu.az",
-        institutional_email=True,
-        kind=Referee.Kind.ACADEMIC,
-        relationship="Supervised my BSc Chemistry thesis on catalytic polymer synthesis (grade 95/100) and taught Advanced Organic Chemistry.",
-        agreed_requests=12,
-        gives_generic_letter=True,
-        status=Referee.Status.ACTIVE,
-    )
-    r2 = Referee.objects.create(
-        tenant=agency,
-        student=student_m,
-        title="Assoc. Prof.",
-        name="Sevda Hasanova",
-        institution="Baku State University",
-        email="s.hasanova@bsu.edu.az",
-        institutional_email=True,
-        kind=Referee.Kind.ACADEMIC,
-        relationship="Taught Analytical & Instrumental Chemistry (grade 92/100) and oversaw my spectroscopy lab practicum.",
-        agreed_requests=12,
-        gives_generic_letter=True,
-        status=Referee.Status.ACTIVE,
-    )
-    Referee.objects.create(
-        tenant=agency,
-        student=student_m,
-        title="Dr.",
-        name="Kamran Guliyev",
-        institution="SOCAR Polymer R&D Lab",
-        email="k.guliyev@socarpolymer.az",
-        institutional_email=True,
-        kind=Referee.Kind.PROFESSIONAL,
-        relationship="Supervised my summer polymer characterisation internship (FTIR and thermal analysis).",
-        agreed_requests=6,
-        gives_generic_letter=True,
-        status=Referee.Status.ACTIVE,
-    )
-    for idx, app in enumerate(Application.objects.filter(student=student_m, outcome="").order_by("created_at")):
-        RefereeRequest.objects.create(
+    with tenant_scope(agency.id), tenant_transaction(agency.id):
+        r1 = Referee.objects.create(
             tenant=agency,
-            referee=r1,
-            application=app,
-            mode=RefereeRequest.Mode.PORTAL_INVITE if idx % 2 == 0 else RefereeRequest.Mode.UPLOAD_ADDRESSED,
-            state=RefereeRequest.State.AGREED if idx < 2 else RefereeRequest.State.PROPOSED,
+            student=student_m,
+            title="Prof.",
+            name="Rauf Aliyev",
+            institution="Baku State University",
+            email="r.aliyev@bsu.edu.az",
+            institutional_email=True,
+            kind=Referee.Kind.ACADEMIC,
+            relationship="Supervised my BSc Chemistry thesis on catalytic polymer synthesis (grade 95/100) and taught Advanced Organic Chemistry.",
+            agreed_requests=12,
+            gives_generic_letter=True,
+            status=Referee.Status.ACTIVE,
         )
-        RefereeRequest.objects.create(
+        r2 = Referee.objects.create(
             tenant=agency,
-            referee=r2,
-            application=app,
-            mode=RefereeRequest.Mode.PORTAL_INVITE if idx % 2 == 0 else RefereeRequest.Mode.UPLOAD_GENERIC,
-            state=RefereeRequest.State.ASKED if idx < 2 else RefereeRequest.State.PROPOSED,
+            student=student_m,
+            title="Assoc. Prof.",
+            name="Sevda Hasanova",
+            institution="Baku State University",
+            email="s.hasanova@bsu.edu.az",
+            institutional_email=True,
+            kind=Referee.Kind.ACADEMIC,
+            relationship="Taught Analytical & Instrumental Chemistry (grade 92/100) and oversaw my spectroscopy lab practicum.",
+            agreed_requests=12,
+            gives_generic_letter=True,
+            status=Referee.Status.ACTIVE,
         )
+        r3 = Referee.objects.create(
+            tenant=agency,
+            student=student_m,
+            title="Dr.",
+            name="Kamran Guliyev",
+            institution="SOCAR Polymer R&D Lab",
+            email="k.guliyev@socarpolymer.az",
+            institutional_email=True,
+            kind=Referee.Kind.PROFESSIONAL,
+            relationship="Supervised my summer polymer characterisation internship (FTIR and thermal analysis).",
+            agreed_requests=6,
+            gives_generic_letter=True,
+            status=Referee.Status.ACTIVE,
+        )
+        for idx, app in enumerate(Application.objects.filter(student=student_m, outcome="").order_by("created_at")):
+            RefereeRequest.objects.create(
+                tenant=agency,
+                referee=r1,
+                application=app,
+                mode=RefereeRequest.Mode.PORTAL_INVITE if idx % 2 == 0 else RefereeRequest.Mode.UPLOAD_ADDRESSED,
+                state=RefereeRequest.State.AGREED if idx < 2 else RefereeRequest.State.PROPOSED,
+            )
+            RefereeRequest.objects.create(
+                tenant=agency,
+                referee=r2,
+                application=app,
+                mode=RefereeRequest.Mode.PORTAL_INVITE if idx % 2 == 0 else RefereeRequest.Mode.UPLOAD_GENERIC,
+                state=RefereeRequest.State.ASKED if idx < 2 else RefereeRequest.State.PROPOSED,
+            )
+            if idx < 2:
+                RefereeRequest.objects.create(
+                    tenant=agency,
+                    referee=r3,
+                    application=app,
+                    mode=RefereeRequest.Mode.UPLOAD_ADDRESSED,
+                    state=RefereeRequest.State.AGREED if idx == 0 else RefereeRequest.State.ASKED,
+                )
     print("Referees added")
 
 

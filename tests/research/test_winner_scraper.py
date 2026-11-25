@@ -221,6 +221,31 @@ def test_sync_winner_cohort_upserts_program_and_opportunity_profiles() -> None:
     assert opp_cohort.holder_name == "DAAD"
     assert opp_cohort.country_code == "DE"
     assert opp_cohort.sample_size == 2
+    assert getattr(opp_cohort, "archetype", None) is not None
+    assert opp_cohort.archetype.sample_size == 2
+
+    # Verify serialized WinnerArchetype is persisted in prior_degree_levels["__archetype__"]
+    opp_cohort_from_db = WinnerCohortProfile.objects.get(pk=opp_cohort.pk)
+    assert opp_cohort_from_db.prior_degree_levels["BACHELOR"] == 2
+    arch_meta = opp_cohort_from_db.prior_degree_levels.get("__archetype__")
+    assert isinstance(arch_meta, dict)
+    for required_key in (
+        "effective_sample_size",
+        "shrinkage_factor",
+        "avg_gpa",
+        "eb_avg_gpa",
+        "avg_work_months",
+        "eb_avg_work_months",
+        "research_share",
+        "eb_research_share",
+        "top_prior_universities",
+        "prior_university_shares",
+        "origin_country_shares",
+        "prior_degree_level_shares",
+        "prior_degree_field_shares",
+    ):
+        assert required_key in arch_meta, required_key
+    assert 0.0 < float(arch_meta["effective_sample_size"]) <= 2.0
 
 
 def test_sync_winner_cohort_logs_and_returns_none_when_unconfigured_or_failing(
@@ -277,3 +302,145 @@ def test_http_provider_rejects_cleartext_private_and_loopback_urls() -> None:
     ):
         with pytest.raises(ValueError):
             HttpThirdPartyLinkedInProvider(endpoint_url=bad_url, api_key="secret")
+
+
+def test_multilingual_degree_normalization_and_research_signals() -> None:
+    from apps.research.winner_scraper import _normalize_degree_level, parse_raw_winner_profile
+
+    for master_title in (
+        "M.Sc.",
+        "M.A.",
+        "Magister",
+        "Master of Science",
+        "Laurea Magistrale in Ingegneria Informatica",
+        "Diplôme d'Ingénieur",
+        "Máster Universitario en Ciencia de Datos",
+        "Mestrado em Ciência da Computação",
+        "Yüksek Lisans",
+        "Magistr",
+        "Магистр",
+        "修士（工学）",
+        "工学硕士",
+        "공학석사",
+    ):
+        assert _normalize_degree_level(master_title) == "MASTER", master_title
+
+    for phd_title in ("Ph.D.", "Dr. rer. nat.", "Doctorat", "Dottorato di Ricerca", "博士", "박사"):
+        assert _normalize_degree_level(phd_title) == "PHD", phd_title
+
+    for bachelor_title in (
+        "Licence",
+        "Licenciatura",
+        "Laurea Triennale",
+        "Бакалавр",
+        "学士",
+        "학사",
+    ):
+        assert _normalize_degree_level(bachelor_title) == "BACHELOR", bachelor_title
+
+    for exp_title in (
+        "Wissenschaftlicher Mitarbeiter",
+        "Assistant de recherche",
+        "Asistente de investigación",
+        "Assegnista di ricerca",
+        "Araştırma Görevlisi",
+        "Младший научный сотрудник",
+        "学術論文 第一作者",
+        "학술논문 연구원",
+    ):
+        prof = parse_raw_winner_profile(
+            {
+                "origin_country": "DE",
+                "education": [{"degree_name": "Laurea Magistrale", "field_of_study": "Physics"}],
+                "experiences": [{"title": exp_title, "duration_months": 12}],
+            }
+        )
+        assert prof.prior_degree_level == "MASTER"
+        assert prof.has_research_signal is True, exp_title
+
+
+def test_hajek_ipw_and_kish_effective_sample_size_winner_archetype_debiasing() -> None:
+    from apps.research.winner_scraper import (
+        build_winner_archetype,
+        eb_shrinkage_weight,
+        kish_effective_sample_size,
+    )
+
+    # 1. Equal weights -> n_eff == n
+    assert kish_effective_sample_size([2.0, 2.0, 2.0, 2.0]) == pytest.approx(4.0)
+
+    # 2. Unequal weights -> 0 < n_eff < n (Kish Cauchy-Schwarz inequality)
+    unequal_n_eff = kish_effective_sample_size([1.0, 1.0, 1.0, 10.0])
+    assert 0.0 < unequal_n_eff < 4.0
+    assert unequal_n_eff == pytest.approx((13.0**2) / 103.0)
+
+    # 3. Empirical Bayes shrinkage weight is strictly increasing in n_eff
+    assert 0.0 < eb_shrinkage_weight(1.5, kappa=5.0) < eb_shrinkage_weight(4.0, kappa=5.0) < 1.0
+
+    # 4. Cohort with low-propensity (UZ / History) vs high-propensity (US / CS) winners
+    profiles = [
+        {
+            "origin_country": "US",
+            "prior_degree_fields": ["Computer Science"],
+            "prior_degree_level": "MASTER",
+            "work_experience_months": 12,
+            "has_research_signal": False,
+            "gpa": 3.4,
+            "prior_universities": ["UC Berkeley"],
+            "reporting_propensity": 0.80,  # w_1 = 1.25
+        },
+        {
+            "origin_country": "US",
+            "prior_degree_fields": ["Computer Science"],
+            "prior_degree_level": "MASTER",
+            "work_experience_months": 12,
+            "has_research_signal": False,
+            "gpa": 3.4,
+            "prior_universities": ["UC Berkeley"],
+            "reporting_propensity": 0.80,  # w_2 = 1.25
+        },
+        {
+            "origin_country": "UZ",
+            "prior_degree_fields": ["History"],
+            "prior_degree_level": "Magistr",
+            "work_experience_months": 36,
+            "has_research_signal": True,
+            "gpa": 3.9,
+            "prior_universities": ["National University of Uzbekistan"],
+            "reporting_propensity": 0.10,  # w_3 = 10.0
+        },
+    ]
+
+    archetype = build_winner_archetype(profiles)
+    assert archetype.sample_size == 3
+    # Total weight = 1.25 + 1.25 + 10.0 = 12.5; sum(w^2) = 1.5625 + 1.5625 + 100 = 103.125
+    expected_n_eff = (12.5**2) / 103.125
+    assert archetype.effective_sample_size == pytest.approx(expected_n_eff, abs=1e-3)
+    assert 0.0 < archetype.effective_sample_size < archetype.sample_size
+
+    # Unweighted research share would be 1/3 = 0.3333, but Hájek IPW gives 10.0 / 12.5 = 0.8000
+    assert archetype.research_share == pytest.approx(0.80, abs=1e-4)
+    # Hájek avg_work_months = (2.5 * 12 + 10.0 * 36) / 12.5 = 31.2
+    assert archetype.avg_work_months == pytest.approx(31.2, abs=1e-4)
+    # Hájek avg_gpa = (2.5 * 3.4 + 10.0 * 3.9) / 12.5 = 3.8
+    assert archetype.avg_gpa == pytest.approx(3.8, abs=1e-4)
+    # Top prior university by Hájek weight is National University of Uzbekistan (share 0.80 > 0.20)
+    assert archetype.top_prior_universities == (
+        "National University of Uzbekistan",
+        "UC Berkeley",
+    )
+    assert archetype.prior_university_shares["National University of Uzbekistan"] == pytest.approx(
+        0.80, abs=1e-4
+    )
+
+    # Empirical Bayes shrinkage pulls small-n_eff estimates toward the prior
+    shrunk = build_winner_archetype(
+        profiles,
+        prior_gpa=3.5,
+        prior_work_months=18.0,
+        prior_research_share=0.25,
+        prior_concentration=5.0,
+    )
+    assert 3.5 < (shrunk.avg_gpa or 0.0) < (archetype.avg_gpa or 0.0)
+    assert 18.0 < (shrunk.avg_work_months or 0.0) < (archetype.avg_work_months or 0.0)
+    assert 0.25 < (shrunk.research_share or 0.0) < (archetype.research_share or 0.0)

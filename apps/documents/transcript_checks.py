@@ -89,9 +89,26 @@ def _credit_totals(rows: Sequence[Row], total_line: str | None) -> Iterator[High
         yield Highlight(kind="credit_total_not_checked", scope="transcript")
 
 
+_SCALE_RANGE_RE = re.compile(
+    r"^\s*[+-]?\d+(?:[.,]\d+)?\s*(?:[-–—]|\bto\b)\s*([+-]?\d+(?:[.,]\d+)?)\s*%?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _scale_ceiling(text: str) -> Decimal | None:
+    """Extract the upper bound of a grading scale (`'100'`, `'0-20'`, `'1.0-5.0'`, `'18-30'`)."""
+    direct = number(text)
+    if direct is not None:
+        return direct
+    m_range = _SCALE_RANGE_RE.match(text)
+    if m_range:
+        return number(m_range.group(1))
+    return None
+
+
 def _ranges(reading: Reading) -> Iterator[Highlight]:
     grade = number(reading.content.overall_grade or "")
-    scale = number(reading.content.grading_scale or "")
+    scale = _scale_ceiling(reading.content.grading_scale or "")
     if grade is not None and scale is not None and grade > scale:
         yield Highlight(kind="grade_above_scale", scope="field", ref="overall_grade")
     year_load = _YEAR_LOAD.get(reading.content.credit_unit)

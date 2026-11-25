@@ -191,14 +191,28 @@ _REFEREE_CRITERIA: dict[str, dict[str, object]] = {
     },
 }
 
-_MONTHS = (
-    "January|February|March|April|May|June|July|August|September|October|November|December|"
-    "Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|"
-    "Januar|Februar|März|Juni|Juli|Oktober|Dezember"
-)
-#: A date as a page writes it. ponytail: English and German month names and the
-#: numeric forms only; a page writing its date otherwise gets no date option, and
-#: its BEFORE_DEADLINE record carries no date -- shown, never guessed.
+def _build_month_alternation() -> str:
+    from apps.research.locale_names import month_forms
+
+    from .dates import _MONTHS as _DATE_MONTHS
+
+    tokens: set[str] = set(_DATE_MONTHS)
+    for name, _lang, _num in month_forms(wide_only=False):
+        cleaned = name.strip(" .")
+        if len(cleaned) >= 3 and cleaned.isalpha():
+            tokens.add(cleaned)
+    tokens.update(
+        {
+            "Januar", "Februar", "März", "Juni", "Juli", "Oktober", "Dezember",
+            "février", "août", "décembre", "şubat", "mayıs", "ağustos", "eylül",
+            "kasım", "aralık", "iyun", "iyul",
+        }
+    )
+    return "|".join(re.escape(t) for t in sorted(tokens, key=len, reverse=True))
+
+
+_MONTHS = _build_month_alternation()
+#: A date as a page writes it across CLDR page languages and numeric forms.
 _DATE = re.compile(
     rf"\b(?:\d{{1,2}}(?:st|nd|rd|th)?\.?\s+(?:{_MONTHS})\.?,?\s+\d{{4}}"
     rf"|(?:{_MONTHS})\.?\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}}"

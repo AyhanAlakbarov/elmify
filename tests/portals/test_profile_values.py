@@ -267,3 +267,30 @@ def test_narrative_values_combine_confirmed_inputs_and_approved_letter_drafts(
     )
     assert "Dear Admissions Committee," in values["narrative.motivation_letter"]
     assert "Wrong programme fit." not in values.values()
+
+
+def test_undated_degrees_sort_after_dated_entries(agency_a, membership_a) -> None:
+    from apps.documents.models import VerifiedFact
+    from apps.portals.profile import verified_values
+
+    with tenant_scope(agency_a.id):
+        _fact(
+            agency_a,
+            membership_a,
+            VerifiedFact.Category.EDUCATION,
+            {"institution": "Undated School", "degree": "Certificate"},
+        )
+        _fact(
+            agency_a,
+            membership_a,
+            VerifiedFact.Category.EDUCATION,
+            {
+                "institution": "Baku State University",
+                "degree": "BSc",
+                "start_date": "2020-09-01",
+                "end_date": "2024-06-30",
+            },
+        )
+        values = verified_values(membership_a)
+    assert values["education.1.institution"] == "Baku State University"
+    assert values["education.2.institution"] == "Undated School"

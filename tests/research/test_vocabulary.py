@@ -209,3 +209,40 @@ def test_the_committed_kinds_name_every_kind_at_depth_3() -> None:
 def test_every_committed_country_loads(country) -> None:
     v = vocabulary.load_vocabulary(country)
     assert v.country_qid.startswith("Q") and v.geo and v.kinds
+
+
+@pytest.mark.parametrize(
+    "country_code",
+    ["GB", "US", "FR", "NL", "IT", "ES", "CH", "SE", "CA", "AU", "JP", "KR", "PL"],
+)
+def test_universal_vocabulary_for_and_load_or_build_vocabulary_cover_uncommitted_countries(
+    country_code: str,
+) -> None:
+    vocabulary.universal_vocabulary_for.cache_clear()
+    v = vocabulary.load_or_build_vocabulary(country_code)
+    assert v.country_code == country_code
+    assert v.country_qid.startswith("Q")
+    assert v.cctld == ("uk" if country_code == "GB" else country_code.lower())
+    assert "en" in v.languages and "ru" in v.languages
+    assert v.geo and v.kinds and v.generic
+    assert "foundation" in v.kinds and "university" in v.kinds
+
+
+def test_build_country_doc_scales_geo_and_org_floors_for_microstates() -> None:
+    lu_answers = {
+        "wdt:P297": [{"country": "http://www.wikidata.org/entity/Q32", "lang": "fr", "tld": ".lu"}],
+        "wd:Q515": [
+            {"label": "Luxembourg"},
+            {"label": "Esch-sur-Alzette"},
+            {"label": "Differdange"},
+            {"label": "Dudelange"},
+            {"label": "Ettelbruck"},
+        ],
+        "wdt:P856": [{"label": f"Fondation {i} Luxembourg"} for i in range(15)],
+    }
+    doc = build_country_doc("LU", retrieved_on="2026-11-03", sparql=_sparql(lu_answers))
+    assert doc["iso2"] == "LU"
+    assert doc["country_qid"] == "Q32"
+    assert doc["cctld"] == "lu"
+    assert len(doc["geo"]) >= 5
+    assert doc["organisation_labels"] == 15

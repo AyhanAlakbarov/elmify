@@ -1,4 +1,5 @@
 import logging
+import re
 from collections.abc import Callable
 from datetime import timedelta
 from decimal import Decimal
@@ -17,6 +18,7 @@ from apps.accounts.schemas import StudentProfileSnapshot
 from apps.funding.evaluation import AwardCandidateFacts, CandidateFacts
 from apps.funding.fx import RateTable
 from apps.funding.models import (
+    BenefitRule,
     EvidenceClaim,
     FundingOpportunity,
     PackCandidate,
@@ -29,7 +31,13 @@ from apps.funding.pack import PackedApplication, PackedAward
 from apps.funding.probability import sync_outcome_calibration_records
 from apps.funding.services import auto_publish_pack
 
-from .candidate_details import award_details, budget_line, fit_for, program_details
+from .candidate_details import (
+    award_details,
+    budget_line,
+    fit_for,
+    pick_portal_url,
+    program_details,
+)
 from .coverage import pack_coverage, refresh_cell_coverage
 from .models import ConsultantResearchTask, DomainLease
 from .provenance import provenance_of_award, provenance_of_program
@@ -315,6 +323,97 @@ def _funding_condition(application: PackedApplication) -> str:
     return note[:500]
 
 
+_EMBEDDED_HTTPS_URL = re.compile(r"https://[^\s\"'<>)\]]+")
+
+
+def _collect_urls(value: object, out: list[str]) -> None:
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return
+        if stripped.startswith("https://") and " " not in stripped:
+            out.append(stripped.rstrip(".,;:"))
+            return
+        for match in _EMBEDDED_HTTPS_URL.findall(stripped):
+            out.append(match.rstrip(".,;:"))
+        return
+    if isinstance(value, dict):
+        for priority_key in ("portal_url", "apply_url", "source_url", "url"):
+            if priority_key in value:
+                _collect_urls(value[priority_key], out)
+        for key, item in value.items():
+            if key not in ("portal_url", "apply_url", "source_url", "url"):
+                _collect_urls(item, out)
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _collect_urls(item, out)
+
+
+def _program_portal_url(program: Program) -> str:
+    """Resolve an application portal URL from the programme's catalogue facts."""
+    urls: list[str] = []
+    for prompt in program.application_prompts.all():
+        _collect_urls(prompt.source_url, urls)
+        _collect_urls(prompt.letter_shape_sources, urls)
+        _collect_urls(prompt.letter_written_requirements, urls)
+        _collect_urls(prompt.letter_student_actions, urls)
+        _collect_urls(prompt.programme_evidence, urls)
+        _collect_urls(prompt.questions, urls)
+    _collect_urls(program.referee_requirements, urls)
+    _collect_urls(program.cv_format_source_url, urls)
+    _collect_urls(program.cv_constraints, urls)
+    _collect_urls(program.cv_directives, urls)
+    _collect_urls(program.file_rules, urls)
+    for stmt in program.statements.select_related("snapshot", "snapshot__source").all():
+        _collect_urls(stmt.snapshot.final_url, urls)
+        _collect_urls(stmt.snapshot.source.canonical_url, urls)
+        _collect_urls(stmt.text, urls)
+    for claim in program.evidence_claims.select_related("source", "snapshot").all():
+        if claim.snapshot is not None:
+            _collect_urls(claim.snapshot.final_url, urls)
+        _collect_urls(claim.source.canonical_url, urls)
+        _collect_urls(claim.claim, urls)
+    for rule in BenefitRule.objects.filter(program=program).prefetch_related(
+        "evidence_claims__source", "evidence_claims__snapshot"
+    ):
+        _collect_urls(rule.rule_text, urls)
+        for claim in rule.evidence_claims.all():
+            if claim.snapshot is not None:
+                _collect_urls(claim.snapshot.final_url, urls)
+            _collect_urls(claim.source.canonical_url, urls)
+            _collect_urls(claim.claim, urls)
+    return pick_portal_url(urls)
+
+
+def _award_portal_url(award: FundingOpportunity) -> str:
+    """Resolve an application portal URL from the award's catalogue facts."""
+    urls: list[str] = []
+    _collect_urls(award.card_quotes, urls)
+    for claim in award.evidence_claims.select_related("source", "snapshot").all():
+        if claim.snapshot is not None:
+            _collect_urls(claim.snapshot.final_url, urls)
+        _collect_urls(claim.source.canonical_url, urls)
+        _collect_urls(claim.claim, urls)
+    for verification in award.cycle_verifications.all():
+        _collect_urls(verification.evidence, urls)
+        _collect_urls(verification.cycles_observed, urls)
+        _collect_urls(verification.trail, urls)
+    for rule in BenefitRule.objects.filter(benefit__opportunity=award).prefetch_related(
+        "evidence_claims__source", "evidence_claims__snapshot"
+    ):
+        _collect_urls(rule.rule_text, urls)
+        for claim in rule.evidence_claims.all():
+            if claim.snapshot is not None:
+                _collect_urls(claim.snapshot.final_url, urls)
+            _collect_urls(claim.source.canonical_url, urls)
+            _collect_urls(claim.claim, urls)
+    resolved = pick_portal_url(urls)
+    if not resolved and award.scope_type == "PROGRAM" and award.program is not None:
+        return _program_portal_url(award.program)
+    return resolved
+
+
 def _program_copy(program: Program, application: PackedApplication) -> dict[str, object]:
     """What the board and the pack show about a programme, copied so the web
     tier renders it without the catalogue (catalog-read-split)."""
@@ -339,9 +438,73 @@ def _program_copy(program: Program, application: PackedApplication) -> dict[str,
     }
 
 
+def _card_amounts_payload(
+    card: object | None,
+) -> tuple[list[str], dict[str, list[str]], list[str]]:
+    if card is None:
+        return ([], {}, [])
+    raw_lines = getattr(card, "amounts", ()) or ()
+    if not raw_lines:
+        return ([], {}, [])
+    if not any(getattr(line, "country_code", "") for line in raw_lines):
+        return ([line.amount_text for line in raw_lines], {}, [])
+
+    from apps.documents.templatetags.cv_countries import country_name
+
+    country_scoped_kinds = {
+        line.kind for line in raw_lines if getattr(line, "country_code", "")
+    }
+    summary_pairs: list[tuple[tuple[int, str], str]] = []
+    all_country_codes: list[str] = []
+    for line in raw_lines:
+        raw_cc = getattr(line, "country_code", "") or ""
+        if raw_cc:
+            codes = [c.strip().upper() for c in raw_cc.split(",") if c.strip()]
+            for c in codes:
+                if c not in all_country_codes:
+                    all_country_codes.append(c)
+            label = ", ".join(country_name(c) or c for c in codes)
+            summary_pairs.append(((1, label), f"{label}: {line.amount_text}"))
+        elif line.kind in country_scoped_kinds:
+            summary_pairs.append(((2, "Other"), f"Other countries: {line.amount_text}"))
+        else:
+            summary_pairs.append(((0, ""), line.amount_text))
+    summary_pairs.sort(key=lambda item: item[0])
+    amounts = [text for _, text in summary_pairs]
+
+    amounts_by_country: dict[str, list[str]] = {}
+    for cc in sorted(all_country_codes):
+        cc_lines = [
+            line
+            for line in raw_lines
+            if cc
+            in {
+                c.strip().upper()
+                for c in (getattr(line, "country_code", "") or "").split(",")
+                if c.strip()
+            }
+        ]
+        cc_kinds = {line.kind for line in cc_lines}
+        other_lines = [
+            line
+            for line in raw_lines
+            if not getattr(line, "country_code", "") and line.kind not in cc_kinds
+        ]
+        amounts_by_country[cc] = [line.amount_text for line in (*cc_lines, *other_lines)]
+
+    default_amounts = [
+        line.amount_text
+        for line in raw_lines
+        if not getattr(line, "country_code", "")
+    ]
+    return (amounts, amounts_by_country, default_amounts)
+
+
 def _award_copy(
     award: FundingOpportunity,
     packed: PackedAward,
+    *,
+    portal_url: str = "",
 ) -> dict[str, object]:
     """An award's heading and the programmes it can pay for (dashboard spec §5)."""
     program_ids = list(award.programs.values_list("id", flat=True))
@@ -361,6 +524,32 @@ def _award_copy(
             )
         )
     )
+    amounts, amounts_by_country, default_amounts = _card_amounts_payload(card)
+    funding_card: dict[str, object] = {
+        "holder": packed.holder_name,
+        "deadline": packed.deadline.isoformat() if packed.deadline else "",
+        "scope": award.scope_type,
+        "family": award.family,
+        "route": card.route if card is not None else award.route,
+        "tuition": card.tuition if card is not None else "",
+        "living": card.living if card is not None else "",
+        "amounts": amounts,
+        "unconfirmed": list(packed.unconfirmed),
+        # No catalogue column says which degree levels an award covers yet;
+        # grouping.funds() checks the level only when both sides carry one.
+        "degree_levels": [],
+        # How long the award pays for, as the page states it (lanes spec §9.5);
+        # the per-year money line reads it. None/"" when the page is silent.
+        "duration_months": award.duration_months,
+        "duration_text": award.duration_text,
+    }
+    if amounts_by_country:
+        funding_card["amounts_by_country"] = amounts_by_country
+        if default_amounts:
+            funding_card["default_amounts"] = default_amounts
+    resolved_portal = pick_portal_url((portal_url,)) if portal_url else _award_portal_url(award)
+    if resolved_portal:
+        funding_card["portal_url"] = resolved_portal
     return {
         "institution_id": award.institution_id,
         # HOLDER scope has no country of its own; the holder's is a proxy (owner sign-off pending).
@@ -368,37 +557,23 @@ def _award_copy(
         # HOLDER scheme keeps its country badge/flag without matching domestic programmes.
         "country_code": award.country_code or holder_country or "",
         "funds_program_ids": program_ids,
-        "funding_card": {
-            "holder": packed.holder_name,
-            "deadline": packed.deadline.isoformat() if packed.deadline else "",
-            "scope": award.scope_type,
-            "family": award.family,
-            "route": card.route if card is not None else award.route,
-            "tuition": card.tuition if card is not None else "",
-            "living": card.living if card is not None else "",
-            "amounts": [line.amount_text for line in card.amounts] if card is not None else [],
-            "unconfirmed": list(packed.unconfirmed),
-            # No catalogue column says which degree levels an award covers yet;
-            # grouping.funds() checks the level only when both sides carry one.
-            "degree_levels": [],
-            # How long the award pays for, as the page states it (lanes spec §9.5);
-            # the per-year money line reads it. None/"" when the page is silent.
-            "duration_months": award.duration_months,
-            "duration_text": award.duration_text,
-        },
+        "funding_card": funding_card,
     }
 
 
 def _page_copy(
-    describe: Callable[[Any], dict[str, object]],
+    describe: Callable[..., dict[str, object]],
     facts: CandidateFacts | AwardCandidateFacts | None,
     profile: StudentProfileSnapshot | None,
+    *,
+    portal_url: str = "",
 ) -> dict[str, object]:
     """``details`` and ``fit`` for the scholarship page, or neither."""
     if facts is None:
-        return {}
+        resolved_portal = pick_portal_url((portal_url,)) if portal_url else ""
+        return {"details": {"portal_url": resolved_portal}} if resolved_portal else {}
     return {
-        "details": describe(facts),
+        "details": describe(facts, portal_url=portal_url) if portal_url else describe(facts),
         "fit": {
             "conditions": fit_for(facts.applicant_conditions, profile),
             "budget": budget_line(profile),
@@ -468,6 +643,15 @@ def _publish(
         cal_features: dict[str, object] = (
             dict(prog_prob.features) if prog_prob is not None else {}
         )
+        if prog_prob is not None:
+            if prog_prob.ci_low_pct is not None:
+                cal_features.setdefault("ci_low_pct", float(prog_prob.ci_low_pct))
+            if prog_prob.ci_high_pct is not None:
+                cal_features.setdefault("ci_high_pct", float(prog_prob.ci_high_pct))
+            if prog_prob.epistemic_se_logit is not None:
+                cal_features.setdefault(
+                    "epistemic_se_logit", round(float(prog_prob.epistemic_se_logit), 4)
+                )
         if application.program_id in result.program_deadlines:
             cal_features["application_deadline"] = result.program_deadlines[application.program_id]
         if application.winnable_with:
@@ -478,6 +662,7 @@ def _publish(
             cal_features["risk_notes"] = list(application.tradeoffs)
         if not in_pack and application.over_budget_reason:
             cal_features["over_budget_reason"] = application.over_budget_reason
+        prog_portal_url = _program_portal_url(program)
         existing_candidate = (
             RecommendationCandidate.objects.filter(run=run, program=program).first()
             if version > 1
@@ -534,7 +719,10 @@ def _publish(
                 "rank": application.rank,
                 **_program_copy(program, application),
                 **_page_copy(
-                    program_details, result.program_facts.get(application.program_id), profile
+                    program_details,
+                    result.program_facts.get(application.program_id),
+                    profile,
+                    portal_url=prog_portal_url,
                 ),
             }.items():
                 setattr(existing_candidate, k, v)
@@ -570,7 +758,10 @@ def _publish(
                 rank=application.rank,
                 **_program_copy(program, application),
                 **_page_copy(
-                    program_details, result.program_facts.get(application.program_id), profile
+                    program_details,
+                    result.program_facts.get(application.program_id),
+                    profile,
+                    portal_url=prog_portal_url,
                 ),
             )
         if not _is_publishable_confidence(candidate.evidence_confidence):
@@ -596,6 +787,7 @@ def _publish(
             )
             continue
         body_id, code = provenance_of_award(award)
+        award_portal_url = _award_portal_url(award)
         award_prob = result.probabilities.get(award_application.award_id)
         new_award_chance = (
             award_prob.chance_pct
@@ -605,6 +797,15 @@ def _publish(
         award_cal_features: dict[str, object] = (
             dict(award_prob.features) if award_prob is not None else {}
         )
+        if award_prob is not None:
+            if award_prob.ci_low_pct is not None:
+                award_cal_features.setdefault("ci_low_pct", float(award_prob.ci_low_pct))
+            if award_prob.ci_high_pct is not None:
+                award_cal_features.setdefault("ci_high_pct", float(award_prob.ci_high_pct))
+            if award_prob.epistemic_se_logit is not None:
+                award_cal_features.setdefault(
+                    "epistemic_se_logit", round(float(award_prob.epistemic_se_logit), 4)
+                )
         existing_award_cand = (
             RecommendationCandidate.objects.filter(run=run, opportunity=award).first()
             if version > 1
@@ -629,9 +830,12 @@ def _publish(
                 "eligible": True,
                 "provenance_reason_code": code,
                 "provenance_body_id": body_id,
-                **_award_copy(award, award_application),
+                **_award_copy(award, award_application, portal_url=award_portal_url),
                 **_page_copy(
-                    award_details, result.award_facts.get(award_application.award_id), profile
+                    award_details,
+                    result.award_facts.get(award_application.award_id),
+                    profile,
+                    portal_url=award_portal_url,
                 ),
             }.items():
                 setattr(existing_award_cand, k, v)
@@ -659,9 +863,12 @@ def _publish(
                 eligible=True,
                 provenance_reason_code=code,
                 provenance_body_id=body_id,
-                **_award_copy(award, award_application),
+                **_award_copy(award, award_application, portal_url=award_portal_url),
                 **_page_copy(
-                    award_details, result.award_facts.get(award_application.award_id), profile
+                    award_details,
+                    result.award_facts.get(award_application.award_id),
+                    profile,
+                    portal_url=award_portal_url,
                 ),
             )
         if _is_publishable_confidence(candidate.evidence_confidence):

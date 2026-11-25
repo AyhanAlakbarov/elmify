@@ -580,6 +580,24 @@ def harvest_tap_seed_urls(
     return tuple(urls)
 
 
+def _default_fetch_html(url: str) -> str | None:
+    from .discovery import retrieve_official_source
+
+    page = retrieve_official_source(url)
+    body = getattr(page, "body", b"")
+    if isinstance(body, bytes):
+        return body.decode("utf-8", errors="replace")
+    return str(body) if body else None
+
+
+def _default_site_search(query: str, domain: str) -> Sequence[str]:
+    if not getattr(settings, "EXA_API_KEY", ""):
+        return ()
+    from .providers.exa import exa_site_search
+
+    return exa_site_search(query=query, domain=domain).urls
+
+
 class CardHostReader:
     """`HostReader` over `card_funding.entry.read_page` and `card_funding.store.write_card`.
 
@@ -600,11 +618,19 @@ class CardHostReader:
         site_search: Callable[[str, str], Sequence[str]] | None = None,
         fetch_html: Callable[[str], bytes | str | None] | None = None,
         field: str = "",
+        screen: Any = None,
+        limit: Any = None,
+        readers: Any = None,
+        transport: Any = None,
     ) -> None:
         self.read_card_fn = read_card_fn
         self.site_search = site_search
         self.fetch_html = fetch_html
         self.field = field
+        self.screen = screen
+        self.limit = limit
+        self.readers = readers
+        self.transport = transport
 
     def read(
         self,
@@ -834,8 +860,15 @@ class CardHostReader:
             return
         from apps.funding.models import CostComponent
 
+        from .card_engine.screen import screen as default_screen
         from .programme_scraper import scrape_programme_pages
 
+        eff_screen = self.screen if self.screen is not None else (
+            default_screen if self.read_card_fn is None else None
+        )
+        eff_limit = self.limit if self.limit is not None else (
+            run_limit(uuid4()) if eff_screen is not None else None
+        )
         for prog in programs:
             if CostComponent.objects.filter(
                 program=prog, kind=CostComponent.Kind.TUITION
@@ -855,6 +888,10 @@ class CardHostReader:
                     prog_html,
                     fetch_fn=self.fetch_html,
                     stage="gate_and_money",
+                    screen=eff_screen,
+                    limit=eff_limit,
+                    readers=self.readers,
+                    transport=self.transport,
                     now=now,
                 )
 

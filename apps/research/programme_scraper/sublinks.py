@@ -8,7 +8,6 @@ import hashlib
 import logging
 import re
 from collections.abc import Collection, Sequence
-from decimal import Decimal
 from urllib.parse import urljoin, urlsplit
 
 import lxml.html
@@ -31,6 +30,7 @@ from apps.research.structured_html import extract_jsonld_lines, extract_table_an
 from .extractors import (
     _amount_audience_on_line,
     _candidates_with_header_currency,
+    _normalize_tuition_amount_and_period,
     _period_from_context,
     extract_tier0_programme_facts,
 )
@@ -315,15 +315,7 @@ def extract_institution_base_profile(
         raw_per = _period_from_context(ctx)
         if raw_per == "PER_CREDIT":
             continue
-        if raw_per == "PER_ECTS":
-            final_amt = amt.low * Decimal(60)
-            final_per = "ANNUAL"
-        elif raw_per == "SEMESTER":
-            final_amt = amt.low * Decimal(2)
-            final_per = "ANNUAL"
-        else:
-            final_amt = amt.low
-            final_per = raw_per
+        final_amt, final_per = _normalize_tuition_amount_and_period(amt.low, raw_per)
         src_url = bundle.line_sources[idx] if idx < len(bundle.line_sources) else primary_url
         quote = locate(amt.text, bundle.section) or Quote(amt.text, f"L{idx}.text")
         spec = CostComponentSpec(

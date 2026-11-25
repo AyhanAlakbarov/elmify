@@ -96,7 +96,7 @@ def test_rendering_is_deterministic_complete_and_tagged(profile_snapshot) -> Non
     assert all(10 <= request.max_results <= 15 for _, request in first)
     assert [angle_id for angle_id, _ in first[:2]] == ["a0", "a1"]
     assert first[0][1].phrasing == "local" and first[1][1].phrasing == "english"
-    assert first[0][1].query == "computer science 2027"
+    assert first[0][1].query == "bilgisayar mühendisliği 2027"
 
 
 def test_a_template_slot_outside_the_allow_list_refuses_the_angle(profile_snapshot) -> None:
@@ -140,6 +140,10 @@ def test_duration_preference_uses_the_schemas_values(profile_snapshot) -> None:
         duration_preference="ONE_YEAR", duration_flexibility="NON_NEGOTIABLE",
     )
     assert inputs_from(one).duration_words[0] == "one-year master's"
+    one_half = profile_snapshot(
+        duration_preference="ONE_AND_HALF_YEAR", duration_flexibility="NON_NEGOTIABLE",
+    )
+    assert inputs_from(one_half).duration_words == ("1.5-year master's", "3 semesters, 90 ECTS")
 
 
 def test_the_area_sweep_side_never_imports_the_tap_query() -> None:
@@ -235,7 +239,7 @@ def test_a_country_is_named_in_the_templates_language(profile_snapshot) -> None:
     )
     queries = [r.query for _, r in render_tap_queries(
         inputs_from(profile_snapshot(allowed_countries=("DE",))), angles)]
-    assert queries == ["Masterstudiengang computer science in Deutschland",
+    assert queries == ["Masterstudiengang Informatik in Deutschland",
                        "M.Sc. in computer science in Germany"]
 
 
@@ -267,4 +271,23 @@ def test_unconstrained_self_funded_student_omits_money_words_and_money_angles(
     assert inputs.money_words == ()
     rendered = render_tap_queries(inputs, angles)
     assert [angle_id for angle_id, _ in rendered] == ["plain"]
+
+
+def test_dotted_degree_acronyms_and_center_or_college_field_phrases_survive(
+    profile_snapshot,
+) -> None:
+    law_inputs = inputs_from(profile_snapshot(target_field="Law (LL.M.)"))
+    assert law_inputs.field_words == ("law llm",)
+
+    msc_inputs = inputs_from(profile_snapshot(target_field="M.Sc. in Physics"))
+    assert msc_inputs.field_words == ("msc in physics",)
+
+    dc_inputs = inputs_from(profile_snapshot(target_field="Data Center Engineering"))
+    assert dc_inputs.field_words == ("data center engineering",)
+
+    he_inputs = inputs_from(
+        profile_snapshot(target_field="Higher Education and College Administration")
+    )
+    assert he_inputs.field_words == ("higher education and college administration",)
+
 

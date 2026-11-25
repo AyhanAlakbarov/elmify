@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 
@@ -28,6 +29,7 @@ from apps.tenancy.models import Membership
 
 from .audit import record_event
 from .hygiene import normalize_text
+from .letter_exemplars import RhetoricalDiscipline
 from .models import CvFixRevert, VerifiedFact
 from .schemas import CVContent, EducationEntry, ExperienceEntry
 from .verification import (
@@ -73,8 +75,16 @@ class AppliedFix:
 
 def fold(text: str) -> str:
     """Whole-name comparison form: NFC-normalised, curly apostrophe straightened,
-    case-folded."""
-    return normalize_text(text).replace("’", "'").casefold().strip()
+    case-folded, with Turkish/Azerbaijani dotted-İ combining dot stripped and
+    dotless-ı unified."""
+    return (
+        normalize_text(text)
+        .replace("’", "'")
+        .casefold()
+        .replace("\u0307", "")
+        .replace("ı", "i")
+        .strip()
+    )
 
 
 def _payload(fact: VerifiedFact) -> dict[str, object]:
@@ -142,44 +152,154 @@ def forget_revert(student: Membership, subject: str) -> None:
     CvFixRevert.objects.filter(student=student, subject=subject).delete()
 
 
-#: English only (MVP). From the two verified sources in docs/research/
-#: 2026-10-12-cv-engine/2026-10-12-cv-wordlists-and-merit-items.md §2 (UK
-#: National Careers Service; Loughborough University), folded, hyphens as
-#: spaces, with the spelling variants the research lists. Left off on purpose:
-#: networking (a technical skill for a network engineer), planning (urban
-#: planning), negotiating, and every field skill section-2-refined.md §3 names
-#: (data analysis, project management, research, teaching, statistics).
-SOFT_SKILLS = frozenset({
-    "communication", "leadership", "time management", "conflict management",
-    "problem solving", "mentoring", "positivity", "flexibility", "team player",
-    "teamwork", "team work", "analytical ability", "commercial awareness", "creativity",
-    "decision making", "emotional intelligence", "entrepreneurial", "influencing",
-    "initiative", "interpersonal", "organisation", "organization", "organisational",
-    "organizational", "people management", "presentation", "resilience", "self awareness",
-    "self confidence", "self development", "self management", "self motivation",
+#: Dispositional traits and generic self-characterizations (O*NET Worker
+#: Characteristics / Work Styles) that are omitted across all academic disciplines
+#: unless vouched by an AUTHORITATIVE_DOCUMENT or explicitly requested by the programme.
+UNIVERSAL_SELF_TRAITS: frozenset[str] = frozenset({
+    "communication", "time management", "problem solving", "positivity", "flexibility",
+    "team player", "teamwork", "team work", "analytical ability", "emotional intelligence",
+    "initiative", "interpersonal", "resilience", "self awareness", "self confidence",
+    "self development", "self management", "self motivation",
 })
+
+#: Competencies from the UK National Careers Service / Loughborough lists that are
+#: generic filler on a pure STEM/lab CV but evaluated domain competencies in
+#: specific RhetoricalDiscipline clusters (O*NET Cross-Functional Skills).
+DISCIPLINE_COMPETENCY_EXEMPTIONS: dict[str, frozenset[RhetoricalDiscipline]] = {
+    "conflict management": frozenset({
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+        RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+    }),
+    "commercial awareness": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "entrepreneurial": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "leadership": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "people management": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "decision making": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "influencing": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "mentoring": frozenset({
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+    }),
+    "organisation": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "organization": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "organisational": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "organizational": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+    }),
+    "presentation": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+    }),
+    "creativity": frozenset({
+        RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+        RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+    }),
+}
+
+#: From the two verified sources in docs/research/2026-10-12-cv-engine/
+#: 2026-10-12-cv-wordlists-and-merit-items.md §2 (UK National Careers Service;
+#: Loughborough University), partitioned into UNIVERSAL_SELF_TRAITS and
+#: DISCIPLINE_COMPETENCY_EXEMPTIONS.
+SOFT_SKILLS: frozenset[str] = UNIVERSAL_SELF_TRAITS | frozenset(DISCIPLINE_COMPETENCY_EXEMPTIONS)
 _SOFT_PREFIX = re.compile(r"^(?:strong|excellent|good|effective|great)\s+")
 _SOFT_SUFFIX = re.compile(r"\s+(?:skills?|abilities)$")
 #: Measured or read from the student's own code (SkillEntry.kind): never filler.
 _TECHNICAL_KINDS = frozenset({"language", "library", "technique"})
 
 
-def is_soft_skill(name: str, kind: str | None) -> bool:
+def _matches_programme_requested_term(
+    candidates: tuple[str, ...], programme_requested_terms: frozenset[str]
+) -> bool:
+    if not programme_requested_terms:
+        return False
+    folded_terms = tuple(fold(t).replace("-", " ") for t in programme_requested_terms if t)
+    for cand in candidates:
+        if not cand:
+            continue
+        pattern = re.compile(rf"(?<![^\W\d_]){re.escape(cand)}(?![^\W\d_])")
+        if any(cand == term or pattern.search(term) for term in folded_terms):
+            return True
+    return False
+
+
+def is_soft_skill(
+    name: str,
+    kind: str | None,
+    *,
+    discipline: RhetoricalDiscipline | None = None,
+    programme_requested_terms: frozenset[str] = frozenset(),
+) -> bool:
     """Whole-name match only, never a substring: "Communication protocols" and
-    "Team Foundation Server" are technical skills."""
+    "Team Foundation Server" are technical skills.
+
+    Synchronized with RhetoricalDiscipline and programme-requested competencies:
+    1. Technical kinds ('language', 'library', 'technique') are never soft skills.
+    2. If the folded skill name or core matches a competency explicitly requested
+       by the target programme, it is preserved.
+    3. If `discipline` is provided and the skill is in `DISCIPLINE_COMPETENCY_EXEMPTIONS`
+       for that discipline, it is preserved as an evaluated domain competency.
+    """
     if kind in _TECHNICAL_KINDS:
         return False
     folded = fold(name).replace("-", " ")
     core = _SOFT_SUFFIX.sub("", _SOFT_PREFIX.sub("", folded))
-    return folded in SOFT_SKILLS or core in SOFT_SKILLS
+    if _matches_programme_requested_term((folded, core), programme_requested_terms):
+        return False
+    for candidate in (folded, core):
+        if candidate in UNIVERSAL_SELF_TRAITS:
+            return True
+        if candidate in DISCIPLINE_COMPETENCY_EXEMPTIONS:
+            if (
+                discipline is not None
+                and discipline in DISCIPLINE_COMPETENCY_EXEMPTIONS[candidate]
+            ):
+                return False
+            return True
+    return False
 
 
 def drop_soft_skills(
-    content: CVContent, facts: Sequence[VerifiedFact], undone: frozenset[str]
+    content: CVContent,
+    facts: Sequence[VerifiedFact],
+    undone: frozenset[str],
+    *,
+    discipline: RhetoricalDiscipline | None = None,
+    programme_requested_terms: frozenset[str] = frozenset(),
 ) -> tuple[CVContent, tuple[AppliedFix, ...]]:
     """Spec §5.2 (S-025): general qualities listed as skills are left out of the
     Skills section and listed as left out. The ledger keeps them, so the letter
-    engine and tailoring still see them. A skill a document vouches for stays."""
+    engine and tailoring still see them. A skill a document vouches for, a
+    programme explicitly asks for, or a discipline evaluates as a domain
+    competency stays."""
     vouched = {
         fold(str(_payload(f).get("name") or ""))
         for f in facts
@@ -188,7 +308,15 @@ def drop_soft_skills(
     }
     kept, fixes = [], []
     for skill in content.skills:
-        if not is_soft_skill(skill.name, skill.kind) or fold(skill.name) in vouched:
+        if (
+            not is_soft_skill(
+                skill.name,
+                skill.kind,
+                discipline=discipline,
+                programme_requested_terms=programme_requested_terms,
+            )
+            or fold(skill.name) in vouched
+        ):
             kept.append(skill)
             continue
         subject = subject_of(SOFT_SKILL, skill.name)
@@ -201,14 +329,38 @@ def drop_soft_skills(
     return content.model_copy(update={"skills": tuple(kept)}), tuple(fixes)
 
 
-#: section-2-refined.md §6's English pattern, matched on the folded title
-#: without closing punctuation. "Master's thesis student" and "Thesis
-#: Supervisor" are roles and do not match, which is the point.
+#: section-2-refined.md §6 + 12-language thesis nouns (en, de, fr, nl, it, es, pt,
+#: tr, az, ru, zh, ja, ko), matched on the folded title without closing punctuation.
+#: "Master's thesis student" and "Thesis Supervisor" are roles and do not match.
 _THESIS_TITLE = re.compile(
-    r"^(?:(?:m\.?sc\.?|b\.?sc\.?|master'?s?|bachelor'?s?|diploma|honou?rs|graduation|"
-    r"final[- ]year|capstone|undergraduate|graduate|degree)\s+)*"
-    r"(?:thesis|dissertation|final year project|graduation project|capstone project)"
-    r"(?:\s+(?:work|project|research))?$"
+    r"^(?:"
+    r"(?:(?:m\.?sc\.?|b\.?sc\.?|m\.?a\.?|b\.?a\.?|m\.?eng\.?|b\.?eng\.?|master'?s?|bachelor'?s?|"
+    r"diploma|honou?rs|graduation|final[- ]year|capstone|undergraduate|graduate|degree|"
+    r"lisans|yüksek|yuksek|doktora|bitirme|mezuniyet|"
+    r"bakalavr|magistr|buraxiliş|buraxilis|"
+    r"бакалаврская|магистерская|дипломная|выпускная|квалификационная)\s+)*"
+    r"(?:thesis|dissertation|final\s+year\s+project|graduation\s+project|capstone\s+project|"
+    r"masterarbeit|bachelorarbeit|diplomarbeit|studienarbeit|abschlussarbeit|"
+    r"scriptie|bachelorscriptie|masterscriptie|proefschrift|afstudeerproject|afstudeeronderzoek|"
+    r"tezi|tez|dissertasiyasi|dissertasiya|диссертация|вкр)"
+    r"(?:\s+(?:work|project|research|arbeit|работы|исследование))?"
+    r"|"
+    r"(?:(?:bitirme|mezuniyet|lisans|yüksek|yuksek|bakalavr|magistr|diplom|"
+    r"buraxiliş|buraxilis|бакалаврская|магистерская|дипломная|выпускная|квалификационная)\s+)+"
+    r"(?:projesi|işi|isi|работа|проект)"
+    r"|"
+    r"(?:mémoire|memoire|thèse|these|tesi|tesis|tese|dissertação|dissertacao|"
+    r"trabajo\s+(?:de\s+)?fin\s+de\s+(?:grado|máster|master)|tfg|tfm|"
+    r"trabalho\s+de\s+conclusão\s+de\s+curso|tcc)"
+    r"(?:\s+(?:de\s+|di\s+|d'|del\s+|da\s+|do\s+)?"
+    r"(?:master|máster|magistrale|laurea(?:\s+magistrale|\s+triennale)?|"
+    r"licence|bachelor|grado|doutorado|mestrado|doctorat|fin\s+d'études|fin\s+d'etudes|"
+    r"recherche|investigación|investigacion))?"
+    r"|"
+    r"(?:本科|学士|硕士|碩士|博士|毕业|畢業|学位|學位|卒業|修士|학사|석사|박사|졸업|학위)*"
+    r"(?:毕业论文|畢業論文|学位论文|學位論文|毕业设计|畢業設計|卒業論文|修士論文|博士論文|"
+    r"졸업논문|학위논문|석사학위논문|박사학위논문)"
+    r")$"
 )
 
 
@@ -299,22 +451,68 @@ _LETTERS = re.compile(r"[^\W\d_]+")
 TITLE_MAX = {"degree_as_awarded": 200, "institution_original": 300}
 
 
+_CJK_DEGREE_NOUNS = ("学士", "硕士", "碩士", "博士", "修士", "학사", "석사", "박사")
+_STATUTORY_SINGLE_WORD_DEGREES = frozenset({
+    "habilitation",
+    "staatsexamen",
+    "agrégation",
+    "agregation",
+})
+
+
 def cut_stems(text: str) -> list[str]:
     return [m.group(1).casefold() for m in _CUT_WORD.finditer(_DEGREE_MARKS.sub(" ", text))]
 
 
 def abbreviated_degree(text: str) -> bool:
     """A cut-off word ("Chem."), nothing left beside the degree mark ("BSc"),
-    or a one-word title ("Bakalavr")."""
+    or a one-word title ("Bakalavr") unless it is a closed German compound
+    degree+field noun ("Diplomingenieur", "Diplomjurist", "Diplomkauffrau"), a
+    self-contained statutory qualification ("Habilitation", "Staatsexamen",
+    "Agrégation"), or a >=4-char CJK <Field><Degree> title ("计算机科学学士",
+    "工学修士", "이학학사")."""
+    if cut_stems(text):
+        return True
     rest = _LETTERS.findall(_DEGREE_MARKS.sub(" ", text))
-    return bool(cut_stems(text)) or not rest or len(_LETTERS.findall(text)) == 1
+    if not rest:
+        return True
+    words = _LETTERS.findall(text)
+    if len(words) == 1:
+        word = words[0]
+        folded_word = normalize_text(word).casefold().replace("\u0307", "")
+        if (
+            folded_word in _STATUTORY_SINGLE_WORD_DEGREES
+            or (folded_word.startswith("diplom") and len(folded_word) >= 11)
+            or folded_word.endswith(("staatsexamen", "habilitation"))
+        ):
+            return False
+        lo_count = sum(1 for c in word if unicodedata.category(c) == "Lo")
+        if lo_count >= 4 and any(noun in word for noun in _CJK_DEGREE_NOUNS):
+            return False
+        return True
+    return False
 
 
 def abbreviated_institution(text: str) -> bool:
-    """A cut-off word, or no word with three lower-case letters ("UFAZ", "İTÜ")."""
+    """A cut-off word, an acronym ("UFAZ", "İTÜ", "TU WIEN", "ETH ZÜRICH"), or a
+    2-character CJK short form ("清华", "北大"). Complete names in caseless
+    Unicode 'Lo' scripts ("清华大学", "東京大学", "서울대학교", "جامعة القاهرة") and
+    multi-word ALL-CAPS transcript headers ("TECHNISCHE UNIVERSITÄT MÜNCHEN")
+    are not abbreviated."""
     if cut_stems(text):
         return True
-    return not any(sum(c.islower() for c in word) >= 3 for word in _LETTERS.findall(text))
+    words = _LETTERS.findall(text)
+    if not words:
+        return True
+    if any(sum(c.islower() for c in word) >= 3 for word in words):
+        return False
+    lo_count = sum(1 for w in words for c in w if unicodedata.category(c) == "Lo")
+    if lo_count > 0:
+        return lo_count < 3
+    long_upper_words = sum(1 for w in words if len(w) >= 5 and all(c.isupper() for c in w))
+    if len(words) >= 2 and long_upper_words >= 2:
+        return False
+    return True
 
 
 def _stems_in_order(stems: list[str], words: list[str]) -> bool:
@@ -382,6 +580,13 @@ def full_titles(
         subject = subject_of(FULL_TITLE, entry.degree_as_awarded)
         was_undone = subject in undone
         if not was_undone:
+            before_verdicts = verify_against_facts(
+                content.model_copy(update={"education": tuple(education)}), facts
+            )
+            before_verdict = next(
+                (v.verdict for v in before_verdicts if v.claim_path == f"education[{index}]"),
+                None,
+            )
             trial = [*education]
             trial[index] = entry.model_copy(update={"degree_as_awarded": full})
             verdicts = verify_against_facts(
@@ -390,7 +595,12 @@ def full_titles(
             verdict = next(
                 v.verdict for v in verdicts if v.claim_path == f"education[{index}]"
             )
-            if verdict not in (Verdict.SUPPORTED, Verdict.UNCERTAIN):
+            allowed_verdicts = (
+                (Verdict.SUPPORTED,)
+                if before_verdict == Verdict.SUPPORTED
+                else (Verdict.SUPPORTED, Verdict.UNCERTAIN)
+            )
+            if verdict not in allowed_verdicts:
                 continue
             education = trial
         fixes.append(

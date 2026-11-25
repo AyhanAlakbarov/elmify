@@ -341,3 +341,30 @@ def test_a_sign_up_the_portal_sent_back_gets_the_password_already_made(
     )
 
     assert again.json() == made
+
+
+def test_login_includes_application_number_when_recorded_on_application(
+    client, agency_a, domain_a, membership_a, fake
+) -> None:
+    from apps.portals.models import ApplicationStep
+
+    application, address = _setup(agency_a, membership_a)
+    token = _pair(client, agency_a, membership_a, domain_a)
+    made = _signup(client, application, token, domain_a).json()
+    with tenant_scope(agency_a.id):
+        ApplicationStep.objects.create(
+            tenant=agency_a,
+            application=application,
+            sequence=application.next_step_sequence(),
+            kind=ApplicationStep.Kind.STATUS,
+            detail={"application_number": "2026-004192"},
+        )
+
+    login = _ask(client, application, token, domain_a, {"page": "login", "host": HOST})
+
+    assert login.status_code == 200
+    assert login.json() == {
+        "username": address,
+        "password": made["password"],
+        "application_number": "2026-004192",
+    }

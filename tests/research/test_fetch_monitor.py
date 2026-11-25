@@ -192,3 +192,38 @@ def test_a_check_skipped_for_credits_is_not_a_failure():
     )
 
     assert checks == ()
+
+
+def test_seasonal_monitor_cron_adapts_frequency_near_opening_and_deadline():
+    import datetime as dt
+
+    from apps.research.fetch.monitor import (
+        MONITOR_CRON,
+        MONITOR_CRON_BIWEEKLY,
+        MONITOR_CRON_WEEKLY,
+        seasonal_monitor_cron,
+    )
+
+    today = dt.date(2026, 9, 26)
+    # Within 21 days of a deadline or right at call opening -> weekly
+    assert seasonal_monitor_cron(today=today, deadline=dt.date(2026, 10, 10)) == MONITOR_CRON_WEEKLY
+    assert (
+        seasonal_monitor_cron(today=dt.date(2026, 10, 15), open_month=10) == MONITOR_CRON_WEEKLY
+    )
+    # Lead window before October call opening -> biweekly
+    assert seasonal_monitor_cron(today=today, open_month=10) == MONITOR_CRON_BIWEEKLY
+    # Off-season (April opening) -> monthly
+    assert seasonal_monitor_cron(today=today, open_month=4) == MONITOR_CRON
+
+    sink: list[tuple[str, dict]] = []
+    create_monitor(
+        api_key="k",
+        name="2027:uni.example.org",
+        targets=[{"type": "scrape", "url": "https://uni.example.org/"}],
+        open_month=10,
+        today=today,
+        post=_post({"success": True, "id": "m1", "estimatedCreditsPerMonth": 30}, sink=sink),
+        delete=_delete(),
+    )
+    assert sink[0][1]["cron"] == MONITOR_CRON_BIWEEKLY
+

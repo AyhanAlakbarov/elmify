@@ -272,11 +272,11 @@ export async function postPortalLogin(
   origin: string,
   applicationId: string,
   ask: { page: "login" | "signup"; host: string; max_length?: number; came_back?: boolean },
-): Promise<{ username: string; password: string }> {
+): Promise<{ username: string; password: string; application_number?: string }> {
   return (await call(origin, `/ext/applications/${applicationId}/portal-login`, {
     method: "POST",
     body: JSON.stringify(ask),
-  })) as { username: string; password: string };
+  })) as { username: string; password: string; application_number?: string };
 }
 
 /** The answers channel (owner, 2026-10-09): values the student typed into boxes

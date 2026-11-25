@@ -75,7 +75,7 @@ def rate_note(table: RateTable | None) -> str:
         return ""
     day = table.retrieved_on
     via = (
-        ", via the ECB's euro rate for currencies CBAR doesn't publish"
+        f", via the ECB's euro rate for currencies {table.source} doesn't publish"
         if table.cross
         else ""
     )

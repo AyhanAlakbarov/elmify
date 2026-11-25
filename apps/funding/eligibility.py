@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import csv
 import re
+import unicodedata
 from dataclasses import dataclass
 from datetime import date as _date
 from functools import cache
@@ -297,7 +298,7 @@ _OPERATORS_BY_KEY: dict[str, tuple[str, ...]] = {
     "RESIDENCE": ("IN", "NOT_IN", "PRESENT"),
     "FIELD": ("IN",),
     "PRIOR_DEGREE": ("GTE", "EQ", "LTE", "NOT_IN"),
-    "PRIOR_INSTITUTION": ("IN",),
+    "PRIOR_INSTITUTION": ("IN", "NOT_IN", "EQ"),
     "GRADE": ("GTE", "LTE"),
     "WORK_EXPERIENCE": ("GTE",),
     "LANGUAGE": ("PRESENT", "GTE"),
@@ -436,10 +437,30 @@ _SCALE_ALIASES: dict[str, str] = {
     "cgpa 4.0": "gpa 4.0",
     "4.0 gpa": "gpa 4.0",
     "4.00": "gpa 4.0",
+    "4.3": "gpa 4.3",
+    "4.30": "gpa 4.3",
+    "0-4.3": "gpa 4.3",
+    "0.0-4.3": "gpa 4.3",
+    "out of 4.3": "gpa 4.3",
+    "gpa 4.3": "gpa 4.3",
+    "cgpa 4.3": "gpa 4.3",
+    "4.3 gpa": "gpa 4.3",
+    "4.5": "gpa 4.5",
+    "4.50": "gpa 4.5",
+    "0-4.5": "gpa 4.5",
+    "0.0-4.5": "gpa 4.5",
+    "out of 4.5": "gpa 4.5",
+    "gpa 4.5": "gpa 4.5",
+    "cgpa 4.5": "gpa 4.5",
+    "4.5 gpa": "gpa 4.5",
     "5": "5.0",
     "5.0": "5.0",
     "0-5": "5.0",
     "0-5.0": "5.0",
+    "2-5": "5.0",
+    "2.0-5.0": "5.0",
+    "3-5": "5.0",
+    "3.0-5.0": "5.0",
     "out of 5": "5.0",
     "out of 5.0": "5.0",
     "gpa 5.0": "5.0",
@@ -450,6 +471,37 @@ _SCALE_ALIASES: dict[str, str] = {
     "1,0-5,0": "german 1-5",
     "german 1-5": "german 1-5",
     "german 1.0-5.0": "german 1-5",
+    "6": "6.0",
+    "6.0": "6.0",
+    "1-6": "6.0",
+    "1.0-6.0": "6.0",
+    "1,0-6,0": "6.0",
+    "2-6": "6.0",
+    "2.0-6.0": "6.0",
+    "out of 6": "6.0",
+    "out of 6.0": "6.0",
+    "swiss 1-6": "6.0",
+    "7": "7.0",
+    "7.0": "7.0",
+    "0-7": "7.0",
+    "1-7": "7.0",
+    "1.0-7.0": "7.0",
+    "out of 7": "7.0",
+    "out of 7.0": "7.0",
+    "gpa 7": "7.0",
+    "gpa 7.0": "7.0",
+    "cgpa 7": "7.0",
+    "cgpa 7.0": "7.0",
+    "9": "9.0",
+    "9.0": "9.0",
+    "0-9": "9.0",
+    "1-9": "9.0",
+    "out of 9": "9.0",
+    "out of 9.0": "9.0",
+    "gpa 9": "9.0",
+    "gpa 9.0": "9.0",
+    "cgpa 9": "9.0",
+    "cgpa 9.0": "9.0",
     "10": "10.0",
     "10.0": "10.0",
     "cgpa 10": "10.0",
@@ -460,6 +512,14 @@ _SCALE_ALIASES: dict[str, str] = {
     "1-10": "10.0",
     "out of 10": "10.0",
     "out of 10.0": "10.0",
+    "12": "12.0",
+    "12.0": "12.0",
+    "-3-12": "12.0",
+    "02-12": "12.0",
+    "2-12": "12.0",
+    "out of 12": "12.0",
+    "danish 12": "12.0",
+    "7-step": "12.0",
     "20": "20.0",
     "20.0": "20.0",
     "0-20": "20.0",
@@ -511,6 +571,8 @@ _NON_LANGUAGE_TOKENS: frozenset[str] = frozenset(
         "cae",
         "cpe",
         "fce",
+        "pet",
+        "ket",
         "testdaf",
         "dsh",
         "goethe",
@@ -528,6 +590,9 @@ _NON_LANGUAGE_TOKENS: frozenset[str] = frozenset(
         "plida",
         "torfl",
         "trki",
+        "трки",
+        "тэу",
+        "тбу",
         "tömer",
         "tomer",
         "yökdil",
@@ -540,8 +605,20 @@ _NON_LANGUAGE_TOKENS: frozenset[str] = frozenset(
 
 def _extract_test_and_score(raw_level: str) -> tuple[str, float] | None:
     lower = " ".join(raw_level.strip().split()).casefold()
+    m_jlpt = re.search(r"\b(?:jlpt\s*)?n\s*([1-5])\b", lower)
+    if m_jlpt and ("jlpt" in lower or re.search(r"\bn[1-5]\b", lower)):
+        # Higher JLPT proficiency is lower N-number (N1=highest, N5=lowest); store
+        # inverted (6 - N) so `held >= wanted` holds in `_decide_language`.
+        return "jlpt", float(6 - int(m_jlpt.group(1)))
+    if any(tok in lower for tok in ("torfl", "trki", "трки")):
+        m_torfl = re.search(r"\b(?:torfl|trki|трки)[\s\-–:]*(iv|iii|ii|i|[1-4])\b", lower)
+        if m_torfl:
+            tok = m_torfl.group(1)
+            roman_map = {"i": 1.0, "ii": 2.0, "iii": 3.0, "iv": 4.0}
+            return "torfl", roman_map.get(tok, float(tok) if tok.isdigit() else 0.0)
     cleaned_num_str = re.sub(
-        r"\b(?:cefr\s*)?[abc][12]\b|(?:/|out\s+of)\s*(?:9(?:\.0)?|90|120|160)\b",
+        r"\b(?:cefr\s*)?[abc][12]\b|(?:/|out\s+of)\s*(?:9(?:\.0)?|90|100|120|160|230|699|900|1000)\b"
+        r"|\btopik\s+i{1,2}\b",
         " ",
         lower,
     )
@@ -549,10 +626,48 @@ def _extract_test_and_score(raw_level: str) -> tuple[str, float] | None:
     score = next((n for n in nums if n is not None), None)
     if score is None:
         return None
-    for test_name in ("ielts", "toefl", "pte", "duolingo", "testdaf", "dsh"):
-        if test_name in lower or (test_name == "duolingo" and re.search(r"\bdet\b", lower)):
+    if 120.0 <= score <= 230.0 and any(
+        tok in lower
+        for tok in (
+            "cambridge",
+            "cae",
+            "cpe",
+            "fce",
+            "pet",
+            "ket",
+            "c1 advanced",
+            "c2 proficiency",
+            "b2 first",
+            "b1 preliminary",
+            "a2 key",
+        )
+    ):
+        return "cambridge", score
+    for test_name in (
+        "ielts",
+        "toefl",
+        "pte",
+        "duolingo",
+        "testdaf",
+        "dsh",
+        "tcf",
+        "tef",
+        "siele",
+        "cils",
+        "celi",
+        "topik",
+        "hsk",
+    ):
+        if test_name in lower or (
+            test_name == "duolingo" and re.search(r"\bdet\b", lower)
+        ) or (
+            test_name == "testdaf" and re.search(r"\btdn\b", lower)
+        ):
             if test_name == "toefl" and score < 30:
                 return None
+            if test_name == "testdaf" and score <= 5:
+                # Normalize TDN 3/4/5 to 12/16/18 on the 4-subtest (max 20) scale.
+                score = 18.0 if score >= 5 else (16.0 if score >= 4 else 12.0)
             return test_name, score
     return None
 
@@ -561,6 +676,23 @@ def _to_ielts_equiv(test_name: str, score: float) -> float | None:
     """Map an English standardized test score to its official IELTS band equivalent."""
     if test_name == "ielts":
         return score
+    if test_name == "cambridge":
+        for threshold, band in (
+            (209.0, 9.0),
+            (205.0, 8.5),
+            (200.0, 8.0),
+            (191.0, 7.5),
+            (185.0, 7.0),
+            (176.0, 6.5),
+            (169.0, 6.0),
+            (162.0, 5.5),
+            (154.0, 5.0),
+            (147.0, 4.5),
+            (140.0, 4.0),
+        ):
+            if score >= threshold:
+                return band
+        return 3.5
     if test_name == "toefl":
         for threshold, band in (
             (118.0, 9.0),
@@ -619,20 +751,31 @@ def _level_to_cefr(raw_level: str) -> str | None:
     upper = cleaned.upper()
     if upper in _CEFR:
         return upper
-    m_cefr = re.search(r"\b(A1|A2|B1|B2|C1|C2)\b", upper)
+    upper_no_cam_titles = re.sub(
+        r"\b(?:C2\s+PROFICIENCY|C1\s+ADVANCED|B2\s+FIRST|B1\s+PRELIMINARY|A2\s+KEY)\b",
+        " ",
+        upper,
+    )
+    m_cefr = re.search(r"\b(A1|A2|B1|B2|C1|C2)\b", upper_no_cam_titles)
     if m_cefr:
         return m_cefr.group(1)
     lower = cleaned.casefold()
-    if re.search(r"\b(?:cpe|c2\s+proficiency|dsh\s*[-–]?\s*3)\b", lower):
-        return "C2"
-    if re.search(
-        r"\b(?:cae|c1\s+advanced|dsh\s*[-–]?\s*2|tdn\s*[45]|testdaf\s*4\s*x\s*4)\b", lower
-    ):
-        return "C1"
-    if re.search(r"\b(?:fce|b2\s+first|dsh\s*[-–]?\s*1|tdn\s*3)\b", lower):
-        return "B2"
+    if any(tok in lower for tok in ("torfl", "trki", "трки", "тбу", "тэу")):
+        if re.search(r"\b(?:torfl|trki|трки)[\s\-–:]*(?:iv|4)\b", lower):
+            return "C2"
+        if re.search(r"\b(?:torfl|trki|трки)[\s\-–:]*(?:iii|3)\b", lower):
+            return "C1"
+        if re.search(r"\b(?:torfl|trki|трки)[\s\-–:]*(?:ii|2)\b", lower):
+            return "B2"
+        if re.search(r"\b(?:torfl|trki|трки)[\s\-–:]*(?:i|1)\b", lower):
+            return "B1"
+        if re.search(r"\b(?:тбу|tbu)\b", lower):
+            return "A2"
+        if re.search(r"\b(?:тэу|teu)\b", lower):
+            return "A1"
     cleaned_num_str = re.sub(
-        r"(?:/|out\s+of)\s*(?:9(?:\.0)?|90|120|160)\b",
+        r"\b(?:cefr\s*)?[abc][12]\b|(?:/|out\s+of)\s*(?:9(?:\.0)?|90|100|120|160|230|699|900|1000)\b"
+        r"|\btopik\s+i{1,2}\b",
         " ",
         lower,
     )
@@ -641,6 +784,70 @@ def _level_to_cefr(raw_level: str) -> str | None:
         for tok in re.findall(r"\d+(?:[.,]\d+)?", cleaned_num_str)
     ]
     score = next((n for n in nums if n is not None), None)
+    if (
+        score is not None
+        and 120.0 <= score <= 230.0
+        and any(
+            tok in lower
+            for tok in (
+                "cambridge",
+                "cae",
+                "cpe",
+                "fce",
+                "pet",
+                "ket",
+                "c1 advanced",
+                "c2 proficiency",
+                "b2 first",
+                "b1 preliminary",
+                "a2 key",
+            )
+        )
+    ):
+        if score >= 200:
+            return "C2"
+        if score >= 180:
+            return "C1"
+        if score >= 160:
+            return "B2"
+        if score >= 140:
+            return "B1"
+        return "A2"
+    if re.search(
+        r"\b(?:cpe|c2\s+proficiency|dsh\s*[-–]?\s*3|gds|großes\s+deutsches\s+sprachdiplom|"
+        r"grosses\s+deutsches\s+sprachdiplom|zop|zentrale\s+oberstufenprüfung|"
+        r"dele\s+superior|cils\s+(?:quattro|4)|celi\s*5)\b",
+        lower,
+    ):
+        return "C2"
+    if re.search(
+        r"\b(?:cae|c1\s+advanced|dsh\s*[-–]?\s*2|tdn\s*[45]|testdaf\s*4\s*x\s*[45]|"
+        r"kds|kleines\s+deutsches\s+sprachdiplom|dalf|siele\s*s5|cils\s+(?:tre|3)|"
+        r"celi\s*4|(?:jlpt\s*)?n\s*1|tömer\s+yüksek|tomer\s+yuksek)\b",
+        lower,
+    ):
+        return "C1"
+    if re.search(
+        r"\b(?:fce|b2\s+first|dsh\s*[-–]?\s*1|tdn\s*3|testdaf\s*4\s*x\s*3|"
+        r"dele\s+intermedio|siele\s*s4|cils\s+(?:due|2)|celi\s*3|(?:jlpt\s*)?n\s*2|"
+        r"tömer\s+orta|tomer\s+orta)\b",
+        lower,
+    ):
+        return "B2"
+    if re.search(
+        r"\b(?:pet|b1\s+preliminary|zertifikat\s+deutsch|dele\s+inicial|siele\s*s3|"
+        r"cils\s+(?:uno|1)|celi\s*2|(?:jlpt\s*)?n\s*3)\b",
+        lower,
+    ):
+        return "B1"
+    if re.search(
+        r"\b(?:ket|a2\s+key|siele\s*s2|celi\s*1|(?:jlpt\s*)?n\s*4|"
+        r"tömer\s+temel|tomer\s+temel)\b",
+        lower,
+    ):
+        return "A2"
+    if re.search(r"\b(?:siele\s*s1|celi\s*(?:impatto|0)|(?:jlpt\s*)?n\s*5)\b", lower):
+        return "A1"
     if score is None:
         return None
     if "ielts" in lower:
@@ -656,11 +863,11 @@ def _level_to_cefr(raw_level: str) -> str | None:
     if "toefl" in lower and score >= 30:
         if score >= 114:
             return "C2"
-        if score >= 95:
+        if score >= 94:
             return "C1"
-        if score >= 72:
+        if score >= 60:
             return "B2"
-        if score >= 42:
+        if score >= 35:
             return "B1"
         return "A2"
     if "pte" in lower and score >= 10:
@@ -676,7 +883,7 @@ def _level_to_cefr(raw_level: str) -> str | None:
     if ("duolingo" in lower or re.search(r"\bdet\b", lower)) and score >= 10:
         if score >= 155:
             return "C2"
-        if score >= 130:
+        if score >= 125:
             return "C1"
         if score >= 100:
             return "B2"
@@ -692,65 +899,308 @@ def _level_to_cefr(raw_level: str) -> str | None:
             return "C1"
         if score >= 3:
             return "B2"
+    if "dsh" in lower:
+        if score >= 3:
+            return "C2"
+        if score >= 2:
+            return "C1"
+        if score >= 1:
+            return "B2"
+    if re.search(r"\btcf\b", lower):
+        if score >= 600 or score == 6:
+            return "C2"
+        if score >= 500 or score == 5:
+            return "C1"
+        if score >= 400 or score == 4:
+            return "B2"
+        if score >= 300 or score == 3:
+            return "B1"
+        if score >= 200 or score == 2:
+            return "A2"
+        if score >= 100 or score == 1:
+            return "A1"
+    if re.search(r"\btef\b", lower):
+        if "/900" in lower or "out of 900" in lower or score > 699:
+            if score >= 834:
+                return "C2"
+            if score >= 699:
+                return "C1"
+            if score >= 541:
+                return "B2"
+            if score >= 361:
+                return "B1"
+            if score >= 181:
+                return "A2"
+            return "A1"
+        if score >= 600 or score == 6:
+            return "C2"
+        if score >= 500 or score == 5:
+            return "C1"
+        if score >= 400 or score == 4:
+            return "B2"
+        if score >= 300 or score == 3:
+            return "B1"
+        if score >= 200 or score == 2:
+            return "A2"
+        if score >= 100 or score == 1:
+            return "A1"
+    if "siele" in lower:
+        if score >= 750 or score == 5:
+            return "C1"
+        if score >= 500 or score == 4:
+            return "B2"
+        if score >= 300 or score == 3:
+            return "B1"
+        if score >= 150 or score == 2:
+            return "A2"
+        return "A1"
+    if "jlpt" in lower:
+        if score == 1:
+            return "C1"
+        if score == 2:
+            return "B2"
+        if score == 3:
+            return "B1"
+        if score == 4:
+            return "A2"
+        if score == 5:
+            return "A1"
+    if "topik" in lower or "급" in lower:
+        if score >= 6:
+            return "C2"
+        if score >= 5:
+            return "C1"
+        if score >= 4:
+            return "B2"
+        if score >= 3:
+            return "B1"
+        if score >= 2:
+            return "A2"
+        if score >= 1:
+            return "A1"
+    if "hsk" in lower:
+        if score >= 7:
+            return "C2"
+        if score == 6:
+            return "C1"
+        if score == 5:
+            return "B2"
+        if score == 4:
+            return "B1"
+        if score == 3:
+            return "A2"
+        if score in (1, 2):
+            return "A1"
+    if any(tok in lower for tok in ("tömer", "tomer", "yökdil", "yokdil", "yds")):
+        if score >= 85:
+            return "C1"
+        if score >= 70:
+            return "B2"
+        if score >= 55:
+            return "B1"
+        if score >= 40:
+            return "A2"
     return None
 
 
 _LANGUAGE_ALIASES: dict[str, str] = {
     "en": "english",
     "eng": "english",
+    "englisch": "english",
+    "anglais": "english",
+    "inglese": "english",
+    "inglés": "english",
+    "ingles": "english",
+    "engels": "english",
+    "ingilizce": "english",
+    "i\u0307ngilizce": "english",
+    "ingilis": "english",
+    "ingilis dili": "english",
+    "английский": "english",
+    "英语": "english",
+    "英語": "english",
+    "영어": "english",
     "de": "german",
     "deu": "german",
     "ger": "german",
     "deutsch": "german",
+    "allemand": "german",
+    "tedesco": "german",
+    "alemán": "german",
+    "aleman": "german",
+    "duits": "german",
+    "almanca": "german",
+    "alman": "german",
+    "alman dili": "german",
+    "немецкий": "german",
+    "德语": "german",
+    "ドイツ語": "german",
+    "독일어": "german",
     "fr": "french",
     "fra": "french",
     "fre": "french",
     "français": "french",
     "francais": "french",
+    "französisch": "french",
+    "franzosisch": "french",
+    "francese": "french",
+    "francés": "french",
+    "frances": "french",
+    "frans": "french",
+    "fransızca": "french",
+    "fransizca": "french",
+    "французский": "french",
+    "法语": "french",
+    "フランス語": "french",
+    "프랑스어": "french",
     "it": "italian",
     "ita": "italian",
     "italiano": "italian",
+    "italienisch": "italian",
+    "italien": "italian",
+    "italiaans": "italian",
+    "итальянский": "italian",
     "es": "spanish",
     "spa": "spanish",
     "español": "spanish",
     "espanol": "spanish",
+    "spanisch": "spanish",
+    "espagnol": "spanish",
+    "spagnolo": "spanish",
+    "spaans": "spanish",
+    "испанский": "spanish",
     "nl": "dutch",
     "nld": "dutch",
     "dut": "dutch",
     "nederlands": "dutch",
+    "niederländisch": "dutch",
+    "niederlandisch": "dutch",
+    "néerlandais": "dutch",
+    "neerlandais": "dutch",
+    "olandese": "dutch",
     "tr": "turkish",
     "tur": "turkish",
     "türkçe": "turkish",
     "turkce": "turkish",
+    "türkisch": "turkish",
     "az": "azerbaijani",
     "aze": "azerbaijani",
     "azərbaycan": "azerbaijani",
+    "azərbaycan dili": "azerbaijani",
+    "azerbaijani": "azerbaijani",
     "ru": "russian",
     "rus": "russian",
     "русский": "russian",
+    "russisch": "russian",
+    "russe": "russian",
     "zh": "chinese",
     "zho": "chinese",
     "chi": "chinese",
     "mandarin": "chinese",
     "mandarin chinese": "chinese",
+    "中文": "chinese",
+    "汉语": "chinese",
+    "chinesisch": "chinese",
     "ja": "japanese",
     "jpn": "japanese",
+    "日本語": "japanese",
+    "japanisch": "japanese",
     "ko": "korean",
     "kor": "korean",
+    "한국어": "korean",
+    "koreanisch": "korean",
     "ar": "arabic",
     "ara": "arabic",
+    "العربية": "arabic",
+    "arabisch": "arabic",
     "pt": "portuguese",
     "por": "portuguese",
+    "português": "portuguese",
+    "portugues": "portuguese",
     "pl": "polish",
     "pol": "polish",
+    "polski": "polish",
     "sv": "swedish",
     "swe": "swedish",
+    "svenska": "swedish",
 }
 
 
 def _normalize_language(raw: str) -> str:
     folded = " ".join(raw.strip().split()).casefold()
     return _LANGUAGE_ALIASES.get(folded, folded)
+
+
+_TEST_LANGUAGE_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (
+        re.compile(
+            r"\b(?:testdaf|tdn|dsh|goethe|ösd|osd|kds|gds|zop|zertifikat\s+deutsch|"
+            r"großes\s+deutsches\s+sprachdiplom|grosses\s+deutsches\s+sprachdiplom|"
+            r"kleines\s+deutsches\s+sprachdiplom|zentrale\s+oberstufenprüfung)\b",
+            re.IGNORECASE,
+        ),
+        "german",
+    ),
+    (re.compile(r"\b(?:delf|dalf|tcf|tef)\b", re.IGNORECASE), "french"),
+    (re.compile(r"\b(?:dele|siele)\b", re.IGNORECASE), "spanish"),
+    (re.compile(r"\b(?:cils|celi|plida)\b", re.IGNORECASE), "italian"),
+    (re.compile(r"\b(?:torfl|trki|трки|тбу|тэу)\b", re.IGNORECASE), "russian"),
+    (re.compile(r"\b(?:jlpt|n[1-5])\b", re.IGNORECASE), "japanese"),
+    (re.compile(r"\btopik\b|급", re.IGNORECASE), "korean"),
+    (re.compile(r"\bhsk\b", re.IGNORECASE), "chinese"),
+    (re.compile(r"\b(?:tömer|tomer|yökdil|yokdil|yds)\b", re.IGNORECASE), "turkish"),
+    (
+        re.compile(
+            r"\b(?:toefl|pte|duolingo|det|cambridge|cae|cpe|fce|pet|ket|ielts|"
+            r"c1\s+advanced|c2\s+proficiency|b2\s+first|b1\s+preliminary|a2\s+key)\b",
+            re.IGNORECASE,
+        ),
+        "english",
+    ),
+)
+
+_QUOTE_LANGUAGE_NAMES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\b(?:english|englisch)\b", re.IGNORECASE), "english"),
+    (re.compile(r"\b(?:german|deutsch|deutsche[nr]?)\b", re.IGNORECASE), "german"),
+    (re.compile(r"\b(?:french|français|francais|französisch)\b", re.IGNORECASE), "french"),
+    (re.compile(r"\b(?:spanish|español|espanol|spanisch)\b", re.IGNORECASE), "spanish"),
+    (re.compile(r"\b(?:italian|italiano|italienisch)\b", re.IGNORECASE), "italian"),
+    (re.compile(r"\b(?:dutch|nederlands|niederländisch)\b", re.IGNORECASE), "dutch"),
+    (re.compile(r"\b(?:turkish|türkçe|turkce|türkisch)\b", re.IGNORECASE), "turkish"),
+    (re.compile(r"\b(?:azerbaijani|azərbaycan)\b", re.IGNORECASE), "azerbaijani"),
+    (re.compile(r"\b(?:russian|русский|russisch)\b", re.IGNORECASE), "russian"),
+    (re.compile(r"\b(?:chinese|mandarin)\b", re.IGNORECASE), "chinese"),
+    (re.compile(r"\b(?:japanese|japanisch)\b", re.IGNORECASE), "japanese"),
+    (re.compile(r"\b(?:korean|koreanisch)\b", re.IGNORECASE), "korean"),
+    (re.compile(r"\b(?:arabic|arabisch)\b", re.IGNORECASE), "arabic"),
+    (re.compile(r"\b(?:portuguese|portugiesisch)\b", re.IGNORECASE), "portuguese"),
+    (re.compile(r"\b(?:polish|polnisch)\b", re.IGNORECASE), "polish"),
+    (re.compile(r"\b(?:swedish|schwedisch)\b", re.IGNORECASE), "swedish"),
+)
+
+
+def _infer_language_from_test(raw: str) -> str | None:
+    cleaned = " ".join(raw.strip().split())
+    if not cleaned:
+        return None
+    matched: set[str] = set()
+    for pattern, lang in _TEST_LANGUAGE_PATTERNS:
+        if pattern.search(cleaned):
+            matched.add(lang)
+    return next(iter(matched)) if len(matched) == 1 else None
+
+
+def _infer_language_from_quote(quote: str) -> str | None:
+    cleaned = " ".join((quote or "").strip().split())
+    if not cleaned:
+        return None
+    matched: set[str] = set()
+    for pattern, lang in _QUOTE_LANGUAGE_NAMES:
+        if pattern.search(cleaned):
+            matched.add(lang)
+    if len(matched) == 1:
+        return next(iter(matched))
+    return _infer_language_from_test(cleaned)
 
 
 def _split_language_bar(raw: str) -> tuple[str, str]:
@@ -760,7 +1210,11 @@ def _split_language_bar(raw: str) -> tuple[str, str]:
     if " " not in cleaned:
         return cleaned, ""
     head, _, tail = cleaned.rpartition(" ")
-    if tail.upper() in _CEFR or not head:
+    if not head:
+        return head, tail
+    if tail.upper() in _CEFR and (
+        " " not in head or head.casefold() in _LANGUAGE_ALIASES
+    ):
         return head, tail
     first, _, rest = cleaned.partition(" ")
     return first, rest
@@ -905,6 +1359,369 @@ def _decide_prior_degree(
     return _verdict(satisfied, f"PRIOR_DEGREE: holds {_DEGREE_ORDER[best]}")
 
 
+_INSTITUTION_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "of",
+        "the",
+        "for",
+        "in",
+        "at",
+        "on",
+        "to",
+        "and",
+        "by",
+        "de",
+        "du",
+        "des",
+        "d",
+        "la",
+        "le",
+        "les",
+        "l",
+        "di",
+        "del",
+        "della",
+        "dei",
+        "degli",
+        "delle",
+        "da",
+        "do",
+        "dos",
+        "das",
+        "von",
+        "zu",
+        "zur",
+        "zum",
+        "im",
+        "am",
+        "an",
+        "auf",
+        "bei",
+        "der",
+        "die",
+        "den",
+        "dem",
+        "und",
+        "für",
+        "fuer",
+        "ve",
+        "named",
+        "after",
+    }
+)
+
+_INSTITUTION_TOKEN_STEMS: dict[str, str] = {
+    "university": "uni",
+    "universität": "uni",
+    "universitaet": "uni",
+    "universitat": "uni",
+    "université": "uni",
+    "universite": "uni",
+    "università": "uni",
+    "universita": "uni",
+    "universidad": "uni",
+    "universidade": "uni",
+    "universiteit": "uni",
+    "uniwersytet": "uni",
+    "universitet": "uni",
+    "universitetet": "uni",
+    "universiteti": "uni",
+    "üniversitesi": "uni",
+    "universitesi": "uni",
+    "univerzita": "uni",
+    "univerza": "uni",
+    "egyetem": "uni",
+    "yliopisto": "uni",
+    "universitatea": "uni",
+    "uni": "uni",
+    "univ": "uni",
+    "technical": "tech",
+    "technische": "tech",
+    "technology": "tech",
+    "technologie": "tech",
+    "teknik": "tech",
+    "tekniska": "tech",
+    "teknillinen": "tech",
+    "politecnico": "tech",
+    "politechnika": "tech",
+    "polytechnique": "tech",
+    "polytechnic": "tech",
+    "polytechnische": "tech",
+    "hochschule": "tech",
+    "th": "tech",
+    "institute": "inst",
+    "institut": "inst",
+    "instituto": "inst",
+    "istituto": "inst",
+    "instituut": "inst",
+    "institutet": "inst",
+    "instytut": "inst",
+    "state": "state",
+    "staatliche": "state",
+    "dövlət": "state",
+    "dovlet": "state",
+    "devlet": "state",
+    "national": "national",
+    "nationale": "national",
+    "nacional": "national",
+    "nazionale": "national",
+    "milli": "national",
+    "federal": "federal",
+    "eidgenössische": "federal",
+    "eidgenoessische": "federal",
+    "eidgenossische": "federal",
+    "swiss": "swiss",
+    "schweizerische": "swiss",
+    "free": "free",
+    "freie": "free",
+    "applied": "applied",
+    "angewandte": "applied",
+    "sciences": "sciences",
+    "wissenschaften": "sciences",
+    "münchen": "munich",
+    "muenchen": "munich",
+    "munchen": "munich",
+    "munich": "munich",
+    "wien": "vienna",
+    "vienna": "vienna",
+    "zürich": "zurich",
+    "zuerich": "zurich",
+    "zurich": "zurich",
+    "genève": "geneva",
+    "geneve": "geneva",
+    "geneva": "geneva",
+    "genf": "geneva",
+    "köln": "cologne",
+    "koeln": "cologne",
+    "koln": "cologne",
+    "cologne": "cologne",
+    "nürnberg": "nuremberg",
+    "nuernberg": "nuremberg",
+    "nurnberg": "nuremberg",
+    "nuremberg": "nuremberg",
+    "göttingen": "gottingen",
+    "goettingen": "gottingen",
+    "gottingen": "gottingen",
+    "tübingen": "tubingen",
+    "tuebingen": "tubingen",
+    "tubingen": "tubingen",
+    "würzburg": "wurzburg",
+    "wuerzburg": "wurzburg",
+    "wurzburg": "wurzburg",
+    "münster": "munster",
+    "muenster": "munster",
+    "munster": "munster",
+    "düsseldorf": "dusseldorf",
+    "duesseldorf": "dusseldorf",
+    "dusseldorf": "dusseldorf",
+    "warszawa": "warsaw",
+    "warsaw": "warsaw",
+    "kraków": "krakow",
+    "krakow": "krakow",
+    "cracow": "krakow",
+    "praha": "prague",
+    "prague": "prague",
+    "moskva": "moscow",
+    "moscow": "moscow",
+    "roma": "rome",
+    "rome": "rome",
+    "milano": "milan",
+    "milan": "milan",
+    "firenze": "florence",
+    "florence": "florence",
+    "torino": "turin",
+    "turin": "turin",
+    "padova": "padua",
+    "padua": "padua",
+    "venezia": "venice",
+    "venice": "venice",
+    "napoli": "naples",
+    "naples": "naples",
+    "bruxelles": "brussels",
+    "brussel": "brussels",
+    "brussels": "brussels",
+    "leuven": "leuven",
+    "louvain": "leuven",
+    "gent": "ghent",
+    "ghent": "ghent",
+    "gand": "ghent",
+    "københavn": "copenhagen",
+    "kobenhavn": "copenhagen",
+    "copenhagen": "copenhagen",
+    "göteborg": "gothenburg",
+    "goteborg": "gothenburg",
+    "gothenburg": "gothenburg",
+    "helsingfors": "helsinki",
+    "helsinki": "helsinki",
+    "beijing": "beijing",
+    "peking": "beijing",
+    "bakı": "baku",
+    "baki": "baku",
+    "baku": "baku",
+    "azərbaycan": "azerbaijan",
+    "azerbaycan": "azerbaijan",
+    "azerbaijan": "azerbaijan",
+    "türkiye": "turkey",
+    "turkiye": "turkey",
+    "turkey": "turkey",
+}
+
+_INSTITUTION_COMPOUND_ABBRS: dict[str, tuple[str, ...]] = {
+    "tu": ("tech", "uni"),
+    "fu": ("free", "uni"),
+    "hu": ("humboldt", "uni"),
+    "ku": ("katholieke", "uni"),
+    "eth": ("federal", "tech", "inst"),
+    "epfl": ("federal", "tech", "lausanne"),
+    "rwth": ("rwth", "tech", "uni"),
+    "lmu": ("ludwig", "maximilian", "uni"),
+    "kit": ("karlsruhe", "inst", "tech"),
+}
+
+_GENERIC_INSTITUTION_TOKENS: frozenset[str] = frozenset(
+    {
+        "uni",
+        "tech",
+        "inst",
+        "state",
+        "national",
+        "federal",
+        "swiss",
+        "free",
+        "applied",
+        "sciences",
+        "college",
+        "school",
+        "academy",
+        "higher",
+        "education",
+        "institution",
+        "institutions",
+        "universities",
+        "partner",
+        "recognized",
+        "recognised",
+        "accredited",
+        "approved",
+        "eligible",
+        "public",
+        "private",
+        "research",
+        "international",
+        "world",
+        "top",
+        "ranked",
+        "ranking",
+        "group",
+    }
+)
+
+
+def _fold_ascii(token: str) -> str:
+    folded = (
+        token.casefold()
+        .replace("ß", "ss")
+        .replace("ø", "o")
+        .replace("å", "a")
+        .replace("æ", "ae")
+        .replace("ı", "i")
+        .replace("ə", "e")
+    )
+    decomposed = unicodedata.normalize("NFKD", folded)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+
+
+def _institution_signature(raw: str) -> tuple[frozenset[str], frozenset[str], bool]:
+    """Return ``(canonical_tokens, acronyms, has_specific_identity)`` for an institution string."""
+    cleaned = raw.strip().casefold()
+    if not cleaned:
+        return frozenset(), frozenset(), False
+    parts = [cleaned]
+    for paren in re.findall(r"\(([^)]+)\)", cleaned):
+        if paren.strip():
+            parts.append(paren.strip())
+    without_parens = re.sub(r"\([^)]*\)", " ", cleaned).strip()
+    if without_parens and without_parens not in parts:
+        parts.append(without_parens)
+
+    canon_tokens: set[str] = set()
+    acronyms: set[str] = set()
+    for part in parts:
+        raw_words = [
+            w for w in re.split(r"[^a-z0-9äöüßøåæıəğşçéèêëàáâãії]+", part) if w
+        ]
+        sig_words = [
+            w
+            for w in raw_words
+            if w not in _INSTITUTION_STOPWORDS and _fold_ascii(w) not in _INSTITUTION_STOPWORDS
+        ]
+        if not sig_words:
+            continue
+        if len(sig_words) == 1 and 2 <= len(sig_words[0]) <= 6 and sig_words[0].isalpha():
+            acronyms.add(_fold_ascii(sig_words[0]))
+        if len(sig_words) >= 2:
+            raw_initialism = "".join(_fold_ascii(w)[0] for w in sig_words if _fold_ascii(w))
+            if len(raw_initialism) >= 2:
+                acronyms.add(raw_initialism)
+        part_canon: list[str] = []
+        for word in sig_words:
+            folded = _fold_ascii(word)
+            if folded in _INSTITUTION_COMPOUND_ABBRS:
+                if len(sig_words) == 1:
+                    acronyms.add(folded)
+                part_canon.extend(_INSTITUTION_COMPOUND_ABBRS[folded])
+                continue
+            stem = _INSTITUTION_TOKEN_STEMS.get(word) or _INSTITUTION_TOKEN_STEMS.get(folded)
+            if stem is not None:
+                part_canon.append(stem)
+            else:
+                if folded.startswith("ludwig") or folded.startswith("maximilian"):
+                    part_canon.append("ludwig" if folded.startswith("ludwig") else "maximilian")
+                else:
+                    part_canon.append(folded)
+        canon_tokens.update(part_canon)
+        if len(part_canon) >= 2:
+            canon_initialism = "".join(tok[0] for tok in part_canon if tok)
+            if len(canon_initialism) >= 2:
+                acronyms.add(canon_initialism)
+        if "federal" in part_canon and "tech" in part_canon and "zurich" in part_canon:
+            acronyms.add("eth")
+        if "ludwig" in part_canon and "maximilian" in part_canon and "munich" in part_canon:
+            acronyms.add("lmu")
+    specific = bool((canon_tokens - _GENERIC_INSTITUTION_TOKENS) or acronyms)
+    return frozenset(canon_tokens), frozenset(acronyms), specific
+
+
+def _institution_matches(wanted_raw: str, held_raw: str) -> bool:
+    w_clean = " ".join(wanted_raw.strip().split()).casefold()
+    h_clean = " ".join(held_raw.strip().split()).casefold()
+    if not w_clean or not h_clean:
+        return False
+    if w_clean == h_clean or _fold_ascii(w_clean) == _fold_ascii(h_clean):
+        return True
+    w_tokens, w_acronyms, w_specific = _institution_signature(w_clean)
+    h_tokens, h_acronyms, h_specific = _institution_signature(h_clean)
+    if not w_specific or not h_specific:
+        return False
+    if w_acronyms & h_acronyms:
+        w_places = w_tokens - _GENERIC_INSTITUTION_TOKENS - w_acronyms
+        h_places = h_tokens - _GENERIC_INSTITUTION_TOKENS - h_acronyms
+        if not w_places or not h_places or (w_places & h_places):
+            return True
+    w_dist = w_tokens - _GENERIC_INSTITUTION_TOKENS
+    h_dist = h_tokens - _GENERIC_INSTITUTION_TOKENS
+    if w_dist and h_dist and w_tokens == h_tokens:
+        return True
+    if (
+        w_dist
+        and w_dist == h_dist
+        and ("tech" in w_tokens) == ("tech" in h_tokens)
+        and ("applied" in w_tokens) == ("applied" in h_tokens)
+    ):
+        return True
+    return False
+
+
 def _decide_prior_institution(
     condition: ConditionTriple, profile: object, _today: _date | None = None
 ) -> Decision:
@@ -914,24 +1731,59 @@ def _decide_prior_institution(
     countries = expand_countries(condition.value)
     if countries is not None:
         held_countries = {
-            str(getattr(record, "country_code", "")).upper() for record in records
+            str(getattr(record, "country_code", "")).upper()
+            for record in records
+            if str(getattr(record, "country_code", "")).strip()
         }
+        if not held_countries:
+            return _undecidable("PRIOR_INSTITUTION: the profile does not carry academic history")
+        inside = bool(held_countries & set(countries))
+        satisfied = not inside if condition.operator == "NOT_IN" else inside
         return _verdict(
-            bool(held_countries & set(countries)),
+            satisfied,
             f"PRIOR_INSTITUTION: studied in {sorted(held_countries)}",
         )
-    names = {str(getattr(record, "institution", "")).casefold() for record in records}
-    wanted_name = condition.value.strip().casefold()
-    if not wanted_name:
+    wanted_raw = condition.value.strip()
+    if not wanted_raw:
         return _undecidable(
             f"PRIOR_INSTITUTION: '{condition.value}' names no institution to match"
         )
-    if wanted_name in names:
+    held_names = [
+        str(getattr(record, "institution", "")).strip()
+        for record in records
+        if str(getattr(record, "institution", "")).strip()
+    ]
+    wanted_parts = [p.strip() for p in re.split(r"[,;]", wanted_raw) if p.strip()]
+    matched = any(
+        _institution_matches(part, held_name)
+        for part in wanted_parts
+        for held_name in held_names
+    )
+    if matched:
+        if condition.operator == "NOT_IN":
+            return _verdict(False, f"PRIOR_INSTITUTION: studied at {condition.value}")
         return Decision("SATISFIED", f"PRIOR_INSTITUTION: studied at {condition.value}")
+    if (
+        condition.operator == "NOT_IN"
+        and held_names
+        and all(_institution_signature(part)[2] for part in wanted_parts)
+    ):
+        return Decision("SATISFIED", f"PRIOR_INSTITUTION: did not study at {condition.value}")
     return _undecidable(
         f"PRIOR_INSTITUTION: '{condition.value}' is a name, not a country list -- "
         "a human decides whether it matches"
     )
+
+
+def _to_bavarian(
+    grade: float | str, scale: str, country_code: str = ""
+) -> float | None:
+    """Convert `(grade, scale, country_code)` to its Modified Bavarian (`1.0`..`5.0`) float
+    using the canonical piecewise-equipercentile converter in `transcript_eligibility`."""
+    from apps.funding.transcript_eligibility import convert_grade_to_bavarian
+
+    bav = convert_grade_to_bavarian(str(grade), scale, country_code)
+    return float(bav) if bav is not None else None
 
 
 def _decide_grade(
@@ -940,6 +1792,25 @@ def _decide_grade(
     bar_text, scale = _split_scale(condition.value)
     bar = _parse_finite(bar_text)
     if bar is None or not scale:
+        if condition.operator in ("GTE", "EQ"):
+            from apps.funding.transcript_eligibility import (
+                _evaluate_uk_honours_for_record,
+                _uk_honours_tier,
+            )
+
+            hon_bar = _uk_honours_tier(condition.value)
+            if hon_bar is not None:
+                hon_decisions: list[Decision] = []
+                for record in getattr(profile, "academic_history", ()):
+                    ev = _evaluate_uk_honours_for_record(hon_bar[0], hon_bar[1], record)
+                    if ev is None:
+                        continue
+                    verdict = _verdict(ev.outcome == "SATISFIED", f"GRADE: {ev.status_text}")
+                    if verdict.outcome == "SATISFIED":
+                        return verdict
+                    hon_decisions.append(verdict)
+                if hon_decisions:
+                    return hon_decisions[0]
         return _undecidable(f"GRADE: '{condition.value}' does not state a finite bar")
     norm_wanted_scale = _normalize_scale(scale)
     matched_decisions: list[Decision] = []
@@ -947,6 +1818,7 @@ def _decide_grade(
     for record in getattr(profile, "academic_history", ()):
         rec_scale = str(getattr(record, "grading_scale", ""))
         raw_grade = str(getattr(record, "grade", "")).strip()
+        rec_cc = str(getattr(record, "country_code", "") or "").strip().upper()
         if (
             rec_scale.strip().casefold() in unstated_markers
             or raw_grade.casefold() in unstated_markers
@@ -959,6 +1831,26 @@ def _decide_grade(
             if g_dec is not None and raw_grade.casefold() in unstated_markers:
                 raw_grade = str(g_dec)
         if not rec_scale or _normalize_scale(rec_scale) != norm_wanted_scale:
+            continue
+        if rec_cc in {"CZ", "SK", "PH"}:
+            continue
+        if rec_cc in {"DE", "AT"} and norm_wanted_scale in {"gpa 4.0", "5.0"}:
+            continue
+        if norm_wanted_scale == "german 1-5" and rec_cc in {
+            "HU",
+            "RU",
+            "KZ",
+            "BY",
+            "UA",
+            "UZ",
+            "KG",
+            "TJ",
+            "TM",
+            "NG",
+            "SA",
+        }:
+            continue
+        if norm_wanted_scale == "100" and rec_cc in {"GB", "UK", "IE", "AU", "NZ"} and bar > 70:
             continue
         grade = _parse_finite(raw_grade.rstrip("%").strip())
         if grade is None:
@@ -1069,6 +1961,41 @@ def _decide_language(
 ) -> Decision:
     language, level = _split_language_bar(condition.value)
     norm_lang = _normalize_language(language) if language else ""
+    if (
+        not norm_lang
+        or norm_lang in _NON_LANGUAGE_TOKENS
+        or (
+            norm_lang not in _LANGUAGE_ALIASES.values()
+            and _infer_language_from_test(language) is not None
+        )
+    ):
+        val_without_marker = re.sub(
+            r"^\s*unstated_language\b\s*", "", condition.value, flags=re.IGNORECASE
+        ).strip()
+        inferred = _infer_language_from_test(val_without_marker)
+        if inferred is not None and condition.operator == "GTE":
+            norm_lang = inferred
+            language = inferred.capitalize()
+            level = val_without_marker
+        elif inferred is not None and condition.operator == "PRESENT" and inferred != "english":
+            norm_lang = inferred
+            language = inferred.capitalize()
+            level = (
+                val_without_marker
+                if (
+                    _level_to_cefr(val_without_marker) is not None
+                    or _extract_test_and_score(val_without_marker) is not None
+                )
+                else ""
+            )
+        else:
+            quote_lang = _infer_language_from_quote(condition.quote)
+            if quote_lang is not None and val_without_marker:
+                norm_lang = quote_lang
+                language = quote_lang.capitalize()
+                level = val_without_marker
+            else:
+                norm_lang = ""
     if not norm_lang or norm_lang in _NON_LANGUAGE_TOKENS:
         # A condition that names no language (or only a bare CEFR/test token like
         # "B2" or "IELTS 6.5" without naming the language) cannot fail anybody --
@@ -1091,10 +2018,17 @@ def _decide_language(
     evidence_types: dict[str, str] = {}
     late_evidence: dict[str, tuple[str, _date, _date]] = {}
     for item in records:
-        item_lang = _normalize_language(str(getattr(item, "language", "")))
+        raw_item_lang = str(getattr(item, "language", "")).strip()
+        item_lang = _normalize_language(raw_item_lang)
         item_level = str(getattr(item, "level", "")).strip()
+        if item_lang in _NON_LANGUAGE_TOKENS:
+            inferred_item_lang = _infer_language_from_test(f"{raw_item_lang} {item_level}")
+            if inferred_item_lang is not None:
+                item_lang = inferred_item_lang
+                if raw_item_lang and raw_item_lang.casefold() not in item_level.casefold():
+                    item_level = f"{raw_item_lang} {item_level}".strip()
         item_ev_type = str(getattr(item, "evidence_type", "") or "").upper()
-        if not item_lang:
+        if not item_lang or item_lang in _NON_LANGUAGE_TOKENS:
             continue
         avail = getattr(item, "available_by", None)
         if isinstance(avail, _date) and isinstance(intake, _date) and avail > intake:

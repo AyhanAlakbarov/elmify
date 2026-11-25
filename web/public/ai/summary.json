@@ -4,8 +4,8 @@
   "category": "EducationalApplication",
   "primaryLaunchMarket": "Azerbaijan",
   "availableLanguages": ["en", "az", "ru"],
-  "degreeScope": "Master's degrees (MSc, MA, LLM, MRes) and second-cycle scholarships are live today. Bachelor's degree support will be done soon. PhD programmes are not covered.",
-  "description": "Launching first in Azerbaijan in English, Azerbaijani, and Russian: Elmify's AI reads official university and scholarship pages for master's degrees (MSc, MA, LLM, MRes — Bachelor's coming soon), checks your GPA, ECTS credits, and IELTS or TOEFL scores against State Program (Dövlət Proqramı), HTP, Erasmus Mundus, DAAD, and Chevening rules, and prepares your CV, motivation letters, and referee briefs.",
+  "degreeScope": "Master's degrees (MSc, MA, LLM, MRes) and second-cycle scholarships are live today. Bachelor's degree support will be done soon.",
+  "description": "Elmify reads official university and scholarship regulations across 50+ countries in English, Azerbaijani, and Russian for master's degrees (MSc, MA, LLM, MRes — Bachelor's coming soon), checks your GPA, ECTS credits, and IELTS or TOEFL scores against State Program (Dövlət Proqramı), HTP, Erasmus Mundus, DAAD, Chevening, tuition waivers, regional grants, and RA/TA assistantships, and builds tailored CVs, motivation letters, and referee briefs from your verified record.",
   "updatedAt": "2026-11-01",
   "links": {
     "homepageEn": "https://elmify.com",

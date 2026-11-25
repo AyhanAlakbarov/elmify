@@ -316,3 +316,87 @@ def test_a_free_mail_subdomain_is_still_never_learned():
     key = sender_key("x@eu.outlook.com")
     assert key == "eu.outlook.com"
     assert learnable_domain(key, own_domains=()) is False
+
+
+@pytest.mark.parametrize(
+    "domain",
+    ["box.az", "mail.az", "bk.ru", "wp.pl", "seznam.cz", "libero.it", "orange.fr", "t-online.de"],
+)
+def test_regional_free_mail_domains_are_never_learned(domain: str) -> None:
+    from apps.mailbox.filter import learnable_domain
+
+    assert learnable_domain(domain, own_domains=()) is False
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "uni.mobility-online.com",
+        "school.fullfabric.com",
+        "apply.embark.com",
+        "grad.technolutions.net",
+        "col.applyweb.com",
+        "app.studielink.nl",
+        "vu.osiris-student.nl",
+        "dossier.parcoursup.fr",
+        "track.ucas.com",
+        "apply.commonapp.org",
+    ],
+)
+def test_expanded_shared_platforms_keep_their_full_host(host: str) -> None:
+    from apps.mailbox.filter import _key
+
+    assert _key(host) == host
+
+
+@pytest.mark.django_db
+def test_catalogue_discovered_shared_platform_keeps_full_host_and_blocks_cross_mail() -> None:
+    from django.core.cache import cache
+
+    from apps.funding.models import Institution
+    from apps.mailbox.filter import (
+        _host_of,
+        _is_platform_host,
+        _key,
+        is_shared_platform,
+        learnable_domain,
+    )
+
+    cache.delete("portals:shared_platform_hosts:v1")
+    Institution.objects.create(
+        canonical_key="kth-mail-test",
+        name="KTH Royal Institute of Technology",
+        country_code="SE",
+        official_website="https://www.kth.se",
+    )
+    Institution.objects.create(
+        canonical_key="lu-mail-test",
+        name="Lund University",
+        country_code="SE",
+        official_website="https://www.lu.se",
+    )
+    PortalForm.objects.create(
+        portal_host="kth.nordic-admissions.eu",
+        form_key="/apply",
+        form_url="https://kth.nordic-admissions.eu/apply",
+    )
+    PortalForm.objects.create(
+        portal_host="lu.nordic-admissions.eu",
+        form_key="/apply",
+        form_url="https://lu.nordic-admissions.eu/apply",
+    )
+
+    cache.delete("portals:shared_platform_hosts:v1")
+    assert is_shared_platform("kth.nordic-admissions.eu") is True
+    assert is_shared_platform("nordic-admissions.eu") is True
+    assert _is_platform_host("nordic-admissions.eu") is True
+    assert _key("kth.nordic-admissions.eu") == "kth.nordic-admissions.eu"
+    assert learnable_domain("kth.nordic-admissions.eu", own_domains=()) is False
+
+    allowed = {_key(_host_of("https://kth.nordic-admissions.eu/apply")): None}
+    assert matched_domain("no-reply@nordic-admissions.eu", allowed) == ""
+    assert matched_domain("no-reply@lu.nordic-admissions.eu", allowed) == ""
+    assert (
+        matched_domain("no-reply@kth.nordic-admissions.eu", allowed)
+        == "kth.nordic-admissions.eu"
+    )

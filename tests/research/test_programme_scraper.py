@@ -640,6 +640,8 @@ def test_item1_scrape_fetched_programme_page_and_card_host_reader_integration(se
     claim = OfficialEvidenceClaim.objects.filter(program=prog, claim_class="TUITION").first()
     assert claim is not None and claim.snapshot_id == snapshot.id
     assert claim.snapshot.render_status == "ARCHIVE:2026-06-25"
+    app_fee = CostComponent.objects.get(program=prog, kind="APPLICATION_FEE")
+    assert app_fee.amount == Decimal("100.00")
 
     # Now test CardHostReader with fetch_html on a second unpriced Program
     settings.FUNDER_SWEEP_LEVEL_CHECK_LIVE = True
@@ -1172,6 +1174,799 @@ def test_audit_pass3_multirow_thead_header_currency_negated_docs_and_jsonld_form
     assert cc_after.amount == Decimal("9000")
     assert cc_after.currency == "EUR"
 
+
+def test_per_credit_and_trimester_quarter_term_tuition_and_multilingual_guards() -> None:
+    """Covers Tier-1 PER_CREDIT single-credit conversion (* 30), TRIMESTER/QUARTER/TERM (* 3),
+    yearless deadline 60-day past guard, 1/3 referee counts, and multilingual conditional guards."""
+    import datetime as dt
+
+    from apps.documents.referee_needs import needs_for
+    from apps.research.card_engine import Decision, Quote
+    from apps.research.programme_scraper.arbitration import (
+        needs_high_risk_arbitration,
+        refine_with_dual_readers,
+    )
+    from apps.research.programme_scraper.extractors import (
+        _candidates_with_header_currency,
+        _normalize_tuition_amount_and_period,
+        _period_from_context,
+    )
+    from apps.research.programme_scraper.specs import ProgrammeQuestionSet
+
+    # 1. QuestionSet options include PER_CREDIT, TRIMESTER, QUARTER, TERM
+    us_html = "<html><body><h1>MS CS</h1><p>Tuition is USD 1,850 per credit hour.</p></body></html>"
+    us_bundle = build_programme_bundle([("https://www.columbia.edu/ms-cs", us_html)])
+    qset = ProgrammeQuestionSet(
+        unresolved_slots=frozenset({"tuition"}),
+        high_risk_flags=frozenset(),
+    )
+    cands = _candidates_with_header_currency(us_bundle.section.lines)
+    qs = qset.questions(us_bundle.section, cands, {})
+    period_q = next(q for q in qs if q.id == "tuition_period")
+    for opt in ("PER_CREDIT", "TRIMESTER", "QUARTER", "TERM"):
+        assert opt in period_q.options
+
+    # 2. _period_from_context and _normalize_tuition_amount_and_period
+    assert _period_from_context("AUD 12,000 per trimester") == "TRIMESTER"
+    assert _period_from_context("USD 15,000 per quarter") == "QUARTER"
+    assert _period_from_context("GBP 9,000 per term") == "TERM"
+    assert _normalize_tuition_amount_and_period(Decimal("12000"), "TRIMESTER") == (
+        Decimal("36000"),
+        "ANNUAL",
+    )
+    assert _normalize_tuition_amount_and_period(Decimal("15000"), "QUARTER") == (
+        Decimal("45000"),
+        "ANNUAL",
+    )
+    assert _normalize_tuition_amount_and_period(Decimal("9000"), "TERM") == (
+        Decimal("27000"),
+        "ANNUAL",
+    )
+    assert _normalize_tuition_amount_and_period(Decimal("1850"), "PER_CREDIT") == (
+        Decimal("55500"),
+        "ANNUAL",
+    )
+
+    # 3. Tier-1 arbitration with PER_CREDIT multiplies by 30 instead of storing single-credit fee
+    us_tier0 = extract_tier0_programme_facts(us_bundle)
+    assert "tuition" in us_tier0.unresolved_slots
+
+    test_readers = Stack(
+        pair=(
+            ReaderSpec("cheap-a", "openrouter", "openai/gpt-5.4-nano", host="OpenAI"),
+            ReaderSpec("cheap-b", "openrouter", "google/gemini-3.1-flash-lite", host="Google"),
+        ),
+        decider=ReaderSpec("frontier-decider", "anthropic", "claude-opus-4-7"),
+    )
+
+    def fake_transport(reader: ReaderSpec, prompt: Prompt) -> Attempt:
+        return Attempt(
+            reply=Reply.model_validate(
+                {
+                    "answers": [
+                        {"id": "tuition_amount", "value": "m1", "quote": "USD 1,850"},
+                        {"id": "tuition_period", "value": "PER_CREDIT", "quote": "per credit hour"},
+                    ]
+                }
+            ),
+            reason="",
+            cost_usd=0.0001,
+            latency_s=0.01,
+        )
+
+    us_refined = refine_with_dual_readers(
+        us_bundle,
+        us_tier0,
+        screen=Screen("clear", frozenset(us_bundle.section.texts())),
+        limit=Limit("test-bucket", 1, 100, 3600),
+        readers=test_readers,
+        transport=fake_transport,
+    )
+    tuition_cost = next(c for c in us_refined.costs if c.kind == "TUITION")
+    assert tuition_cost.amount == Decimal("55500")
+    assert tuition_cost.period == "ANNUAL"
+    assert tuition_cost.currency == "USD"
+
+    # 4. Yearless deadline never placed >60 days in the past relative to today
+    today = dt.date.today()
+    past_dt = today - dt.timedelta(days=120)
+    month_name = past_dt.strftime("%B")
+    past_dl_html = (
+        f"<html><body><p>Application deadline for the {today.year} intake: "
+        f"15 {month_name}.</p></body></html>"
+    )
+    past_bundle = build_programme_bundle([("https://www.uni.example.org/ms", past_dl_html)])
+    past_facts = extract_tier0_programme_facts(past_bundle)
+    dl_val = next(e.value for e in past_facts.eligibility if e.kind == "DEADLINE")
+    assert dt.date.fromisoformat(dl_val) >= today - dt.timedelta(days=60)
+
+    # 5. Referee count: "a letter of recommendation" -> ONE, "drei" -> THREE_OR_MORE
+    one_ref_html = (
+        "<html><body><p>Applicants must submit a letter of recommendation.</p></body></html>"
+    )
+    one_ref_bundle = build_programme_bundle([("https://www.uni.example.org/ms-1", one_ref_html)])
+    one_ref_facts = extract_tier0_programme_facts(one_ref_bundle)
+    assert needs_for(one_ref_facts.referee_requirements).letters == 1
+
+    three_ref_bundle = build_programme_bundle(
+        [
+            (
+                "https://www.uni.example.org/ms-3",
+                "<html><body><p>Bewerber reichen drei Empfehlungsschreiben ein.</p></body></html>",
+            )
+        ]
+    )
+    three_ref_facts = extract_tier0_programme_facts(three_ref_bundle)
+    assert needs_for(three_ref_facts.referee_requirements).letters == 3
+
+    # 6. Multilingual conditional guards trigger needs_high_risk_arbitration
+    agreed_free = (
+        Decision(
+            question="tuition_free_all_internationals",
+            status="agreed",
+            value="yes",
+            quote=Quote("keine Studiengebühren", "L0.text"),
+            answers=(),
+        ),
+    )
+    for guard_line in (
+        "Keine Studiengebühren, ausgenommen Drittstaatsangehörige.",
+        "Gebührenfrei nur für EU-Bürger.",
+        "Befreiung für Studierende einer Partneruniversität.",
+        "Gratuité sauf pour les étudiants hors UE.",
+        "Exonération pour les ressortissants de l'UE.",
+        "Geen collegegeld, alleen voor EU-studenten (uitzondering).",
+        "Matrícula gratuita excepto estudiantes no comunitarios (exención).",
+        "Esonero tasse universitarie, eccetto studenti internazionali.",
+    ):
+        g_bundle = build_programme_bundle(
+            [("https://www.uni.example.org/fees", f"<html><body><p>{guard_line}</p></body></html>")]
+        )
+        assert needs_high_risk_arbitration(agreed_free, g_bundle.section) == (
+            "tuition_free_all_internationals",
+        ), guard_line
+
+
+def test_dawid_skene_log_odds_amount_spread_default_transport_and_fail_closed(monkeypatch) -> None:
+    """Verify Proposition 1 Dawid-Skene log-odds boundaries, multi-amount spread escalation,
+    default `transport` wiring when `transport=None`, and fail-closed downgrade to `'unresolved'`
+    when the Tier 2 frontier decider fails or returns an unlocated quote."""
+    import math
+
+    from apps.research.card_engine import Decision, Quote, ReaderAnswer
+    from apps.research.programme_scraper import arbitration
+    from apps.research.programme_scraper.arbitration import (
+        CONDITIONAL_FREE_TUITION_PARAMS,
+        DawidSkeneSlotParams,
+        detect_tuition_amount_spread_risk,
+        needs_high_risk_arbitration,
+        refine_with_dual_readers,
+        slot_escalation_bounds,
+        slot_posterior_log_odds,
+    )
+
+    # 1. Exact Proposition 1 formulas for slot_escalation_bounds and slot_posterior_log_odds
+    params = DawidSkeneSlotParams(
+        prior=0.15,
+        sensitivities=(0.90, 0.90),
+        specificities=(0.88, 0.88),
+        c_fp=100.0,
+        c_fn=5.0,
+        c_judge=1.0,
+    )
+    theta_low, theta_high = slot_escalation_bounds(params)
+    assert theta_low == pytest.approx(math.log(1.0 / 4.0))
+    assert theta_high == pytest.approx(math.log(99.0))
+    l_unanimous_yes = slot_posterior_log_odds((True, True), CONDITIONAL_FREE_TUITION_PARAMS)
+    assert theta_low < l_unanimous_yes < theta_high
+
+    # 2. Multi-amount spread risk: cheap readers agree on EUR 1,500 when EUR 15,000 is on the page
+    spread_html = """
+    <html>
+      <body>
+        <h1>M.Sc. in Data Engineering</h1>
+        <p>Fee tariff group I: EUR 1,500. Fee tariff group II: EUR 15,000.</p>
+      </body>
+    </html>
+    """
+    spread_bundle = build_programme_bundle(
+        [("https://www.uni.example.org/msc-de", spread_html)]
+    )
+    amt_dec_low = Decision(
+        question="tuition_amount",
+        status="agreed",
+        value="m1",
+        quote=Quote("EUR 1,500", "L1.text"),
+        answers={
+            "cheap-a": ReaderAnswer("m1", Quote("EUR 1,500", "L1.text")),
+            "cheap-b": ReaderAnswer("m1", Quote("EUR 1,500", "L1.text")),
+        },
+    )
+    per_dec = Decision(
+        question="tuition_period",
+        status="agreed",
+        value="ANNUAL",
+        quote=Quote("EUR 1,500", "L1.text"),
+        answers={},
+    )
+    assert detect_tuition_amount_spread_risk(amt_dec_low, spread_bundle.section) is True
+    assert needs_high_risk_arbitration((amt_dec_low, per_dec), spread_bundle.section) == (
+        "tuition_amount",
+        "tuition_period",
+    )
+
+    # 3. Production default transport (transport=None uses default_call for both Tier 1 and Tier 2)
+    cond_html = """
+    <html>
+      <body>
+        <h1>M.Sc. in Economics</h1>
+        <p>Tuition-free for exchange students from partner universities.</p>
+      </body>
+    </html>
+    """
+    cond_bundle = build_programme_bundle(
+        [("https://www.uni.example.org/msc-econ", cond_html)]
+    )
+    cond_tier0 = extract_tier0_programme_facts(cond_bundle)
+    test_readers = Stack(
+        pair=(
+            ReaderSpec("cheap-a", "openrouter", "openai/gpt-5.4-nano", host="OpenAI"),
+            ReaderSpec("cheap-b", "openrouter", "google/gemini-3.1-flash-lite", host="Google"),
+        ),
+        decider=ReaderSpec("frontier-decider", "anthropic", "claude-opus-4-7"),
+    )
+    default_called: list[str] = []
+
+    def fake_default_call(reader: ReaderSpec, prompt: Prompt) -> Attempt:
+        default_called.append(reader.name)
+        if reader.name in ("cheap-a", "cheap-b"):
+            return Attempt(
+                reply=Reply.model_validate(
+                    {
+                        "answers": [
+                            {
+                                "id": "tuition_free_all_internationals",
+                                "value": "yes",
+                                "quote": "Tuition-free",
+                            }
+                        ]
+                    }
+                ),
+                reason="",
+                cost_usd=0.0001,
+                latency_s=0.05,
+            )
+        # Simulate frontier decider returning an unlocated quote (or failing) -> must fail-closed!
+        return Attempt(
+            reply=Reply.model_validate(
+                {
+                    "answers": [
+                        {
+                            "id": "tuition_free_all_internationals",
+                            "value": "yes",
+                            "quote": "nonexistent fabricated quote",
+                        }
+                    ]
+                }
+            ),
+            reason="",
+            cost_usd=0.002,
+            latency_s=0.1,
+        )
+
+    monkeypatch.setattr(arbitration, "default_call", fake_default_call)
+    refined_fail_closed = refine_with_dual_readers(
+        cond_bundle,
+        cond_tier0,
+        screen=Screen("clear", frozenset(cond_bundle.section.texts())),
+        limit=Limit("test-bucket", 1, 100, 3600),
+        readers=test_readers,
+        transport=None,
+    )
+    assert "frontier-decider" in default_called
+    free_decision = next(
+        d for d in refined_fail_closed.decisions if d.question == "tuition_free_all_internationals"
+    )
+    assert free_decision.status == "unresolved"
+    assert free_decision.value is None
+    assert not any(
+        c.kind == "TUITION" and c.amount == Decimal("0.00") for c in refined_fail_closed.costs
+    )
+    assert "tuition" in refined_fail_closed.unresolved_slots
+
+
+def test_calibrated_dawid_skene_six_high_risk_slots_and_scrape_fetched_arbitration() -> None:
+    """Verify:
+    1. `ProgrammeQuestionSet` emits questions for all 6 high-consequence slots (`tuition`,
+       `conditional_free_tuition`, `application_fee`, `deadline`, `min_gpa`, `ielts_bar`,
+       `scholarship_suspended`).
+    2. `calibrate_slot_params` shrinks Beta-Binomial reader confusion counts (`GoldItem` +
+       `DecisionRecord` or `ReaderAuditCounts`) with kappa_0=20.0, enforces the informativeness
+       guard `alpha_hat + beta_hat > 1.02`, and falls back cleanly to default params when no
+       audited records exist.
+    3. `needs_high_risk_arbitration` escalates agreed cheap-reader decisions across the extended
+       high-risk slots when conditional guards or competing candidates exist.
+    4. `scrape_fetched_programme_page` accepts optional `screen`, `limit`, `readers`, `transport`
+       and invokes `refine_with_dual_readers` when `needs_high_risk_arbitration(result)` triggers.
+    """
+    from apps.funding.models import OfficialSource, OfficialSourceSnapshot
+    from apps.research.card_engine import Decision, Quote, ReaderAnswer
+    from apps.research.models import DecisionRecord, GoldItem
+    from apps.research.programme_scraper import scrape_fetched_programme_page
+    from apps.research.programme_scraper.arbitration import (
+        APPLICATION_FEE_PARAMS,
+        CONDITIONAL_FREE_TUITION_PARAMS,
+        DEADLINE_PARAMS,
+        IELTS_BAR_PARAMS,
+        MIN_GPA_PARAMS,
+        SCHOLARSHIP_SUSPENDED_PARAMS,
+        ReaderAuditCounts,
+        calibrate_slot_params,
+        needs_high_risk_arbitration,
+    )
+    from apps.research.programme_scraper.extractors import _candidates_with_header_currency
+    from apps.research.programme_scraper.specs import ProgrammeQuestionSet
+
+    rich_html = """
+    <html>
+      <body>
+        <h1>M.Sc. in Quantitative Finance</h1>
+        <p>Tuition fee: EUR 2,500 for EU students, except non-EU students who pay EUR 16,000.</p>
+        <p>Application fee: EUR 50 for EU citizens, or EUR 120 for non-EU applicants.</p>
+        <p>Application deadline: 15 January 2027 or 1 May 2027.</p>
+        <p>Minimum GPA: 3.0 out of 4.0 or 3.5 out of 4.0 for honors track.</p>
+        <p>English proficiency: IELTS 6.5 or IELTS 7.0.</p>
+      </body>
+    </html>
+    """
+    bundle = build_programme_bundle(
+        [("https://www.uni.example.org/msc-qf", rich_html)],
+        title="M.Sc. in Quantitative Finance",
+    )
+    cands = _candidates_with_header_currency(bundle.section.lines)
+    qset = ProgrammeQuestionSet(
+        unresolved_slots=frozenset(
+            {"tuition", "application_fee", "deadline", "min_gpa", "ielts_bar"}
+        ),
+        high_risk_flags=frozenset({"conditional_free_tuition", "scholarship_suspended"}),
+    )
+    asked_ids = {q.id for q in qset.questions(bundle.section, cands, {})}
+    assert asked_ids == {
+        "tuition_amount",
+        "tuition_period",
+        "tuition_free_all_internationals",
+        "application_fee_amount",
+        "application_deadline_date",
+        "minimum_gpa_bar",
+        "minimum_language_bar",
+        "scholarship_intake_suspended",
+    }
+
+    # 2. Beta-Binomial conjugate calibration (explicit counts + DB GoldItem/DecisionRecord + guard)
+    assert calibrate_slot_params("tuition", CONDITIONAL_FREE_TUITION_PARAMS) == (
+        CONDITIONAL_FREE_TUITION_PARAMS
+    )
+    cal_explicit = calibrate_slot_params(
+        CONDITIONAL_FREE_TUITION_PARAMS,
+        (
+            ReaderAuditCounts(tp=30, fn=0, tn=25, fp=0),
+            ReaderAuditCounts(tp=10, fn=10, tn=10, fp=10),
+        ),
+        prior_strength=20.0,
+    )
+    assert cal_explicit.sensitivities[0] > CONDITIONAL_FREE_TUITION_PARAMS.sensitivities[0]
+    assert cal_explicit.specificities[0] > CONDITIONAL_FREE_TUITION_PARAMS.specificities[0]
+    assert cal_explicit.sensitivities[1] < CONDITIONAL_FREE_TUITION_PARAMS.sensitivities[1]
+
+    # Informativeness guard: anti-informative counts (alpha_hat + beta_hat <= 1.02) fall back
+    cal_uninformative = calibrate_slot_params(
+        CONDITIONAL_FREE_TUITION_PARAMS,
+        (ReaderAuditCounts(tp=0, fn=200, tn=0, fp=200),),
+        prior_strength=20.0,
+    )
+    assert cal_uninformative.sensitivities[0] == CONDITIONAL_FREE_TUITION_PARAMS.sensitivities[0]
+    assert cal_uninformative.specificities[0] == CONDITIONAL_FREE_TUITION_PARAMS.specificities[0]
+
+    # DB-backed calibration from GoldItem + DecisionRecord
+    gold_pos = GoldItem.objects.create(
+        run="audit-2026-11",
+        kind=GoldItem.Kind.MONEY,
+        question="application_fee_amount",
+        language="en",
+        page_url="https://www.uni.example.org/msc-qf",
+        line_text="Application fee: EUR 120 for non-EU applicants.",
+        claim="m4",
+        round=1,
+        purpose=GoldItem.Purpose.CERTIFICATION,
+        verdict=GoldItem.Verdict.CORRECT,
+    )
+    DecisionRecord.objects.create(
+        state_digest=gold_pos.line_sha256,
+        question_digest="q" * 64,
+        decision="application_fee_amount",
+        question_id="application_fee_amount",
+        value="m4",
+        confidence=0.95,
+        model="cheap-a",
+        provider="openrouter",
+        refused=False,
+    )
+    cal_db = calibrate_slot_params("application_fee", APPLICATION_FEE_PARAMS)
+    assert cal_db.sensitivities[0] > APPLICATION_FEE_PARAMS.sensitivities[0]
+
+    # 3. needs_high_risk_arbitration across the extended slots
+    amt_key = next(iter(cands.amounts.keys()))
+    date_key = next(iter(cands.dates.keys()))
+    grade_key = next(k for k, r in cands.requirements.items() if r.value.kind == "grade")
+    lang_key = next(
+        k for k, r in cands.requirements.items() if r.value.kind in ("language_test", "cefr")
+    )
+    synthetic_decisions = (
+        Decision(
+            question="application_fee_amount",
+            status="agreed",
+            value=amt_key,
+            quote=Quote("EUR 50", "L1.text"),
+            answers={"a": ReaderAnswer(amt_key, None), "b": ReaderAnswer(amt_key, None)},
+        ),
+        Decision(
+            question="application_deadline_date",
+            status="agreed",
+            value=date_key,
+            quote=Quote("15 January 2027", "L2.text"),
+            answers={"a": ReaderAnswer(date_key, None), "b": ReaderAnswer(date_key, None)},
+        ),
+        Decision(
+            question="minimum_gpa_bar",
+            status="agreed",
+            value=grade_key,
+            quote=Quote("3.0", "L3.text"),
+            answers={"a": ReaderAnswer(grade_key, None), "b": ReaderAnswer(grade_key, None)},
+        ),
+        Decision(
+            question="minimum_language_bar",
+            status="agreed",
+            value=lang_key,
+            quote=Quote("6.5", "L4.text"),
+            answers={"a": ReaderAnswer(lang_key, None), "b": ReaderAnswer(lang_key, None)},
+        ),
+        Decision(
+            question="scholarship_intake_suspended",
+            status="agreed",
+            value="yes",
+            quote=Quote("except", "L0.text"),
+            answers={"a": ReaderAnswer("yes", None), "b": ReaderAnswer("yes", None)},
+        ),
+    )
+    for p_check in (
+        DEADLINE_PARAMS,
+        MIN_GPA_PARAMS,
+        IELTS_BAR_PARAMS,
+        SCHOLARSHIP_SUSPENDED_PARAMS,
+    ):
+        assert p_check.c_judge < min(p_check.c_fp, p_check.c_fn)
+    escalated = needs_high_risk_arbitration(
+        synthetic_decisions, bundle.section, candidates=cands
+    )
+    assert set(escalated) == {
+        "application_fee_amount",
+        "application_deadline_date",
+        "minimum_gpa_bar",
+        "minimum_language_bar",
+        "scholarship_intake_suspended",
+    }
+
+    # 4. scrape_fetched_programme_page with screen & limit invokes refine_with_dual_readers
+    prog = _make_program(country_code="DE", domain="uni-cond.de", name="M.Sc. Economics")
+    page_url = "https://www.uni-cond.de/msc-economics"
+    source = OfficialSource.objects.create(
+        canonical_url=page_url,
+        publisher="uni-cond.de",
+        source_type=OfficialSource.Type.PROGRAM,
+    )
+    snapshot = OfficialSourceSnapshot.objects.create(
+        source=source,
+        s3_key="official-sources/uni-cond/1",
+        s3_version_id="1",
+        sha256="c" * 64,
+        final_url=page_url,
+        redirect_chain=[],
+        retrieved_at=timezone.now(),
+        admissions_cycle="2027",
+        content_type="text/html",
+        byte_size=200,
+    )
+    cond_html = """
+    <html>
+      <body>
+        <h1>M.Sc. Economics</h1>
+        <p>Tuition-free for exchange students from partner universities.</p>
+      </body>
+    </html>
+    """
+    test_readers = Stack(
+        pair=(
+            ReaderSpec("cheap-a", "openrouter", "openai/gpt-5.4-nano", host="OpenAI"),
+            ReaderSpec("cheap-b", "openrouter", "google/gemini-3.1-flash-lite", host="Google"),
+        ),
+        decider=ReaderSpec("frontier-decider", "anthropic", "claude-opus-4-7"),
+    )
+    called_in_fetched: list[str] = []
+
+    def fake_transport(reader: ReaderSpec, prompt: Prompt) -> Attempt:
+        called_in_fetched.append(reader.name)
+        val = "yes" if reader.name in ("cheap-a", "cheap-b") else "no"
+        q_txt = "Tuition-free" if val == "yes" else ""
+        return Attempt(
+            reply=Reply.model_validate(
+                {
+                    "answers": [
+                        {
+                            "id": "tuition_free_all_internationals",
+                            "value": val,
+                            "quote": q_txt,
+                        }
+                    ]
+                }
+            ),
+            reason="",
+            cost_usd=0.0002,
+            latency_s=0.05,
+        )
+
+    fetched_bundle = build_programme_bundle([(page_url, cond_html)], title=prog.name)
+    res_fetched = scrape_fetched_programme_page(
+        prog,
+        source=source,
+        snapshot=snapshot,
+        html=cond_html,
+        screen=Screen("clear", frozenset(fetched_bundle.section.texts())),
+        limit=Limit("test-bucket", 1, 100, 3600),
+        readers=test_readers,
+        transport=fake_transport,
+    )
+    assert "frontier-decider" in called_in_fetched
+    assert any(
+        d.question == "tuition_free_all_internationals" and d.value == "no"
+        for d in res_fetched.decisions
+    )
+    assert not CostComponent.objects.filter(program=prog, kind="TUITION").exists()
+
+
+def test_stage2_bound_host_reader_2d_table_labels_arbitration_statements_and_leap_day_clamping(
+    settings,
+    monkeypatch,
+) -> None:
+    """Verify Stage 2 fixes:
+    1. `bound_host_reader()` wires default `fetch_html` (wrapping `retrieve_official_source`)
+       and `site_search` (wrapping `exa_site_search` when `EXA_API_KEY` is non-empty).
+    2. 2D table `GRADE` and `LANGUAGE` rows prefix `elig.label (elig.value): quote` onto
+       `DocumentStatementSpec.text`; multiple GRADE/LANGUAGE/DEADLINE values and scholarship
+       suspension statements populate `unresolved_slots` and `high_risk_flags`; and
+       `refine_with_dual_readers` updates/prunes `updated_elig` AND `updated_statements`.
+    3. Leap-day (`29 February`) and out-of-range days clamp cleanly in `extractors.py`,
+       `arbitration.py`, `candidates/dates.py`, `card_funding/parse.py`, and
+       `card_funding/store.py`.
+    """
+    import datetime as dt
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from apps.funding.probability import _extract_required_gpa_bar
+    from apps.research.candidates import Date, Found
+    from apps.research.candidates.dates import find_dates
+    from apps.research.card_engine import Decision, Limit
+    from apps.research.card_engine.engine import Attempt, Reply
+    from apps.research.card_engine.readers import ReaderSpec, Stack
+    from apps.research.card_engine.screen import Screen
+    from apps.research.card_funding.card import AwardDate
+    from apps.research.card_funding.parse import page_date
+    from apps.research.card_funding.store import _date_iso
+    from apps.research.providers.base import SiteSearchResult
+    from apps.research.seam_bindings import CardHostReader
+    from apps.research.tap_seams import bound_host_reader
+
+    # 1. bound_host_reader default fetch_html and site_search wiring
+    monkeypatch.setattr(
+        "apps.research.discovery.retrieve_official_source",
+        lambda url: SimpleNamespace(body=b"<html><body> Tuition EUR 12,000 </body></html>"),
+    )
+    monkeypatch.setattr(
+        "apps.research.providers.exa.exa_site_search",
+        lambda *, query, domain, **kw: SiteSearchResult(
+            urls=(f"https://{domain}/scholarships",), cost_usd=0.005, provider="exa"
+        ),
+    )
+    settings.EXA_API_KEY = "test-exa-key"
+    reader = bound_host_reader(field="Computer Science")
+    assert isinstance(reader, CardHostReader)
+    assert reader.fetch_html is not None
+    assert "Tuition EUR 12,000" in (reader.fetch_html("https://uni.example.org") or "")
+    assert reader.site_search is not None
+    assert tuple(reader.site_search("master scholarship", "uni.example.org")) == (
+        "https://uni.example.org/scholarships",
+    )
+
+    # 2a. 2D table row label preservation in DocumentStatementSpec
+    table_html = """
+    <html>
+      <body>
+        <h1>M.Sc. Data Science</h1>
+        <table>
+          <tr><th>Requirement</th><th>Threshold</th></tr>
+          <tr><th>Minimum GPA</th><td>3.5 / 4.0</td></tr>
+          <tr><th>IELTS</th><td>7.0</td></tr>
+        </table>
+      </body>
+    </html>
+    """
+    tbl_bundle = build_programme_bundle(
+        [("https://uni.example.org/ds", table_html)],
+        title="M.Sc. Data Science",
+    )
+    tbl_res = extract_tier0_programme_facts(tbl_bundle)
+    gpa_stmt = next(s for s in tbl_res.statements if s.label == "Minimum Grade / GPA")
+    assert gpa_stmt.text == "Minimum Grade / GPA (3.5/4.0): 3.5 / 4.0"
+    assert _extract_required_gpa_bar((), tbl_res.statements) == (3.5, "gpa 4.0")
+    lang_stmt = next(s for s in tbl_res.statements if s.label == "IELTS")
+    assert lang_stmt.text == "IELTS (7.0): 7.0"
+
+    # 2b & 2c. Ambiguous GPA, language, deadline, and scholarship suspension -> arbitration
+    ambig_html = """
+    <html>
+      <body>
+        <h1>M.Sc. Computational Finance</h1>
+        <p>Tuition fee: EUR 14,000 per year for international students.</p>
+        <p>Application deadline: 29 February or 15 May 2027.</p>
+        <p>Minimum GPA: 3.0/4.0 for standard track or GPA 3.6/4.0 for honors track.</p>
+        <p>English requirement: IELTS 6.5 or IELTS 7.0.</p>
+        <p>No scholarships are available for the 2027/28 intake.</p>
+      </body>
+    </html>
+    """
+    ambig_bundle = build_programme_bundle(
+        [("https://uni.example.org/cf", ambig_html)],
+        title="M.Sc. Computational Finance",
+    )
+    tier0_ambig = extract_tier0_programme_facts(ambig_bundle)
+    assert {"deadline", "min_gpa", "ielts_bar", "scholarship_suspended"} <= set(
+        tier0_ambig.unresolved_slots
+    )
+    assert {
+        "ambiguous_deadline",
+        "ambiguous_min_gpa",
+        "ambiguous_ielts_bar",
+        "scholarship_suspended",
+    } <= set(tier0_ambig.high_risk_flags)
+
+    # Leap-day clamping in Tier 0 deadline extraction ("29 February" in 2027 -> "2027-02-28")
+    dl_tier0 = next(e for e in tier0_ambig.eligibility if e.kind == "DEADLINE")
+    assert dl_tier0.value == "2027-02-28"
+
+    from apps.research.programme_scraper.extractors import _candidates_with_header_currency
+
+    cands_ambig = _candidates_with_header_currency(ambig_bundle.section.lines)
+    gpa_36_key = next(
+        k
+        for k, r in cands_ambig.requirements.items()
+        if r.value.kind == "grade" and str(r.value.score) == "3.6"
+    )
+    ielts_70_key = next(
+        k
+        for k, r in cands_ambig.requirements.items()
+        if r.value.kind == "language_test" and str(r.value.score) == "7.0"
+    )
+    feb29_key = next(k for k, d in cands_ambig.dates.items() if d.value.month == 2)
+
+    test_readers = Stack(
+        pair=(
+            ReaderSpec("cheap-a", "openrouter", "openai/gpt-5.4-nano", host="OpenAI"),
+            ReaderSpec("cheap-b", "openrouter", "google/gemini-3.1-flash-lite", host="Google"),
+        ),
+        decider=ReaderSpec("frontier-decider", "anthropic", "claude-opus-4-7"),
+    )
+
+    def arbitrate_transport(_reader: ReaderSpec, _prompt: object) -> Attempt:
+        return Attempt(
+            reply=Reply.model_validate(
+                {
+                    "answers": [
+                        {
+                            "id": "application_deadline_date",
+                            "value": feb29_key,
+                            "quote": "29 February",
+                        },
+                        {
+                            "id": "minimum_gpa_bar",
+                            "value": gpa_36_key,
+                            "quote": "3.6/4.0",
+                        },
+                        {
+                            "id": "minimum_language_bar",
+                            "value": ielts_70_key,
+                            "quote": "IELTS 7.0",
+                        },
+                        {
+                            "id": "scholarship_intake_suspended",
+                            "value": "no",
+                            "quote": "",
+                        },
+                    ]
+                }
+            ),
+            reason="",
+            cost_usd=0.0001,
+            latency_s=0.01,
+        )
+
+    refined = refine_with_dual_readers(
+        ambig_bundle,
+        tier0_ambig,
+        screen=Screen("clear", frozenset(ambig_bundle.section.texts())),
+        limit=Limit("test-stage2-arb", 1, 100, 3600),
+        readers=test_readers,
+        transport=arbitrate_transport,
+    )
+    assert [e.value for e in refined.eligibility if e.kind == "GRADE"] == ["3.6/4.0"]
+    assert [e.value for e in refined.eligibility if e.kind == "LANGUAGE"] == ["7.0"]
+    assert [e.value for e in refined.eligibility if e.kind == "DEADLINE"] == ["2027-02-28"]
+    assert not any(s.label == "Scholarship / Funding Status" for s in refined.statements)
+    assert any("3.6/4.0" in s.text for s in refined.statements if s.kind == "COMPETENCY")
+    assert not any("3.0/4.0" in s.text for s in refined.statements if s.kind == "COMPETENCY")
+    assert [s.text for s in refined.statements if s.kind == "LANGUAGE"] == ["IELTS 7.0"]
+
+    # 3. Leap-day and out-of-range day clamping in dates.py, parse.py::page_date,
+    #    store.py::_date_iso
+    assert [(d.month, d.day) for d in find_dates("31 and 15 April 2027")] == [(4, 15)]
+    joined_leap = find_dates("29 February to 15 March 2027")
+    assert len(joined_leap) == 1
+    assert (joined_leap[0].year, joined_leap[0].month, joined_leap[0].day) == (2027, 2, 28)
+
+    fake_cands = replace(
+        cands_ambig,
+        dates={"d_leap": Found(0, Date("29 Feb 2027", 0, 11, 2027, 2, 29), False)},
+    )
+    p_dt = page_date(
+        (Decision("role_d_leap", "agreed", "page_published_or_updated", None, {}),),
+        fake_cands,
+        dt.date(2026, 1, 1),
+    )
+    assert p_dt == dt.date(2027, 2, 28)
+
+    aw_date = AwardDate(
+        role="application_deadline",
+        date=Date("29 Feb 2027", 0, 11, 2027, 2, 29),
+        for_all=True,
+        places=frozenset(),
+        cycle=2027,
+    )
+    assert _date_iso(aw_date) == "2027-02-28"
+
+    # 4. bound_host_reader wires screen and limit, and conflicting application fees
+    #    populate "application_fee" / "ambiguous_application_fee"
+    from apps.research.tap_seams import bound_host_reader
+
+    host_reader = bound_host_reader(field="Computer Science")
+    assert callable(host_reader.screen)
+    assert host_reader.limit is not None
+
+    fee_bundle = build_programme_bundle(
+        [
+            (
+                "https://uni.example.org/fees",
+                """
+                <html><body>
+                  <p>International application fee: EUR 50.</p>
+                  <p>Non-EU application fee: EUR 100.</p>
+                </body></html>
+                """,
+            )
+        ],
+        title="M.Sc. Fees",
+    )
+    fee_res = extract_tier0_programme_facts(fee_bundle)
+    assert "application_fee" in fee_res.unresolved_slots
+    assert "ambiguous_application_fee" in fee_res.high_risk_flags
 
 
 

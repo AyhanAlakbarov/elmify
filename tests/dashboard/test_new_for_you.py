@@ -285,7 +285,10 @@ def test_score_unlocked_and_boosted_programmes_and_scholarships_appear_in_new_fo
         scope_type="GLOBAL",
     )
     with tenant_scope(agency_a.id):
-        RecommendationCandidate.objects.filter(id=award.id).update(country_code="DE")
+        RecommendationCandidate.objects.filter(id=award.id).update(
+            country_code="DE",
+            funding_card={**(award.funding_card or {}), "deadline": "2027-01-15"},
+        )
         v2 = PackVersion.objects.create(
             run=programme.run, version=2, published_at=timezone.now()
         )

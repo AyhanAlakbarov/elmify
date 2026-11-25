@@ -1,6 +1,20 @@
-{% load cv_countries dashboard %}<article id="card-{{ card.application_id }}" class="app-card" aria-labelledby="card-title-{{ card.application_id }}">
-  <h5 id="card-title-{{ card.application_id }}">{% if not read_only and not counselor_view %}<a href="{% url 'student-programme' card.application_id %}">{% if card.is_award %}{{ card.title }}{% else %}{{ card.title|programme_in_university:card.institution }}<span class="sr-only"> {{ card.title }}</span>{% endif %}</a>{% else %}{% if card.is_award %}{{ card.title }}{% else %}{{ card.title|programme_in_university:card.institution }}<span class="sr-only"> {{ card.title }}</span>{% endif %}{% endif %}</h5>
-  {% if card.chance_line %}<p>{{ card.chance_line }}</p>{% endif %}
+{% load cv_countries dashboard %}<article id="card-{{ card.application_id }}" class="app-card app-card-{{ card.column.key }}" data-board-kind="{% if card.is_award %}scholarship{% else %}programme{% endif %}" aria-labelledby="card-title-{{ card.application_id }}">
+  <div class="card-top-meta">
+    <span class="card-kind-pill {% if card.is_award %}is-scholarship{% else %}is-programme{% endif %}">
+      {% if card.country %}{{ card.country|flag }}{% endif %}
+      <span>{% if card.is_award %}Scholarship{% else %}Programme{% endif %}</span>
+    </span>
+    {% if item and item.status %}
+      <span class="card-stage-pill stage-pill-{{ card.column.key }}">{{ item.status }}</span>
+    {% endif %}
+  </div>
+  <h5 id="card-title-{{ card.application_id }}">{% if not read_only and not counselor_view %}<a href="{% url 'student-programme' card.application_id %}">{% if item and not card.is_award %}{{ item.title }}<span class="sr-only"> {{ card.title|programme_in_university:card.institution }} {{ card.title }}</span>{% elif card.is_award %}{{ card.title }}{% else %}{{ card.title|programme_in_university:card.institution }}<span class="sr-only"> {{ card.title }}</span>{% endif %}</a>{% else %}{% if item and not card.is_award %}{{ item.title }}<span class="sr-only"> {{ card.title|programme_in_university:card.institution }} {{ card.title }}</span>{% elif card.is_award %}{{ card.title }}{% else %}{{ card.title|programme_in_university:card.institution }}<span class="sr-only"> {{ card.title }}</span>{% endif %}{% endif %}</h5>
+  {% if item %}
+    {% if item.programmes %}<span class="sr-only">For: {{ item.programmes|join:", " }}</span>{% endif %}
+    {% if item.also_funded %}<span class="sr-only">{% for line in item.also_funded %}{{ line }} {% endfor %}</span>{% endif %}
+    {% include "student/_award_lines.html" with lane=item %}
+  {% endif %}
+  {% if card.chance_line %}<p class="card-chance"{% if card.chance_ci_low is not None and card.chance_ci_high is not None %} title="Depending on how many people apply this year, your chance is usually between {{ card.chance_ci_low }}% and {{ card.chance_ci_high }}%."{% endif %}>{{ card.chance_line }}{% if card.chance_band_label %} <span class="card-chance-ci">· {{ card.chance_band_label }}</span>{% endif %}</p>{% endif %}
   {% if card.notice_line %}<p>{{ card.notice_line }}</p>{% endif %}
   {% if card.deadline_text %}
     <p class="card-deadline{% if card.days_left is not None and card.days_left >= 0 and card.days_left <= 7 %} is-soon{% endif %}">Deadline: {{ card.deadline_text }} — {% if card.days_left < 0 %}passed{% else %}{{ card.days_left }} day{{ card.days_left|pluralize }} left{% endif %}</p>
@@ -15,21 +29,27 @@
     {% endif %}
   </div>
   {% endif %}
-  {% for line in card.funding %}
-    <p class="card-funding tone-{{ line.name|tone }}">Funding: {{ line.name }}{% if line.covers %} — covers {{ line.covers }}{% endif %}{% if line.amounts %} — {{ line.amounts }}{% endif %}</p>
-  {% endfor %}
+  {% if card.is_award %}
+    {% for line in card.funding %}
+      {% if line.covers or line.amounts %}
+        <p class="card-funding tone-{{ line.name|tone }}">Covers {{ line.covers }}{% if line.covers and line.amounts %} — {% endif %}{{ line.amounts }}<span class="sr-only"> {{ line.name }}</span></p>
+      {% endif %}
+    {% endfor %}
+  {% elif card.funding %}
+    <span class="sr-only">{% for line in card.funding %}Funding: {{ line.name }}{% if line.covers %} — covers {{ line.covers }}{% endif %}{% if line.amounts %} — {{ line.amounts }}{% endif %} {% endfor %}</span>
+  {% endif %}
   {% if card.gap %}<p class="card-line">Remaining gap: {{ card.gap }}</p>{% endif %}
   {% if card.funding_outcome_line %}<p class="card-line">{{ card.funding_outcome_line }}</p>{% endif %}
   {% if card.fee_state == "PAID" %}
     <p class="card-line">Application fee paid</p>
   {% elif card.fee %}
-    <p class="card-line">Application fee: {{ card.fee_text }} — you pay this at submission</p>
+    <p class="card-line">Application fee: {{ card.fee_text }} — you pay this at submission <span class="card-fee-hint">(auto-detected from your email receipt, or mark below)</span></p>
   {% elif card.fee_state == "UNKNOWN" and not card.is_award %}
-    <p class="card-line">Fee not known yet</p>
+    <p class="card-line">Fee not known yet <span class="card-fee-hint">(auto-detected from your email receipt if you pay one)</span></p>
   {% endif %}
   {% if card.risk_line %}<p class="card-line">{{ card.risk_line }}</p>{% endif %}
   {% if card.fee_paid_url and not read_only %}
-    <form method="post" action="{{ card.fee_paid_url }}">{% csrf_token %}<button type="submit">I've paid this fee</button></form>
+    <form method="post" action="{{ card.fee_paid_url }}">{% csrf_token %}<button type="submit" class="btn-quiet btn-small" title="Email receipts mark this paid automatically, or click here if you already paid.">I've paid this fee</button></form>
   {% endif %}
   {% if card.badges %}<p class="card-badge">New mail: {{ card.badges|join:", " }}</p>{% endif %}
   {% if card.missing and not compact_readiness %}

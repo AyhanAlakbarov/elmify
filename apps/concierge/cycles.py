@@ -89,27 +89,25 @@ def cycle_consumption_status(
     now: datetime | None = None,
 ) -> CycleConsumptionStatus:
     """Compute the deterministic Unconsumed Pass consumption state from PostgreSQL."""
+    from django.db.models import Q
+
     from apps.documents.models import DocumentDraft
     from apps.portals.models import Application, ApplicationStep, PreparedDocument
 
     now = now or timezone.now()
-    applications_count = Application.objects.filter(student_id=student_id).count()
-    programme_drafts_count = (
+    since = cycle.paid_at if (cycle is not None and cycle.paid_at is not None) else None
+
+    applications_qs = Application.objects.filter(student_id=student_id)
+    programme_drafts_qs = (
         DocumentDraft.objects.filter(student_id=student_id, is_general=False)
         .exclude(kind=DocumentDraft.Kind.CORE_NARRATIVE)
-        .count()
     )
-    kits_count = max(applications_count, programme_drafts_count)
-
-    rendered_drafts_count = (
+    rendered_drafts_qs = (
         DocumentDraft.objects.filter(student_id=student_id)
         .exclude(rendered_filename="")
-        .count()
     )
-    prepared_docs_count = PreparedDocument.objects.filter(student_id=student_id).count()
-    exports_count = rendered_drafts_count + prepared_docs_count
-
-    extension_sessions_count = ApplicationStep.objects.filter(
+    prepared_docs_qs = PreparedDocument.objects.filter(student_id=student_id)
+    extension_steps_qs = ApplicationStep.objects.filter(
         application__student_id=student_id,
         kind__in=(
             ApplicationStep.Kind.PACKET,
@@ -117,7 +115,26 @@ def cycle_consumption_status(
             ApplicationStep.Kind.READ_BACK,
             ApplicationStep.Kind.SUBMITTED,
         ),
-    ).count()
+    )
+
+    if since is not None:
+        applications_qs = applications_qs.filter(created_at__gte=since)
+        programme_drafts_qs = programme_drafts_qs.filter(created_at__gte=since)
+        rendered_drafts_qs = rendered_drafts_qs.filter(
+            Q(created_at__gte=since) | Q(approved_at__gte=since)
+        )
+        prepared_docs_qs = prepared_docs_qs.filter(prepared_at__gte=since)
+        extension_steps_qs = extension_steps_qs.filter(created_at__gte=since)
+
+    applications_count = applications_qs.count()
+    programme_drafts_count = programme_drafts_qs.count()
+    kits_count = max(applications_count, programme_drafts_count)
+
+    rendered_drafts_count = rendered_drafts_qs.count()
+    prepared_docs_count = prepared_docs_qs.count()
+    exports_count = rendered_drafts_count + prepared_docs_count
+
+    extension_sessions_count = extension_steps_qs.count()
 
     transcript_pages_used = cycle.pages_used if cycle is not None else 0
     within_7_day_window = bool(

@@ -9,6 +9,8 @@ onto RecommendationCandidate, and the kit is built from the Application's copy.
 from __future__ import annotations
 
 import logging
+import math
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
@@ -25,9 +27,18 @@ from apps.accounts.schemas import LanguageEvidence, StudentProfileSnapshot
 from apps.dashboard.notices import notice_for
 from apps.documents.table import Table, table_for
 from apps.funding.fx import RateTable
-from apps.funding.grouping import funds
+from apps.funding.grouping import award_amounts_for_country, funds
 from apps.funding.models import RecommendationCandidate
-from apps.funding.probability import joint_admission_and_funding_chance_pct
+from apps.funding.pack import (
+    FunderRiskTerms,
+    _normalize_shared_funder_key,
+    compute_pack_success_probability_pct,
+)
+from apps.funding.probability import (
+    MARGINAL_MERIT_PQD_CORRELATION,
+    _compute_epistemic_interval,
+    joint_admission_and_funding_chance_pct,
+)
 from apps.funding.rates import latest_table
 from apps.funding.services import pack_awards
 from apps.funding.transcript_eligibility import evaluate_program_statement
@@ -39,8 +50,8 @@ from apps.portals.outcome import is_funding_application
 from apps.portals.packets import ApplicationKit, build_kits_for_board
 from apps.tenancy.models import Membership
 
-from .dates import both_zones, counting_deadline, final_passed, pre_checks
-from .lanes import Lane, lanes_for
+from .dates import CLOSED, both_zones, counting_deadline, final_passed, pre_checks
+from .lanes import _FAR, Lane, lanes_for
 from .money import (
     WITH_APPLICATION,
     BudgetLine,
@@ -184,11 +195,74 @@ class Card:
     funding_outcome: str = ""
     has_bundled_funding: bool = False
     deadline_local: datetime | None = None
+    chance_pct: int | None = None
+    admit_chance_pct: int | None = None
+    chance_ci_low: int | None = None
+    chance_ci_high: int | None = None
+    scholarship_name: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.is_award and not self.scholarship_name and self.funding:
+            object.__setattr__(self, "scholarship_name", self.funding[0].name.strip())
+        if self.chance_pct is None and self.chance_line and not self.outcome:
+            matches = [int(m) for m in re.findall(r"~(\d+)%", self.chance_line)]
+            if matches:
+                if "admission and funding" in self.chance_line and len(matches) >= 2:
+                    object.__setattr__(self, "admit_chance_pct", matches[0])
+                    object.__setattr__(self, "chance_pct", matches[0])
+                elif "admission and funding" in self.chance_line:
+                    object.__setattr__(self, "chance_pct", matches[0])
+                else:
+                    object.__setattr__(self, "chance_pct", matches[0])
+                    if self.admit_chance_pct is None:
+                        object.__setattr__(self, "admit_chance_pct", matches[0])
+        if (
+            self.chance_pct is not None
+            and not self.outcome
+            and (self.chance_ci_low is None or self.chance_ci_high is None)
+        ):
+            low, high = _chance_credible_interval(self.chance_pct)
+            object.__setattr__(self, "chance_ci_low", low)
+            object.__setattr__(self, "chance_ci_high", high)
+
+    @property
+    def chance_band_label(self) -> str:
+        """Plain-English odds summary for students across any major."""
+        if self.chance_pct is None or self.outcome:
+            return ""
+        if self.chance_pct >= 50:
+            return "Good chance"
+        if self.chance_pct >= 25:
+            return "Fair chance"
+        return "Competitive"
 
     @property
     def converted(self) -> bool:
         """An amount on this card was converted, so the board shows the rate note."""
         return "≈" in self.fee_text
+
+
+@dataclass(frozen=True)
+class KanbanItem:
+    """One application card inside a Kanban stage column, with its lane context attached."""
+
+    card: Card
+    title: str
+    status: str
+    page_url: str = ""
+    also_funded: tuple[str, ...] = ()
+    programmes: tuple[str, ...] = ()
+    award_lines: tuple[ object, ...] = ()
+
+
+@dataclass(frozen=True)
+class KanbanStage:
+    """One stage column of the 3-column Kanban board (To start -> In progress -> Done)."""
+
+    key: str
+    title: str
+    subtitle: str
+    items: tuple[KanbanItem, ...]
 
 
 @dataclass(frozen=True)
@@ -203,6 +277,16 @@ class Board:
     budget_url: str = ""
     #: The profile holds a budget with a currency, convertible or not.
     budget_set: bool = False
+    pack_chance_pct: int | None = None
+    shared_funder_warning: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.pack_chance_pct is None or self.shared_funder_warning is None:
+            computed_pct, computed_warning = _compute_board_outlook(self.lanes)
+            if self.pack_chance_pct is None and computed_pct is not None:
+                object.__setattr__(self, "pack_chance_pct", computed_pct)
+            if self.shared_funder_warning is None and computed_warning is not None:
+                object.__setattr__(self, "shared_funder_warning", computed_warning)
 
     @property
     def open_cards(self) -> tuple[Card, ...]:
@@ -218,6 +302,75 @@ class Board:
         return tuple(
             (column, tuple(card for card in all_cards if card.column is column))
             for column in Column
+        )
+
+    @property
+    def programme_count(self) -> int:
+        return sum(1 for c in self.open_cards if not c.is_award)
+
+    @property
+    def scholarship_count(self) -> int:
+        return sum(1 for c in self.open_cards if c.is_award)
+
+    @property
+    def kanban_stages(self) -> tuple[KanbanStage, ...]:
+        all_items: list[KanbanItem] = []
+        for lane in self.lanes:
+            lead = lane.lead
+            for card in lane.cards:
+                is_lead = card.application_id == lane.key
+                status = CLOSED if card.closed else str(card.column.value)
+                all_items.append(
+                    KanbanItem(
+                        card=card,
+                        title=lane.title if is_lead else card.title,
+                        status=status,
+                        page_url=lane.page_url if is_lead else "",
+                        also_funded=lane.also_funded if is_lead else (),
+                        programmes=(
+                            lane.programmes
+                            if is_lead
+                            else ((lead.title,) if card.is_award and not lead.is_award else ())
+                        ),
+                        award_lines=lane.award_lines if is_lead else (),
+                    )
+                )
+        all_items.sort(
+            key=lambda item: (
+                item.card.closed,
+                item.card.deadline or _FAR,
+                item.card.is_award,
+                item.card.created_at,
+            )
+        )
+        stage_specs = (
+            (
+                "to_start",
+                "To start",
+                "Click Apply (or add the portal link) to begin",
+                (Column.TO_START,),
+            ),
+            (
+                "in_progress",
+                "In progress",
+                "Filling the portal with the browser extension",
+                (Column.IN_PROGRESS,),
+            ),
+            (
+                "done",
+                "Submitted & Decision",
+                "Updates automatically from your email or portal",
+                (Column.SUBMITTED, Column.CONFIRMED, Column.DECISION),
+            ),
+        )
+        return tuple(
+            KanbanStage(
+                key=key,
+                title=title,
+                subtitle=subtitle,
+                items=tuple(i for i in all_items if i.card.column in cols),
+            )
+            for key, title, subtitle, cols in stage_specs
         )
 
 
@@ -441,12 +594,12 @@ def _read(application: Application, signal: MailSignal) -> str:
     return signal.funding_outcome if is_funding_application(application) else signal.outcome
 
 
-def _funding_line(award: RecommendationCandidate) -> FundingLine:
+def _funding_line(award: RecommendationCandidate, *, country_code: str = "") -> FundingLine:
     card = award.funding_card or {}
     return FundingLine(
         award.program_name,
         _covers(card),
-        "; ".join(str(a) for a in card.get("amounts", [])),
+        "; ".join(award_amounts_for_country(card, country_code)),
         duration=str(card.get("duration_text") or ""),
         deadline=str(card.get("deadline") or ""),
         source_url=https_only(award.evidence.source_url),
@@ -455,7 +608,218 @@ def _funding_line(award: RecommendationCandidate) -> FundingLine:
     )
 
 
-def _chance_line(
+_CONDITION_FUNDING_RE = re.compile(
+    r"^Affordable only if you win\s+(.+?)\.\s+Apply for it",
+    re.IGNORECASE,
+)
+_ALSO_FUNDED_RE = re.compile(r"^Also funded by your (.+) application$")
+
+
+def _chance_credible_interval(
+    chance_pct: int,
+    candidate: RecommendationCandidate | None = None,
+    *,
+    funding_candidates: Sequence[RecommendationCandidate] = (),
+) -> tuple[int, int]:
+    """Return the 90% epistemic credible interval `(ci_low, ci_high)` for `chance_pct`."""
+    if chance_pct >= 100:
+        return (100, 100)
+    features = (candidate.calibration_features or {}) if candidate is not None else {}
+    if (
+        candidate is not None
+        and candidate.estimated_chance_pct == chance_pct
+        and isinstance(features.get("ci_low_pct"), (int, float))
+        and isinstance(features.get("ci_high_pct"), (int, float))
+    ):
+        low = max(1, min(chance_pct, int(features["ci_low_pct"])))
+        high = max(chance_pct, min(95, int(features["ci_high_pct"])))
+        return (low, high)
+    p = max(0.01, min(0.95, float(chance_pct) / 100.0))
+    raw_se = features.get("epistemic_se_logit")
+    award_ses = [
+        float(aw_se)
+        for aw in funding_candidates
+        for aw_se in ((aw.calibration_features or {}).get("epistemic_se_logit"),)
+        if isinstance(aw_se, (int, float)) and not isinstance(aw_se, bool) and float(aw_se) > 0
+    ]
+    if isinstance(raw_se, (int, float)) and not isinstance(raw_se, bool) and float(raw_se) > 0:
+        prog_se = float(raw_se)
+        se_logit = math.hypot(prog_se, min(award_ses)) if award_ses else prog_se
+    elif award_ses:
+        se_logit = min(award_ses)
+    else:
+        raw_prior = features.get("base_prior")
+        base_prior = (
+            max(0.01, min(0.95, float(raw_prior)))
+            if isinstance(raw_prior, (int, float))
+            else p
+        )
+        alpha_0 = base_prior * 10.0
+        beta_0 = (1.0 - base_prior) * 10.0
+        se_logit = math.sqrt((1.0 / (alpha_0 + 0.5)) + (1.0 / (beta_0 + 0.5)) + 0.08)
+    _, ci_low, ci_high = _compute_epistemic_interval(p, se_logit)
+    return (min(chance_pct, ci_low), max(chance_pct, ci_high))
+
+
+def _resolve_card_scholarship_name(
+    candidate: RecommendationCandidate | None,
+    *,
+    awards: Sequence[RecommendationCandidate] = (),
+    linked_award_titles: Sequence[str] = (),
+    home_country: str = "",
+) -> str:
+    if candidate is not None and candidate.opportunity_id is not None:
+        return ""
+    for title in linked_award_titles:
+        cleaned = title.strip()
+        if _normalize_shared_funder_key(cleaned, uses_external_scheme=True) is not None:
+            return cleaned
+    if linked_award_titles:
+        return linked_award_titles[0].strip()
+    if candidate is not None:
+        matching = [
+            award
+            for award in awards
+            if funds(award, candidate, home_country=home_country)
+        ]
+        for award in matching:
+            if (award.funding_card or {}).get("route") != "AUTOMATIC_ON_ADMISSION":
+                name = award.program_name.strip()
+                if _normalize_shared_funder_key(name, uses_external_scheme=True) is not None:
+                    return name
+        for award in matching:
+            name = award.program_name.strip()
+            if name:
+                return name
+        cond = (candidate.funding_condition or "").strip()
+        if cond:
+            m = _CONDITION_FUNDING_RE.match(cond)
+            if m:
+                extracted = m.group(1).strip()
+                if extracted and extracted != "the selective funding listed for this programme":
+                    return extracted
+    return ""
+
+
+def _compute_board_outlook(lanes: Sequence[Lane]) -> tuple[int | None, str | None]:
+    """Compute `(pack_chance_pct, shared_funder_warning)` across active open programme cards."""
+    award_prob_by_key: dict[str, float] = {}
+    active_prog_records: list[tuple[str, Card, str | None, str]] = []
+    funder_counts: dict[str, int] = {}
+    funder_display: dict[str, str] = {}
+
+    for lane in lanes:
+        lane_award_name = ""
+        for line in lane.also_funded:
+            m = _ALSO_FUNDED_RE.match(line.strip())
+            if m:
+                lane_award_name = m.group(1).strip()
+                break
+        if not lane_award_name:
+            for c in lane.cards:
+                if c.is_award and not c.outcome:
+                    lane_award_name = c.title.strip()
+                    break
+
+        for card in lane.cards:
+            if card.is_award:
+                if not card.closed and not card.outcome and card.chance_pct is not None:
+                    award_prob_by_key[card.title.strip().lower()] = max(
+                        0.01, min(0.99, float(card.chance_pct) / 100.0)
+                    )
+                continue
+            if card.closed or card.outcome:
+                continue
+            s_name = (
+                card.scholarship_name.strip()
+                or (card.funding[0].name.strip() if card.funding else "")
+                or lane_award_name
+            )
+            funder_key = _normalize_shared_funder_key(s_name, uses_external_scheme=True)
+            if funder_key is not None:
+                funder_counts[funder_key] = funder_counts.get(funder_key, 0) + 1
+                funder_display.setdefault(funder_key, s_name)
+            active_prog_records.append((str(card.application_id), card, funder_key, s_name))
+
+    warning: str | None = None
+    concentrated = [
+        (k, cnt) for k, cnt in funder_counts.items() if cnt >= 3
+    ]
+    if concentrated:
+        top_key, top_count = max(concentrated, key=lambda item: item[1])
+        display_name = funder_display.get(top_key, top_key)
+        warning = (
+            f"{top_count} options share {display_name} — adding an option with separate"
+            " funding improves your backup coverage"
+        )
+
+    prob_records = [
+        (pid, card, funder_key)
+        for pid, card, funder_key, _ in active_prog_records
+        if card.chance_pct is not None
+    ]
+    if not prob_records:
+        return (None, warning)
+
+    raw_groups: dict[str, list[tuple[str, float, float]]] = {}
+    for pid, card, funder_key in prob_records:
+        assert card.chance_pct is not None
+        p_i = max(0.01, min(0.9999, float(card.chance_pct) / 100.0))
+        admit_raw = card.admit_chance_pct if card.admit_chance_pct is not None else card.chance_pct
+        a_raw = max(p_i, min(0.9999, float(admit_raw) / 100.0))
+        if funder_key is not None:
+            raw_groups.setdefault(funder_key, []).append((pid, p_i, a_raw))
+
+    group_q: dict[str, float] = {}
+    for funder_key, group in raw_groups.items():
+        if len(group) < 2:
+            continue
+        max_p = max((g_p for _g_pid, g_p, _g_a in group), default=0.0)
+        if max_p <= 0.0:
+            group_q[funder_key] = 1.0
+            continue
+        if funder_key in award_prob_by_key and award_prob_by_key[funder_key] >= max_p / 0.95:
+            q_val = award_prob_by_key[funder_key]
+        else:
+            implied: list[float] = []
+            for _g_pid, g_p, g_a_raw in group:
+                if g_a_raw > g_p + 1e-6:
+                    implied.append(g_p / g_a_raw)
+                else:
+                    implied.append(min(0.95, math.sqrt(g_p)))
+            q_val = max(implied) if implied else 1.0
+        q_val = max(q_val, min(0.9999, max_p / 0.99))
+        group_q[funder_key] = max(0.0001, min(1.0, q_val))
+
+    risk_map: dict[str, FunderRiskTerms] = {}
+    active_pids: list[str] = []
+    for pid, card, funder_key in prob_records:
+        assert card.chance_pct is not None
+        p_i = max(0.01, min(0.9999, float(card.chance_pct) / 100.0))
+        active_pids.append(pid)
+        if funder_key is None or funder_key not in group_q:
+            risk_map[pid] = FunderRiskTerms(
+                funder_key=None,
+                q_funder=1.0,
+                cond_admission_prob=p_i,
+                effective_prob=p_i,
+                has_known_prob=True,
+            )
+        else:
+            q_k = group_q[funder_key]
+            risk_map[pid] = FunderRiskTerms(
+                funder_key=funder_key,
+                q_funder=q_k,
+                cond_admission_prob=min(0.9999, p_i / q_k),
+                effective_prob=p_i,
+                has_known_prob=True,
+            )
+
+    pack_pct = compute_pack_success_probability_pct(active_pids, risk_map)
+    return (pack_pct, warning)
+
+
+def _chance_details(
     application: Application,
     candidate: RecommendationCandidate | None,
     *,
@@ -464,11 +828,13 @@ def _chance_line(
     linked_award_outcomes: Sequence[str] = (),
     funded_with_application: bool = False,
     home_country: str = "",
-) -> str:
+) -> tuple[str, int | None, int | None, int | None, int | None]:
     if candidate is None or candidate.estimated_chance_pct is None or application.outcome:
-        return ""
+        return ("", None, None, None, None)
+    admit_pct = int(candidate.estimated_chance_pct)
     if candidate.opportunity_id is not None:
-        return candidate.format_chance_line()
+        ci_low, ci_high = _chance_credible_interval(admit_pct, candidate)
+        return (candidate.format_chance_line(), admit_pct, admit_pct, ci_low, ci_high)
 
     won_outcomes = (Application.Outcome.ADMITTED, Application.Outcome.ADMITTED_CONDITIONAL)
     lost_outcomes = (Application.Outcome.REJECTED, Application.Outcome.WITHDRAWN)
@@ -494,7 +860,7 @@ def _chance_line(
         )
     )
     if funding_already_won:
-        funded_pct: int | None = int(candidate.estimated_chance_pct)
+        funded_pct: int | None = admit_pct
     elif funding_all_lost:
         funded_pct = None
     else:
@@ -508,7 +874,9 @@ def _chance_line(
                 and award.estimated_chance_pct is not None
             ]
             funded_pct = joint_admission_and_funding_chance_pct(
-                candidate.estimated_chance_pct, selective_award_pcts
+                admit_pct,
+                selective_award_pcts,
+                correlation=MARGINAL_MERIT_PQD_CORRELATION,
             )
     cannot_afford = (
         not funding_all_lost
@@ -521,10 +889,48 @@ def _chance_line(
             )
         )
     )
-    return candidate.format_chance_line(
+    line = candidate.format_chance_line(
         funded_chance_pct=funded_pct,
         cannot_afford=cannot_afford,
     )
+    effective_pct = int(funded_pct) if (cannot_afford and funded_pct is not None) else admit_pct
+    matching_awards = (
+        [
+            award
+            for award in awards
+            if funds(award, candidate, home_country=home_country)
+            and (award.funding_card or {}).get("route") != "AUTOMATIC_ON_ADMISSION"
+        ]
+        if effective_pct != admit_pct
+        else ()
+    )
+    ci_low, ci_high = _chance_credible_interval(
+        effective_pct,
+        candidate,
+        funding_candidates=matching_awards,
+    )
+    return (line, effective_pct, admit_pct, ci_low, ci_high)
+
+
+def _chance_line(
+    application: Application,
+    candidate: RecommendationCandidate | None,
+    *,
+    awards: Sequence[RecommendationCandidate],
+    mandatory: bool,
+    linked_award_outcomes: Sequence[str] = (),
+    funded_with_application: bool = False,
+    home_country: str = "",
+) -> str:
+    return _chance_details(
+        application,
+        candidate,
+        awards=awards,
+        mandatory=mandatory,
+        linked_award_outcomes=linked_award_outcomes,
+        funded_with_application=funded_with_application,
+        home_country=home_country,
+    )[0]
 
 
 def build_card(
@@ -590,6 +996,21 @@ def build_card(
         linked_award_titles=linked_award_titles,
         funded_with_application=funded_with_application,
     )
+    chance_line, chance_pct, admit_chance_pct, chance_ci_low, chance_ci_high = _chance_details(
+        application,
+        candidate,
+        awards=awards,
+        mandatory=mandatory,
+        linked_award_outcomes=linked_award_outcomes,
+        funded_with_application=funded_with_application,
+        home_country=home_country,
+    )
+    scholarship_name = _resolve_card_scholarship_name(
+        candidate,
+        awards=awards,
+        linked_award_titles=linked_award_titles,
+        home_country=home_country,
+    )
     return Card(
         application_id=application.id,
         title=application.title,
@@ -615,7 +1036,7 @@ def build_card(
             (_funding_line(candidate),)
             if candidate is not None and candidate.opportunity_id is not None
             else tuple(
-                _funding_line(award)
+                _funding_line(award, country_code=candidate.country_code or "")
                 for award in awards
                 if is_programme
                 and candidate is not None
@@ -702,15 +1123,12 @@ def build_card(
             if application.fee_state in PAYABLE and (candidate is None or is_programme)
             else ""
         ),
-        chance_line=_chance_line(
-            application,
-            candidate,
-            awards=awards,
-            mandatory=mandatory,
-            linked_award_outcomes=linked_award_outcomes,
-            funded_with_application=funded_with_application,
-            home_country=home_country,
-        ),
+        chance_line=chance_line,
+        chance_pct=chance_pct,
+        admit_chance_pct=admit_chance_pct,
+        chance_ci_low=chance_ci_low,
+        chance_ci_high=chance_ci_high,
+        scholarship_name=scholarship_name,
         funding_outcome=application.funding_outcome,
         has_bundled_funding=bool(
             is_programme
@@ -765,6 +1183,15 @@ def _parse_board_snapshot(snapshot: object, *, student_id: UUID) -> object | Non
 
 
 def board_for(
+    student: Membership, *, counselor_view: bool = False, now: datetime | None = None
+) -> Board:
+    from apps.documents.gaps.models import preload_gap_facts
+
+    with preload_gap_facts(student):
+        return _board_for_inner(student, counselor_view=counselor_view, now=now)
+
+
+def _board_for_inner(
     student: Membership, *, counselor_view: bool = False, now: datetime | None = None
 ) -> Board:
     now = now or timezone.now()

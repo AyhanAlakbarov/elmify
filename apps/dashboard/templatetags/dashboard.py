@@ -156,21 +156,98 @@ def student_risk_note(value: object) -> str:
     return text
 
 
-_DEGREE_PREFIX_RE = re.compile(
-    r"^(?:M\.?Sc\.?|M\.?A\.?|M\.?Eng\.?|LL\.?M\.?|M\.?B\.?A\.?|Master(?:'s)?(?:\s+of\s+\w+)?)(?:\s+in\b)?\s+",
-    re.IGNORECASE,
+_DEGREE_PREFIXES: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "MA",
+        re.compile(
+            r"^(?:M\.?A\.?|Master(?:'s)?\s+of\s+Arts)(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "LLM",
+        re.compile(
+            r"^(?:LL\.?M\.?|Master(?:'s)?\s+of\s+Laws)(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "MBA",
+        re.compile(
+            r"^(?:M\.?B\.?A\.?|Master(?:'s)?\s+of\s+Business\s+Administration)"
+            r"(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "MEng",
+        re.compile(
+            r"^(?:M\.?Eng\.?|Master(?:'s)?\s+of\s+Engineering)(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "MRes",
+        re.compile(
+            r"^(?:M\.?Res\.?|Master(?:'s)?\s+of\s+Research)(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "MPhil",
+        re.compile(
+            r"^(?:M\.?Phil\.?|Master(?:'s)?\s+of\s+Philosophy)(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "BSc",
+        re.compile(
+            r"^(?:B\.?Sc\.?|Bachelor(?:'s)?\s+of\s+Science)(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "BA",
+        re.compile(
+            r"^(?:B\.?A\.?|Bachelor(?:'s)?\s+of\s+Arts)(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "PhD",
+        re.compile(
+            r"^(?:Ph\.?D\.?|Doctor\s+of\s+Philosophy)(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "MSc",
+        re.compile(
+            r"^(?:M\.?Sc\.?|Master(?:'s)?\s+of\s+Science|Master(?:'s)?\s+in\b|Master(?:'s)?\b)"
+            r"(?:\s+in\b|\s*[-–:]\s*|\s+|$)",
+            re.IGNORECASE,
+        ),
+    ),
 )
 
 
 @register.filter
 def programme_in_university(title: object, institution: object) -> str:
-    """Format a Master's programme card heading as 'MSc in <field> in <university>'."""
+    """Format a programme card heading as '<Degree> in <field> in <university>'."""
     raw_title = str(title or "").strip()
     raw_inst = str(institution or "").strip()
     if not raw_title:
         return raw_inst
-    field = _DEGREE_PREFIX_RE.sub("", raw_title, count=1).strip() or raw_title
-    heading = f"MSc in {field}"
+    degree = "MSc"
+    field = raw_title
+    for canonical, pattern in _DEGREE_PREFIXES:
+        match = pattern.match(raw_title)
+        if match:
+            degree = canonical
+            field = raw_title[match.end() :].strip()
+            break
+    heading = f"{degree} in {field}" if field else degree
     if raw_inst and raw_inst.casefold() not in heading.casefold():
         heading = f"{heading} in {raw_inst}"
     return heading

@@ -1072,3 +1072,113 @@ def test_grant_negation_spares_separate_tuition_waiver_group():
     assert by_form["FEE_WAIVER"].offered == "YES"
     assert by_form["FEE_WAIVER"].applies_to == "2027-2029"
 
+
+def test_group_decisions_sort_by_intake_year_ascending_so_newest_intake_is_last():
+    old_yes = Line(
+        "For the 2025-2026 intake, 15 scholarships were awarded.",
+        "Scholarships",
+    )
+    new_no = Line(
+        "For the 2026-2027 intake, no scholarships will be offered.",
+        "Scholarships",
+    )
+    chunk = (old_yes, new_no)
+    v_old = verdict(
+        0,
+        offered="YES",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        applies_to="2025-2026",
+        name="Programme Scholarship",
+    )
+    v_new = verdict(
+        1,
+        offered="NO",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        applies_to="2026-2027",
+        name="Programme Scholarship",
+    )
+    result = awards(line_outcomes(chunk, [_reading(v_old, v_new)] * 3))
+    assert [(d.applies_to, d.offered) for d in result.decisions] == [
+        ("2025-2026", "YES"),
+        ("2026-2027", "NO"),
+    ]
+
+
+def test_distinct_named_scholarships_under_same_heading_keep_separate_amounts():
+    from decimal import Decimal
+
+    from apps.research.funding_judge import AmountStated
+
+    line_a = Line(
+        "The Excellence Scholarship provides €10,000 per year toward tuition.",
+        "Scholarships",
+    )
+    line_b = Line(
+        "The Dean's Merit Award provides €5,000 per year toward tuition.",
+        "Scholarships",
+    )
+    chunk = (line_a, line_b)
+    v_a = verdict(
+        0,
+        offered="YES",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        name="Excellence Scholarship",
+        amounts=(
+            AmountStated(covers="TUITION", amount="€10,000", currency="EUR", period="ANNUAL"),
+        ),
+    )
+    v_b = verdict(
+        1,
+        offered="YES",
+        kind="I2_PROGRAMME_ATTACHED",
+        scope="PROGRAM",
+        name="Dean's Merit Award",
+        amounts=(
+            AmountStated(covers="TUITION", amount="€5,000", currency="EUR", period="ANNUAL"),
+        ),
+    )
+    result = awards(line_outcomes(chunk, [_reading(v_a, v_b)] * 3))
+    assert len(result.decisions) == 2
+    by_name = {d.name: d for d in result.decisions}
+    assert by_name["Excellence Scholarship"].amounts[0].amount == Decimal("10000")
+    assert by_name["Dean's Merit Award"].amounts[0].amount == Decimal("5000")
+    assert "amount" not in by_name["Excellence Scholarship"].unconfirmed
+    assert "amount" not in by_name["Dean's Merit Award"].unconfirmed
+
+
+def test_cross_family_support_blocks_three_openai_yes_from_overriding_claude_no():
+    """Proposition 2: On a 4-reading tie-break `(openai_1, openai_2, claude, openai_tiebreak)`,
+    three OpenAI `YES` votes with zero support from Claude (which explicitly voted `NO`) must
+    remain disputed on `offered`, whereas an intra-OpenAI split (`openai_1=YES`, `openai_2=NO`,
+    `claude=YES`, `openai_tiebreak=YES`) has cross-family support and settles to `agreed`."""
+    from apps.research.funding_judge import has_cross_family_support
+
+    yes = _reading(verdict(1, offered="YES"))
+    no = _reading(verdict(1, offered="NO"))
+
+    # 1. Three OpenAI YES votes vs explicit Claude NO at index 2 -> disputed!
+    assert (
+        has_cross_family_support(
+            [[verdict(1)], [verdict(1)], [verdict(1, offered="NO")], [verdict(1)]]
+        )
+        is False
+    )
+    correl_outcome = _status([yes, yes, no, yes])
+    assert correl_outcome.status == "disputed"
+    assert "offered" in correl_outcome.disputed
+
+    # 2. Two OpenAI YES + one Claude YES vs one OpenAI NO at index 1 -> agreed!
+    assert (
+        has_cross_family_support(
+            [[verdict(1)], [verdict(1, offered="NO")], [verdict(1)], [verdict(1)]]
+        )
+        is True
+    )
+    cross_outcome = _status([yes, no, yes, yes])
+    assert cross_outcome.status == "agreed"
+    assert cross_outcome.disputed == ()
+
+

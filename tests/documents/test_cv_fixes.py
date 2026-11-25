@@ -384,3 +384,195 @@ def test_thesis_title_regex_is_linear_time_on_repeated_prefixes():
     elapsed = time.perf_counter() - start
     assert elapsed < 0.05
     assert is_thesis_title("Master's graduation thesis project") is True
+
+
+def test_fold_normalizes_turkish_and_azerbaijani_dotted_and_dotless_i():
+    from apps.documents.cv_fixes import fold
+
+    assert fold("İLETİŞİM") == fold("iletişim")
+    assert fold("BİTİRME PROJESİ") == "bitirme projesi"
+    assert fold("Buraxılış İşi") == "buraxiliş işi"
+
+
+@pytest.mark.parametrize(
+    "name, discipline_name, requested, expected_soft",
+    [
+        ("Conflict management", "STEM_QUANT", frozenset(), True),
+        ("Conflict management", "SOCIAL_POLICY_ECON", frozenset(), False),
+        ("Conflict management", "HUMANITIES_LAW_ARTS", frozenset(), False),
+        ("Commercial awareness", "HUMANITIES_LAW_ARTS", frozenset(), False),
+        ("Commercial awareness", "PROFESSIONAL_DESIGN", frozenset(), False),
+        ("Commercial awareness", "LIFE_BIOMED", frozenset(), True),
+        ("Leadership", "SOCIAL_POLICY_ECON", frozenset(), False),
+        ("Leadership", "PROFESSIONAL_DESIGN", frozenset(), False),
+        ("Leadership", "STEM_QUANT", frozenset(), True),
+        ("Leadership", "STEM_QUANT", frozenset({"demonstrated leadership in lab teams"}), False),
+        ("Presentation", "PROFESSIONAL_DESIGN", frozenset(), False),
+        ("Creativity", "HUMANITIES_LAW_ARTS", frozenset(), False),
+        ("Positivity", "SOCIAL_POLICY_ECON", frozenset(), True),
+        ("Team player", "PROFESSIONAL_DESIGN", frozenset(), True),
+    ],
+)
+def test_discipline_and_programme_synchronized_soft_skills(
+    name, discipline_name, requested, expected_soft
+):
+    from apps.documents.letter_exemplars import RhetoricalDiscipline
+
+    disc = RhetoricalDiscipline[discipline_name]
+    assert (
+        is_soft_skill(
+            name,
+            None,
+            discipline=disc,
+            programme_requested_terms=requested,
+        )
+        is expected_soft
+    )
+    content = _cv(skills=(SkillEntry(name=name),))
+    kept, fixes = drop_soft_skills(
+        content,
+        [],
+        frozenset(),
+        discipline=disc,
+        programme_requested_terms=requested,
+    )
+    if expected_soft:
+        assert kept.skills == () and len(fixes) == 1
+    else:
+        assert [s.name for s in kept.skills] == [name] and fixes == ()
+
+
+@pytest.mark.parametrize(
+    "title, expected",
+    [
+        ("Masterarbeit", True),
+        ("Bachelorarbeit", True),
+        ("Diplomarbeit", True),
+        ("Scriptie", True),
+        ("Proefschrift", True),
+        ("Mémoire", True),
+        ("Mémoire de Master", True),
+        ("Tesi di laurea", True),
+        ("Tesi di Laurea Magistrale", True),
+        ("TFG", True),
+        ("TFM", True),
+        ("Trabajo Fin de Máster", True),
+        ("Bitirme Projesi", True),
+        ("BİTİRME PROJESİ", True),
+        ("Yüksek Lisans Tezi", True),
+        ("Buraxılış işi", True),
+        ("Magistr dissertasiyası", True),
+        ("ВКР", True),
+        ("Дипломная работа", True),
+        ("Магистерская диссертация", True),
+        ("毕业论文", True),
+        ("硕士学位论文", True),
+        ("修士論文", True),
+        ("卒業論文", True),
+        ("석사학위논문", True),
+        ("Master's thesis student", False),
+        ("Thesis Supervisor", False),
+        ("Thesis Advisor", False),
+    ],
+)
+def test_multilingual_is_thesis_title(title, expected):
+    assert is_thesis_title(title) is expected
+
+
+@pytest.mark.parametrize(
+    "degree, expected",
+    [
+        ("计算机科学学士", False),
+        ("化学工程硕士", False),
+        ("工学修士", False),
+        ("이학학사", False),
+        ("Diplomingenieur", False),
+        ("Diplomchemiker", False),
+        ("Diplomphysiker", False),
+        ("Diplomkaufmann", False),
+        ("Diplommathematiker", False),
+        ("Diplombiologe", False),
+        ("Diplompsychologe", False),
+        ("Diplominformatiker", False),
+        ("Diplomvolkswirt", False),
+        ("Habilitation", False),
+        ("Staatsexamen", False),
+        ("Agrégation", False),
+        ("学士", True),
+        ("修士", True),
+        ("학사", True),
+        ("Bakalavr", True),
+        ("BSc", True),
+    ],
+)
+def test_abbreviated_degree_handles_cjk_compounds_and_statutory_qualifications(
+    degree, expected
+):
+    assert abbreviated_degree(degree) is expected
+
+
+@pytest.mark.parametrize(
+    "institution, expected",
+    [
+        ("清华大学", False),
+        ("東京大学", False),
+        ("서울대학교", False),
+        ("جامعة القاهرة", False),
+        ("TECHNISCHE UNIVERSITÄT MÜNCHEN", False),
+        ("AZERBAIJAN STATE OIL AND INDUSTRY UNIVERSITY", False),
+        ("清华", True),
+        ("東大", True),
+        ("UFAZ", True),
+        ("İTÜ", True),
+        ("MIT", True),
+        ("TU WIEN", True),
+        ("ETH ZÜRICH", True),
+    ],
+)
+def test_abbreviated_institution_handles_caseless_scripts_and_all_caps_headers(
+    institution, expected
+):
+    assert abbreviated_institution(institution) is expected
+
+
+def test_full_titles_never_downgrades_confirmed_supported_entry_via_unconfirmed_diploma(
+    agency_a, django_user_model
+):
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "full-nodowngrade")
+        confirmed_cv_fact = _fact(
+            student,
+            EDU,
+            {
+                "degree_as_awarded": "B.Sc. of Chem. Eng.",
+                "institution_original": "UFAZ",
+                "end_date": "2023-06-30",
+            },
+        )
+        unconfirmed_diploma = VerifiedFact.objects.create(
+            student=student,
+            category=EDU,
+            payload={
+                "degree_as_awarded": "Bachelor of Science in Chemical Engineering",
+                "institution_original": "UFAZ",
+                "end_date": "2023-06-30",
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="upload:diploma",
+            confirmed_by=None,
+            confirmed_at=None,
+            created_by=student,
+        )
+        abbreviated = EducationEntry(
+            degree_as_awarded="B.Sc. of Chem. Eng.",
+            institution_original="UFAZ",
+            end_date=date(2023, 6, 30),
+        )
+        content, fixes = full_titles(
+            _cv(education=(abbreviated,)),
+            [confirmed_cv_fact, unconfirmed_diploma],
+            frozenset(),
+        )
+    assert content.education[0].degree_as_awarded == "B.Sc. of Chem. Eng."
+    assert fixes == ()
+

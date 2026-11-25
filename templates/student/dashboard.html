@@ -73,6 +73,46 @@
         </div>
       {% endif %}{% endfor %}
       {% include "student/_needs.html" %}
+      {% if open_gap_questions or gap_notes %}
+        <section class="panel home-questions" id="home-gap-questions" aria-labelledby="home-gap-heading">
+          <div class="panel-head">
+            <div>
+              <h2 id="home-gap-heading">Questions for you{% if open_gap_questions %} ({{ open_gap_questions }} open){% endif %}</h2>
+              <p class="home-q-sub">Short details missing from your uploaded files that strengthen your CV, motivation letters, and forms.</p>
+            </div>
+            <a class="btn btn-secondary btn-small" href="/student/gap-interview/">Answer questions</a>
+          </div>
+          {% if gap_sections %}
+            <ul class="home-q-cats" aria-label="Question categories">
+              {% for sec in gap_sections %}
+                <li><span>{{ sec.title }}</span><strong>{{ sec.count }}</strong></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          {% if gap_questions_preview %}
+            <ul class="home-q-list">
+              {% for q in gap_questions_preview %}
+                <li>
+                  <a class="home-q-row" href="/student/gap-interview/">
+                    <div class="home-q-body">
+                      <span class="home-q-tag">{{ q.section }}</span>
+                      <strong>{{ q.prompt }}</strong>
+                      {% if q.evidence %}<small>{{ q.evidence }}</small>{% endif %}
+                    </div>
+                    <span class="home-q-arrow" aria-hidden="true">&rarr;</span>
+                  </a>
+                </li>
+              {% endfor %}
+            </ul>
+            {% if open_gap_questions > 3 %}
+              <p class="home-q-more"><a href="/student/gap-interview/">Answer all {{ open_gap_questions }} open questions &rarr;</a></p>
+            {% endif %}
+          {% endif %}
+          {% for note in gap_notes %}
+            <p class="home-q-note">{{ note.text }}</p>
+          {% endfor %}
+        </section>
+      {% endif %}
     </section>
 
     <section class="side-panel" aria-labelledby="deadlines-heading">
@@ -85,12 +125,58 @@
               <a href="/student/applications/#card-{{ card.application_id }}">{% if card.country %}{{ card.country|flag }}{% endif %}{{ card.title }}<small><time datetime="{{ card.deadline_local|date:'c' }}">{{ card.deadline_local|date:"j M" }}</time>{% if card.institution %} · {{ card.institution }}{% endif %}</small></a>
             </li>
           {% endfor %}
-        </ul>
-      {% else %}
-        <p class="quiet-line">No deadlines yet. They appear when you add a programme.</p>
+        </section>
       {% endif %}
+    </div>
+
+    <div class="home-side">
+      <section class="side-panel" aria-labelledby="deadlines-heading">
+        <div class="panel-head">
+          <h2 id="deadlines-heading">Upcoming deadlines</h2>
+          {% if o.deadlines %}<span class="badge badge-muted">{{ o.deadlines|length }}</span>{% endif %}
+        </div>
+        {% if o.deadlines %}
+          <ul class="deadlines">
+            {% for card in o.deadlines %}
+              <li>
+                <a href="/student/applications/#card-{{ card.application_id }}">{% if card.country %}{{ card.country|flag }}{% endif %}{{ card.title }}{% if card.institution %}<small>{{ card.institution }}</small>{% endif %}</a>
+                <span class="when{% if card.days_left <= o.soon_days %} soon{% endif %}"><time datetime="{{ card.deadline_local|date:'c' }}">{{ card.deadline_local|date:"j M" }}</time><small>{% if card.days_left == 0 %}today{% else %}in {{ card.days_left }} day{{ card.days_left|pluralize }}{% endif %}</small></span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="quiet-line">No deadlines yet. They appear when you add a programme.</p>
+        {% endif %}
+        {% if o.applications %}
+          <a class="side-link" href="/student/applications/">See all {{ o.applications }} application{{ o.applications|pluralize }} &rarr;</a>
+        {% endif %}
+      </section>
+
       {% if o.applications %}
-        <a class="side-link" href="/student/applications/">See all {{ o.applications }} application{{ o.applications|pluralize }}</a>
+        <section class="side-panel home-readiness" aria-labelledby="readiness-heading">
+          <h2 id="readiness-heading">Application kit &amp; readiness</h2>
+          <div class="readiness-meters">
+            <div class="readiness-meter">
+              <div class="readiness-label">
+                <span>Documents ready</span>
+                <strong>{{ o.documents_done }} / {{ o.documents_total }}</strong>
+              </div>
+              <progress value="{{ o.documents_done }}" max="{{ o.documents_total|default:1 }}"></progress>
+            </div>
+            <div class="readiness-meter">
+              <div class="readiness-label">
+                <span>Portal answers ready</span>
+                <strong>{{ o.answers_done }} / {{ o.answers_total }}</strong>
+              </div>
+              <progress value="{{ o.answers_done }}" max="{{ o.answers_total|default:1 }}"></progress>
+            </div>
+          </div>
+          <ul class="readiness-links">
+            <li><a href="/student/documents/"><span>Documents &amp; uploads</span><span aria-hidden="true">&rarr;</span></a></li>
+            <li><a href="/student/writing/"><span>CV &amp; Motivation Letters</span><span aria-hidden="true">&rarr;</span></a></li>
+            <li><a href="/student/references/"><span>Referees &amp; recommendation letters</span><span aria-hidden="true">&rarr;</span></a></li>
+          </ul>
+        </section>
       {% endif %}
       {% if booking_url %}
         <a class="book-call" href="{{ booking_url }}" target="_blank" rel="noopener noreferrer">

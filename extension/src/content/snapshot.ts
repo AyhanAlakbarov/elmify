@@ -8,7 +8,9 @@
  */
 
 /** Types no packet may ever type into. `file` inputs are described like any control: they
- *  are where documents go (plan 5). The rest are controls, secrets or payment fields. */
+ *  are where documents go (plan 5). `radio` inputs are allowed only when they are
+ *  non-consent profile controls (checked via `notConsentRadio`). The rest are controls,
+ *  secrets or payment/consent fields. */
 export const REFUSED_TYPES = new Set([
   "password",
   "hidden",
@@ -17,8 +19,10 @@ export const REFUSED_TYPES = new Set([
   "image",
   "reset",
   "checkbox",
-  "radio",
 ]);
+
+const CONSENT_RE =
+  /\b(consent|agree|accept|confirm|declare|acknowledge|terms|privacy|gdpr|einverstanden|zustimm\w*|datenschutz\w*|j\s*accepte|kabul|onay\w*|razıyam|raziyam|соглас\w*)\b/i;
 
 export interface SnapshotControl {
   selector: string;
@@ -34,6 +38,17 @@ export interface SnapshotControl {
   context: string;
   accept: string;
   max_length: number;
+}
+
+export type ControlDescriptor = SnapshotControl;
+
+export function isControlRequired(el: Element, label: string): boolean {
+  return (
+    (el as HTMLInputElement).required === true ||
+    el.hasAttribute("required") ||
+    el.getAttribute("aria-required") === "true" ||
+    /\*/.test(label)
+  );
 }
 
 export interface FormSnapshot {
@@ -76,11 +91,67 @@ function cleanLabelText(node: Element | null): string {
   const copy = node.cloneNode(true) as Element;
   copy
     .querySelectorAll(
-      "input, select, textarea, button, script, style, option, " +
+      "input, select, textarea, button, script, style, option, [role=\"listbox\"], [role=\"option\"], " +
         '[contenteditable]:not([contenteditable="false"])',
     )
     .forEach((child) => child.remove());
   return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+export function isCombobox(element: Element): boolean {
+  return (element.getAttribute("role") ?? "").toLowerCase() === "combobox";
+}
+
+export function isRadioGroupContainer(element: Element): boolean {
+  const tag = element.tagName.toLowerCase();
+  const role = (element.getAttribute("role") ?? "").toLowerCase();
+  return (
+    (tag === "fieldset" || role === "radiogroup") &&
+    element.querySelectorAll('input[type="radio"]').length > 0
+  );
+}
+
+export function isRadioControl(element: Element): boolean {
+  return (
+    (element instanceof HTMLInputElement && element.type.toLowerCase() === "radio") ||
+    isRadioGroupContainer(element)
+  );
+}
+
+export function radioButtonsFor(element: Element): HTMLInputElement[] {
+  if (element instanceof HTMLInputElement && element.type.toLowerCase() === "radio") {
+    if (element.name) {
+      const scope = element.form ?? document;
+      const group = Array.from(
+        scope.querySelectorAll<HTMLInputElement>(
+          `input[type="radio"][name="${CSS.escape(element.name)}"]`,
+        ),
+      );
+      if (group.length > 0) return group;
+    }
+    const container = element.closest('fieldset, [role="radiogroup"]');
+    if (container) {
+      return Array.from(container.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+    }
+    return [element];
+  }
+  if (isRadioGroupContainer(element)) {
+    return Array.from(element.querySelectorAll<HTMLInputElement>('input[type="radio"]'));
+  }
+  return [];
+}
+
+export function radioOptionLabel(radio: HTMLInputElement): string {
+  const id = radio.getAttribute("id");
+  if (id) {
+    const labelText = cleanLabelText(document.querySelector(`label[for="${CSS.escape(id)}"]`));
+    if (labelText) return labelText;
+  }
+  const wrappingText = cleanLabelText(radio.closest("label"));
+  if (wrappingText) return wrappingText;
+  const ariaLabel = radio.getAttribute("aria-label");
+  if (ariaLabel?.trim()) return ariaLabel.trim();
+  return (radio.getAttribute("value") ?? "").trim();
 }
 
 const CHAR_LIMIT_RE =
@@ -158,6 +229,105 @@ export function headingFor(element: Element): string {
   return clip(found, 200);
 }
 
+export function radioGroupName(element: Element): string {
+  const rg = element.closest('[role="radiogroup"]');
+  if (rg) {
+    const aria = rg.getAttribute("aria-label")?.trim();
+    if (aria) return aria;
+    const labelledBy = rg.getAttribute("aria-labelledby");
+    if (labelledBy) {
+      const targetText = cleanLabelText(document.getElementById(labelledBy));
+      if (targetText) return targetText;
+    }
+  }
+  const legend = element.closest("fieldset")?.querySelector(":scope > legend");
+  if (legend?.textContent?.trim()) return clip(legend.textContent, 200);
+  const group = element.closest(GROUPS) ?? element.parentElement;
+  if (group) {
+    for (const label of Array.from(group.querySelectorAll("label"))) {
+      if (label.getAttribute("for") || label.querySelector('input[type="radio"]')) continue;
+      const text = cleanLabelText(label);
+      if (text) return text;
+    }
+  }
+  const ownAria = element.getAttribute("aria-label")?.trim();
+  if (ownAria) return ownAria;
+  const heading = headingFor(element);
+  if (heading) return heading;
+  return element.getAttribute("name") ?? accessibleName(element);
+}
+
+export function notConsentRadio(element: Element): boolean {
+  const radios = radioButtonsFor(element);
+  const texts = [
+    radioGroupName(element),
+    headingFor(element),
+    element.getAttribute("name") ?? "",
+    ...radios.map((r) => radioOptionLabel(r)),
+  ];
+  return !texts.some((t) => CONSENT_RE.test(t));
+}
+
+export interface ComboboxOptionItem {
+  element: HTMLElement;
+  value: string;
+  text: string;
+  disabled: boolean;
+}
+
+export function comboboxOptionsFor(element: Element): ComboboxOptionItem[] {
+  const roots: Element[] = [];
+  for (const attr of ["aria-controls", "aria-owns", "list"]) {
+    const raw = element.getAttribute(attr) ?? "";
+    for (const id of raw.split(/\s+/).filter(Boolean)) {
+      const target = document.getElementById(id);
+      if (target && !roots.includes(target)) roots.push(target);
+    }
+  }
+  const wrapper = element.closest('[role="combobox"]');
+  if (wrapper && wrapper !== element) {
+    for (const attr of ["aria-controls", "aria-owns"]) {
+      const raw = wrapper.getAttribute(attr) ?? "";
+      for (const id of raw.split(/\s+/).filter(Boolean)) {
+        const target = document.getElementById(id);
+        if (target && !roots.includes(target)) roots.push(target);
+      }
+    }
+  }
+  const container = element.closest(GROUPS) ?? element.parentElement;
+  if (container) {
+    for (const lb of Array.from(container.querySelectorAll('[role="listbox"]'))) {
+      if (!roots.includes(lb)) roots.push(lb);
+    }
+  }
+  if (roots.length === 0) {
+    const allListboxes = Array.from(document.querySelectorAll('[role="listbox"]'));
+    if (allListboxes.length === 1 && allListboxes[0]) {
+      roots.push(allListboxes[0]);
+    }
+  }
+  const nodes: HTMLElement[] = [];
+  for (const root of roots) {
+    if ((root.getAttribute("role") ?? "").toLowerCase() === "option" && root instanceof HTMLElement) {
+      nodes.push(root);
+    }
+    for (const opt of Array.from(root.querySelectorAll<HTMLElement>('[role="option"], option'))) {
+      if (!nodes.includes(opt)) nodes.push(opt);
+    }
+  }
+  return nodes.map((opt) => {
+    const text =
+      (opt.textContent ?? "").replace(/\s+/g, " ").trim() ||
+      (opt.getAttribute("aria-label") ?? "").trim();
+    const value = (opt.getAttribute("data-value") ?? opt.getAttribute("value") ?? text).trim();
+    const disabled =
+      opt.getAttribute("aria-disabled") === "true" ||
+      opt.hasAttribute("disabled") ||
+      (opt as HTMLOptionElement).disabled === true;
+    return { element: opt, value, text, disabled };
+  });
+}
+
 /** The text of the control's own group with every control removed: a clone,
  *  so the page is never touched, and no input, select or textarea text (a
  *  textarea's text IS its value). */
@@ -168,7 +338,7 @@ export function contextFor(element: Element): string {
   copy
     // A rich-text essay box is the student's own text, never page context.
     .querySelectorAll(
-      "input, select, textarea, script, style, option, " +
+      "input, select, textarea, script, style, option, [role=\"listbox\"], [role=\"option\"], " +
         '[contenteditable]:not([contenteditable="false"])',
     )
     .forEach((node) => node.remove());
@@ -177,10 +347,47 @@ export function contextFor(element: Element): string {
 
 export function buildSnapshot(root: Document): FormSnapshot {
   const controls: SnapshotControl[] = [];
-  for (const element of Array.from(root.querySelectorAll("input, select, textarea"))) {
+  const seenRadioElements = new Set<Element>();
+  const elements = Array.from(
+    root.querySelectorAll('input, select, textarea, [role="combobox"]'),
+  );
+  for (const element of elements) {
     const elementTag = element.tagName.toLowerCase();
-    const controlType = (element.getAttribute("type") ?? "").toLowerCase();
-    if (REFUSED_TYPES.has(controlType)) continue;
+    const isNativeControl = ["input", "select", "textarea"].includes(elementTag);
+    if (!isNativeControl && element.querySelector("input, select, textarea")) {
+      continue;
+    }
+    const rawType = (element.getAttribute("type") ?? "").toLowerCase();
+    const combobox = isCombobox(element);
+    if (REFUSED_TYPES.has(rawType)) continue;
+    if (rawType === "radio") {
+      if (seenRadioElements.has(element)) continue;
+      const radios = radioButtonsFor(element);
+      for (const r of radios) seenRadioElements.add(r);
+      if (!notConsentRadio(element)) continue;
+      const groupLabel = radioGroupName(element);
+      const radioOptions = radios.map((r) => radioOptionLabel(r)).filter(Boolean);
+      controls.push({
+        selector: selectorFor(element),
+        tag: elementTag,
+        type: "radio",
+        name: element.getAttribute("name") ?? "",
+        id: element.getAttribute("id") ?? "",
+        label: groupLabel,
+        placeholder: "",
+        options: radioOptions,
+        required:
+          radios.some((r) => isControlRequired(r, radioOptionLabel(r))) ||
+          isControlRequired(element, groupLabel),
+        heading: headingFor(element),
+        context: contextFor(element),
+        accept: "",
+        max_length: 0,
+      });
+      if (controls.length >= 200) break;
+      continue;
+    }
+    const controlType = combobox ? "combobox" : rawType;
     const controlLabel = accessibleName(element);
     const controlPlaceholder = element.getAttribute("placeholder") ?? "";
     const controlContext = contextFor(element);
@@ -195,6 +402,12 @@ export function buildSnapshot(root: Document): FormSnapshot {
         : element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement
           ? inferredMaxLength(controlLabel, controlPlaceholder, controlContext)
           : 0;
+    const options =
+      element instanceof HTMLSelectElement
+        ? Array.from(element.options).map((option) => option.text)
+        : combobox
+          ? comboboxOptionsFor(element).map((option) => option.text)
+          : [];
     controls.push({
       selector: selectorFor(element),
       tag: elementTag,
@@ -203,11 +416,8 @@ export function buildSnapshot(root: Document): FormSnapshot {
       id: element.getAttribute("id") ?? "",
       label: controlLabel,
       placeholder: controlPlaceholder,
-      options:
-        element instanceof HTMLSelectElement
-          ? Array.from(element.options).map((option) => option.text)
-          : [],
-      required: element.hasAttribute("required"),
+      options,
+      required: isControlRequired(element, controlLabel),
       heading: headingFor(element),
       context: controlContext,
       accept: clip(element.getAttribute("accept") ?? "", 100),

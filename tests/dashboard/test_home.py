@@ -285,3 +285,198 @@ def test_the_rate_note_appears_once_however_many_amounts(
     assert "Application fee: 75.00 EUR ≈ 150 AZN — you pay this at submission" in body
     assert "20.00 USD ≈ 32 AZN" in body
     assert body.count("Converted at the CBAR rate") == 1
+
+
+def test_home_surfaces_open_gap_questions_and_notes(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    from apps.documents.models import VerifiedFact
+
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        add_card(agency_a, membership_a, programme)
+        VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.IDENTITY,
+            payload={"full_name": "Aysel Mammadova"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="cv",
+            confirmed_by=membership_a,
+            confirmed_at=timezone.now(),
+            created_by=membership_a,
+        )
+    client.force_login(user_a)
+    with reads_no_catalogue():
+        body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+    assert 'id="home-gap-questions"' in body
+    assert "Questions for you (" in body
+    assert "Answer questions" in body
+    assert "Contact &amp; profile links" in body
+    assert "What phone number should the CV print?" in body
+    assert "Application kit &amp; readiness" in body
+    assert "Certificates, licences, professional registration and short courses" in body
+
+
+def test_home_renders_three_stage_kanban_and_programme_scholarship_filters(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    """Option A Kanban: applications are grouped into 3 fixed stage columns
+    (To start -> In progress -> Submitted & Decision) with All / Programmes / Scholarships
+    filter pills and card-level Programme vs. Scholarship badges."""
+    now = timezone.now()
+    programme, award = pack
+    with tenant_scope(agency_a.id):
+        prog_card = add_card(agency_a, membership_a, programme)
+        award_card = add_card(
+            agency_a, membership_a, award, portal=False, started_at=now
+        )
+    client.force_login(user_a)
+    with reads_no_catalogue():
+        body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+
+    assert 'id="applications-kanban"' in body
+    assert 'id="stage-to_start"' in body
+    assert 'id="stage-in_progress"' in body
+    assert 'id="stage-done"' in body
+    assert 'data-board-filter="all"' in body
+    assert 'data-board-filter="programme"' in body
+    assert 'data-board-filter="scholarship"' in body
+    assert f'id="card-{prog_card.id}"' in body
+    assert 'data-board-kind="programme"' in body
+    assert f'id="card-{award_card.id}"' in body
+    assert 'data-board-kind="scholarship"' in body
+
+
+def test_home_renders_card_credible_interval_on_application_cards(
+    client, agency_a, domain_a, user_a, membership_a, pack
+) -> None:
+    from apps.dashboard.board import board_for
+
+    programme, _award = pack
+    with tenant_scope(agency_a.id):
+        RecommendationCandidate.objects.filter(id=programme.id).update(
+            estimated_chance_pct=50,
+            calibration_features={"base_prior": 0.50},
+        )
+        programme.refresh_from_db()
+        add_card(agency_a, membership_a, programme)
+        with reads_no_catalogue():
+            board = board_for(membership_a)
+
+    (card,) = board.open_cards
+    assert card.chance_pct == 50
+    assert card.chance_ci_low is not None and card.chance_ci_high is not None
+    assert 1 <= card.chance_ci_low < card.chance_pct < card.chance_ci_high <= 95
+
+    client.force_login(user_a)
+    with reads_no_catalogue():
+        body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+    assert card.chance_line in body
+    assert "· Good chance" in body
+    expected_title = (
+        "Depending on how many people apply this year, your chance is usually "
+        f"between {card.chance_ci_low}% and {card.chance_ci_high}%."
+    )
+    assert f'title="{expected_title}"' in body
+
+
+def test_home_pack_outlook_discounts_shared_scholarship_and_warns_at_three_cards(
+    client, agency_a, domain_a, user_a, membership_a, pack, program_factory
+) -> None:
+    from apps.dashboard.board import board_for
+
+    programme_1, award = pack
+    prog_row_2 = program_factory(name="M.Sc. Data Engineering")
+    prog_row_3 = program_factory(name="M.Sc. Robotics")
+    run = programme_1.run
+
+    with tenant_scope(agency_a.id):
+        programme_2 = make_db_candidate(
+            agency_a, run, program_name="M.Sc. Data Engineering", funding_gap="1200.00"
+        )
+        programme_3 = make_db_candidate(
+            agency_a, run, program_name="M.Sc. Robotics", funding_gap="1200.00"
+        )
+        for cand, row in (
+            (programme_1, programme_1),
+            (programme_2, prog_row_2),
+            (programme_3, prog_row_3),
+        ):
+            pid = cand.program_id if cand is programme_1 else row.id
+            RecommendationCandidate.objects.filter(id=cand.id).update(
+                program_id=pid,
+                institution_name="TUM",
+                country_code="DE",
+                estimated_chance_pct=40,
+            )
+            if cand is not programme_1:
+                PackCandidate.objects.create(
+                    pack_version=PackVersion.objects.get(run=run), candidate=cand
+                )
+            cand.refresh_from_db()
+
+        # First: only programme_1 is funded by DAAD; programme_2 and programme_3 are independent.
+        RecommendationCandidate.objects.filter(id=award.id).update(
+            funds_program_ids=[programme_1.program_id]
+        )
+        award.refresh_from_db()
+
+        add_card(agency_a, membership_a, programme_1)
+        add_card(agency_a, membership_a, programme_2)
+        card_3 = add_card(agency_a, membership_a, programme_3)
+
+        with reads_no_catalogue():
+            indep_board = board_for(membership_a)
+        assert indep_board.pack_chance_pct == 78
+        assert indep_board.shared_funder_warning is None
+
+        # Second: 2 programmes share DAAD -> discounted below 78%, still no 3-card warning.
+        RecommendationCandidate.objects.filter(id=award.id).update(
+            funds_program_ids=[programme_1.program_id, programme_2.program_id]
+        )
+        with reads_no_catalogue():
+            two_shared_board = board_for(membership_a)
+        assert two_shared_board.pack_chance_pct is not None
+        assert two_shared_board.pack_chance_pct < indep_board.pack_chance_pct
+        assert two_shared_board.shared_funder_warning is None
+
+        # Third: all 3 programmes share DAAD -> further discounted and warning triggers.
+        RecommendationCandidate.objects.filter(id=award.id).update(
+            funds_program_ids=[
+                programme_1.program_id,
+                programme_2.program_id,
+                programme_3.program_id,
+            ]
+        )
+        with reads_no_catalogue():
+            three_shared_board = board_for(membership_a)
+        assert three_shared_board.pack_chance_pct == 60
+        assert three_shared_board.pack_chance_pct < two_shared_board.pack_chance_pct
+        assert three_shared_board.shared_funder_warning == (
+            "3 options share DAAD Study Scholarship — adding an option with separate"
+            " funding improves your backup coverage"
+        )
+
+    client.force_login(user_a)
+    with reads_no_catalogue():
+        body = client.get("/student/", HTTP_HOST=domain_a.host).content.decode()
+    assert "Overall outlook:" in body
+    assert (
+        "About a 60% chance of getting at least one offer across your 3 active programmes"
+        in body
+    )
+    assert (
+        "3 options share DAAD Study Scholarship — adding an option with separate"
+        " funding improves your backup coverage"
+    ) in body
+
+    # Once one of the 3 cards is decided, only 2 active undecided cards share DAAD -> no warning.
+    with tenant_scope(agency_a.id):
+        card_3.outcome = "REJECTED"
+        card_3.save(update_fields=["outcome"])
+        with reads_no_catalogue():
+            after_decision_board = board_for(membership_a)
+        assert after_decision_board.shared_funder_warning is None
+
+
+

@@ -1400,3 +1400,18 @@ def test_scanned_pdf_multimodal_ocr_fallback_via_gemini_flash_openrouter():
     assert "Applicants must hold" in pdf_text_or_ocr(digital_pdf, ocr_fallback=_should_not_run)
     assert called_fallback is False
 
+
+def test_large_page_retains_multilingual_admission_sections() -> None:
+    filler = "<section><h2>Campus History</h2><p>" + ("History prose. " * 1800) + "</p></section>"
+    html = (
+        f"<html><body><main>{filler}"
+        "<section><h2>Zulassungsvoraussetzungen und Bewerbungsunterlagen</h2>"
+        "<p>Bewerber müssen einen Bachelorabschluss vorweisen.</p></section>"
+        "<section><h2>募集要項・出願資格</h2>"
+        "<p>修士課程の出願には推薦状が必要です。</p></section>"
+        "</main></body></html>"
+    ).encode()
+    rendered = readable_text(FetchResult("https://uni.example.de/msc", (), "text/html", html))
+    assert "Zulassungsvoraussetzungen" in rendered
+    assert "募集要項" in rendered
+

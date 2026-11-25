@@ -8,11 +8,18 @@
       <h1>Who writes for which application</h1>
       <p>Match your referees to each programme's letter requirements and portal limits.</p>
     </div>
-    <form method="post" action="{% url 'student-referee-propose' %}">
-      {% csrf_token %}
-      <button type="submit">Propose a plan</button>
-    </form>
+    <div class="row-actions">
+      <a class="btn btn-quiet" href="{% url 'student-referees' %}#add-referee-heading">+ Add a new professor</a>
+      <form method="post" action="{% url 'student-referee-propose' %}" class="inline-form">
+        {% csrf_token %}
+        <button type="submit">Propose a plan</button>
+      </form>
+    </div>
   </div>
+  <nav class="doc-tabs" aria-label="Referees sections">
+    <a href="{% url 'student-referees' %}">Your referees{% if active %}<span class="count">{{ active|length }}</span>{% endif %}</a>
+    <a href="{% url 'student-referee-plan' %}" aria-current="page">Who writes for which application{% if lines %}<span class="count">{{ lines|length }}</span>{% endif %}</a>
+  </nav>
   {% for line in short %}<p role="alert">{{ line }}</p>{% endfor %}
   {% if not active and lines %}
     <div class="write-callout">
@@ -24,10 +31,79 @@
         <a href="{% url 'student-referees' %}" class="btn btn-primary btn-small">Add your referees &rarr;</a>
       </div>
     </div>
+  {% elif referee_loads and lines %}
+    <section class="panel ref-plan-overview{% if just_proposed %} is-just-proposed{% endif %}" aria-labelledby="plan-overview-heading">
+      <div class="panel-head ref-plan-card-head">
+        <div class="ref-plan-card-title">
+          <h2 id="plan-overview-heading">Plan overview</h2>
+          {% if just_proposed %}
+            <span class="ref-status-badge ref-status-badge--agreed">&#10003; Plan updated</span>
+          {% endif %}
+        </div>
+        <span class="muted small">Applications where referees were already asked or agreed stay locked when you re-propose.</span>
+      </div>
+      <div class="ref-load-grid">
+        {% for item in referee_loads %}
+          <div class="ref-load-card">
+            <div class="ref-load-head">
+              <strong>{{ item.referee.label }}</strong>
+              <span class="muted small">{{ item.total }} / {{ item.referee.agreed_requests }} slots</span>
+            </div>
+            <div class="ref-load-badges">
+              {% if item.agreed %}<span class="ref-status-badge ref-status-badge--agreed">&#10003; {{ item.agreed }} agreed</span>{% endif %}
+              {% if item.asked %}<span class="ref-status-badge ref-status-badge--asked">&#9203; {{ item.asked }} asked</span>{% endif %}
+              {% if item.proposed %}<span class="ref-status-badge ref-status-badge--proposed">{{ item.proposed }} proposed</span>{% endif %}
+              {% if not item.total %}<span class="muted small">No open assignments</span>{% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+      {% if proposed_lines %}
+        <div class="ref-overview-group">
+          <span class="ref-assigned-label">Proposed by plan ({{ proposed_lines|length }} application{{ proposed_lines|length|pluralize }} — click to jump):</span>
+          <div class="ref-assigned-apps">
+            {% for pline in proposed_lines %}
+              <a href="#app-{{ pline.application.id }}" class="ref-app-chip ref-app-chip--proposed">
+                <span class="ref-app-chip-title">{{ pline.application.title }}</span>
+                <span class="ref-status-badge ref-status-badge--proposed">{{ pline.proposed_count }} proposed</span>
+              </a>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+      {% if locked_lines %}
+        <div class="ref-overview-group">
+          <span class="ref-assigned-label">Already asked or agreed ({{ locked_lines|length }} kept locked):</span>
+          <div class="ref-assigned-apps">
+            {% for lline in locked_lines %}
+              <a href="#app-{{ lline.application.id }}" class="ref-app-chip ref-app-chip--agreed">
+                <span class="ref-app-chip-title">{{ lline.application.title }}</span>
+                {% if lline.agreed_count or lline.submitted_count %}<span class="ref-status-badge ref-status-badge--agreed">&#10003; {{ lline.agreed_count|add:lline.submitted_count }} agreed</span>{% endif %}
+                {% if lline.asked_count %}<span class="ref-status-badge ref-status-badge--asked">{{ lline.asked_count }} asked</span>{% endif %}
+              </a>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+    </section>
   {% endif %}
   {% for line in lines %}
-    <section class="panel" aria-labelledby="plan-{{ line.application.id }}">
-      <h2 id="plan-{{ line.application.id }}">{% if line.application.candidate.country_code %}{{ line.application.candidate.country_code|flag }}{% endif %}{{ line.application.title }}</h2>
+    <section class="panel" id="app-{{ line.application.id }}" aria-labelledby="plan-{{ line.application.id }}">
+      <div class="panel-head ref-plan-card-head">
+        <div class="ref-plan-card-title">
+          <h2 id="plan-{{ line.application.id }}">{% if line.application.candidate.country_code %}{{ line.application.candidate.country_code|flag }}{% endif %}{{ line.application.title }}</h2>
+          <span class="option-kind kind-{% if line.is_award %}award{% else %}programme{% endif %}">{% if line.is_award %}Scholarship{% else %}Programme{% endif %}</span>
+        </div>
+        {% if line.requests %}
+          <div class="ref-plan-summary" aria-label="Referee status summary">
+            {% if line.submitted_count %}<span class="badge badge-ok">&#10003; {{ line.submitted_count }} submitted</span>{% endif %}
+            {% if line.agreed_count %}<span class="badge badge-ok">&#10003; {{ line.agreed_count }} agreed</span>{% endif %}
+            {% if line.asked_count %}<span class="badge badge-warn">{{ line.asked_count }} asked</span>{% endif %}
+            {% if line.declined_count %}<span class="badge badge-danger">&#10005; {{ line.declined_count }} not agreed</span>{% endif %}
+            {% if line.proposed_count %}<span class="badge">{{ line.proposed_count }} proposed</span>{% endif %}
+          </div>
+        {% endif %}
+      </div>
       {% if line.has_stated %}
         <dl class="kv">
           {% for label, stated in line.fields %}
@@ -52,26 +128,47 @@
         </details>
       {% endif %}
       {% for sentence in line.other_conditions %}<p class="note">Only for some applicants: {{ sentence }}</p>{% endfor %}
-      <ul class="item-list">
+      <ul class="item-list ref-plan-list">
         {% for request, flagged in line.requests %}
-          <li>
-            <span>{{ request.referee.label }} — {{ request.get_state_display|lower }}{% if flagged %} <span class="badge badge-warn">(this programme wants a university address)</span>{% endif %}</span>
+          <li id="req-{{ request.id }}" class="ref-plan-row ref-plan-row--{{ request.state|lower }}{% if saved_request_id == request.id|stringformat:'s' %} is-just-saved{% endif %}">
+            <div class="ref-plan-who">
+              <div class="ref-plan-who-top">
+                <span class="sr-only">{{ request.referee.label }} — {{ request.get_state_display|lower }}</span>
+                <strong class="ref-plan-name" aria-hidden="true">{{ request.referee.label }}</strong>
+                {% if request.state == "AGREED" %}
+                  <span class="ref-status-badge ref-status-badge--agreed">&#10003; Agreed to write</span>
+                {% elif request.state == "SUBMITTED" %}
+                  <span class="ref-status-badge ref-status-badge--submitted">&#10003; Letter submitted</span>
+                {% elif request.state == "ASKED" %}
+                  <span class="ref-status-badge ref-status-badge--asked">&#9203; Asked — awaiting reply</span>
+                {% elif request.state == "DECLINED" %}
+                  <span class="ref-status-badge ref-status-badge--declined">&#10005; Not agreed (declined)</span>
+                {% else %}
+                  <span class="ref-status-badge ref-status-badge--proposed">Proposed — not asked yet</span>
+                {% endif %}
+                {% if flagged %} <span class="badge badge-warn">(this programme wants a university address)</span>{% endif %}
+              </div>
+              <span class="ref-plan-meta">{{ request.referee.get_kind_display }}{% if request.referee.institution %} · {{ request.referee.institution }}{% endif %}</span>
+            </div>
             <div class="row-actions">
               <a class="btn btn-quiet btn-small" href="{% url 'student-referee-package' request.referee.id %}">What to send</a>
-              <form method="post" action="{% url 'student-referee-request-state' request.id %}" class="inline-form">
+              <form method="post" action="{% url 'student-referee-request-state' request.id %}" class="inline-form ref-state-form">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="/student/referees/plan/">
                 <label class="sr-only" for="state-{{ request.id }}">Status for {{ request.referee.label }}</label>
-                <select id="state-{{ request.id }}" name="state">
+                <select id="state-{{ request.id }}" name="state" class="ref-state-select ref-state-select--{{ request.state|lower }}">
                   {% if request.state == "PROPOSED" %}<option value="PROPOSED" selected disabled>Proposed</option>{% endif %}
                   {% for value, label in marks %}<option value="{{ value }}"{% if value == request.state %} selected{% endif %}>{{ label }}</option>{% endfor %}
                 </select>
                 <button type="submit" class="btn-quiet btn-small">Save status</button>
+                {% if saved_request_id == request.id|stringformat:"s" %}
+                  <span class="badge badge-ok">&#10003; Saved</span>
+                {% endif %}
               </form>
               {% if request.state == "PROPOSED" %}
                 <form method="post" action="{% url 'student-referee-request-remove' request.id %}">{% csrf_token %}<button type="submit" class="btn-quiet btn-small">Remove</button></form>
               {% else %}
-                <form method="post" action="{% url 'student-referee-request-state' request.id %}">{% csrf_token %}<input type="hidden" name="state" value="DECLINED"><input type="hidden" name="next" value="/student/referees/plan/"><button type="submit" class="btn-quiet btn-small">Remove</button></form>
+                <form method="post" action="{% url 'student-referee-request-state' request.id %}">{% csrf_token %}<input type="hidden" name="state" value="DECLINED"><input type="hidden" name="remove" value="1"><input type="hidden" name="next" value="/student/referees/plan/"><button type="submit" class="btn-quiet btn-small">Remove</button></form>
               {% endif %}
             </div>
           </li>
@@ -79,15 +176,63 @@
           <li class="quiet-line">Nobody yet.</li>
         {% endfor %}
       </ul>
-      {% if active %}
-        <form method="post" action="{% url 'student-referee-request-add' %}" class="inline-form">
-          {% csrf_token %}
-          <input type="hidden" name="application_id" value="{{ line.application.id }}">
-          <label for="add-{{ line.application.id }}">Add a referee</label>
-          <select id="add-{{ line.application.id }}" name="referee_id">{% for referee in active %}<option value="{{ referee.id }}">{{ referee.label }}</option>{% endfor %}</select>
-          <button type="submit" class="btn-quiet">Add</button>
-        </form>
-      {% endif %}
+      <div class="ref-card-footer">
+        {% if line.available_referees %}
+          <form method="post" action="{% url 'student-referee-request-add' %}" class="inline-form ref-add-form">
+            {% csrf_token %}
+            <input type="hidden" name="application_id" value="{{ line.application.id }}">
+            <label for="add-{{ line.application.id }}">Assign from your referees<span class="sr-only"> — Add a referee</span></label>
+            <select id="add-{{ line.application.id }}" name="referee_id">{% for referee in line.available_referees %}<option value="{{ referee.id }}">{{ referee.label }}</option>{% endfor %}</select>
+            <button type="submit" class="btn-quiet btn-small">Assign</button>
+          </form>
+        {% elif active and line.requests %}
+          <span class="muted small ref-all-assigned">All your saved referees are assigned to this application.</span>
+        {% endif %}
+        <details class="ref-new-inline">
+          <summary class="btn btn-quiet btn-small">+ Add a new professor / referee</summary>
+          <form method="post" action="{% url 'student-referee-add' %}" class="ref-new-inline-form">
+            {% csrf_token %}
+            <input type="hidden" name="application_id" value="{{ line.application.id }}">
+            <input type="hidden" name="next" value="/student/referees/plan/">
+            <div class="ref-new-grid">
+              <div>
+                <label for="new-title-{{ line.application.id }}">Title (Prof., Dr.)</label>
+                <input id="new-title-{{ line.application.id }}" type="text" name="title" placeholder="Prof.">
+              </div>
+              <div>
+                <label for="new-name-{{ line.application.id }}">Full name *</label>
+                <input id="new-name-{{ line.application.id }}" type="text" name="name" required placeholder="e.g. Leyla Karimova">
+              </div>
+              <div>
+                <label for="new-inst-{{ line.application.id }}">University or organisation</label>
+                <input id="new-inst-{{ line.application.id }}" type="text" name="institution" placeholder="e.g. ADA University">
+              </div>
+              <div>
+                <label for="new-email-{{ line.application.id }}">Official email address</label>
+                <input id="new-email-{{ line.application.id }}" type="email" name="email" placeholder="name@university.edu">
+              </div>
+              <div>
+                <label for="new-kind-{{ line.application.id }}">Academic or professional</label>
+                <select id="new-kind-{{ line.application.id }}" name="kind">
+                  <option value="ACADEMIC" selected>Academic</option>
+                  <option value="PROFESSIONAL">Professional</option>
+                </select>
+              </div>
+              <div>
+                <label for="new-agreed-{{ line.application.id }}">Agreed portal requests</label>
+                <input id="new-agreed-{{ line.application.id }}" type="number" name="agreed_requests" value="3" min="0" max="50">
+              </div>
+            </div>
+            <div class="ref-new-inline-bottom">
+              <label class="ref-new-check">
+                <input type="checkbox" name="institutional_email" checked>
+                <span>This is an official university / institutional email address</span>
+              </label>
+              <button type="submit" class="btn-small">Add &amp; assign to {{ line.application.title }}</button>
+            </div>
+          </form>
+        </details>
+      </div>
     </section>
   {% empty %}
     <div class="empty-state">

@@ -102,10 +102,9 @@ def test_web_llms_txt_and_llms_full_txt() -> None:
         assert len(links) >= 6, f"{label} must contain Markdown links"
         assert "MSc" in content and "MA" in content and "LLM" in content and "MRes" in content
         assert "Azerbaijan" in content
-        assert "dp.edu.gov.az" in content and "htp.edu.az" in content
+        assert "dp.edu.az" in content and "htp.edu.az" in content
         assert "https://elmify.com/az" in content and "https://elmify.com/ru" in content
         assert "will be done soon" in content
-        assert "PhD" in content
         _assert_clean_of_prompt_injection(content, label)
 
     assert "## Optional" in llms_txt
@@ -179,7 +178,7 @@ def test_web_trilingual_copy_schema_and_prompt_injection_cleanliness() -> None:
     assert '"Azerbaijan"' in landing_tsx
 
     i18n_ts = (WEB_DIR / "app" / "_components" / "i18n.ts").read_text(encoding="utf-8")
-    assert "https://dp.edu.gov.az/" in i18n_ts
+    assert "https://dp.edu.az/" in i18n_ts
     assert "https://htp.edu.az/" in i18n_ts
     assert "Bachelor's degree support will be done soon" in i18n_ts
     assert "bakalavr proqramları üzrə dəstək isə tezliklə əlavə olunacaq" in i18n_ts

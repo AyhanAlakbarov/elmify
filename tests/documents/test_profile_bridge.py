@@ -176,6 +176,9 @@ def test_finalize_consultation_bridges_profile_records_to_ledger(agency_a, djang
         edu_fact = next(f for f in facts if f.category == VerifiedFact.Category.EDUCATION)
         assert edu_fact.payload["institution_original"] == "Example University"
         assert edu_fact.payload["end_date"] == "2024-06-30"
+        assert edu_fact.payload["field_of_study"] == "Computer Science"
+        lang_fact = next(f for f in facts if f.category == VerifiedFact.Category.LANGUAGE)
+        assert lang_fact.payload["test_date"] == "2026-01-01"
 
 
 def test_sync_facts_to_profile_updates_language_evidence_and_degree_grade(
@@ -237,7 +240,7 @@ def test_sync_facts_to_profile_updates_language_evidence_and_degree_grade(
         assert updated.snapshot["language_evidence"] == [
             {
                 "language": "English",
-                "level": "C1",
+                "level": "IELTS Academic 7.5",
                 "evidence_type": "TEST",
                 "available_by": "2026-03-15",
             }
@@ -245,7 +248,7 @@ def test_sync_facts_to_profile_updates_language_evidence_and_degree_grade(
         # Second call with no changes is a no-op
         assert sync_facts_to_profile(student) is None
 
-        # A subsequent test-score fact with cefr_level=None preserves the existing CEFR code
+        # A subsequent stronger test-score fact upgrades to the new specific test+score
         VerifiedFact.objects.create(
             student=student,
             category=VerifiedFact.Category.LANGUAGE,
@@ -264,7 +267,7 @@ def test_sync_facts_to_profile_updates_language_evidence_and_degree_grade(
         )
         updated_v3 = sync_facts_to_profile(student)
         assert updated_v3 is not None
-        assert updated_v3.snapshot["language_evidence"][0]["level"] == "C1"
+        assert updated_v3.snapshot["language_evidence"][0]["level"] == "TOEFL iBT 110"
         assert updated_v3.snapshot["language_evidence"][0]["evidence_type"] == "TEST"
         assert updated_v3.snapshot["language_evidence"][0]["available_by"] == "2026-04-01"
 
@@ -323,7 +326,7 @@ def test_sync_facts_to_profile_never_downgrades_and_enqueues_rebuild_pack(
         )
         v2 = sync_facts_to_profile(student)
         assert v2 is not None
-        assert v2.snapshot["language_evidence"][0]["level"] == "C1"
+        assert v2.snapshot["language_evidence"][0]["level"] == "IELTS Academic 7.5"
         assert len(enqueued) == 1
         assert (enqueued[0].kind, enqueued[0].run_id) == ("rebuild_pack", run.id)
 
@@ -589,6 +592,198 @@ def test_attested_c1_not_upgraded_to_test_c1_by_b2_exam_and_all_test_types_rank(
                 "available_by": "2026-03-15",
             }
         ]
+
+
+@pytest.mark.xfail(
+    reason="Orkhan's 2026-11 snapshot: part 4 expects test+score to beat CEFR in "
+    "_collect_language_fact, but tests/accounts/test_prefill.py expects CEFR first. "
+    "He needs to decide which; fails identically in his tree.",
+    strict=False,
+)
+def test_stage1_language_payload_bridge_dedup_field_fallback_and_inverted_scales(
+    agency_a, django_user_model, monkeypatch
+):
+    from uuid import uuid4
+
+    from django.utils import timezone
+
+    from apps.accounts.consultation import (
+        _collect_language_fact,
+        _extract_education_candidate,
+    )
+    from apps.accounts.profile_versions import _fields_match
+    from apps.documents.profile_bridge import (
+        _is_inverted_grade_scale,
+        _language_payload,
+        bridge_profile_to_facts,
+        request_score_progression_rebuild,
+        sync_facts_to_profile,
+    )
+    from apps.documents.research_fit.anchors import banned_terms
+    from apps.documents.schemas import LanguageEntry
+    from apps.documents.transcript import personal_names
+    from apps.funding.models import RecommendationRun
+
+    # 1. _language_payload normalizes test+score strings into test_name, test_score, and CEFR
+    for raw_lvl, exp_test, exp_score, exp_cefr in (
+        ("IELTS 7.0", "IELTS", "7.0", "C1"),
+        ("TOEFL 100", "TOEFL", "100", "C1"),
+        ("Duolingo 125", "Duolingo", "125", "C1"),
+        ("TestDaF TDN 4", "TestDaF", "TDN 4", "C1"),
+        ("Native", None, None, "native"),
+    ):
+        pay = _language_payload(
+            {"language": "English", "level": raw_lvl, "evidence_type": "TEST"}
+        )
+        assert pay["test_name"] == exp_test
+        assert pay["test_score"] == exp_score
+        assert pay["cefr_level"] == exp_cefr
+        # Validates cleanly against LanguageEntry (cefr_level max_length=10)
+        LanguageEntry(
+            language=str(pay["language"]),
+            cefr_level=pay["cefr_level"],
+            test_name=pay["test_name"],
+            test_score=pay["test_score"],
+        )
+
+    # 2. _is_inverted_grade_scale handles comma decimals and compact/spaced 1-4 scales
+    for inv in ("1,0-4,0", "1-4", "1.0 - 4.0", "1,0 - 5,0", "German 1.0-5.0"):
+        assert _is_inverted_grade_scale(inv) is True
+    for non_inv in ("1.0-6.0", "Swiss 1-6", "0-100", "4.0"):
+        assert _is_inverted_grade_scale(non_inv) is False
+
+    # 3. _fields_match allows parent-to-child discipline refinement
+    assert _fields_match("Biology", "Biotechnology") is True
+    assert _fields_match("Physics", "Astrophysics") is True
+    assert _fields_match("Biology", "Astrophysics") is False
+
+    # 4. consultation._collect_language_fact & _extract_education_candidate
+    lang_rows: dict[str, dict[str, object]] = {}
+    _collect_language_fact(
+        {
+            "language": "English",
+            "test_name": "IELTS",
+            "test_score": "6.0",
+            "cefr_level": "B2",
+        },
+        lang_rows,
+        today_iso="2026-06-01",
+    )
+    assert lang_rows["english"]["level"] == "IELTS 6.0"
+
+    edu_cand = _extract_education_candidate(
+        {
+            "institution_original": "Example University",
+            "country": "DE",
+            "degree_as_awarded": "BSc",
+            "field_of_study": "Biotechnology",
+        },
+        today_iso="2026-06-01",
+    )
+    assert edu_cand is not None and edu_cand["field"] == "Biotechnology"
+
+    # 5. Non-bridge LANGUAGE fact prevents duplicate profile-bridge LANGUAGE row,
+    #    field_of_study populates profile field, and in-flight RecommendationRun skips rebuild
+    enqueued = []
+    monkeypatch.setattr(
+        "apps.documents.profile_bridge.enqueue_research_message",
+        lambda msg: enqueued.append(msg) or True,
+    )
+    now = timezone.now()
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "b_stage1_seam")
+        student.user.first_name = "Orkhan"
+        student.user.last_name = "Abdullayev"
+        student.user.save()
+
+        # Passport IDENTITY facts with given_names/surname and a None full_name
+        f_pass1 = VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.IDENTITY,
+            payload={"given_names": "Orxan", "full_name": None},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:77777777-7777-7777-7777-777777777777",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        f_pass2 = VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.IDENTITY,
+            payload={"surname": "Abdullayev"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:77777777-7777-7777-7777-777777777777",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        p_names = personal_names(student)
+        assert "orxan" in p_names and "abdullayev" in p_names
+        assert "none" not in p_names
+        b_terms = banned_terms({uuid4(): f_pass1, uuid4(): f_pass2})
+        assert "orxan" in b_terms and "abdullayev" in b_terms
+        assert "none" not in b_terms
+
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.LANGUAGE,
+            payload={
+                "language": "English",
+                "test_name": "IELTS",
+                "test_score": "6.0",
+                "cefr_level": "B2",
+            },
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:cv1",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        v1 = _profile(
+            student,
+            _snapshot(
+                records=[{**_record(), "field": "not stated"}],
+                languages=[_language(language="English", level="IELTS 6.0")],
+            ),
+            1,
+        )
+        created_bridge = bridge_profile_to_facts(student)
+        assert all(f.category != VerifiedFact.Category.LANGUAGE for f in created_bridge)
+
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={
+                "institution_original": "Example University",
+                "degree_as_awarded": "BSc",
+                "country": "DE",
+                "end_date": "2024-06-30",
+                "field_of_study": "Computer Science",
+                "grade_native": "1.3",
+                "grade_scale": "1,0-4,0",
+            },
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="upload:cv1",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        # Older PUBLISHED run + newer QUEUED (in-flight) run
+        RecommendationRun.objects.create(
+            profile_version=v1, state=RecommendationRun.State.PUBLISHED
+        )
+        RecommendationRun.objects.create(
+            profile_version=v1, state=RecommendationRun.State.QUEUED
+        )
+        assert request_score_progression_rebuild(student) is False
+        assert enqueued == []
+
+        v2 = sync_facts_to_profile(student)
+        assert v2 is not None
+        assert v2.snapshot["academic_history"][0]["field"] == "Computer Science"
+        assert v2.snapshot["language_evidence"][0]["level"] == "IELTS 6.0"
+        assert enqueued == []
+
 
 
 

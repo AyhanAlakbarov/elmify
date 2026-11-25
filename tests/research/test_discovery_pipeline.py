@@ -1299,6 +1299,9 @@ def test_undergraduate_and_postgraduate_are_not_other_degree_pages() -> None:
     assert not pipeline_module._names_another_degree(
         "https://consortium.eu/admissions/postgraduate"
     )
+    assert not pipeline_module._names_another_degree(
+        "https://www.mit.edu/graduate/admissions"
+    )
 
 
 def test_a_hyphenated_phd_segment_is_still_caught() -> None:

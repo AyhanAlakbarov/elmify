@@ -31,10 +31,18 @@ from apps.mailbox.decision_questions import DECISION, DELTAS, GATED, questions
 from apps.research.decisions import Answer, Client, ask
 from apps.research.engine_eval.items import RUNS
 from apps.research.engine_eval.jev_reader import jev_cost_usd
-from apps.research.engine_eval.score import ltt_bar, upper_error, zero_error_rows_needed
+from apps.research.engine_eval.score import (
+    ltt_bar,
+    ltt_negative_bar,
+    upper_error,
+    zero_error_rows_needed,
+)
 from apps.research.models import GoldItem
 
 CORPUS = Path(__file__).resolve().parents[4] / "tests" / "mailbox" / "decision_corpus.json"
+#: Binary Noul questions that also make negative ("False") decisions and require independent
+#: False-Omission-Rate calibration via `ltt_negative_bar`.
+BINARY_NOULS: tuple[str, ...] = ("is_decision", "other_programme")
 #: None reaches Jev through the decision layer; a test swaps in a fake.
 CLIENT: Client | None = None
 
@@ -154,6 +162,7 @@ class Command(BaseCommand):
                       "| 95% upper error |",
                       "|---|---|---|---|---|---|"]
             bars: dict[str, float | None] = {}
+            neg_bars: dict[str, float | None] = {}
             for qid in GATED:
                 pairs: dict[str, list[tuple[float, bool]]] = {"tune": [], "score": []}
                 for key, letter in letters.items():
@@ -165,6 +174,8 @@ class Command(BaseCommand):
                     pairs[half].append((p_yes, bool(letter["truth"][qid])))
                 bar = ltt_bar([p for p in pairs["tune"] if p[0] >= 0.5], DELTAS[qid])
                 bars[qid] = bar
+                if qid in BINARY_NOULS:
+                    neg_bars[qid] = ltt_negative_bar(pairs["tune"], DELTAS[qid])
                 accepted = [t for s, t in pairs["score"] if bar is not None and s >= bar]
                 wrong = sum(1 for t in accepted if not t)
                 positives = sum(1 for _s, t in pairs["score"] if t) or 1
@@ -173,6 +184,13 @@ class Command(BaseCommand):
                     f"{(len(accepted) - wrong) / positives:.2f} | "
                     f"{upper_error(wrong, len(accepted)):.4f} |"
                 )
-            lines += ["", "```python", f"BARS = {json.dumps(bars, indent=4)}", "```", ""]
+            lines += [
+                "",
+                "```python",
+                f"BARS = {json.dumps(bars, indent=4)}",
+                f"NEGATIVE_BARS = {json.dumps(neg_bars, indent=4)}",
+                "```",
+                "",
+            ]
         (out_dir / "report.md").write_text("\n".join(lines))
         self.stdout.write(str(out_dir / "report.md"))

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from functools import cache
 from pathlib import Path
 
+from apps.funding.eligibility import _country_group_eligible_codes
 from apps.funding.regions import REGIONS
 
 _DOCS = Path(__file__).resolve().parents[2] / "docs" / "research"
@@ -32,8 +33,25 @@ REFUSE = "OTHER"
 _ISO_LIST = re.compile(r"[A-Z]{2}(?:,[A-Z]{2})*")
 _TOKEN = re.compile(r"[A-Z_]+")
 _TOKEN_PREFIXES = frozenset({"APPLICANT_CLASS", "FUNDING", "ROUTE", "DESCENT"})
-#: "non-India", "non India" -- "nonindian" is not a word boundary and never matches.
-_NEGATED = re.compile(r"(?<!\w)non[- ]$")
+#: "non-India", "non India", "outside of EU", "other than Pakistan", "excluding India",
+#: "except for EU", "without EU" -- "nonindian" is not a word boundary and never matches.
+_NEGATED = re.compile(
+    r"(?<!\w)(?:non[- ]|(?:outside(?:\s+of)?|other\s+than|excluding|except(?:\s+for)?|without)"
+    r"(?:\s+(?:the|countries\s+in|citizens\s+of|nationals\s+of|applicants\s+from))?\s+)$",
+    re.IGNORECASE,
+)
+_NEGATION_PHRASE_RE = re.compile(
+    r"\b(?:outside(?:\s+of)?|other\s+than|excluding|except(?:\s+for)?|without)\b",
+    re.IGNORECASE,
+)
+
+_COUNTRY_GROUP_ALIASES: dict[str, tuple[str, ...]] = {
+    "DAC": ("DAC", "OECD DAC", "OECD-DAC", "DAC list"),
+    "LDC": ("LDC", "Least Developed Countries", "Least Developed Country"),
+    "SSA": ("SSA", "Sub-Saharan Africa", "Sub Saharan Africa"),
+    "CIS": ("CIS", "Commonwealth of Independent States"),
+    "LMY": ("LMY", "Low and Middle Income Countries", "Low- and Middle-Income Countries"),
+}
 
 
 @dataclass(frozen=True)
@@ -67,6 +85,20 @@ def default_countries() -> dict[str, str]:
     with (_DOCS / "country-labels.csv").open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
             codes.setdefault(row["label"].casefold(), set()).add(row["iso2"].upper())
+    if not codes:
+        from babel import Locale
+        from babel.core import UnknownLocaleError
+
+        for loc_name in ("en", "de", "fr", "es"):
+            try:
+                loc = Locale.parse(loc_name)
+            except (UnknownLocaleError, ValueError):
+                loc = None
+            if loc is None:
+                continue
+            for code, name in loc.territories.items():
+                if isinstance(code, str) and len(code) == 2 and code.isascii() and code.isalpha():
+                    codes.setdefault(str(name).casefold(), set()).add(code.upper())
     return {label: next(iter(found)) for label, found in codes.items() if len(found) == 1}
 
 
@@ -87,7 +119,11 @@ def _passthrough(raw: str) -> str | None:
     if not sep or not value:
         return None
     if prefix in ("NATIONALITY", "RESIDENCE"):
-        valid = bool(_ISO_LIST.fullmatch(value)) or value in REGIONS
+        valid = (
+            bool(_ISO_LIST.fullmatch(value))
+            or value in REGIONS
+            or value in _country_group_eligible_codes()
+        )
     elif prefix == "ROUND":
         valid = value.isascii() and value.isdigit()
     elif prefix in _TOKEN_PREFIXES:
@@ -127,7 +163,7 @@ def _countries_in(text: str, countries: Mapping[str, str]) -> list[str] | None:
 
 
 def _region_in(text: str) -> str | None:
-    """The first REGIONS key the text names; "" for none, None when negated."""
+    """The first REGIONS or country-group key the text names; "" for none, None when negated."""
     folded = text.casefold()
     for key, region in REGIONS.items():
         for name in (key, region.name):
@@ -135,6 +171,15 @@ def _region_in(text: str) -> str | None:
                 if _NEGATED.search(folded[: match.start()]):
                     return None
                 return key
+    group_codes = _country_group_eligible_codes()
+    for grp_key, aliases in _COUNTRY_GROUP_ALIASES.items():
+        if grp_key not in group_codes:
+            continue
+        for alias in aliases:
+            for match in re.finditer(rf"(?<!\w){re.escape(alias.casefold())}(?!\w)", folded):
+                if _NEGATED.search(folded[: match.start()]):
+                    return None
+                return grp_key
     return ""
 
 
@@ -155,7 +200,7 @@ def normalise_condition(
     other = f"OTHER:{raw[:_OTHER_MAX]}"
 
     matched = [(match, term) for term in terms if (match := term.regex.search(raw))]
-    if any(term.condition == REFUSE for _match, term in matched):
+    if any(term.condition == REFUSE for _match, term in matched) or _NEGATION_PHRASE_RE.search(raw):
         return other
     residence = any(term.condition == "RESIDENCE:*" for _match, term in matched)
     if residence and len(matched) > 1:
@@ -178,3 +223,129 @@ def normalise_condition(
     if region and prefix in ("RESIDENCE", "NATIONALITY"):
         return f"{prefix}:{region}"
     return other
+
+
+_EU_EEA_CH_CODES: frozenset[str] = frozenset(REGIONS["EEA"].countries) | {"CH"}
+_STRIP_NEGATION_PREFIX_RE = re.compile(
+    r"^(?:(?:for|open\s+to)\s+)?(?:applicants\s+|students\s+|citizens\s+|nationals\s+|"
+    r"candidates\s+|residents\s+)?(?:from\s+|of\s+|in\s+|living\s+in\s+|residing\s+in\s+)?"
+    r"(?:countries\s+)?(?:non[- ]|outside(?:\s+of)?\s+|other\s+than\s+|excluding\s+|"
+    r"except(?:\s+for)?\s+|without\s+)(?:the\s+|countries\s+in\s+)?",
+    re.IGNORECASE,
+)
+
+
+def applies_to_student(
+    condition: str,
+    student: Mapping[str, object] | str | object,
+    *,
+    program_country: str = "",
+) -> bool | None:
+    """Return True if `condition` matches `student`, False if `condition` targets a
+    different group, or None when `condition` is unconditional (`ALL`/`OPEN`) or unmapped."""
+    raw = " ".join((condition or "").split())
+    if not raw or raw.upper() == "ALL" or raw.startswith("OPEN"):
+        return None
+    if isinstance(student, str):
+        nat = student.strip().upper()
+        res = nat
+    elif isinstance(student, Mapping):
+        nat = str(student.get("nationality", "") or "").strip().upper()
+        res = str(student.get("country_of_residence", "") or "").strip().upper() or nat
+    else:
+        nat = str(getattr(student, "nationality", "") or "").strip().upper()
+        res = str(getattr(student, "country_of_residence", "") or "").strip().upper() or nat
+    prog_cc = program_country.strip().upper()
+    is_dom_or_eea_ch = (bool(prog_cc) and nat == prog_cc) or (
+        (not prog_cc or prog_cc in _EU_EEA_CH_CODES) and nat in _EU_EEA_CH_CODES
+    )
+
+    canon = raw if _passthrough(raw) is not None else normalise_condition(raw)
+    if canon == "ALL" or canon.startswith("OPEN"):
+        return None
+
+    if canon.startswith(("NATIONALITY:", "RESIDENCE:")):
+        prefix, _, val = canon.partition(":")
+        check_cc = res if prefix == "RESIDENCE" else nat
+        if not check_cc:
+            return None
+        if val in ("EEA", "EFTA") and check_cc in _EU_EEA_CH_CODES:
+            return True
+        if val == "EU" and check_cc == "CH" and (not prog_cc or prog_cc in _EU_EEA_CH_CODES):
+            return True
+        if val in REGIONS:
+            return check_cc in REGIONS[val].countries
+        group_codes = _country_group_eligible_codes()
+        if val in group_codes:
+            return check_cc in group_codes[val]
+        codes = {c.strip() for c in val.split(",") if c.strip()}
+        return check_cc in codes if codes else None
+
+    if canon.startswith("APPLICANT_CLASS:"):
+        _, _, cls_val = canon.partition(":")
+        cls_low = cls_val.casefold()
+        if cls_low in ("eu", "eea", "eu_eea", "efta", "domestic", "home"):
+            return is_dom_or_eea_ch
+        if cls_low in (
+            "non_eu", "non_eea", "non_eu_eea", "international", "overseas", "third_country", "visa",
+        ):
+            return not is_dom_or_eea_ch
+        return None
+
+    probe = raw.removeprefix("OTHER:").strip()
+    lower_probe = probe.casefold()
+    mentions_non_eu = any(
+        k in lower_probe
+        for k in (
+            "non-eu",
+            "non-eea",
+            "non eu",
+            "non eea",
+            "outside eu",
+            "outside the eu",
+            "outside eea",
+            "outside the eea",
+            "visa",
+            "third-country",
+            "third country",
+            "international",
+            "overseas",
+        )
+    )
+    cleaned_for_eu = re.sub(
+        r"\b(?:non[-\s]*|outside\s+(?:of\s+)?(?:the\s+)?)"
+        r"(?:eu\s*/\s*eea(?:\s*/\s*(?:ch|swiss))?|eu|eea|efta|domestic)\b",
+        "",
+        lower_probe,
+    )
+    mentions_eu = any(
+        k in cleaned_for_eu
+        for k in (
+            "eu/eea",
+            "eu / eea",
+            "eu citizens",
+            "eea citizens",
+            "swiss",
+            "efta",
+            "domestic",
+            "home student",
+        )
+    )
+    if mentions_non_eu and not mentions_eu:
+        return not is_dom_or_eea_ch
+    if mentions_eu and not mentions_non_eu:
+        return is_dom_or_eea_ch
+
+    m_neg = _STRIP_NEGATION_PREFIX_RE.match(probe)
+    if m_neg:
+        inner = probe[m_neg.end() :].strip()
+        if inner:
+            inner_canon = normalise_condition(inner)
+            if inner_canon.startswith(("NATIONALITY:", "RESIDENCE:")):
+                inner_res = applies_to_student(
+                    inner_canon, student, program_country=program_country
+                )
+                if inner_res is not None:
+                    return not inner_res
+
+    return None

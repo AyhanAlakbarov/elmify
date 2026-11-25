@@ -71,7 +71,7 @@ from .fact_writer import (
 from .file_rules import UPLOAD_DOCUMENTS, rule_for
 from .form_filler import fill_student_form_template
 from .gap_intake import field_name, submit_answers
-from .gaps import UnanswerableQuestion, gap_notes, gap_questions
+from .gaps import GapQuestion, UnanswerableQuestion, gap_notes, gap_questions
 from .generation import contact_email
 from .id_reading import OWNER_UNCHECKED
 from .models import DocumentDraft, DocumentReading, TranscriptReading, VerifiedFact
@@ -118,7 +118,7 @@ from .verification import (
     unsuperseded_facts,
 )
 
-__all__ = ["download_document", "gap_interview", "render_gap_page"]
+__all__ = ["download_document", "gap_interview", "render_gap_page", "summarize_gap_questions"]
 
 
 
@@ -239,6 +239,48 @@ _GAP_SECTION_META: dict[str, tuple[str, str]] = {
         "Details asked for by a programme on your list.",
     ),
 }
+
+
+def summarize_gap_questions(questions: tuple[GapQuestion, ...]) -> dict[str, object]:
+    """Build section counts and a 3-item representative preview from open gap questions."""
+    section_counts: dict[str, int] = {}
+    first_per_section: dict[str, dict[str, str]] = {}
+    fallbacks: list[dict[str, str]] = []
+    for q in questions:
+        sec_title, _ = _GAP_SECTION_META.get(
+            str(q.kind), ("Other details", "Additional details for your CV and applications.")
+        )
+        short_sec = sec_title.replace(" (if applicable)", "")
+        section_counts[short_sec] = section_counts.get(short_sec, 0) + 1
+        is_followup = bool(q.slug and len(q.group_keys) > 1 and q.payload_key != q.group_keys[0])
+        if is_followup:
+            continue
+        raw_prompt = q.prompt.replace(" -- ", " — ")
+        if "?" in raw_prompt:
+            headline = raw_prompt[: raw_prompt.index("?") + 1]
+        elif ". " in raw_prompt:
+            headline = raw_prompt[: raw_prompt.index(". ") + 1]
+        else:
+            headline = raw_prompt
+        item = {
+            "section": short_sec,
+            "prompt": headline,
+            "evidence": q.evidence.replace(" -- ", " — "),
+        }
+        if short_sec not in first_per_section:
+            first_per_section[short_sec] = item
+        else:
+            fallbacks.append(item)
+    preview = list(first_per_section.values())[:3]
+    if len(preview) < 3:
+        preview.extend(fallbacks[: 3 - len(preview)])
+    return {
+        "open_gap_questions": len(questions),
+        "gap_sections": [
+            {"title": title, "count": count} for title, count in section_counts.items()
+        ],
+        "gap_questions_preview": preview,
+    }
 
 
 def render_gap_page(
@@ -429,6 +471,13 @@ def page_context(student: Membership, *, counselor_view: bool) -> dict[str, obje
     ``counselor_view`` hides every student-only action (Submit, expiry, fact
     confirmation, CV writing and approval, naming a message); Task 20 reuses it.
     """
+    from .gaps.models import preload_gap_facts
+
+    with preload_gap_facts(student):
+        return _page_context_inner(student, counselor_view=counselor_view)
+
+
+def _page_context_inner(student: Membership, *, counselor_view: bool) -> dict[str, object]:
     applications = list(
         Application.objects.filter(student=student)
         .exclude(outcome=Application.Outcome.WITHDRAWN)
@@ -477,10 +526,16 @@ def page_context(student: Membership, *, counselor_view: bool) -> dict[str, obje
         for fact in confirm_candidates(student)
         if not fact.source_ref.startswith("document:") and fact.id not in pending_ids
     ]
+    cached_facts: tuple[VerifiedFact, ...] = getattr(student, "_gap_facts_cache", None) or tuple(
+        unsuperseded_facts(student)
+    )
     # A CV degree that may be one already held waits for the student's "Different degree"
     # (transcript plan 3b Task 7): shown with the degree it may be, never confirmed in the batch.
-    unconfirmed = list(unsuperseded_facts(student).filter(
-        category=VerifiedFact.Category.EDUCATION, confirmed_at__isnull=True))
+    unconfirmed = [
+        f
+        for f in cached_facts
+        if f.category == VerifiedFact.Category.EDUCATION and f.confirmed_at is None
+    ]
     held_ids = held_duplicates(unconfirmed)
     checked = accepted_reading(student)
     held_degrees = []
@@ -496,13 +551,14 @@ def page_context(student: Membership, *, counselor_view: bool) -> dict[str, obje
         (f"document:{r.document_id}", v.get("key")): v for r in readings for v in (r.values or [])
     }
     disowned = disowned_refs(student)
-    retired, live = retired_refs(student), live_retired_refs(student)
+    retired = retired_refs(student)
+    live = live_retired_refs(student, retired=retired, disowned=disowned)
     read_facts = [
         f
-        for f in unsuperseded_facts(student)
-        .filter(source_ref__startswith="document:")
-        .exclude(source_ref__in=disowned)
-        if not retired_hides(f, retired, live)
+        for f in cached_facts
+        if f.source_ref.startswith("document:")
+        and f.source_ref not in disowned
+        and not retired_hides(f, retired, live)
     ]
     # A whole row whose document a confirmed degree or sitting carries is no longer a
     # question; the append-only ledger keeps it (fact_writer.placed_whole_rows).
@@ -598,12 +654,14 @@ def page_context(student: Membership, *, counselor_view: bool) -> dict[str, obje
         for ref, doc in documents.items()
         if doc.get("document_type") == "passport" and doc.get("expiry_date", "") >= today
     ]
+    uploads_qs = list(DocumentVersion.objects.filter(student=student).order_by("-created_at"))
+    has_passport_upload = any(u.kind == "PASSPORT" and not u.retired_at for u in uploads_qs)
     # What a new upload can replace; a transcript has its own modes (transcript_pages).
-    replaceable = (
-        DocumentVersion.objects.filter(student=student, state="AVAILABLE", retired_at__isnull=True)
-        .exclude(kind="TRANSCRIPT")
-        .order_by("-created_at")
-    )
+    replaceable = [
+        u
+        for u in uploads_qs
+        if u.state == "AVAILABLE" and u.retired_at is None and u.kind != "TRANSCRIPT"
+    ]
     drafts = list(
         DocumentDraft.objects.filter(
             student=student, kind=DocumentDraft.Kind.CV
@@ -616,8 +674,6 @@ def page_context(student: Membership, *, counselor_view: bool) -> dict[str, obje
     for draft in drafts:
         draft.counsellor_notes = notes_by_draft.get(draft.id, [])  # type: ignore[attr-defined]
     latest_cv = drafts[0] if drafts else None
-    uploads_qs = list(DocumentVersion.objects.filter(student=student).order_by("-created_at"))
-    has_passport_upload = any(u.kind == "PASSPORT" and not u.retired_at for u in uploads_qs)
     return {
         "details": details,
         "to_check": to_check,
@@ -668,6 +724,7 @@ def page_context(student: Membership, *, counselor_view: bool) -> dict[str, obje
             for fact in facts
         ],
         "held_degrees": held_degrees,
+        "open_gap_questions": 0 if counselor_view else len(gap_questions(student)),
         # The transcript the student checked, kept in view with "Something's wrong" (a
         # checked transcript must not vanish), or the one waiting to be checked.
         "transcript_checked": checked,

@@ -18,8 +18,11 @@ from apps.dashboard.mylist import country_groups
 from apps.dashboard.needs import items_for
 from apps.dashboard.new_for_you import offers_for
 from apps.dashboard.overview import build_overview
+from apps.documents.gaps import gap_notes, gap_questions
+from apps.documents.gaps.models import preload_gap_facts
 from apps.documents.storage import staff_may_view
 from apps.documents.transcript_check import transcript_to_check
+from apps.documents.views import summarize_gap_questions
 from apps.funding.models import AuditEvent
 from apps.mailbox.models import MAX_CLASSIFY_ATTEMPTS, MailboxConnection, MailSignal
 from apps.portals.models import Application
@@ -221,16 +224,23 @@ def _student_dashboard_page(
     error_field: str | None = None,
     form_values: dict[str, str] | None = None,
 ) -> HttpResponse:
-    board = board_for(student)
-    needs = items_for(student, board=board)
+    with preload_gap_facts(student):
+        board = board_for(student)
+        needs = items_for(student, board=board)
+        gap_summary = summarize_gap_questions(gap_questions(student))
+        notes = gap_notes(student)
+        overview = build_overview(student, board, needs)
+        offers = offers_for(student, board=board, table=board.rates, home=board.home)
     return render(
         request,
         "student/dashboard.html",
         {
             "board": board,
             "needs": needs,
-            "overview": build_overview(student, board, needs),
-            "offers": offers_for(student, board=board, table=board.rates, home=board.home),
+            "overview": overview,
+            **gap_summary,
+            "gap_notes": notes,
+            "offers": offers,
             "outcome_choices": Application.Outcome.choices,
             "transcript_to_check": transcript_to_check(student),
             "error": error,

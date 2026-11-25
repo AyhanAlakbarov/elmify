@@ -44,6 +44,44 @@ def _nationality_backed_by_fact(student: Membership, nationality: str) -> bool:
     return False
 
 
+_BROAD_ROOT_UMBRELLAS = frozenset(
+    {
+        "natural sciences",
+        "physical sciences",
+        "social sciences",
+        "humanities",
+        "engineering",
+        "life sciences",
+        "arts",
+        "health sciences",
+        "business & management",
+        "computer & information sciences",
+    }
+)
+
+
+def _fields_match(prev_field: str, cur_field: str) -> bool:
+    p_cf = prev_field.strip().casefold()
+    c_cf = cur_field.strip().casefold()
+    if p_cf == c_cf or p_cf == "not stated":
+        return True
+    if not p_cf or not c_cf or c_cf == "not stated":
+        return False
+    from .field_taxonomy import resolve_field_taxonomy
+
+    prev_tax = resolve_field_taxonomy(prev_field)
+    cur_tax = resolve_field_taxonomy(cur_field)
+    if set(prev_tax.canonical_degree_titles) & set(cur_tax.canonical_degree_titles):
+        return True
+    prev_domains = (
+        set(prev_tax.canonical_degree_titles) | set(prev_tax.parent_fields)
+    ) - _BROAD_ROOT_UMBRELLAS
+    cur_domains = (
+        set(cur_tax.canonical_degree_titles) | set(cur_tax.parent_fields)
+    ) - _BROAD_ROOT_UMBRELLAS
+    return bool(prev_domains & cur_domains)
+
+
 def _identity_continuity_holds(
     student: Membership, validated: StudentProfileSnapshot
 ) -> bool:
@@ -73,28 +111,40 @@ def _identity_continuity_holds(
         return False
     used_indices: set[int] = set()
     for prev_deg in prev.academic_history:
+        prev_end = prev_deg.completed_on or prev_deg.expected_completion
         prev_fact = {
             "institution_original": prev_deg.institution,
-            "degree_type": prev_deg.qualification,
-            "field": prev_deg.field,
+            "country": prev_deg.country_code,
+            "degree_as_awarded": prev_deg.qualification,
+            "end_date": prev_end.isoformat() if prev_end else None,
         }
         match_idx = next(
             (
                 idx
                 for idx, cur_deg in enumerate(validated.academic_history)
                 if idx not in used_indices
+                and _fields_match(prev_deg.field, cur_deg.field)
                 and (
                     (
                         same_name(prev_deg.institution, cur_deg.institution)
                         and prev_deg.qualification.casefold() == cur_deg.qualification.casefold()
-                        and prev_deg.field.casefold() == cur_deg.field.casefold()
                     )
                     or same_degree(
                         prev_fact,
                         {
-                            "institution_original": cur_deg.institution,
-                            "degree_type": cur_deg.qualification,
-                            "field": cur_deg.field,
+                            "institution": cur_deg.institution,
+                            "country_code": cur_deg.country_code,
+                            "qualification": cur_deg.qualification,
+                            "completed_on": (
+                                cur_deg.completed_on.isoformat()
+                                if cur_deg.completed_on
+                                else None
+                            ),
+                            "expected_completion": (
+                                cur_deg.expected_completion.isoformat()
+                                if cur_deg.expected_completion
+                                else None
+                            ),
                         },
                     )
                     == "same"

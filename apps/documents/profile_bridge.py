@@ -54,6 +54,7 @@ def _education_payload(record: dict[str, object]) -> dict[str, object]:
         "start_date": None,
         "end_date": record.get("completed_on") or record.get("expected_completion"),
         "field": record.get("field"),
+        "field_of_study": record.get("field"),
         "grade_native": record.get("grade"),
         "grade_scale": record.get("grading_scale"),
     }
@@ -63,14 +64,90 @@ def _education_payload(record: dict[str, object]) -> dict[str, object]:
     return payload
 
 
+_TEST_CANONICAL_NAMES: dict[str, str] = {
+    "ielts": "IELTS",
+    "toefl": "TOEFL",
+    "pte": "PTE",
+    "duolingo": "Duolingo",
+    "testdaf": "TestDaF",
+    "dsh": "DSH",
+    "cambridge": "Cambridge",
+    "tcf": "TCF",
+    "tef": "TEF",
+    "siele": "SIELE",
+    "cils": "CILS",
+    "celi": "CELI",
+    "topik": "TOPIK",
+    "hsk": "HSK",
+    "jlpt": "JLPT",
+    "torfl": "TORFL",
+}
+
+
 def _language_payload(record: dict[str, object]) -> dict[str, object]:
-    return {
+    from apps.funding.eligibility import _extract_test_and_score, _level_to_cefr
+
+    raw_level = str(record.get("level") or "").strip()
+    test_name: str | None = None
+    test_score: str | None = None
+    ts = _extract_test_and_score(raw_level) if raw_level else None
+    if ts is not None:
+        test_key, num_score = ts
+        m_tdn = re.search(r"^(.*?)\b(TDN\s*[345])\b", raw_level, re.IGNORECASE)
+        m_jlpt = re.search(r"^(.*?)\b(N[1-5])\b", raw_level, re.IGNORECASE)
+        m_num = re.search(
+            r"^(.+?)[\s\-–:]+(\d+(?:[.,]\d+)?)(?:\s*(?:/\d+|\([ABC][12]\)))?$",
+            raw_level,
+            re.IGNORECASE,
+        )
+        if m_tdn:
+            prefix = m_tdn.group(1).strip(" -–:")
+            test_name = prefix or _TEST_CANONICAL_NAMES.get(test_key, test_key.upper())
+            test_score = " ".join(m_tdn.group(2).upper().split())
+        elif m_jlpt and test_key == "jlpt":
+            prefix = m_jlpt.group(1).strip(" -–:")
+            test_name = prefix or "JLPT"
+            test_score = m_jlpt.group(2).upper()
+        elif m_num:
+            test_name = m_num.group(1).strip(" -–:") or _TEST_CANONICAL_NAMES.get(
+                test_key, test_key.upper()
+            )
+            test_score = m_num.group(2)
+        else:
+            test_name = _TEST_CANONICAL_NAMES.get(test_key, test_key.upper())
+            raw_nums = re.findall(r"\d+(?:[.,]\d+)?", raw_level)
+            test_score = (
+                raw_nums[0]
+                if raw_nums
+                else (str(int(num_score)) if float(num_score).is_integer() else str(num_score))
+            )
+
+    inferred_cefr = _level_to_cefr(raw_level) if raw_level else None
+    if inferred_cefr is not None:
+        cefr_level: str | None = inferred_cefr
+    elif re.search(
+        r"\b(?:native|mother\s+tongue|bilingual|first\s+language)\b", raw_level.casefold()
+    ):
+        cefr_level = "native"
+    else:
+        cefr_tok = str(_cefr_code(raw_level) or "").strip()
+        if cefr_tok.upper() in _CEFR_RANK:
+            cefr_level = cefr_tok.upper()
+        elif ts is not None:
+            cefr_level = None
+        else:
+            cefr_level = (raw_level[:10] if len(raw_level) > 10 else raw_level) or None
+
+    payload: dict[str, object] = {
         "language": record["language"],
-        "cefr_level": record["level"],
-        "test_name": None,
-        "test_score": None,
+        "cefr_level": cefr_level,
+        "test_name": test_name,
+        "test_score": test_score,
         "evidence_type": record.get("evidence_type"),
     }
+    if record.get("available_by"):
+        payload["test_date"] = str(record.get("available_by"))
+    return payload
 
 
 _SECTIONS: tuple[tuple[str, str, Callable[[dict[str, object]], dict[str, object]]], ...] = (
@@ -123,6 +200,21 @@ def bridge_profile_to_facts(student: Membership) -> tuple[VerifiedFact, ...]:
         .filter(category=VerifiedFact.Category.EDUCATION)
         .exclude(source_ref__startswith=f"{_SOURCE_PREFIX}:")
     )
+    held_languages = {
+        str(
+            (
+                f.payload.get("language")
+                or TESTS.get(str(f.payload.get("test_name") or "").strip())
+            )
+            or ""
+        )
+        .strip()
+        .casefold()
+        for f in unsuperseded_facts(student)
+        .filter(category=VerifiedFact.Category.LANGUAGE)
+        .exclude(source_ref__startswith=f"{_SOURCE_PREFIX}:")
+        if isinstance(f.payload, dict)
+    } - {""}
     for section, category, build_payload in _SECTIONS:
         for index, record in enumerate(profile.snapshot.get(section, [])):
             if not isinstance(record, dict):
@@ -131,15 +223,34 @@ def bridge_profile_to_facts(student: Membership) -> tuple[VerifiedFact, ...]:
             existing = _current_fact_for_slot(student, category=category, index=index)
             if existing is not None and existing.payload == payload:
                 continue
-            if (
-                existing is None
-                and category == VerifiedFact.Category.EDUCATION
+            covered_by_non_bridge = (
+                category == VerifiedFact.Category.EDUCATION
                 and any(
                     isinstance(f.payload, dict) and same_degree(f.payload, record) == "same"
                     for f in held_degrees
                 )
-            ):
+            ) or (
+                category == VerifiedFact.Category.LANGUAGE
+                and str(record.get("language") or "").strip().casefold() in held_languages
+            )
+            if covered_by_non_bridge:
                 continue
+            preserve_confirmed = (
+                existing is not None
+                and existing.confirmed_by_id is not None
+                and isinstance(existing.payload, dict)
+                and (
+                    (
+                        category == VerifiedFact.Category.EDUCATION
+                        and same_degree(existing.payload, record) == "same"
+                    )
+                    or (
+                        category == VerifiedFact.Category.LANGUAGE
+                        and str(existing.payload.get("language") or "").strip().casefold()
+                        == str(payload.get("language") or "").strip().casefold()
+                    )
+                )
+            )
             created.append(
                 VerifiedFact.objects.create(
                     student=student,
@@ -147,7 +258,16 @@ def bridge_profile_to_facts(student: Membership) -> tuple[VerifiedFact, ...]:
                     payload=payload,
                     source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
                     source_ref=f"{_SOURCE_PREFIX}:{profile.id}:{index}",
-                    confirmed_by=None,
+                    confirmed_by=(
+                        existing.confirmed_by
+                        if (preserve_confirmed and existing is not None)
+                        else None
+                    ),
+                    confirmed_at=(
+                        existing.confirmed_at
+                        if (preserve_confirmed and existing is not None)
+                        else None
+                    ),
                     supersedes=existing,
                     created_by=student,
                 )
@@ -374,12 +494,12 @@ def _uk_honours_rank(grade: str | None) -> int | None:
 
 
 def _is_inverted_grade_scale(scale: str) -> bool:
-    low = scale.casefold()
+    low = re.sub(r"\s*-\s*", "-", scale.casefold().replace(",", "."))
     if "6.0" in low or "1-6" in low or "swiss" in low:
         return False
     return any(
         token in low
-        for token in ("german", "austrian", "bavarian", "1.0-5.0", "1-5", "1.0-4.0", "1 - 5")
+        for token in ("german", "austrian", "bavarian", "1.0-5.0", "1-5", "1.0-4.0", "1-4")
     )
 
 
@@ -462,18 +582,17 @@ def enqueue_research_message(message: ResearchMessage) -> bool:
 
 def request_score_progression_rebuild(student: Membership) -> bool:
     """Enqueue a `rebuild_pack` message for the student's active PUBLISHED run, if any."""
-    run = (
+    latest_run = (
         RecommendationRun.objects.filter(
             profile_version__student=student,
-            state=RecommendationRun.State.PUBLISHED,
         )
         .order_by("-created_at")
         .first()
     )
-    if run is None:
+    if latest_run is None or latest_run.state != RecommendationRun.State.PUBLISHED:
         return False
     return enqueue_research_message(
-        ResearchMessage(kind="rebuild_pack", tenant_id=student.tenant_id, run_id=run.id)
+        ResearchMessage(kind="rebuild_pack", tenant_id=student.tenant_id, run_id=latest_run.id)
     )
 
 
@@ -544,7 +663,7 @@ def sync_facts_to_profile(student: Membership) -> StudentProfileVersion | None:
         elif fact.category == VerifiedFact.Category.EDUCATION:
             grade_val = str(p.get("grade_native") or "").strip()
             scale_val = str(p.get("grade_scale") or "").strip()
-            field_val = str(p.get("field") or "").strip()
+            field_val = str(p.get("field") or p.get("field_of_study") or "").strip()
             end_dt = _parse_iso_date(p.get("end_date"))
             for idx, held in enumerate(history):
                 if same_degree(p, held.model_dump(mode="json")) == "same":
@@ -594,8 +713,8 @@ def sync_facts_to_profile(student: Membership) -> StudentProfileVersion | None:
 
             from apps.funding.eligibility import _level_to_cefr
 
-            test_and_score_str = f"{test_name} {score}".strip() if score else test_name
-            own_candidate_level = raw_cefr or test_and_score_str
+            test_and_score_str = f"{test_name} {score}".strip() if (test_name and score) else ""
+            own_candidate_level = test_and_score_str or raw_cefr or test_name
             inferred_test_cefr = _level_to_cefr(test_and_score_str) if test_and_score_str else None
             preserved_cefr = (
                 existing_ev.level
@@ -612,7 +731,7 @@ def sync_facts_to_profile(student: Membership) -> StudentProfileVersion | None:
                 )
                 else ""
             )
-            candidate_level = raw_cefr or preserved_cefr or test_and_score_str
+            candidate_level = test_and_score_str or raw_cefr or preserved_cefr or test_name
             if not candidate_level:
                 continue
             avail_by = _parse_iso_date(p.get("test_date")) or today
@@ -691,7 +810,9 @@ def sync_facts_to_profile(student: Membership) -> StudentProfileVersion | None:
         logger.warning("synced profile snapshot failed validation for student %s", student.id)
         return None
 
-    created = create_profile_version(student=student, snapshot=updated_snapshot)
+    created = create_profile_version(
+        student=student, snapshot=updated_snapshot, allow_identity_override=True
+    )
     if has_score_progression(snapshot, updated_snapshot):
         request_score_progression_rebuild(student)
     return created

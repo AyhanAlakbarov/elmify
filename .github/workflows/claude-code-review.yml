@@ -12,6 +12,8 @@ on:
 
 jobs:
   claude-review:
+    # Why: dependabot[bot] PRs do not receive user OAuth secrets and fail claude-code-action's non-human actor check.
+    if: github.actor != 'dependabot[bot]'
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||

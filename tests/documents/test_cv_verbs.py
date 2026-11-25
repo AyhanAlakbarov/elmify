@@ -254,3 +254,140 @@ def test_the_i_fix_runs_with_the_gate_off(settings):
     content, fixes = verb_fixes(_cv(_LINES), student_id=uuid4(), undone=frozenset())
     assert content.experience[0].bullets[1] == _NOUN
     assert content.experience[0].bullets[2] == "Trained the models on the cluster."
+
+
+@pytest.mark.parametrize(
+    "entry_text, expected_openers",
+    [
+        (
+            "Wet-Lab Intern Synthesized 12 prodrugs and assayed IC50 values.",
+            {"conducted", "performed", "analyzed", "prepared", "developed"},
+        ),
+        (
+            "Policy Fellow Surveyed 400 households and estimated an IV model.",
+            {"conducted", "analyzed", "prepared", "wrote"},
+        ),
+        (
+            "Archival Assistant Transcribed and catalogued Ottoman registers.",
+            {"conducted", "analyzed", "prepared", "wrote"},
+        ),
+        (
+            "Curatorial Intern Curated the exhibition and fabricated scale models.",
+            {"designed", "built", "prepared", "performed", "conducted"},
+        ),
+    ],
+)
+def test_cross_discipline_execution_verbs_unlock_strength_2_openers(
+    entry_text, expected_openers
+):
+    allowed = set(allowed_openers(entry_text))
+    assert expected_openers <= allowed
+    assert "led" not in allowed
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Synthesize fluorinated ligands for binding assays.",
+        "Culture primary human hepatocytes.",
+        "Assay enzyme kinetics across 8 substrates.",
+        "Transcribe 19th-century archival court registers.",
+        "Litigate administrative asylum appeals.",
+        "Forecast quarterly macroeconomic indicators.",
+        "Fabricate timber exhibition pavilions.",
+        "Audit municipal financial statements.",
+    ],
+)
+def test_present_tense_cross_discipline_verbs_do_not_need_opener(line):
+    assert needs_opener(line) is False
+
+
+@pytest.mark.parametrize(
+    "bullet, opener_id, expected",
+    [
+        (
+            "Synthesis of 14 novel macrocyclic inhibitors.",
+            "performed",
+            "Performed synthesis of 14 novel macrocyclic inhibitors.",
+        ),
+        (
+            "Ethnography of displaced border communities.",
+            "conducted",
+            "Conducted ethnography of displaced border communities.",
+        ),
+        (
+            "Spectrometry of transition-metal complexes.",
+            "performed",
+            "Performed spectrometry of transition-metal complexes.",
+        ),
+        (
+            "Microscopy of stained neural tissue sections.",
+            "performed",
+            "Performed microscopy of stained neural tissue sections.",
+        ),
+        (
+            "Histology of murine liver biopsies.",
+            "analyzed",
+            "Analyzed histology of murine liver biopsies.",
+        ),
+        (
+            "Culture of iPSC-derived cardiomyocytes.",
+            "performed",
+            "Performed culture of iPSC-derived cardiomyocytes.",
+        ),
+        (
+            "Curatorship of the annual graduate sculpture exhibition.",
+            "conducted",
+            "Conducted curatorship of the annual graduate sculpture exhibition.",
+        ),
+    ],
+)
+def test_compose_lowercases_disciplinary_nominalizations(bullet, opener_id, expected):
+    assert compose(bullet, opener_id, present=False) == expected
+
+
+def test_strength_3_opener_from_lead_role_never_leaks_onto_intern_role_sharing_bullet(
+    gate_on,
+):
+    shared_bullet = "A framework for the visualisation of chemical space."
+    cv = CVContent(
+        personal_information=PersonalInformation(full_name="Jane Doe", email="j@example.com"),
+        education=(
+            EducationEntry(
+                degree_as_awarded="MSc Chemistry",
+                institution_original="University of Strasbourg",
+            ),
+        ),
+        experience=(
+            ExperienceEntry(
+                employer="EPFL",
+                title="Team Lead",
+                start_date=date(2025, 1, 1),
+                end_date=date(2025, 9, 1),
+                bullets=("Managed four students.", shared_bullet),
+            ),
+            ExperienceEntry(
+                employer="ETH",
+                title="Research Intern",
+                start_date=date(2024, 6, 1),
+                end_date=date(2024, 9, 1),
+                bullets=(shared_bullet,),
+            ),
+        ),
+        research=(),
+        publications=(),
+        awards=(),
+        skills=(),
+        languages=(),
+        document_language="en",
+    )
+    content, fixes = verb_fixes(
+        cv, student_id=uuid4(), undone=frozenset(), client=_jev("led")
+    )
+    # Team Lead gets "Led ...", while Research Intern (strength 1) is untouched.
+    assert content.experience[0].bullets[1] == (
+        "Led a framework for the visualisation of chemical space."
+    )
+    assert content.experience[1].bullets[0] == shared_bullet
+    assert [f.where for f in fixes] == ["experience[0].bullets[1]"]
+

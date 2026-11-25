@@ -10,6 +10,7 @@ professor's name.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -32,9 +33,21 @@ from apps.tenancy.services import current_membership
 
 from .audit import record_event
 from .models import Referee, RefereeRequest, VerifiedFact
-from .referee_evidence import extract_supervisor_name_and_title, person_matches
+from .referee_evidence import (
+    classify_referee_role,
+    extract_supervisor_name_and_title,
+    person_matches,
+    shared_work_for_referee,
+)
 from .referee_needs import NOT_STATED, RefereeNeed, Stated, needs_for
-from .referee_plan import ApplicationNeed, Assignment, Proposal, RefereeFacts, propose
+from .referee_plan import (
+    ApplicationNeed,
+    Assignment,
+    Proposal,
+    RefereeFacts,
+    RoleArchetype,
+    propose,
+)
 from .verification import unsuperseded_facts
 
 #: Thirty edits an hour: a student adding their professors does a handful.
@@ -131,8 +144,55 @@ def cv_referees(student: Membership, referees: list[Referee]) -> list[VerifiedFa
     return offered
 
 
+def visible_referee_requests(student: Membership) -> list[RefereeRequest]:
+    """Return all non-declined referee requests plus any DECLINED request that the student
+    explicitly saved as Declined via 'Save status' (event='referee.request_state')."""
+    all_reqs = list(
+        RefereeRequest.objects.filter(referee__student=student)
+        .select_related("referee", "application", "application__candidate")
+        .order_by("created_at")
+    )
+    declined_ids = [
+        q.id for q in all_reqs if q.state == RefereeRequest.State.DECLINED
+    ]
+    explicitly_declined: set[UUID] = set()
+    if declined_ids:
+        from apps.funding.models import AuditEvent
+
+        events = (
+            AuditEvent.objects.filter(
+                object_id__in=declined_ids,
+                event__in=("referee.request_state", "referee.request_removed"),
+            )
+            .order_by("created_at")
+            .values_list("object_id", "event")
+        )
+        latest_event: dict[UUID, str] = {}
+        for obj_id, ev in events:
+            if obj_id is not None:
+                latest_event[obj_id] = ev
+        explicitly_declined = {
+            obj_id for obj_id, ev in latest_event.items() if ev == "referee.request_state"
+        }
+    return [
+        q
+        for q in all_reqs
+        if q.state != RefereeRequest.State.DECLINED or q.id in explicitly_declined
+    ]
+
+
 def referee_context(student: Membership, *, counselor_view: bool) -> dict[str, Any]:
     referees = list(Referee.objects.filter(student=student).order_by("created_at"))
+    visible_reqs = visible_referee_requests(student)
+    for r in referees:
+        setattr(
+            r,
+            "visible_requests",
+            [
+                q for q in visible_reqs
+                if q.referee_id == r.id and q.application.outcome == ""
+            ],
+        )
     return {
         "referees": referees,
         # One edit form per professor, the student's only; auto_id keeps the ids apart.
@@ -143,6 +203,11 @@ def referee_context(student: Membership, *, counselor_view: bool) -> dict[str, A
         "counselor_view": counselor_view,
         "from_cv": [] if counselor_view else cv_referees(student, referees),
         "statuses": Referee.Status.choices,
+        "app_count": (
+            0
+            if counselor_view
+            else Application.objects.filter(student=student, outcome="").count()
+        ),
     }
 
 
@@ -190,24 +255,58 @@ def referees_page(request: HttpRequest) -> HttpResponse:
 @require_POST
 def referee_add(request: HttpRequest) -> HttpResponse:
     student = current_membership(request, Membership.Role.STUDENT)
+    from_plan = request.POST.get("next") == "/student/referees/plan/"
+    raw_app_id = request.POST.get("application_id", "").strip()
+    target_app: Application | None = None
+    if raw_app_id:
+        try:
+            target_app = Application.objects.filter(
+                id=UUID(raw_app_id), student=student, outcome=""
+            ).first()
+        except ValueError:
+            target_app = None
     if _limited(request, student):
-        return redirect("student-referees")
+        return redirect("student-referee-plan" if from_plan else "student-referees")
     form = RefereeForm(request.POST)
     if not form.is_valid():
         return _page(request, student, form, status=400)
     with transaction.atomic():
         _lock(student)
         name, email = form.cleaned_data["name"], form.cleaned_data["email"]
-        if Referee.objects.filter(
+        existing = Referee.objects.filter(
             student=student, name__iexact=name, email__iexact=email
-        ).exists():
-            # A double click, or the same professor typed twice.
-            messages.info(request, f"{name} is already on your list.")
-            return redirect("student-referees")
-        referee = form.save(commit=False)
-        referee.student = student
-        referee.save()
-        record_event(actor=student, event="referee.added", object_id=referee.id)
+        ).first()
+        if existing is not None:
+            if target_app is None:
+                # A double click, or the same professor typed twice.
+                messages.info(request, f"{name} is already on your list.")
+                return redirect("student-referee-plan" if from_plan else "student-referees")
+            referee = existing
+        else:
+            referee = form.save(commit=False)
+            referee.student = student
+            referee.save()
+            record_event(actor=student, event="referee.added", object_id=referee.id)
+        if target_app is not None:
+            need = application_needs(student, [target_app])[0][1]
+            mode = (
+                need.mode.value
+                if need.mode is not None
+                else RefereeRequest.Mode.NOT_STATED
+            )
+            made, created = RefereeRequest.objects.get_or_create(
+                referee=referee, application=target_app, defaults={"mode": mode}
+            )
+            if not created and made.state == RefereeRequest.State.DECLINED:
+                made.state, made.mode = RefereeRequest.State.PROPOSED, mode
+                made.save(update_fields=["state", "mode", "updated_at"])
+            record_event(actor=student, event="referee.request_added", object_id=made.id)
+            messages.success(
+                request,
+                f"Added {referee.label} and assigned them to {target_app.title}.",
+            )
+    if from_plan:
+        return redirect("student-referee-plan")
     return redirect("student-referees")
 
 
@@ -384,19 +483,92 @@ def application_needs(
             institutional_email=need.institutional_email,
             deadline=counted.at if counted is not None else None,
             funding_deciding=application.id in funded,
+            min_academic=_min_academic_for(need),
+            webmail_blocked=_webmail_blocked_for(need),
         )))
     return rows
 
 
-def _facts(referees: list[Referee]) -> list[RefereeFacts]:
-    return [
-        RefereeFacts(
-            r.id, r.label, r.kind, r.agreed_requests, r.gives_generic_letter,
-            r.institutional_email,
+def _min_academic_for(need: RefereeNeed) -> int:
+    explicit = getattr(need, "min_academic", None)
+    if isinstance(explicit, int):
+        return explicit
+    kind_val = need.kind.value if need.kind is not None else ""
+    if kind_val == "ACADEMIC" and need.letters:
+        return need.letters
+    if kind_val in ("", "EITHER") and need.kind is not None:
+        text = need.kind.rule_text.lower()
+        if any(
+            phrase in text
+            for phrase in (
+                "at least two academic",
+                "at least 2 academic",
+                "minimum two academic",
+                "minimum 2 academic",
+            )
+        ):
+            return 2
+        if any(
+            phrase in text
+            for phrase in (
+                "at least one academic",
+                "at least 1 academic",
+                "minimum one academic",
+                "minimum 1 academic",
+                "one academic",
+                "1 academic",
+            )
+        ):
+            return 1
+    return 0
+
+
+_WEBMAIL_HARD_BLOCK_RE = re.compile(
+    r"\b(?:webmail|gmail|yahoo|hotmail|personal\s+e-?mail)\b[^.]{0,60}"
+    r"\b(?:not\s+accepted|rejected|blocked|not\s+permitted|not\s+allowed|invalid)\b|"
+    r"\b(?:do\s+not\s+accept|cannot\s+accept|rejects?)\b[^.]{0,60}"
+    r"\b(?:webmail|gmail|yahoo|hotmail|personal\s+e-?mail)\b",
+    re.IGNORECASE,
+)
+
+
+def _webmail_blocked_for(need: RefereeNeed) -> bool:
+    explicit = getattr(need, "webmail_blocked", None)
+    if isinstance(explicit, bool):
+        return explicit
+    inst_req = getattr(need, "institutional_email_required", None)
+    rule_text = getattr(inst_req, "rule_text", "") or ""
+    return bool(rule_text and _WEBMAIL_HARD_BLOCK_RE.search(rule_text))
+
+
+def _facts(
+    referees: list[Referee], student: Membership | None = None
+) -> list[RefereeFacts]:
+    active = [r for r in referees if r.status == Referee.Status.ACTIVE]
+    student_facts = (
+        list(unsuperseded_facts(student)) if (student is not None and active) else []
+    )
+    out: list[RefereeFacts] = []
+    for r in active:
+        work = shared_work_for_referee(r, facts=student_facts) if student_facts else ()
+        role: RoleArchetype = (
+            classify_referee_role(r, work)
+            if (work or r.relationship.strip())
+            else ""
         )
-        for r in referees
-        if r.status == Referee.Status.ACTIVE
-    ]
+        out.append(
+            RefereeFacts(
+                r.id,
+                r.label,
+                r.kind,
+                r.agreed_requests,
+                r.gives_generic_letter,
+                r.institutional_email,
+                role_archetype=role,
+                shared_work_score=len(work),
+            )
+        )
+    return out
 
 
 def _plan_inputs(
@@ -419,7 +591,7 @@ def _plan_inputs(
         (q.application_id, q.referee_id)
         for q in requests.filter(state=RefereeRequest.State.DECLINED)
     ]
-    return rows, _facts(referees), kept, declined
+    return rows, _facts(referees, student=student), kept, declined
 
 
 @transaction.atomic
@@ -457,30 +629,81 @@ def referee_plan_page(request: HttpRequest) -> HttpResponse:
     rows, facts, current, declined = _plan_inputs(student, keep=(*_KEPT, "PROPOSED"))
     # Measured against the plan as it stands, so "too few" says what is still missing.
     shortfall = propose([n for _a, _n, n in rows], facts, kept=current, declined=declined)
-    requests = list(
-        RefereeRequest.objects.filter(referee__student=student)
-        .exclude(state=RefereeRequest.State.DECLINED)
-        .select_related("referee")
+    requests = visible_referee_requests(student)
+    active_referees = list(
+        Referee.objects.filter(student=student, status=Referee.Status.ACTIVE).order_by("created_at")
     )
-    lines = [
-        {
+    saved_request_id = str(request.session.pop("last_saved_referee_req", "") or "")
+    just_proposed = bool(request.session.pop("last_proposed_plan", False))
+    lines: list[dict[str, Any]] = []
+    for application, need, _n in rows:
+        app_requests = [
+            (q, need.institutional_email and not q.referee.institutional_email)
+            for q in requests
+            if q.application_id == application.id
+        ]
+        visible_ref_ids = {
+            q.referee_id
+            for q, _flagged in app_requests
+        }
+        is_award = bool(
+            application.candidate_id is not None
+            and application.candidate is not None
+            and application.candidate.opportunity_id is not None
+        )
+        lines.append({
             "application": application,
+            "is_award": is_award,
             "fields": [(label, _stated(need, field)) for field, label in _FIELD_LABELS],
             "has_stated": any(_stated(need, field) is not None for field, _label in _FIELD_LABELS),
             "other_conditions": need.other_conditions,
             # Flagged where a university address is required and theirs is not one.
-            "requests": [
-                (q, need.institutional_email and not q.referee.institutional_email)
-                for q in requests if q.application_id == application.id
+            "requests": app_requests,
+            "agreed_count": sum(1 for q, _ in app_requests if q.state == "AGREED"),
+            "submitted_count": sum(1 for q, _ in app_requests if q.state == "SUBMITTED"),
+            "asked_count": sum(1 for q, _ in app_requests if q.state == "ASKED"),
+            "declined_count": sum(1 for q, _ in app_requests if q.state == "DECLINED"),
+            "proposed_count": sum(1 for q, _ in app_requests if q.state == "PROPOSED"),
+            "available_referees": [
+                r for r in active_referees if r.id not in visible_ref_ids
             ],
-        }
-        for application, need, _n in rows
+        })
+    open_app_ids = {application.id for application, _need, _n in rows}
+    referee_loads = []
+    for r in active_referees:
+        r_reqs = [
+            q for q in requests
+            if q.referee_id == r.id
+            and q.application_id in open_app_ids
+            and q.state != RefereeRequest.State.DECLINED
+        ]
+        agreed_n = sum(1 for q in r_reqs if q.state in ("AGREED", "SUBMITTED"))
+        asked_n = sum(1 for q in r_reqs if q.state == "ASKED")
+        proposed_n = sum(1 for q in r_reqs if q.state == "PROPOSED")
+        referee_loads.append({
+            "referee": r,
+            "agreed": agreed_n,
+            "asked": asked_n,
+            "proposed": proposed_n,
+            "total": len(r_reqs),
+        })
+    proposed_lines = [line for line in lines if line["proposed_count"] > 0]
+    locked_lines = [
+        line
+        for line in lines
+        if line["proposed_count"] == 0
+        and (line["agreed_count"] + line["submitted_count"] + line["asked_count"]) > 0
     ]
     return render(request, "student/referee_plan.html", {
         "lines": lines,
         "short": shortfall.short,
         "not_stated": NOT_STATED,
-        "active": list(Referee.objects.filter(student=student, status=Referee.Status.ACTIVE)),
+        "active": active_referees,
+        "referee_loads": referee_loads,
+        "proposed_lines": proposed_lines,
+        "locked_lines": locked_lines,
+        "just_proposed": just_proposed,
+        "saved_request_id": saved_request_id,
         "marks": [
             (value, RefereeRequest.State(value).label)
             for value in ("ASKED", "AGREED", "SUBMITTED", "DECLINED")
@@ -493,16 +716,51 @@ def referee_plan_page(request: HttpRequest) -> HttpResponse:
 def referee_propose(request: HttpRequest) -> HttpResponse:
     student = current_membership(request, Membership.Role.STUDENT)
     if not _limited(request, student):
+        previous_pairs = {
+            (q.application_id, q.referee_id)
+            for q in RefereeRequest.objects.filter(
+                referee__student=student, state=RefereeRequest.State.PROPOSED
+            )
+        }
         proposal = repropose(student)
         record_event(actor=student, event="referee.plan_proposed", object_id=student.id)
+        request.session["last_proposed_plan"] = True
+        new_pairs = {(a.application_id, a.referee_id) for a in proposal.assignments}
+        locked_apps = (
+            RefereeRequest.objects.filter(
+                referee__student=student, state__in=_KEPT, application__outcome=""
+            )
+            .values_list("application_id", flat=True)
+            .distinct()
+            .count()
+        )
         if proposal.assignments:
             count = len(proposal.assignments)
-            messages.success(
-                request,
-                f"Updated referee plan: proposed {count} assignment{'s' if count != 1 else ''}. "
-                "Referees you already asked or who agreed were kept.",
+            app_count = len({a.application_id for a in proposal.assignments})
+            changed = len(new_pairs - previous_pairs)
+            locked_note = (
+                f" {locked_apps} application{'s' if locked_apps != 1 else ''} where referees "
+                "were already asked or agreed stayed locked."
+                if locked_apps
+                else ""
             )
-        elif RefereeRequest.objects.filter(referee__student=student, state__in=_KEPT).exists():
+            s_cnt = "s" if count != 1 else ""
+            s_app = "s" if app_count != 1 else ""
+            if previous_pairs and new_pairs == previous_pairs:
+                messages.success(
+                    request,
+                    f"Referee plan verified: {count} proposed assignment{s_cnt} "
+                    f"across {app_count} application{s_app} are already "
+                    f"optimal for your active referees.{locked_note}",
+                )
+            else:
+                change_part = f" ({changed} newly assigned)" if previous_pairs and changed else ""
+                messages.success(
+                    request,
+                    f"Updated referee plan: proposed {count} assignment{s_cnt} "
+                    f"across {app_count} application{s_app}{change_part}.{locked_note}",
+                )
+        elif locked_apps:
             messages.info(
                 request,
                 "All open applications with stated letter requirements are already covered by "

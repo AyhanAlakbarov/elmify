@@ -46,6 +46,7 @@ from apps.tenancy.models import Membership
 
 from .cells import ANY, Area, CellKey, area_of, award_cells, student_areas, student_cells
 from .disciplines import UNCLASSIFIABLE
+from .harness import run_richness_estimate
 from .models import SWEEP_FAMILIES, CellCoverage, ProfileCellSelection, SweepRun
 from .tap_seams import PassState, PassStates, RungRow, RungSource
 
@@ -286,6 +287,36 @@ class AreaLine:
     eligible: int
     rung: RungRow | None
     passes: PassState
+    estimated_total: float | None = None
+    estimated_coverage: float | None = None
+
+
+def _area_richness(
+    country: str, family: str, rung: RungRow | None, passes: PassState
+) -> tuple[float | None, float | None]:
+    """Compute mark-recapture `(estimated_total, estimated_coverage)` for an area when available."""
+    latest_run = (
+        SweepRun.objects.filter(
+            country_code=country, family=family, finished_at__isnull=False
+        )
+        .order_by("-finished_at")
+        .first()
+        if passes.swept
+        else None
+    )
+    if rung is not None and rung.rung in (1, 2) and rung.surveyed and rung.listed > 0:
+        if latest_run is not None:
+            est = run_richness_estimate(latest_run)
+            if est.chapman_hat is not None and est.chapman_coverage is not None:
+                return round(est.chapman_hat, 2), round(est.chapman_coverage, 4)
+        cov = min(1.0, max(0.0, rung.known / rung.listed))
+        return float(rung.listed), round(cov, 4)
+    if latest_run is not None:
+        est = run_richness_estimate(latest_run)
+        if est.s_obs > 0 or (est.chapman_hat is not None and est.chapman_hat > 0):
+            total = est.chapman_hat if est.chapman_hat is not None else est.s_hat
+            return round(total, 2), round(est.effective_coverage, 4)
+    return None, None
 
 
 #: Stop reasons that mean the pass is FINISHED with the area: it hit a stop
@@ -397,10 +428,14 @@ def student_coverage(
         if area.country not in by_country:
             by_country[area.country] = rungs.rungs(area.country)
         rung = next((r for r in by_country[area.country] if r.family == area.family), None)
+        pass_state = passes.state(area.country, area.family)
+        est_total, est_cov = _area_richness(area.country, area.family, rung, pass_state)
         lines.append(
             AreaLine(
                 area.country, area.family, eligible.get(area, 0), rung,
-                passes.state(area.country, area.family),
+                pass_state,
+                estimated_total=est_total,
+                estimated_coverage=est_cov,
             )
         )
     return {
@@ -416,6 +451,8 @@ def student_coverage(
                 "register": line.rung.register if line.rung else "",
                 "stop_reason": line.passes.stop_reason,
                 "clause": _area_clause(line),
+                "estimated_total": line.estimated_total,
+                "estimated_coverage": line.estimated_coverage,
             }
             for line in lines
         ],

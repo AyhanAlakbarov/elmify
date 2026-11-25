@@ -22,6 +22,14 @@ def current_membership(request: HttpRequest, role: str) -> Membership:
     routes through here, so this is the single place that needs the guard.
     """
     assert request.user.pk is not None
+    loaded = getattr(request, "membership", None)
+    if (
+        isinstance(loaded, Membership)
+        and loaded.user_id == request.user.pk
+        and loaded.role == role
+        and loaded.active
+    ):
+        return loaded
     try:
         return Membership.objects.get(user_id=request.user.pk, role=role, active=True)
     except Membership.DoesNotExist as error:

@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -26,6 +27,7 @@ from apps.research.decisions import Choice, Client, DecisionsUnavailable, StateT
 from apps.tenancy.models import Membership
 
 from .coverage import LANGUAGE_TEST, Item
+from .letter_terms import _STOPWORDS
 from .models import CVRelevanceAnswer
 from .tailoring import _RATE_LIMIT, _RATE_LIMIT_BUCKET, _RATE_LIMIT_WINDOW_SECONDS
 
@@ -83,8 +85,21 @@ QUESTION = Choice(
     inspect="`cv_line`",
 )
 
-_CYRILLIC = re.compile(r"[\u0400-\u04ff]")
-_TURKIC_LATIN = re.compile(r"^[A-Za-z\u00c0-\u024f\u0259\u018f]$")
+_CYRILLIC = re.compile(r"[\u0400-\u052f]")
+_LATIN_RE = re.compile(r"[A-Za-z\u00c0-\u024f\u0259\u018f\u1e00-\u1eff]")
+#: Characters exclusive to Turkish and Azerbaijani Latin orthographies (never in
+#: French/German/Spanish/Polish/Nordic proper nouns like "ETH Zürich" or "École").
+_TURKIC_EXCLUSIVE_CHARS = frozenset("əƏıİğĞşŞ")
+#: Shared umlauts/cedilla that appear in BOTH Turkish/Azerbaijani and German/French.
+_TURKIC_SHARED_DIACRITICS = frozenset("çÇöÖüÜ")
+#: Agglutinative nominal/participial endings and academic terms specific to Turkish
+#: and Azerbaijani CV lines when shared diacritics (ç, ö, ü) appear without ə/ı/İ/ğ/ş.
+_TURKIC_SUFFIX_RE = re.compile(
+    r"(?:lığı|liyi|luğu|lüyü|ması|məsi|çün|daki|dəki|lar|lər|dan|dən|nın|nin|nun|nün|"
+    r"lük|luk|lik|lık|iyeti|iyet|ödülü|tezi|tez|bölümü|fakültesi|üniversite|"
+    r"üniversitesi|universiteti|mükafatı|lisans)$"
+)
+_WORD_TOKENS_RE = re.compile(r"[^\W\d_]+", re.UNICODE)
 
 
 @dataclass(frozen=True)
@@ -111,14 +126,50 @@ def _requirements_digest(programme: Program, sentences: Sequence[str]) -> str:
 
 
 def item_language(text: str) -> str:
-    """Plan decision 13: read from the script, never guessed by a model."""
-    letters = [c for c in text if c.isalpha()]
-    if all(c.isascii() for c in letters):
+    """Plan decision 13: read from the script, never guessed by a model.
+
+    Uses Unicode NFC normalization (UAX #15), script-ratio thresholds (UAX #24)
+    so isolated Greek technical symbols ('α-helix', 'β-lactamase') or a single
+    bracketed Cyrillic proper noun inside an English line do not misroute the
+    line, and Turkic-exclusive grapheme / stopword disambiguation so European
+    proper nouns ('ETH Zürich', 'École Polytechnique', 'Marie Skłodowska-Curie')
+    in English lines resolve to 'en'.
+    """
+    normed = unicodedata.normalize("NFC", text)
+    letters = [c for c in normed if c.isalpha()]
+    if not letters:
         return "en"
-    if any(_CYRILLIC.match(c) for c in letters):
+
+    total = len(letters)
+    cyrillic_count = sum(1 for c in letters if _CYRILLIC.match(c))
+    latin_count = sum(1 for c in letters if _LATIN_RE.match(c))
+
+    if cyrillic_count / total >= 0.40:
         return "ru"
-    if all(_TURKIC_LATIN.match(c) for c in letters):
-        return "tr_az"
+
+    if latin_count / total >= 0.70:
+        if all(c.isascii() for c in letters if _LATIN_RE.match(c)):
+            return "en"
+        if any(c in _TURKIC_EXCLUSIVE_CHARS for c in letters):
+            return "tr_az"
+        tokens = [t.casefold().replace("\u0307", "") for t in _WORD_TOKENS_RE.findall(normed)]
+        token_set = set(tokens)
+        tr_az_stops = set(_STOPWORDS.get("tr", ())) | set(_STOPWORDS.get("az", ()))
+        en_stops = set(_STOPWORDS.get("en", ())) | {"in", "on", "at", "by", "from", "as", "an", "a"}
+        tr_az_hits = len(token_set & tr_az_stops) + sum(
+            1 for t in tokens if len(t) >= 4 and _TURKIC_SUFFIX_RE.search(t)
+        )
+        en_hits = len(token_set & en_stops)
+        if any(c in _TURKIC_SHARED_DIACRITICS for c in letters) and tr_az_hits > en_hits:
+            return "tr_az"
+        other_eu_hits = max(
+            len(token_set & set(_STOPWORDS.get(lang, ())))
+            for lang in ("de", "fr", "es", "it", "nl", "pt")
+        )
+        if other_eu_hits >= 2 and en_hits == 0:
+            return "other"
+        return "en"
+
     return "other"
 
 

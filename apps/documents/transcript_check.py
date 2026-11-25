@@ -524,21 +524,6 @@ def _write_degree(
         verdict, fact = match_record(student, record.model_dump(mode="json"))
         fact = fact if verdict == "same" else None
     now = timezone.now()
-    if fact is not None:
-        tip = tip_of(fact)
-        aliases = [str(a) for a in tip.payload.get("aliases") or ()]
-        aliases += [name for name in (record.institution, record.qualification)
-                    if name not in aliases]
-        # An unconfirmed CV claim is never built on: it stays the student's to confirm.
-        confirmed = tip.confirmed_at is not None
-        VerifiedFact.objects.create(
-            student=student, category=VerifiedFact.Category.EDUCATION,
-            payload={**tip.payload, **payload, "aliases": aliases},
-            source_tier=tip.source_tier, source_ref=ref,
-            confirmed_by=student if confirmed else None, confirmed_at=now if confirmed else None,
-            supersedes=tip, created_by=student,
-        )
-        return
     end = record.completed_on or record.expected_completion
     stated = {
         "country": record.country_code,
@@ -546,6 +531,32 @@ def _write_degree(
         "grade_native": record.grade, "grade_scale": record.grading_scale,
     }
     unread = {_UNREAD_KEYS[name] for name in unread_fields if name in _UNREAD_KEYS}
+    if fact is not None:
+        tip = tip_of(fact)
+        merged_payload = dict(tip.payload)
+        for key, value in stated.items():
+            if (
+                value
+                and value != "not stated"
+                and key not in unread
+                and not merged_payload.get(key)
+            ):
+                merged_payload[key] = value
+        if record.field and not merged_payload.get("field_of_study"):
+            merged_payload["field_of_study"] = record.field
+        aliases = [str(a) for a in tip.payload.get("aliases") or ()]
+        aliases += [name for name in (record.institution, record.qualification)
+                    if name not in aliases]
+        # An unconfirmed CV claim is never built on: it stays the student's to confirm.
+        confirmed = tip.confirmed_at is not None
+        VerifiedFact.objects.create(
+            student=student, category=VerifiedFact.Category.EDUCATION,
+            payload={**merged_payload, **payload, "aliases": aliases},
+            source_tier=tip.source_tier, source_ref=ref,
+            confirmed_by=student if confirmed else None, confirmed_at=now if confirmed else None,
+            supersedes=tip, created_by=student,
+        )
+        return
     rec_json = record.model_dump(mode="json")
     bridged = next(
         (

@@ -77,15 +77,32 @@ def persist_programme_scrape(
     pages_by_url: Mapping[str, bytes | str] | None = None,
     stage: ScrapeStage = "full",
     now: dt.datetime | None = None,
+    source: OfficialSource | None = None,
+    snapshot: OfficialSourceSnapshot | None = None,
+    evidence_strength: str = "DIRECT",
+    visibility: str = "STUDENT_FACING",
 ) -> None:
     """Idempotently persist `ProgrammeScrapeResult` onto `Program`, `CostComponent`,
     `ProgramStatement`, and `OfficialEvidenceClaim` rows."""
     checked_at = now or timezone.now()
     html_map = pages_by_url or {}
     fallback_url = (
-        next(iter(html_map.keys()), "")
+        (source.canonical_url if source is not None else "")
+        or next(iter(html_map.keys()), "")
         or f"https://{program.origin_domain or program.evidence_domain or 'example.org'}/"
     )
+    pinned_norm_url = _safe_canonical_url(source.canonical_url) if source is not None else ""
+
+    def _resolve_source_and_snapshot(src_url: str) -> tuple[OfficialSource, OfficialSourceSnapshot]:
+        if (
+            source is not None
+            and snapshot is not None
+            and (not src_url or _safe_canonical_url(src_url) == pinned_norm_url)
+        ):
+            return source, snapshot
+        return _ensure_source_and_snapshot(
+            src_url, html_map.get(src_url), now=checked_at
+        )
 
     update_fields: list[str] = []
     if result.duration_months is not None and 1 <= result.duration_months <= 60:
@@ -145,9 +162,7 @@ def persist_programme_scrape(
 
     for cost_spec in canonical_costs_by_kind.values():
         src_url = cost_spec.source_url or fallback_url
-        source, snapshot = _ensure_source_and_snapshot(
-            src_url, html_map.get(src_url), now=checked_at
-        )
+        cost_source, cost_snapshot = _resolve_source_and_snapshot(src_url)
         period_val = (
             cost_spec.period
             if cost_spec.period in Period.values
@@ -163,13 +178,13 @@ def persist_programme_scrape(
             },
         )
         claim, _ = OfficialEvidenceClaim.objects.update_or_create(
-            source=source,
-            snapshot=snapshot,
+            source=cost_source,
+            snapshot=cost_snapshot,
             claim_class="TUITION",
             claim=cost_spec.quote.text[:4000],
             defaults={
-                "evidence_strength": "DIRECT",
-                "visibility": "STUDENT_FACING",
+                "evidence_strength": evidence_strength,
+                "visibility": visibility,
                 "last_checked_at": checked_at,
             },
         )
@@ -181,18 +196,24 @@ def persist_programme_scrape(
     # Persist Eligibility & Deadline Evidence Claims
     for elig_spec in result.eligibility:
         src_url = elig_spec.source_url or fallback_url
-        source, snapshot = _ensure_source_and_snapshot(
-            src_url, html_map.get(src_url), now=checked_at
-        )
+        elig_source, elig_snapshot = _resolve_source_and_snapshot(src_url)
         c_class = "DEADLINE" if elig_spec.kind == "DEADLINE" else "ELIGIBILITY"
+        if (
+            elig_spec.kind == "DEADLINE"
+            and elig_spec.value
+            and elig_spec.value not in elig_spec.label
+        ):
+            claim_text = f"Application deadline: {elig_spec.value}: {elig_spec.quote.text}"
+        else:
+            claim_text = f"{elig_spec.label}: {elig_spec.quote.text}"
         claim, _ = OfficialEvidenceClaim.objects.update_or_create(
-            source=source,
-            snapshot=snapshot,
+            source=elig_source,
+            snapshot=elig_snapshot,
             claim_class=c_class,
-            claim=f"{elig_spec.label}: {elig_spec.quote.text}"[:4000],
+            claim=claim_text[:4000],
             defaults={
-                "evidence_strength": "DIRECT",
-                "visibility": "STUDENT_FACING",
+                "evidence_strength": evidence_strength,
+                "visibility": visibility,
                 "last_checked_at": checked_at,
             },
         )
@@ -219,12 +240,10 @@ def persist_programme_scrape(
                 continue
             existing_norms.add(norm_text)
             src_url = stmt_spec.source_url or fallback_url
-            _, snapshot = _ensure_source_and_snapshot(
-                src_url, html_map.get(src_url), now=checked_at
-            )
+            _, stmt_snapshot = _resolve_source_and_snapshot(src_url)
             ProgramStatement.objects.create(
                 program=program,
-                snapshot=snapshot,
+                snapshot=stmt_snapshot,
                 kind=stmt_spec.kind,
                 requirement=stmt_spec.requirement,
                 text=stmt_spec.text[:1000],
@@ -232,7 +251,7 @@ def persist_programme_scrape(
             )
 
     # Record the primary front-door snapshot so `is_page_unchanged` hits on the next run
-    if fallback_url in html_map:
+    if fallback_url in html_map and not (source is not None and snapshot is not None):
         _ensure_source_and_snapshot(fallback_url, html_map[fallback_url], now=checked_at)
 
 

@@ -12,10 +12,20 @@
  *  - There is no click anywhere in this file, including for a <select>.
  *    selectOption sets `value` and fires change; the dropdown is never opened.
  */
-import { GROUPS } from "./snapshot.js";
+import {
+  GROUPS,
+  comboboxOptionsFor,
+  isCombobox,
+  isRadioControl,
+  radioButtonsFor,
+  radioOptionLabel,
+} from "./snapshot.js";
+import type { ComboboxOptionItem } from "./snapshot.js";
 import { fieldClass, visible } from "./verify.js";
-import type { VerifiedEntry } from "./verify.js";
+import type { PacketEntry, VerifiedEntry } from "./verify.js";
 import { DOC_TOKENS, normalise, normaliseDoc } from "./vocabulary.js";
+
+export type { PacketEntry };
 
 /** Mirrors apps/portals/session.py::FILL_METHODS. The parity test pins it. */
 const FILL_METHODS = ["fill", "type", "selectOption", "selectOptionFromDropdown"] as const;
@@ -34,11 +44,51 @@ function nativeSetValue(element: HTMLElement, value: string): void {
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
+function nativeSetChecked(radio: HTMLInputElement, checked: boolean): void {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
+  if (setter) setter.call(radio, checked);
+  else radio.checked = checked;
+}
+
 /** Select values a page uses for "nothing chosen yet". */
 const PLACEHOLDERS = ["", "-1", "0", "none", "null"];
+const PLACEHOLDER_LABEL_RE =
+  /^(?:please\s+|bitte\s+|veuillez\s+|lutfen\s+|zehmet\s+olmasa\s+)?(?:select|choose|pick|wahlen|auswahlen|choisir|selectionner|sec|secin|seciniz|выберите|не\s+выбрано|none|none\s+selected|nothing\s+selected)\b/i;
+
+function isPlaceholderOption(opt: { value: string; text: string }): boolean {
+  const val = opt.value.trim().toLowerCase();
+  if (!PLACEHOLDERS.includes(val)) return false;
+  if (val === "0" || val === "none") {
+    const foldedText = foldOptionText(opt.text);
+    return foldedText === "" || PLACEHOLDER_LABEL_RE.test(foldedText);
+  }
+  return true;
+}
 
 function currentValue(element: HTMLElement): string {
-  return (element as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement).value ?? "";
+  if (isRadioControl(element)) {
+    const checked = radioButtonsFor(element).find((r) => r.checked);
+    if (!checked) return "";
+    return (checked.getAttribute("value") ?? "").trim() || radioOptionLabel(checked);
+  }
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLSelectElement ||
+    element instanceof HTMLTextAreaElement
+  ) {
+    return element.value ?? "";
+  }
+  if (isCombobox(element)) {
+    const selectedOpt = comboboxOptionsFor(element).find(
+      (opt) => opt.element.getAttribute("aria-selected") === "true",
+    );
+    if (selectedOpt) return selectedOpt.value || selectedOpt.text;
+    return (
+      element.getAttribute("data-value") ??
+      ((element as HTMLInputElement).value ?? (element.textContent ?? "").trim())
+    );
+  }
+  return (element as HTMLInputElement).value ?? "";
 }
 
 type Ymd = [number, number, number];
@@ -96,9 +146,111 @@ export function sameValue(actual: string, expected: string, rule: string | undef
   return EQUIVALENCE[rule]?.(actual, expected) ?? false;
 }
 
+export function foldOptionText(s: string): string {
+  return s
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0131/g, "i")
+    .replace(/\u0259/g, "e")
+    .replace(/\u00df/g, "ss")
+    .replace(/\u00f8/g, "o")
+    .replace(/\u0142/g, "l")
+    .replace(/\u0111/g, "d")
+    .replace(/\u00e6/g, "ae")
+    .replace(/\u0153/g, "oe")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+export const PORTAL_LOCALES: readonly string[] = [
+  "en",
+  "de",
+  "fr",
+  "es",
+  "it",
+  "nl",
+  "tr",
+  "az",
+  "ru",
+  "pl",
+  "pt",
+  "sv",
+  "no",
+  "da",
+  "fi",
+  "hu",
+  "cs",
+  "zh",
+  "ja",
+  "ko",
+  "ar",
+];
+
+/** Compact ISO-3166-1 alpha-2 -> alpha-3 directory across all 249 territories. */
+const ISO_3166_ALPHA2_TO_ALPHA3 =
+  "AD:AND,AE:ARE,AF:AFG,AG:ATG,AI:AIA,AL:ALB,AM:ARM,AO:AGO,AQ:ATA,AR:ARG,AS:ASM,AT:AUT,AU:AUS,AW:ABW,AX:ALA,AZ:AZE," +
+  "BA:BIH,BB:BRB,BD:BGD,BE:BEL,BF:BFA,BG:BGR,BH:BHR,BI:BDI,BJ:BEN,BL:BLM,BM:BMU,BN:BRN,BO:BOL,BQ:BES,BR:BRA,BS:BHS,BT:BTN,BV:BVT,BW:BWA,BY:BLR,BZ:BLZ," +
+  "CA:CAN,CC:CCK,CD:COD,CF:CAF,CG:COG,CH:CHE,CI:CIV,CK:COK,CL:CHL,CM:CMR,CN:CHN,CO:COL,CR:CRI,CU:CUB,CV:CPV,CW:CUW,CX:CXR,CY:CYP,CZ:CZE," +
+  "DE:DEU,DJ:DJI,DK:DNK,DM:DMA,DO:DOM,DZ:DZA,EC:ECU,EE:EST,EG:EGY,EH:ESH,ER:ERI,ES:ESP,ET:ETH,FI:FIN,FJ:FJI,FK:FLK,FM:FSM,FO:FRO,FR:FRA," +
+  "GA:GAB,GB:GBR,GD:GRD,GE:GEO,GF:GUF,GG:GGY,GH:GHA,GI:GIB,GL:GRL,GM:GMB,GN:GIN,GP:GLP,GQ:GNQ,GR:GRC,GS:SGS,GT:GTM,GU:GUM,GW:GNB,GY:GUY," +
+  "HK:HKG,HM:HMD,HN:HND,HR:HRV,HT:HTI,HU:HUN,ID:IDN,IE:IRL,IL:ISR,IM:IMN,IN:IND,IO:IOT,IQ:IRQ,IR:IRN,IS:ISL,IT:ITA,JE:JEY,JM:JAM,JO:JOR,JP:JPN," +
+  "KE:KEN,KG:KGZ,KH:KHM,KI:KIR,KM:COM,KN:KNA,KP:PRK,KR:KOR,KW:KWT,KY:CYM,KZ:KAZ,LA:LAO,LB:LBN,LC:LCA,LI:LIE,LK:LKA,LR:LBR,LS:LSO,LT:LTU,LU:LUX,LV:LVA,LY:LBY," +
+  "MA:MAR,MC:MCO,MD:MDA,ME:MNE,MF:MAF,MG:MDG,MH:MHL,MK:MKD,ML:MLI,MM:MMR,MN:MNG,MO:MAC,MP:MNP,MQ:MTQ,MR:MRT,MS:MSR,MT:MLT,MU:MUS,MV:MDV,MW:MWI,MX:MEX,MY:MYS,MZ:MOZ," +
+  "NA:NAM,NC:NCL,NE:NER,NF:NFK,NG:NGA,NI:NIC,NL:NLD,NO:NOR,NP:NPL,NR:NRU,NU:NIU,NZ:NZL,OM:OMN,PA:PAN,PE:PER,PF:PYF,PG:PNG,PH:PHL,PK:PAK,PL:POL,PM:SPM,PN:PCN,PR:PRI,PS:PSE,PT:PRT,PW:PLW,PY:PRY," +
+  "QA:QAT,RE:REU,RO:ROU,RS:SRB,RU:RUS,RW:RWA,SA:SAU,SB:SLB,SC:SYC,SD:SDN,SE:SWE,SG:SGP,SH:SHN,SI:SVN,SJ:SJM,SK:SVK,SL:SLE,SM:SMR,SN:SEN,SO:SOM,SR:SUR,SS:SSD,ST:STP,SV:SLV,SX:SXM,SY:SYR,SZ:SWZ," +
+  "TC:TCA,TD:TCD,TF:ATF,TG:TGO,TH:THA,TJ:TJK,TK:TKL,TL:TLS,TM:TKM,TN:TUN,TO:TON,TR:TUR,TT:TTO,TV:TUV,TW:TWN,TZ:TZA,UA:UKR,UG:UGA,UM:UMI,US:USA,UY:URY,UZ:UZB," +
+  "VA:VAT,VC:VCT,VE:VEN,VG:VGB,VI:VIR,VN:VNM,VU:VUT,WF:WLF,WS:WSM,YE:YEM,YT:MYT,ZA:ZAF,ZM:ZMB,ZW:ZWE";
+
+const ISO_639_1_CODES: readonly string[] = [
+  "ar", "az", "bg", "bn", "bs", "ca", "cs", "cy", "da", "de", "el", "en", "es", "et", "eu",
+  "fa", "fi", "fr", "ga", "gl", "gu", "he", "hi", "hr", "hu", "hy", "id", "is", "it", "ja",
+  "ka", "kk", "km", "kn", "ko", "ku", "ky", "la", "lb", "lo", "lt", "lv", "mk", "ml", "mn",
+  "mr", "ms", "mt", "my", "nb", "ne", "nl", "nn", "no", "or", "pa", "pl", "ps", "pt", "ro",
+  "ru", "si", "sk", "sl", "sq", "sr", "sv", "sw", "ta", "te", "tg", "th", "tk", "tl", "tr",
+  "tt", "uk", "ur", "uz", "vi", "zh",
+];
+
+const NON_TERRITORY_ALPHA2: ReadonlySet<string> = new Set([
+  "EU", "EZ", "UN", "QO", "XA", "XB", "ZZ",
+]);
+
 const OPTION_SYNONYM_GROUPS: readonly (readonly string[])[] = [
-  ["yes", "true", "ja", "oui", "beli", "evet", "да"],
-  ["no", "false", "nein", "non", "xeyr", "hayir", "нет"],
+  ["yes", "true", "ja", "oui", "beli", "evet", "si", "tak", "jawohl", "да"],
+  ["no", "false", "nein", "non", "xeyr", "hayir", "nee", "nie", "нет"],
+  [
+    "f",
+    "female",
+    "w",
+    "weiblich",
+    "femme",
+    "femenino",
+    "femminile",
+    "vrouw",
+    "kobieta",
+    "kadın",
+    "kadin",
+    "qadın",
+    "qadin",
+    "женский",
+  ],
+  [
+    "m",
+    "male",
+    "männlich",
+    "mannlich",
+    "maennlich",
+    "homme",
+    "masculino",
+    "maschile",
+    "man",
+    "mezczyzna",
+    "mężczyzna",
+    "erkek",
+    "kişi",
+    "kisi",
+    "мужской",
+  ],
   [
     "azerbaijan",
     "azerbaijani",
@@ -108,60 +260,334 @@ const OPTION_SYNONYM_GROUPS: readonly (readonly string[])[] = [
     "azerbaycan",
     "aserbaidschan",
     "azerbaidjan",
+    "azerbeidzjan",
+    "azerbaigian",
+    "azerbejdzan",
     "азербайджан",
   ],
-  ["turkey", "turkiye", "republic of turkiye", "tr", "tur", "turkei", "turquie", "турция"],
-  ["germany", "deutschland", "federal republic of germany", "de", "deu", "allemagne", "германия"],
-  ["united kingdom", "great britain", "uk", "gb", "gbr", "vereinigtes konigreich", "royaume uni"],
-  ["united states", "united states of america", "usa", "us", "vereinigte staaten", "etats unis"],
+  ["turkey", "turkiye", "republic of turkiye", "tr", "tur", "turkei", "turquie", "turkije", "turchia", "turcja", "турция"],
+  ["germany", "german", "deutschland", "federal republic of germany", "de", "deu", "allemagne", "duitsland", "germania", "niemcy", "alemania", "германия"],
+  ["united kingdom", "british", "great britain", "uk", "gb", "gbr", "vereinigtes konigreich", "royaume uni", "verenigd koninkrijk", "regno unito", "wielka brytania", "reino unido", "великобритания"],
+  ["united states", "american", "united states of america", "usa", "us", "vereinigte staaten", "etats unis", "verenigde staten", "stati uniti", "stany zjednoczone", "estados unidos", "сша"],
+  ["netherlands", "dutch", "the netherlands", "nl", "nld", "nederland", "niederlande", "pays bas", "paesi bassi", "holandia", "paises bajos", "нидерланды"],
+  ["france", "french", "fr", "fra", "frankreich", "frankrijk", "francia", "francja", "франция"],
+  ["italy", "italian", "it", "ita", "italien", "italie", "italia", "wlochy", "италия"],
+  ["spain", "spanish", "es", "esp", "spanien", "espagne", "spanje", "spagna", "hiszpania", "espana", "испания"],
+  ["poland", "polish", "pl", "pol", "polen", "pologne", "polska", "polonia", "польша"],
+  ["austria", "austrian", "at", "aut", "osterreich", "autriche", "oostenrijk", "austria", "австрия"],
+  ["switzerland", "swiss", "ch", "che", "schweiz", "suisse", "svizzera", "zwitserland", "szwajcaria", "suiza", "швейцария"],
 ];
+
+let cachedOptionSynonymMap: ReadonlyMap<string, ReadonlySet<string>> | null = null;
+let cachedCountryGroupByAlpha2: ReadonlyMap<string, ReadonlySet<string>> | null = null;
+
+function addIndexedForms(targetSet: Set<string>, raw: string): void {
+  const lower = raw.trim().toLowerCase();
+  if (lower) targetSet.add(lower);
+  const norm = normalise(raw);
+  if (norm) targetSet.add(norm);
+  const folded = foldOptionText(raw);
+  if (folded) targetSet.add(folded);
+}
+
+/** Lazily construct and memoize the universal territory, language, boolean, and
+ *  gender option equivalence index using ECMA-402 `Intl.DisplayNames` + NFKD folding. */
+export function getOptionSynonymMap(): ReadonlyMap<string, ReadonlySet<string>> {
+  if (cachedOptionSynonymMap !== null) return cachedOptionSynonymMap;
+
+  const groups: Set<string>[] = [];
+  const countryGroupByAlpha2 = new Map<string, Set<string>>();
+  const booleanAndGenderTokens = new Set<string>();
+
+  for (let i = 0; i < OPTION_SYNONYM_GROUPS.length; i++) {
+    const seed = OPTION_SYNONYM_GROUPS[i]!;
+    const set = new Set<string>();
+    for (const token of seed) {
+      addIndexedForms(set, token);
+    }
+    groups.push(set);
+    // Groups 0..3 are boolean/gender; 4+ are seeded country synonym groups.
+    if (i < 4) {
+      for (const token of set) booleanAndGenderTokens.add(token);
+    } else {
+      for (const token of seed) {
+        if (/^[a-z]{2}$/.test(token)) {
+          countryGroupByAlpha2.set(token.toUpperCase(), set);
+        }
+      }
+    }
+  }
+
+  const alpha3ByAlpha2 = new Map<string, string>();
+  for (const pair of ISO_3166_ALPHA2_TO_ALPHA3.split(",")) {
+    const [a2, a3] = pair.split(":");
+    if (a2 && a3) alpha3ByAlpha2.set(a2, a3);
+  }
+
+  const regionFormatters: Intl.DisplayNames[] = [];
+  const languageFormatters: Intl.DisplayNames[] = [];
+  if (typeof Intl !== "undefined" && typeof Intl.DisplayNames === "function") {
+    for (const locale of PORTAL_LOCALES) {
+      try {
+        regionFormatters.push(
+          new Intl.DisplayNames([locale], { type: "region", fallback: "none" }),
+        );
+      } catch {
+        // Ignore unsupported locale in minimal JS runtimes.
+      }
+      try {
+        languageFormatters.push(
+          new Intl.DisplayNames([locale], { type: "language", fallback: "none" }),
+        );
+      } catch {
+        // Ignore unsupported locale in minimal JS runtimes.
+      }
+    }
+  }
+
+  // Enumerate all 26x26 two-letter ASCII region codes AA..ZZ.
+  for (let c1 = 65; c1 <= 90; c1++) {
+    for (let c2 = 65; c2 <= 90; c2++) {
+      const code = String.fromCharCode(c1, c2);
+      if (NON_TERRITORY_ALPHA2.has(code)) continue;
+      const alpha3 = alpha3ByAlpha2.get(code);
+      const names: string[] = [];
+      for (const fmt of regionFormatters) {
+        try {
+          const label = fmt.of(code);
+          if (label && label.toUpperCase() !== code) {
+            names.push(label);
+          }
+        } catch {
+          // Ignore invalid code.
+        }
+      }
+      if (!alpha3 && names.length === 0) continue;
+      let group = countryGroupByAlpha2.get(code);
+      if (!group) {
+        group = new Set<string>();
+        groups.push(group);
+        countryGroupByAlpha2.set(code, group);
+      }
+      // Do not add 2-letter codes that collide with boolean tokens ("no" -> Norway,
+      // "si" -> Slovenia) into the shared synonym set; they are resolved via
+      // cachedCountryGroupByAlpha2 on country selects (>4 options).
+      if (!booleanAndGenderTokens.has(code.toLowerCase())) {
+        addIndexedForms(group, code);
+      }
+      if (alpha3 && !booleanAndGenderTokens.has(alpha3.toLowerCase())) {
+        addIndexedForms(group, alpha3);
+      }
+      for (const label of names) {
+        if (!booleanAndGenderTokens.has(foldOptionText(label))) {
+          addIndexedForms(group, label);
+        }
+      }
+    }
+  }
+
+  // Enumerate common ISO-639-1 language names across PORTAL_LOCALES (indexing full
+  // language names only, never 2-letter ISO-639-1 codes that collide with ISO-3166
+  // country codes like "ar"=Argentina/Arabic, "ca"=Canada/Catalan, "uk"=UK/Ukrainian,
+  // or boolean words like "ja"=Ja/Japanese, "no"=No/Norwegian, "si"=Sí/Sinhala).
+  for (const lang of ISO_639_1_CODES) {
+    const names: string[] = [];
+    for (const fmt of languageFormatters) {
+      try {
+        const label = fmt.of(lang);
+        if (label && label.toLowerCase() !== lang && label.trim().length >= 3) {
+          names.push(label);
+        }
+      } catch {
+        // Ignore invalid language code.
+      }
+    }
+    if (names.length === 0) continue;
+    const group = new Set<string>();
+    for (const label of names) {
+      if (!booleanAndGenderTokens.has(foldOptionText(label))) {
+        addIndexedForms(group, label);
+      }
+    }
+    if (group.size > 0) groups.push(group);
+  }
+
+  const index = new Map<string, Set<string>>();
+  for (const group of groups) {
+    for (const key of group) {
+      let bucket = index.get(key);
+      if (!bucket) {
+        bucket = new Set<string>();
+        index.set(key, bucket);
+      }
+      for (const member of group) {
+        bucket.add(member);
+      }
+    }
+  }
+
+  cachedCountryGroupByAlpha2 = countryGroupByAlpha2;
+  cachedOptionSynonymMap = index;
+  return index;
+}
+
+export interface OptionLike {
+  value: string;
+  text: string;
+  disabled?: boolean;
+}
+
+function isSameSynonymGroup(
+  candidateGroup: ReadonlySet<string>,
+  targetFolded: string,
+  groupSet: ReadonlySet<string> | undefined,
+): boolean {
+  if (candidateGroup.has(targetFolded)) return true;
+  if (groupSet) {
+    for (const token of groupSet) {
+      if (candidateGroup.has(token)) return true;
+    }
+  }
+  return false;
+}
+
+function belongsToOtherSynonymGroup(
+  opt: OptionLike,
+  targetFolded: string,
+  groupSet: ReadonlySet<string> | undefined,
+  synMap: ReadonlyMap<string, ReadonlySet<string>>,
+): boolean {
+  const optFolded = foldOptionText(opt.text);
+  const optNorm = normalise(opt.text);
+  const fullGroup = synMap.get(optFolded) ?? synMap.get(optNorm);
+  if (fullGroup && !isSameSynonymGroup(fullGroup, targetFolded, groupSet)) {
+    return true;
+  }
+  const strippedParens = foldOptionText(opt.text.replace(/\([^)]*\)/g, " "));
+  const baseGroup = strippedParens ? synMap.get(strippedParens) : undefined;
+  if (
+    strippedParens &&
+    strippedParens !== optFolded &&
+    baseGroup &&
+    !isSameSynonymGroup(baseGroup, targetFolded, groupSet)
+  ) {
+    return true;
+  }
+  for (const word of optFolded.split(" ")) {
+    if (word.length < 4) continue;
+    const wordGroup = synMap.get(word);
+    if (wordGroup && !isSameSynonymGroup(wordGroup, targetFolded, groupSet)) {
+      if (!baseGroup || !isSameSynonymGroup(baseGroup, targetFolded, groupSet)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function matchOptionItem<T extends OptionLike>(
+  options: readonly T[],
+  target: string,
+): T | undefined {
+  const enabled = options.filter((opt) => !opt.disabled);
+  const exact = enabled.find((opt) => opt.value === target || opt.text === target);
+  if (exact) return exact;
+  const trimmed = target.trim().toLowerCase();
+  if (!trimmed) return undefined;
+  const nonPlaceholder = enabled.filter((opt) => !isPlaceholderOption(opt));
+  const ci = nonPlaceholder.filter(
+    (opt) => opt.value.trim().toLowerCase() === trimmed || opt.text.trim().toLowerCase() === trimmed,
+  );
+  if (ci.length === 1) return ci[0];
+  const norm = normalise(target);
+  const folded = foldOptionText(target);
+  if (folded) {
+    const foldedExact = nonPlaceholder.filter(
+      (opt) => foldOptionText(opt.value) === folded || foldOptionText(opt.text) === folded,
+    );
+    if (foldedExact.length === 1) return foldedExact[0];
+  }
+  const synMap = getOptionSynonymMap();
+  let groupSet = synMap.get(folded) ?? synMap.get(norm) ?? synMap.get(trimmed);
+  if (
+    nonPlaceholder.length > 4 &&
+    /^[a-z]{2}$/.test(trimmed) &&
+    cachedCountryGroupByAlpha2?.has(trimmed.toUpperCase())
+  ) {
+    groupSet = cachedCountryGroupByAlpha2.get(trimmed.toUpperCase());
+  }
+  if (groupSet) {
+    const exactSyn = nonPlaceholder.filter(
+      (opt) =>
+        groupSet.has(foldOptionText(opt.value)) ||
+        groupSet.has(normalise(opt.value)) ||
+        groupSet.has(foldOptionText(opt.text)) ||
+        groupSet.has(normalise(opt.text)),
+    );
+    if (exactSyn.length === 1) return exactSyn[0];
+  }
+  const targetFolded = folded || norm || trimmed;
+  if (norm.length >= 4 || folded.length >= 4) {
+    const paddedNorm = ` ${norm} `;
+    const paddedFolded = ` ${folded || norm} `;
+    const partial = nonPlaceholder.filter(
+      (opt) =>
+        !belongsToOtherSynonymGroup(opt, targetFolded, groupSet, synMap) &&
+        (` ${foldOptionText(opt.text)} `.includes(paddedFolded) ||
+          ` ${normalise(opt.text)} `.includes(paddedNorm)),
+    );
+    if (partial.length === 1) return partial[0];
+  }
+  if (groupSet) {
+    const longSyns = Array.from(groupSet).filter((s) => s.length >= 4);
+    const wordSyn = nonPlaceholder.filter((opt) => {
+      if (belongsToOtherSynonymGroup(opt, targetFolded, groupSet, synMap)) return false;
+      const paddedFolded = ` ${foldOptionText(opt.text)} `;
+      const paddedNorm = ` ${normalise(opt.text)} `;
+      return longSyns.some(
+        (s) => paddedFolded.includes(` ${s} `) || paddedNorm.includes(` ${s} `),
+      );
+    });
+    if (wordSyn.length === 1) return wordSyn[0];
+  }
+  return undefined;
+}
 
 /** Find the one <option> a <select> offers for `target`:
  *   1. Exact value or text match;
  *   2. Case-insensitive trimmed value or text match (excluding placeholders);
  *   3. Single unambiguous word-boundary match in option text (e.g. "Azerbaijan"
  *      matching "Azerbaijan (+994)" or "AZ - Azerbaijan");
- *   4. Single unambiguous match within a known boolean or country synonym group.
+ *   4. Single unambiguous match within a known boolean, gender, language or
+ *      ECMA-402 `Intl.DisplayNames` 249-territory synonym group.
  *  If two options match at any fallback tier, returns undefined so the student decides. */
 export function matchSelectOption(
   select: HTMLSelectElement,
   target: string,
 ): HTMLOptionElement | undefined {
-  const options = Array.from(select.options);
-  const exact = options.find((opt) => opt.value === target || opt.text === target);
-  if (exact) return exact;
-  const trimmed = target.trim().toLowerCase();
-  if (!trimmed) return undefined;
-  const nonPlaceholder = options.filter(
-    (opt) => !opt.disabled && !PLACEHOLDERS.includes(opt.value.trim().toLowerCase()),
-  );
-  const ci = nonPlaceholder.filter(
-    (opt) => opt.value.trim().toLowerCase() === trimmed || opt.text.trim().toLowerCase() === trimmed,
-  );
-  if (ci.length === 1) return ci[0];
-  const norm = normalise(target);
-  if (norm.length >= 2) {
-    const paddedTarget = ` ${norm} `;
-    const partial = nonPlaceholder.filter((opt) =>
-      ` ${normalise(opt.text)} `.includes(paddedTarget),
-    );
-    if (partial.length === 1) return partial[0];
-  }
-  const group = OPTION_SYNONYM_GROUPS.find((synonyms) => synonyms.includes(norm));
-  if (group) {
-    const groupSet = new Set(group);
-    const exactSyn = nonPlaceholder.filter(
-      (opt) => groupSet.has(normalise(opt.value)) || groupSet.has(normalise(opt.text)),
-    );
-    if (exactSyn.length === 1) return exactSyn[0];
-    const longSyns = group.filter((s) => s.length >= 4);
-    const wordSyn = nonPlaceholder.filter((opt) => {
-      const padded = ` ${normalise(opt.text)} `;
-      return longSyns.some((s) => padded.includes(` ${s} `));
-    });
-    if (wordSyn.length === 1) return wordSyn[0];
-  }
-  return undefined;
+  return matchOptionItem(Array.from(select.options), target);
+}
+
+export const selectOption = matchSelectOption;
+
+export function matchRadioOption(
+  radios: readonly HTMLInputElement[],
+  target: string,
+): HTMLInputElement | undefined {
+  const items = radios.map((radio) => ({
+    radio,
+    value: (radio.getAttribute("value") ?? "").trim(),
+    text: radioOptionLabel(radio),
+    disabled: radio.disabled || radio.getAttribute("aria-disabled") === "true",
+  }));
+  return matchOptionItem(items, target)?.radio;
+}
+
+export function matchComboboxOption(
+  element: HTMLElement,
+  target: string,
+): ComboboxOptionItem | undefined {
+  return matchOptionItem(comboboxOptionsFor(element), target);
 }
 
 /** Fields the page already holds correctly -- the only ones safe to skip.
@@ -173,12 +599,29 @@ export function alreadyCorrect(
   const correct = new Set<string>();
   for (const item of verified) {
     if (!item.ok || !item.element) continue;
+    if (isRadioControl(item.element)) {
+      const radios = radioButtonsFor(item.element);
+      const targetRadio = matchRadioOption(radios, item.entry.value);
+      if (targetRadio && targetRadio.checked) {
+        correct.add(item.entry.profile_field);
+      }
+      continue;
+    }
     const actual = currentValue(item.element);
     const rule = equivalences[fieldClass(item.entry.profile_field)];
     const selectMatch =
       item.element instanceof HTMLSelectElement &&
       matchSelectOption(item.element, item.entry.value)?.value === actual;
-    if (sameValue(actual, item.entry.value, rule) || selectMatch) {
+    const matchedCombo = isCombobox(item.element)
+      ? matchComboboxOption(item.element, item.entry.value)
+      : undefined;
+    const comboboxMatch = Boolean(
+      matchedCombo &&
+        (actual === matchedCombo.value ||
+          actual === matchedCombo.text ||
+          matchedCombo.element.getAttribute("aria-selected") === "true"),
+    );
+    if (sameValue(actual, item.entry.value, rule) || selectMatch || comboboxMatch) {
       correct.add(item.entry.profile_field);
     }
   }
@@ -206,20 +649,103 @@ export function fillVerified(
     // one function in this extension that writes into a page, and the cost of
     // keeping it is a line. A reviewer has already proposed deleting it once.
     if (!FILL_METHODS.includes(item.entry.method as (typeof FILL_METHODS)[number])) continue;
-    if (item.entry.method.startsWith("selectOption") && item.element instanceof HTMLSelectElement) {
+    if (isRadioControl(item.element)) {
+      const radios = radioButtonsFor(item.element);
+      const targetRadio = matchRadioOption(radios, item.entry.value);
+      if (!targetRadio) continue;
+      const checkedRadio = radios.find((r) => r.checked);
+      if (!overwrite && checkedRadio && checkedRadio !== targetRadio) {
+        theirs.add(item.entry.profile_field);
+        continue;
+      }
+      for (const r of radios) {
+        if (r !== targetRadio && r.checked) nativeSetChecked(r, false);
+      }
+      nativeSetChecked(targetRadio, true);
+      targetRadio.dispatchEvent(new Event("input", { bubbles: true }));
+      targetRadio.dispatchEvent(new Event("change", { bubbles: true }));
+      filled.push(item.entry.profile_field);
+      continue;
+    }
+    if (item.element instanceof HTMLSelectElement) {
       const option = matchSelectOption(item.element, item.entry.value);
       // No option, no guess: an unmatched select is the student's to answer.
       if (!option) continue;
       const held = currentValue(item.element);
+      const selectedOpt = item.element.options[item.element.selectedIndex];
       const chosen =
-        item.element.selectedIndex > 0 && !PLACEHOLDERS.includes(held.trim().toLowerCase());
+        item.element.selectedIndex > 0 &&
+        (selectedOpt
+          ? !isPlaceholderOption(selectedOpt)
+          : !PLACEHOLDERS.includes(held.trim().toLowerCase()));
       if (!overwrite && chosen && held !== option.value) { theirs.add(item.entry.profile_field); continue; }
       nativeSetValue(item.element, option.value);
-    } else {
-      const held = currentValue(item.element);
-      if (!overwrite && held !== "" && held !== item.entry.value) { theirs.add(item.entry.profile_field); continue; }
-      nativeSetValue(item.element, item.entry.value);
+      filled.push(item.entry.profile_field);
+      continue;
     }
+    if (isCombobox(item.element)) {
+      let matchedOpt = matchComboboxOption(item.element, item.entry.value);
+      const held = currentValue(item.element);
+      const selectedComboOpt = comboboxOptionsFor(item.element).find(
+        (opt) => opt.element.getAttribute("aria-selected") === "true",
+      );
+      const hasHeld =
+        held !== "" &&
+        (selectedComboOpt
+          ? !isPlaceholderOption(selectedComboOpt)
+          : !PLACEHOLDERS.includes(held.trim().toLowerCase()));
+      if (!overwrite && hasHeld) {
+        const matchesOurs =
+          held === item.entry.value ||
+          (matchedOpt !== undefined && (held === matchedOpt.value || held === matchedOpt.text));
+        if (!matchesOurs) {
+          theirs.add(item.entry.profile_field);
+          continue;
+        }
+      }
+      const isTextControl =
+        item.element instanceof HTMLInputElement || item.element instanceof HTMLTextAreaElement;
+      if (!matchedOpt && isTextControl) {
+        nativeSetValue(item.element, item.entry.value);
+        matchedOpt = matchComboboxOption(item.element, item.entry.value);
+        if (!matchedOpt && comboboxOptionsFor(item.element).length > 0 && item.entry.method.startsWith("selectOption")) {
+          nativeSetValue(item.element, "");
+          continue;
+        }
+      }
+      if (matchedOpt) {
+        for (const opt of comboboxOptionsFor(item.element)) {
+          opt.element.setAttribute(
+            "aria-selected",
+            opt.element === matchedOpt.element ? "true" : "false",
+          );
+        }
+        matchedOpt.element.setAttribute("data-selected", "true");
+        if (matchedOpt.element.id) {
+          item.element.setAttribute("aria-activedescendant", matchedOpt.element.id);
+        }
+        item.element.setAttribute("data-value", matchedOpt.value);
+        if (isTextControl) {
+          nativeSetValue(item.element, matchedOpt.text || matchedOpt.value);
+        } else {
+          (item.element as HTMLInputElement).value = matchedOpt.value;
+          if (!item.element.querySelector('[role="listbox"], [role="option"]')) {
+            item.element.textContent = matchedOpt.text || matchedOpt.value;
+          }
+          item.element.dispatchEvent(new Event("input", { bubbles: true }));
+          item.element.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        matchedOpt.element.dispatchEvent(new Event("change", { bubbles: true }));
+        filled.push(item.entry.profile_field);
+        continue;
+      }
+      if (!isTextControl) continue;
+      filled.push(item.entry.profile_field);
+      continue;
+    }
+    const held = currentValue(item.element);
+    if (!overwrite && held !== "" && held !== item.entry.value) { theirs.add(item.entry.profile_field); continue; }
+    nativeSetValue(item.element, item.entry.value);
     filled.push(item.entry.profile_field);
   }
   return { filled, theirs };
@@ -241,13 +767,38 @@ export function readBack(
   const mismatches = [];
   for (const item of verified) {
     if (!item.ok || !item.element) continue;
+    if (isRadioControl(item.element)) {
+      const radios = radioButtonsFor(item.element);
+      const targetRadio = matchRadioOption(radios, item.entry.value);
+      const checkedRadio = radios.find((r) => r.checked);
+      if (!targetRadio || checkedRadio !== targetRadio) {
+        mismatches.push({
+          profile_field: item.entry.profile_field,
+          expected: item.entry.value,
+          actual: checkedRadio
+            ? (checkedRadio.getAttribute("value") ?? "").trim() || radioOptionLabel(checkedRadio)
+            : "",
+        });
+      }
+      continue;
+    }
     const actual = currentValue(item.element);
     const selectMatch =
       item.element instanceof HTMLSelectElement &&
       matchSelectOption(item.element, item.entry.value)?.value === actual;
+    const matchedCombo = isCombobox(item.element)
+      ? matchComboboxOption(item.element, item.entry.value)
+      : undefined;
+    const comboboxMatch = Boolean(
+      matchedCombo &&
+        (actual === matchedCombo.value ||
+          actual === matchedCombo.text ||
+          matchedCombo.element.getAttribute("aria-selected") === "true"),
+    );
     if (
       !sameValue(actual, item.entry.value, equivalences[fieldClass(item.entry.profile_field)]) &&
-      !selectMatch
+      !selectMatch &&
+      !comboboxMatch
     ) {
       mismatches.push({
         profile_field: item.entry.profile_field,

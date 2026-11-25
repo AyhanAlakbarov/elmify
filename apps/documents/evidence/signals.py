@@ -50,9 +50,13 @@ _NOISE = (
     "setup.py",
 )
 
-#: Files whose text we parse for structure. Only Python has a parser; any other
-#: suffix yields an empty FileSignals and would waste a fetch slot.
-_PARSED_SUFFIXES = (".py", ".ipynb")
+#: Files whose text we parse for structure: Python AST, Jupyter notebooks, and
+#: polyglot source files for top-level declarations and doc comments.
+_POLYGLOT_SUFFIXES = (
+    ".rs", ".go", ".ts", ".tsx", ".js", ".java", ".kt",
+    ".c", ".cpp", ".h", ".hpp", ".R", ".jl",
+)
+_PARSED_SUFFIXES = (".py", ".ipynb") + _POLYGLOT_SUFFIXES
 
 #: Prose the author wrote, in any language's repository. Markdown under docs/
 #: is documentation wherever the code happens to be written in, which is why
@@ -326,12 +330,43 @@ def _description_manifest(text: str) -> tuple[str, ...]:
     )
 
 
+_PEP508_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def _pyproject_manifest(text: str) -> tuple[str, ...]:
+    """Declared dependencies from pyproject.toml ([project].dependencies and
+    [tool.poetry.dependencies])."""
+    try:
+        doc = tomllib.loads(text)
+    except (tomllib.TOMLDecodeError, ValueError):
+        return ()
+    names: set[str] = set()
+    project = doc.get("project")
+    if isinstance(project, dict):
+        deps = project.get("dependencies")
+        if isinstance(deps, list):
+            for item in deps:
+                if isinstance(item, str) and (m := _PEP508_NAME.match(item)):
+                    names.add(m.group(1))
+    tool = doc.get("tool")
+    if isinstance(tool, dict):
+        poetry = tool.get("poetry")
+        if isinstance(poetry, dict):
+            pdeps = poetry.get("dependencies")
+            if isinstance(pdeps, dict):
+                for key in pdeps:
+                    if isinstance(key, str) and key and key.lower() != "python":
+                        names.add(key)
+    return tuple(sorted(names))
+
+
 _MANIFEST_PARSERS = {
     "package.json": _npm_manifest,
     "Cargo.toml": _cargo_manifest,
     "go.mod": _go_manifest,
     "pom.xml": _pom_manifest,
     "DESCRIPTION": _description_manifest,
+    "pyproject.toml": _pyproject_manifest,
 }
 
 #: The manifests worth fetching by name. Derived from the parser table so the
@@ -403,6 +438,113 @@ def strip_markup(text: str) -> str:
     return re.sub(r"\ue000(\d+)\ue001", lambda m: kept[int(m.group(1))], text)
 
 
+_POLYGLOT_DECL_RE = re.compile(
+    r"^(?:\s*)(?:"
+    r"pub(?:\([^)]+\))?\s+(?:async\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)"
+    r"|func\s+(?:\([^)]+\)\s*)?([A-Za-z_]\w*)"
+    r"|type\s+([A-Z]\w*)\s+(?:struct|interface)\b"
+    r"|export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type)\s+([A-Za-z_]\w*)"
+    r"|(?:public|protected)\s+(?:(?:static|final|abstract|sealed|data|open)\s+)*(?:class|interface|enum|record)\s+([A-Za-z_]\w*)"
+    r"|(?:fun|function)\s+([A-Za-z_]\w*)"
+    r"|([A-Za-z_][\w.]*)\s*<-\s*function\s*\("
+    r"|(?:struct|class)\s+([A-Za-z_]\w*)\s*[:{]"
+    r")"
+)
+_C_FUNC_RE = re.compile(
+    r"^(?:[A-Za-z_][\w:<>*&\s]+?)\s+([A-Za-z_]\w*)\s*\([^;]*\)\s*\{"
+)
+_C_CONTROL = frozenset({"if", "for", "while", "switch", "catch", "return", "sizeof"})
+
+
+def polyglot_signals(path: str, text: str) -> FileSignals:
+    """Extract top-of-file module doc and public declarations with doc comments
+    from non-Python source files (.rs, .go, .ts, .tsx, .js, .java, .kt, .c, .cpp,
+    .h, .hpp, .R, .jl). Dependencies remain strictly manifest-sourced."""
+    lines = text[:_MAX_FILE_CHARS].splitlines()
+    module_doc_lines: list[str] = []
+    idx = 0
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+    while idx < len(lines):
+        stripped = lines[idx].strip()
+        if stripped.startswith(("!", "#!")) and idx == 0:
+            idx += 1
+            continue
+        if stripped.startswith(("//! ", "//!", "///", "//", "#'", "#")):
+            cleaned = re.sub(r"^(?://!|///|//|#'|#)\s?", "", stripped).strip()
+            if cleaned:
+                module_doc_lines.append(cleaned)
+            idx += 1
+        elif stripped.startswith(("/*", "/**")):
+            block: list[str] = []
+            while idx < len(lines):
+                s_line = lines[idx].strip()
+                cleaned = re.sub(r"^(?:/\*+|\*+/|\*)\s?", "", s_line)
+                cleaned = re.sub(r"\*+/$", "", cleaned).strip()
+                if cleaned:
+                    block.append(cleaned)
+                if "*/" in s_line:
+                    idx += 1
+                    break
+                idx += 1
+            module_doc_lines.extend(block)
+            break
+        else:
+            break
+    module_doc = "\n".join(module_doc_lines).strip() or None
+
+    definitions: list[tuple[str, str | None]] = []
+    pending_doc: list[str] = []
+    in_block_doc = False
+    for line in lines:
+        stripped = line.strip()
+        if in_block_doc:
+            cleaned = re.sub(r"^(?:\*+/|\*)\s?", "", stripped)
+            cleaned = re.sub(r"\*+/$", "", cleaned).strip()
+            if cleaned:
+                pending_doc.append(cleaned)
+            if "*/" in stripped:
+                in_block_doc = False
+            continue
+        if stripped.startswith("/**"):
+            pending_doc = []
+            cleaned = re.sub(r"^/\*\*+\s?", "", stripped)
+            cleaned = re.sub(r"\*+/$", "", cleaned).strip()
+            if cleaned:
+                pending_doc.append(cleaned)
+            if "*/" not in stripped:
+                in_block_doc = True
+            continue
+        if stripped.startswith("//!"):
+            pending_doc = []
+            continue
+        if stripped.startswith(("///", "//", "#'")):
+            cleaned = re.sub(r"^(?:///|//|#')\s?", "", stripped).strip()
+            if cleaned:
+                pending_doc.append(cleaned)
+            continue
+        if stripped.startswith("#[") or stripped.startswith("@"):
+            continue
+        match = _POLYGLOT_DECL_RE.match(line)
+        name = next((g for g in match.groups() if g), None) if match else None
+        if name is None and path.endswith((".c", ".cpp", ".h", ".hpp")):
+            cm = _C_FUNC_RE.match(stripped)
+            if cm and cm.group(1) not in _C_CONTROL:
+                name = cm.group(1)
+        if name and not name.startswith("_"):
+            doc = " ".join(pending_doc).strip() or None
+            definitions.append((name, doc))
+            pending_doc = []
+        else:
+            pending_doc = []
+
+    return FileSignals(
+        path=path,
+        module_doc=module_doc,
+        definitions=tuple(definitions),
+    )
+
+
 def file_signals(
     path: str, text: str, *, local: frozenset[str] = frozenset()
 ) -> FileSignals:
@@ -412,8 +554,8 @@ def file_signals(
         return prose_signals(path, text)
     if path.endswith(".py"):
         return python_signals(path, text, local=local)
-    # A language we have no parser for. Its dependencies are read from its
-    # manifest by manifest_libraries, never guessed from its source.
+    if path.endswith(_POLYGLOT_SUFFIXES):
+        return polyglot_signals(path, text)
     return FileSignals(path=path)
 
 
@@ -458,7 +600,14 @@ def interesting_paths(
         and not _is_test(path)
         and not any(fragment in f"/{path}" for fragment in _NOISE)
     ]
-    candidates.sort(key=lambda path: (path.count("/"), len(path), path))
+    candidates.sort(
+        key=lambda path: (
+            1 if path.endswith(_POLYGLOT_SUFFIXES) else 0,
+            path.count("/"),
+            len(path),
+            path,
+        )
+    )
     return tuple(candidates[:limit])
 
 

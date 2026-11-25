@@ -126,11 +126,11 @@ def test_interesting_paths_respects_its_limit():
 
 
 def test_files_without_a_parser_do_not_take_a_fetch_slot():
-    paths = tuple(f"a{i}.js" for i in range(8)) + tuple(f"b{i}.go" for i in range(8))
+    paths = tuple(f"a{i}.bin" for i in range(8)) + tuple(f"b{i}.wasm" for i in range(8))
     paths += ("x.py", "y.py", "z.py")
     chosen = interesting_paths(paths, limit=5)
     assert {"x.py", "y.py", "z.py"} <= set(chosen)
-    assert not [p for p in chosen if p.endswith((".js", ".go"))]
+    assert not [p for p in chosen if p.endswith((".bin", ".wasm"))]
 
 
 def test_directory_names_are_a_signal():

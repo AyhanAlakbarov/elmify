@@ -82,8 +82,32 @@ def test_a_page_reaches_the_reader_only_by_name_or_year(text, expected):
 @pytest.mark.parametrize(
     ("term", "folded"),
     [("başvuru", "basvuru"), ("müraciət", "muraciet"), ("son qəbul", "son qebul"),
-     ("Straße", "Strasse")],
+     ("Straße", "strasse"), ("募集", "muji")],
 )
 def test_folding_transliterates_rather_than_dropping(term, folded):
     """Review of 1a72ace: NFKD + ignore turned müraciət into muracit."""
     assert vocab._fold(term) == folded
+
+
+def test_apply_links_matches_ascii_slugs_for_non_ascii_terms_and_japanese_romaji():
+    vocab.terms.cache_clear()
+    ja_cycle = set(vocab.for_languages("cycle", ["ja"]))
+    ja_apply = set(vocab.for_languages("apply", ["ja"]))
+    assert {"boshu", "oubo", "youkou"} <= ja_cycle
+    assert {"oubo", "shutsugan"} <= ja_apply
+
+    html = (
+        b'<html><body>'
+        b'<a href="/burs/basvuru">Apply Now</a>'
+        b'<a href="/stipend/muraciet">Form</a>'
+        b'<a href="/stipendia/prihlaska">Form</a>'
+        b'</body></html>'
+    )
+    links = vocab.apply_links(
+        html, base_url="https://funder.example.org/", languages=["tr", "az", "cs"]
+    )
+    assert links == (
+        "https://funder.example.org/burs/basvuru",
+        "https://funder.example.org/stipend/muraciet",
+        "https://funder.example.org/stipendia/prihlaska",
+    )

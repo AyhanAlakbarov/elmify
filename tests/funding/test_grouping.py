@@ -125,3 +125,77 @@ def test_group_under_funding_orders_programmes_by_rank_then_name() -> None:
     ]
 
 
+def test_wp3_outbound_home_country_and_holder_scholarships_group_foreign_programmes() -> None:
+    baku = _programme("Baku State MSc", country_code="AZ", degree_level="MASTER")
+    delft = _programme("TU Delft MSc", country_code="NL", degree_level="MASTER")
+    munich = _programme("TUM MSc", country_code="DE", degree_level="MASTER")
+    # Outbound home-government HOLDER scholarship without explicit funds_program_ids
+    dp_state = _award(
+        "Azerbaijan State Programme (DP) for Study Abroad",
+        scope="HOLDER",
+        country_code="AZ",
+        levels=("MASTER",),
+    )
+
+    groups = group_under_funding([baku, delft, munich, dp_state], home_country="AZ")
+
+    assert groups[0].label == "Programmes it can pay for"
+    assert [p.candidate.program_name for p in groups[0].programmes] == [
+        "TU Delft MSc",
+        "TUM MSc",
+    ]
+    assert [p.candidate.program_name for p in groups[-1].programmes] == ["Baku State MSc"]
+
+
+def test_multi_country_award_resolves_per_country_amount_on_grouped_programmes() -> None:
+    from apps.funding.grouping import award_amounts_for_country
+
+    delft = _programme("TU Delft MSc", country_code="NL", degree_level="MASTER")
+    munich = _programme("TUM MSc", country_code="DE", degree_level="MASTER")
+    edinburgh = _programme("Edinburgh MSc", country_code="GB", degree_level="MASTER")
+    kth = _programme("KTH MSc", country_code="SE", degree_level="MASTER")
+    multi_award = RecommendationCandidate(
+        program_name="Multi-Country Outbound Scholarship",
+        opportunity_id=uuid4(),
+        country_code="AZ",
+        funding_card={
+            "scope": "HOLDER",
+            "deadline": "2026-12-01",
+            "degree_levels": ["MASTER"],
+            "amounts": [
+                "Germany: 934 EUR/month",
+                "Netherlands: 1150 EUR/month",
+                "United Kingdom: 1350 GBP/month",
+            ],
+            "amounts_by_country": {
+                "DE": ["934 EUR/month"],
+                "NL": ["1150 EUR/month"],
+                "GB": ["1350 GBP/month"],
+            },
+            "default_amounts": ["800 EUR/month"],
+        },
+    )
+
+    assert award_amounts_for_country(multi_award.funding_card, "DE") == ("934 EUR/month",)
+    assert award_amounts_for_country(multi_award.funding_card, "GB") == ("1350 GBP/month",)
+    assert award_amounts_for_country(multi_award.funding_card, "SE") == ("800 EUR/month",)
+    assert award_amounts_for_country(multi_award.funding_card, "") == (
+        "Germany: 934 EUR/month",
+        "Netherlands: 1150 EUR/month",
+        "United Kingdom: 1350 GBP/month",
+    )
+
+    groups = group_under_funding(
+        [delft, munich, edinburgh, kth, multi_award], home_country="AZ"
+    )
+    by_name = {p.candidate.program_name: p.award_amount for p in groups[0].programmes}
+    assert by_name == {
+        "Edinburgh MSc": "1350 GBP/month",
+        "TU Delft MSc": "1150 EUR/month",
+        "TUM MSc": "934 EUR/month",
+        "KTH MSc": "800 EUR/month",
+    }
+
+
+
+

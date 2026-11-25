@@ -1,5 +1,10 @@
 <section class="panel" aria-labelledby="referees-heading" id="referees">
-  <h2 id="referees-heading">{% if counselor_view %}Referees{% else %}Your referees{% endif %}</h2>
+  <div class="panel-head">
+    <h2 id="referees-heading">{% if counselor_view %}Referees{% else %}Your referees{% endif %}</h2>
+    {% if not counselor_view %}
+      <a class="btn btn-quiet btn-small" href="{% url 'student-referee-plan' %}">Who writes for which application &rarr;</a>
+    {% endif %}
+  </div>
   {% if rows %}
     <div class="ref-list">
       {% for referee, edit in rows %}
@@ -11,6 +16,28 @@
           <p class="muted">{{ referee.institution }}{% if referee.email %} · {{ referee.email }}{% if not referee.institutional_email %} (not a university address){% endif %}{% endif %}</p>
           <p>{{ referee.get_kind_display }} · agreed to {{ referee.agreed_requests }} portal request{{ referee.agreed_requests|pluralize }}{% if referee.gives_generic_letter %} · gives a general letter{% endif %}</p>
           {% if referee.relationship %}<p class="muted">{{ referee.relationship }}</p>{% endif %}
+          {% if not counselor_view %}
+            {% if referee.visible_requests %}
+              <div class="ref-assigned-apps" aria-label="Assigned applications">
+                <span class="ref-assigned-label">Applications:</span>
+                {% for req in referee.visible_requests %}
+                  <a href="{% url 'student-referee-plan' %}#app-{{ req.application_id }}" class="ref-app-chip ref-app-chip--{{ req.state|lower }}">
+                    <span class="ref-app-chip-title">{{ req.application.title }}</span>
+                    <span class="ref-status-badge ref-status-badge--{{ req.state|lower }}">
+                      {% if req.state == "AGREED" %}&#10003; Agreed{% elif req.state == "SUBMITTED" %}&#10003; Submitted{% elif req.state == "ASKED" %}&#9203; Asked{% elif req.state == "DECLINED" %}&#10005; Not agreed{% else %}Proposed{% endif %}
+                    </span>
+                  </a>
+                {% endfor %}
+              </div>
+            {% else %}
+              <div class="ref-assigned-apps" aria-label="Assigned applications">
+                <span class="ref-assigned-label">Applications:</span>
+                <a class="ref-app-chip ref-app-chip--proposed" href="{% url 'student-referee-plan' %}">
+                  <span class="ref-app-chip-title">Not assigned yet — choose in Who writes for which application &rarr;</span>
+                </a>
+              </div>
+            {% endif %}
+          {% endif %}
           {% if not counselor_view %}
             <div class="row-actions">
               <a class="btn btn-quiet btn-small" href="{% url 'student-referee-package' referee.id %}">What to send {{ referee.label }}</a>

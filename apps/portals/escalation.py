@@ -16,7 +16,7 @@ from apps.concierge.models import Notification, RoadmapItem
 from apps.tenancy.db import tenant_transaction
 from apps.tenancy.models import CounselorAssignment, Membership
 
-from .models import Application, ApplicationStep
+from .models import Application, ApplicationStep, FieldMap
 
 logger = logging.getLogger(__name__)
 
@@ -151,6 +151,15 @@ def request_first_portal_review(application: Application) -> RoadmapItem | None:
     """
     portal_form = application.portal_form
     if portal_form is None or not portal_form.review_required:
+        return None
+    if FieldMap.objects.filter(
+        portal_form=portal_form,
+        learned_by_tenant__isnull=True,
+        verified_at__isnull=False,
+        superseded_at__isnull=True,
+    ).exists():
+        portal_form.review_required = False
+        portal_form.save(update_fields=["review_required"])
         return None
     with tenant_transaction(application.tenant_id):
         recipient = _recipient(application, Trigger.AMBIGUOUS_DECISION)

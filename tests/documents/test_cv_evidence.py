@@ -213,3 +213,63 @@ def test_hyperlinks_ban_strips_and_checks_project_url():
     assert cleaned.projects[0].url is None
     artifact = render_cv(cleaned, variant="STANDARD", constraints=(rule,))
     assert artifact.pdf_bytes is not None
+
+
+def test_unicode_tokens_match_whole_words_and_reverted_fixes_remain_redoable():
+    cv = _base_cv(
+        experience=(
+            ExperienceEntry(
+                employer="Bakı Dövlət Universiteti",
+                group="Kataliz Laboratoriyası",
+                title="Tədqiqatçı",
+                start_date="2025-02-01",
+                end_date="2025-07-01",
+                bullets=("Built reaction data pipeline.",),
+            ),
+        ),
+    )
+    az_reading = _reading(
+        repo="bdu-kataliz/rxn-pipeline",
+        owner_type="Organization",
+        owner_name="Bakı Dövlət Universiteti",
+        commits=4,
+        names=(),
+        bullets=(
+            UsableBullet("Benchmarked 4 transformer tokenizers.", ("4",), "supported"),
+        ),
+    )
+    assert match_reading_target(az_reading, cv) == ("experience", 0)
+
+    # Undone matched reading records undone=True fix and leaves experience untouched.
+    updated_exp, exp_fixes = apply_cv_evidence(
+        cv,
+        (az_reading,),
+        undone=frozenset({"github:bdu-kataliz/rxn-pipeline@experience:0"}),
+    )
+    assert updated_exp.experience[0].bullets == ("Built reaction data pipeline.",)
+    assert exp_fixes == (
+        {
+            "kind": "added_from_github",
+            "reading": "github:bdu-kataliz/rxn-pipeline",
+            "target": "experience:0",
+            "undone": True,
+        },
+    )
+
+    # Undone unmatched project reading records undone=True fix and leaves projects empty.
+    side = _reading()
+    updated_proj, proj_fixes = apply_cv_evidence(
+        cv,
+        (side,),
+        undone=frozenset({"github:0rkhann/microkatc@projects"}),
+    )
+    assert updated_proj.projects == ()
+    assert proj_fixes == (
+        {
+            "kind": "added_from_github",
+            "reading": "github:0rkhann/microkatc",
+            "target": "projects",
+            "undone": True,
+        },
+    )
+

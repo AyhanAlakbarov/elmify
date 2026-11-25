@@ -1,26 +1,45 @@
 {% extends "base.html" %}
 {% block title %}Request package{% endblock %}
 {% block content %}
-  <nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-referees' %}">Referees</a></nav>
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-referees' %}">Referees</a><span aria-hidden="true">/</span><span aria-current="page">What to send {{ referee.label }}</span></nav>
   <div class="page-head">
     <div>
       <h1>What to send {{ referee.label }}</h1>
       <p>You send this yourself, from your own email. We never write to your referees.</p>
     </div>
+    <div class="row-actions">
+      <a class="btn btn-quiet" href="{% url 'student-referees' %}">Your referees</a>
+      <a class="btn btn-quiet" href="{% url 'student-referee-plan' %}">Who writes for which application</a>
+    </div>
   </div>
+  <nav class="doc-tabs" aria-label="Referees sections">
+    <a href="{% url 'student-referees' %}">Your referees</a>
+    <a href="{% url 'student-referee-plan' %}">Who writes for which application</a>
+    <a href="{% url 'student-referee-package' referee.id %}" aria-current="page">What to send {{ referee.label }}</a>
+  </nav>
   <section class="panel" aria-labelledby="applications-heading">
     <h2 id="applications-heading">Applications</h2>
     {% for line in lines %}
-      <article class="ref-card" id="req-{{ line.request.id }}">
+      <article class="ref-card ref-card--{{ line.request.state|lower }}" id="req-{{ line.request.id }}">
         <div class="ref-card-head">
           <div class="ref-card-title">
             <h3>{{ line.title }}</h3>
-            <span class="badge {% if line.request.state == 'AGREED' or line.request.state == 'SUBMITTED' %}badge-ok{% elif line.request.state == 'ASKED' %}badge-brand{% else %}badge{% endif %}">{{ line.request.get_state_display }}</span>
+            {% if line.request.state == "AGREED" %}
+              <span class="ref-status-badge ref-status-badge--agreed">&#10003; Agreed to write</span>
+            {% elif line.request.state == "SUBMITTED" %}
+              <span class="ref-status-badge ref-status-badge--submitted">&#10003; Letter submitted</span>
+            {% elif line.request.state == "ASKED" %}
+              <span class="ref-status-badge ref-status-badge--asked">&#9203; Asked — awaiting reply</span>
+            {% elif line.request.state == "DECLINED" %}
+              <span class="ref-status-badge ref-status-badge--declined">&#10005; Not agreed (declined)</span>
+            {% else %}
+              <span class="ref-status-badge ref-status-badge--proposed">Proposed — not asked yet</span>
+            {% endif %}
           </div>
           <form method="post" action="{% url 'student-referee-request-state' line.request.id %}" class="inline-form ref-status-form">
             {% csrf_token %}
             <label for="state-{{ line.request.id }}">Status ({{ line.request.get_state_display|lower }})</label>
-            <select id="state-{{ line.request.id }}" name="state">
+            <select id="state-{{ line.request.id }}" name="state" class="ref-state-select ref-state-select--{{ line.request.state|lower }}">
               {% if line.request.state == "PROPOSED" %}<option value="" disabled selected>Proposed — choose…</option>{% endif %}
               {% for value, label in marks %}<option value="{{ value }}"{% if value == line.request.state %} selected{% endif %}>{{ label }}</option>{% endfor %}
             </select>
@@ -51,6 +70,15 @@
     <h2 id="facts-sheet-heading">Facts sheet</h2>
     {% if referee.relationship %}<p>{{ referee.relationship }}</p>{% endif %}
     {% if angle %}<p class="note"><strong>Recommended focus:</strong> {{ angle }}</p>{% endif %}
+    {% if co_referee_coverage %}
+      <div class="co-referee-partition">
+        <h3>How your referees split the evidence</h3>
+        <p class="muted">Each referee's facts sheet and letter draft focus on distinct evidence so your letters complement rather than repeat one another:</p>
+        <ul class="item-list">
+          {% for co_item in co_referee_coverage %}<li>{{ co_item }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
     {% if shared_work %}
       <h3>What we worked on together</h3>
       <ul class="item-list">
@@ -68,6 +96,58 @@
     {% endif %}
     <ul class="item-list">{% for line in facts %}<li>{{ line }}</li>{% endfor %}</ul>
   </section>
+  <section class="panel compliance-banner" id="referee-compliance-banner" aria-labelledby="compliance-heading">
+    <div class="panel-head">
+      <div>
+        <h2 id="compliance-heading">Confidentiality, institutional email &amp; cohort ranking checklist</h2>
+        <p class="muted">Official admissions and scholarship rules before you share this package with {{ referee.label }}.</p>
+      </div>
+      {% if compliance.email_is_webmail %}
+        <span class="badge badge-warn">Webmail address detected</span>
+      {% elif compliance.email_missing %}
+        <span class="badge">Institutional email needed</span>
+      {% else %}
+        <span class="badge badge-ok">Institutional email on file</span>
+      {% endif %}
+    </div>
+    <ul class="compliance-list">
+      <li>
+        <strong>Confidentiality &amp; authorship:</strong>
+        {% if compliance.has_confidential_portal %}
+          Your programme portal(s) send a confidential upload link directly to {{ referee.label }}. Share the facts sheet and draft below only as optional background notes if {{ referee.label }} asks for a starting point — {{ referee.label }} must review, adapt, sign, and submit the final letter directly.
+        {% else %}
+          Even when you upload a letter yourself, {{ referee.label }} must review, finalize, and sign the letter on official letterhead.
+        {% endif %}
+      </li>
+      <li>
+        <strong>Institutional email &amp; letterhead:</strong>
+        {% if compliance.email_is_webmail %}
+          <code>{{ compliance.email_address }}</code> is a personal webmail address. Universities and funders (including ETH Zurich, Imperial, LSE, Oxford, and Cambridge) reject references registered with personal webmail (<code>@gmail.com</code>, <code>@yahoo.com</code>, <code>@hotmail.com</code>, etc.). Ask {{ referee.label }} for an official institutional or company email address and signed letterhead.
+        {% elif compliance.email_missing %}
+          No email address is recorded for {{ referee.label }} yet. Use {{ referee.label }}'s official university or employer email address (not personal webmail) when registering them in application portals, and ask for signed institutional letterhead.
+        {% else %}
+          Use <code>{{ compliance.email_address }}</code> when registering {{ referee.label }} in portals, and ensure the PDF is on signed official letterhead.
+        {% endif %}
+      </li>
+      <li>
+        <strong>Cohort ranking placeholder:</strong>
+        The draft includes <code>{{ compliance.calibration_placeholder }}</code> so {{ referee.label }} can insert their own honest peer-group comparison (for example, top 5% of 120 students taught). Never fill in a percentile yourself.
+      </li>
+    </ul>
+  </section>
+  <section class="panel" aria-labelledby="draft-letter-heading">
+    <div class="panel-head">
+      <div>
+        <h2 id="draft-letter-heading">Ready-to-refine letter draft</h2>
+        <p class="muted">Tailored from your confirmed CV, transcript coursework, research, and work with {{ referee.label }}. Edit or refine it here before sending or sharing.</p>
+      </div>
+      <p class="row-actions"><button type="button" class="btn-quiet btn-small" data-copy="package-draft-letter">Copy letter draft</button> <span role="status" aria-live="polite"></span></p>
+    </div>
+    <p>
+      <label for="package-draft-letter">Draft recommendation / reference letter</label>
+      <textarea id="package-draft-letter" rows="18">{{ draft_letter }}</textarea>
+    </p>
+  </section>
   <section class="panel" aria-labelledby="message-heading">
     <div class="panel-head">
       <h2 id="message-heading">Your message</h2>
@@ -75,7 +155,7 @@
     </div>
     <p>
       <label for="package-message">Copy this into your email</label>
-      <textarea id="package-message" rows="16" readonly>{{ message }}</textarea>
+      <textarea id="package-message" rows="16">{{ message }}</textarea>
     </p>
   </section>
 {% endblock %}

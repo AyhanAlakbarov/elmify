@@ -36,7 +36,7 @@ from apps.concierge.services import (
 from apps.concierge.views import messages_context
 from apps.documents.gap_intake import submit_answers
 from apps.documents.gaps import UnanswerableQuestion
-from apps.documents.referee_views import referee_context
+from apps.documents.referee_views import referee_context, visible_referee_requests
 from apps.documents.storage import staff_may_view
 from apps.documents.transcript_pages import TranscriptRegistrationRefused, register_transcript
 from apps.documents.views import page_context, render_gap_page
@@ -533,6 +533,11 @@ def _programme_page(
             "card": card,
             "page": page,
             "checklist": checklist_for(lane.lead, counselor_view=counselor_view),
+            "referee_requests": (
+                [q for q in visible_referee_requests(student) if q.application_id == application_id]
+                if not counselor_view and not read_only
+                else []
+            ),
             "profile_alignment": profile_alignment_for(student, candidate),
             "missing": missing_links(card, counselor_view=counselor_view),
             "notice": notice_for(lane.lead.country),

@@ -10,7 +10,9 @@ same day.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -19,6 +21,8 @@ from itertools import batched
 import urllib3
 from django.conf import settings
 
+from apps.funding.cycle_schedule import _day_of_year, _month_center_doy, seasonal_hazard
+
 from .site import _BASE, Get, Post, _call, _get, _get_json, _headers, _post
 
 logger = logging.getLogger(__name__)
@@ -26,12 +30,39 @@ logger = logging.getLogger(__name__)
 #: Monthly, at 06:00 on the 1st. Firecrawl spreads its own monitors across the
 #: window, so this is a request, not a guarantee of the minute.
 MONITOR_CRON = "0 6 1 * *"
+MONITOR_CRON_BIWEEKLY = "0 6 1,15 * *"
+MONITOR_CRON_WEEKLY = "0 6 * * 1"
 #: Firecrawl's documented ceiling per monitor. A site with more is split, and
 #: the split is explicit because a create call that silently kept the first 50
 #: leaves the rest unmonitored with nothing saying so.
 MAX_TARGETS = 50
 #: One admissions cycle.
 RETENTION_DAYS = 365
+
+
+def seasonal_monitor_cron(
+    *,
+    today: dt.date | None = None,
+    open_month: int | None = None,
+    deadline: dt.date | None = None,
+) -> str:
+    """Select a Firecrawl cron schedule scaled to sqrt(lambda(t)) (Proposition 2)."""
+    if open_month is None and deadline is None:
+        return MONITOR_CRON
+    ref = today or dt.date.today()
+    open_doy = _month_center_doy(open_month) if open_month is not None else None
+    deadline_doy = _day_of_year(deadline) if deadline is not None else None
+    lam = seasonal_hazard(
+        _day_of_year(ref),
+        open_doy=open_doy,
+        deadline_doy=deadline_doy,
+    )
+    ratio = math.sqrt(lam)
+    if ratio >= 2.2:
+        return MONITOR_CRON_WEEKLY
+    if ratio >= 1.35:
+        return MONITOR_CRON_BIWEEKLY
+    return MONITOR_CRON
 
 
 class MonitorBudgetExceeded(RuntimeError):
@@ -122,6 +153,10 @@ def create_monitor(
     targets: Sequence[dict[str, object]],
     already_committed: int = 0,
     reserve: int = 0,
+    cron: str | None = None,
+    open_month: int | None = None,
+    deadline: dt.date | None = None,
+    today: dt.date | None = None,
     post: Post = _post,
     delete: Delete = _delete,
 ) -> MonitorCreated:
@@ -142,10 +177,15 @@ def create_monitor(
     into the exception message either way, so the orphan is recoverable by
     hand if the delete call itself fails.
     """
+    selected_cron = cron or seasonal_monitor_cron(
+        today=today,
+        open_month=open_month,
+        deadline=deadline,
+    )
     payload = {
         "name": name,
         "targets": list(targets),
-        "cron": MONITOR_CRON,
+        "cron": selected_cron,
         "retentionDays": RETENTION_DAYS,
         # Off, deliberately, and `goal` is omitted with it: a goal with no
         # judge is a field the vendor ignores, and leaving it in would read

@@ -314,10 +314,20 @@ def stated_cycle(c: Candidates) -> int | None:
 
 def page_date(decisions: Iterable[Decision], c: Candidates, default: dt.date) -> dt.date:
     """The page's own published/updated date when the readers found one; else `default`."""
+    import calendar
+
     by = {d.question: d.value for d in decisions}
-    return max((dt.date(d.year, d.month, d.day or 1) for k, f in c.dates.items()
-                if by.get(f"role_{k}") == "page_published_or_updated"
-                and (d := f.value).year and d.month and not d.order_ambiguous), default=default)
+    return max(
+        (
+            dt.date(d.year, d.month, min(d.day or 1, calendar.monthrange(d.year, d.month)[1]))
+            for k, f in c.dates.items()
+            if by.get(f"role_{k}") == "page_published_or_updated"
+            and (d := f.value).year
+            and d.month
+            and not d.order_ambiguous
+        ),
+        default=default,
+    )
 
 
 def _level(a: _Answers, funder_country: str, lang: str, source: str) -> Parsed:

@@ -880,4 +880,87 @@ def test_generation_records_a_verb_fix(agency_a, django_user_model, settings):
     assert result.applied_fixes[-1].original == "A pipeline for the lab and the team."
 
 
+def test_long_repo_evidence_fix_hashes_subject_and_preserves_pass1_fixes_on_retry(
+    agency_a, django_user_model, settings
+):
+    from unittest.mock import patch
+
+    from apps.documents.cv_fixes import remember_revert, reverted_subjects
+    from apps.documents.evidence.readings import UsableBullet, UsableReading
+    from apps.documents.requirement_list import Requirement, RequirementList
+    from apps.documents.schemas import SkillEntry
+    from apps.documents.verification import payload_keys
+
+    assert "field" in payload_keys(VerifiedFact.Category.EDUCATION)
+    assert "field_of_study" in payload_keys(VerifiedFact.Category.EDUCATION)
+
+    settings.CV_REPO_BULLETS_ENABLED = True
+    long_repo = "organization-with-a-very-long-name/repository-with-an-equally-long-identifier-2026"
+    reading = UsableReading(
+        source="github",
+        url=f"https://github.com/{long_repo}",
+        document_id=None,
+        summary="Distributed solver.",
+        kind="project",
+        names=("LongSolverProject",),
+        first_commit="2024-01-01",
+        last_commit="2025-01-01",
+        bullets=(UsableBullet("Implemented distributed solver.", ("solver",), "supported"),),
+        repo=long_repo,
+    )
+    req_list = RequirementList(
+        items=(
+            Requirement(
+                document="cv",
+                key="competency",
+                origin="programme",
+                force="info",
+                sentence="Strong leadership in cross-functional teams",
+                relevance_only=True,
+            ),
+        )
+    )
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g-long-repo")
+        _fact(student, confirmed=True)
+        for name in ("Leadership", "Teamwork"):
+            VerifiedFact.objects.create(
+                student=student,
+                category=VerifiedFact.Category.SKILL,
+                payload={"name": name},
+                source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+                source_ref="upload:test",
+                confirmed_by=student,
+                confirmed_at=timezone.now(),
+                created_by=student,
+            )
+        # Pass 1 has Leadership (preserved via requirements.cv_competencies) + Teamwork
+        # (dropped -> fix), plus hallucinated summary -> triggers retry.
+        pass1 = _content(summary="Hallucinated summary.").model_copy(
+            update={"skills": (SkillEntry(name="Leadership"), SkillEntry(name="Teamwork"))}
+        )
+        # Pass 2 drops skills completely -> _preserve_clean_sections restores skills from Pass 1
+        # and preserves Pass 1's soft_skill AppliedFix for Teamwork.
+        pass2 = _content(summary=None).model_copy(update={"skills": ()})
+        client = MagicMock()
+        r1 = MagicMock(output_parsed=pass1, output=[], usage=None, id="r1")
+        r2 = MagicMock(output_parsed=pass2, output=[], usage=None, id="r2")
+        client.responses.parse.side_effect = [r1, r2]
+
+        with patch("apps.documents.generation.usable_readings", return_value=(reading,)):
+            result = generate_cv(student=student, client=client, requirements=req_list)
+
+        assert [s.name for s in result.content.skills] == ["Leadership"]
+        fix_kinds = {f.fix for f in result.applied_fixes}
+        assert "soft_skill" in fix_kinds
+        assert "added_from_github" in fix_kinds
+        gh_fix = next(f for f in result.applied_fixes if f.fix == "added_from_github")
+        assert len(gh_fix.subject) <= 64
+        # Clicking Undo persists to CvFixRevert without DataError and marks the reading undone
+        remember_revert(student, gh_fix.fix, gh_fix.subject)
+        undone = reverted_subjects(student)
+        assert gh_fix.subject in undone
+
+
+
 

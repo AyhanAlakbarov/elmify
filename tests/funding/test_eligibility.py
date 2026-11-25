@@ -508,3 +508,190 @@ def test_cross_scale_grade_conversion_residence_12_month_prior_degree_not_in_and
     assert all_c is not None and "AZ" in all_c and "ZW" in all_c
 
 
+def test_wp3_regions_non_english_exams_pte_cutoffs_uk_honours_and_inverted_scales():
+    # 1. All 13 new regions expand cleanly
+    for code, member in (
+        ("MERCOSUR", "BR"),
+        ("CARICOM", "JM"),
+        ("GCC", "AE"),
+        ("SAARC", "IN"),
+        ("SADC", "ZA"),
+        ("ECOWAS", "NG"),
+        ("MENA", "EG"),
+        ("LATAM", "MX"),
+        ("NORDIC", "SE"),
+        ("VISEGRAD", "PL"),
+        ("BENELUX", "NL"),
+        ("EFTA", "CH"),
+        ("FRANCOPHONE", "SN"),
+    ):
+        expanded = expand_countries(code)
+        assert expanded is not None and member in expanded, code
+
+    # 2. Non-English exam score mappings in decide(LANGUAGE)
+    de_prof = _Profile(language_evidence=(_Language("German", "TestDaF TDN 4"),))
+    assert decide(_t("LANGUAGE", "GTE", "German C1"), de_prof).outcome == "SATISFIED"
+    dsh_prof = _Profile(language_evidence=(_Language("German", "DSH-2"),))
+    assert decide(_t("LANGUAGE", "GTE", "German C1"), dsh_prof).outcome == "SATISFIED"
+    fr_prof = _Profile(language_evidence=(_Language("French", "DALF C1"),))
+    assert decide(_t("LANGUAGE", "GTE", "French C1"), fr_prof).outcome == "SATISFIED"
+    es_prof = _Profile(language_evidence=(_Language("Spanish", "DELE B2"),))
+    assert decide(_t("LANGUAGE", "GTE", "Spanish B2"), es_prof).outcome == "SATISFIED"
+    jp_prof = _Profile(language_evidence=(_Language("Japanese", "JLPT N1"),))
+    assert decide(_t("LANGUAGE", "GTE", "Japanese C1"), jp_prof).outcome == "SATISFIED"
+    kr_prof = _Profile(language_evidence=(_Language("Korean", "TOPIK 5"),))
+    assert decide(_t("LANGUAGE", "GTE", "Korean C1"), kr_prof).outcome == "SATISFIED"
+    zh_prof = _Profile(language_evidence=(_Language("Chinese", "HSK 6"),))
+    assert decide(_t("LANGUAGE", "GTE", "Chinese C1"), zh_prof).outcome == "SATISFIED"
+    zh_b2_prof = _Profile(language_evidence=(_Language("Chinese", "HSK 5"),))
+    assert decide(_t("LANGUAGE", "GTE", "Chinese B2"), zh_b2_prof).outcome == "SATISFIED"
+    tr_prof = _Profile(language_evidence=(_Language("Turkish", "TÖMER C1"),))
+    assert decide(_t("LANGUAGE", "GTE", "Turkish C1"), tr_prof).outcome == "SATISFIED"
+
+    # 3. PTE GSE/CEFR concordance aligned with probability.py (59 -> B2, 76 -> C1, 85 -> C2)
+    pte_65 = _Profile(language_evidence=(_Language("English", "PTE 65"),))
+    assert decide(_t("LANGUAGE", "GTE", "English B2"), pte_65).outcome == "SATISFIED"
+    pte_76 = _Profile(language_evidence=(_Language("English", "PTE 76"),))
+    assert decide(_t("LANGUAGE", "GTE", "English C1"), pte_76).outcome == "SATISFIED"
+    pte_85 = _Profile(language_evidence=(_Language("English", "PTE 85"),))
+    assert decide(_t("LANGUAGE", "GTE", "English C2"), pte_85).outcome == "SATISFIED"
+
+    # 4. Categorical UK Honours bars in decide(GRADE) & Indian First Class vs UK First-Class
+    uk_65 = _Profile(
+        academic_history=(_Academic(grade="65", grading_scale="100", country_code="GB"),)
+    )
+    assert decide(_t("GRADE", "GTE", "2:1"), uk_65).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "GTE", "Upper Second-Class Honours"), uk_65).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "GTE", "First-Class Honours"), uk_65).outcome == "FAILED"
+
+    in_first = _Profile(
+        academic_history=(
+            _Academic(grade="First Class", grading_scale="Indian Division", country_code="IN"),
+        )
+    )
+    assert decide(_t("GRADE", "GTE", "2:1"), in_first).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "GTE", "First-Class Honours"), in_first).outcome == "FAILED"
+
+    # 5. Inverted Czech 1-4 scale (1.0 is best, 3.0 is pass) converts properly against US 4.0 GPA
+    cz_good = _Profile(
+        academic_history=(_Academic(grade="1.3", grading_scale="1-4", country_code="CZ"),)
+    )
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), cz_good).outcome == "SATISFIED"
+    cz_low = _Profile(
+        academic_history=(_Academic(grade="2.8", grading_scale="1-4", country_code="CZ"),)
+    )
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), cz_low).outcome == "FAILED"
+
+
+def test_impl_b_german_bare_scales_cambridge_numeric_torfl_and_au_nz_bg_hu_scales():
+    # 1. German/Austrian bare "4.0" / "5.0" scale is inverted (1.7 -> 1.7 Bavarian <= 2.5)
+    de_4 = _Profile(
+        academic_history=(_Academic(grade="1.7", grading_scale="4.0", country_code="DE"),)
+    )
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), de_4).outcome == "SATISFIED"
+    at_5 = _Profile(
+        academic_history=(_Academic(grade="1.5", grading_scale="5.0", country_code="AT"),)
+    )
+    assert decide(_t("GRADE", "GTE", "4.0/5.0"), at_5).outcome == "SATISFIED"
+
+    # 2. Numeric Cambridge English Scale (120-230) in decide(LANGUAGE)
+    cam_185 = _Profile(language_evidence=(_Language("English", "Cambridge 185"),))
+    assert decide(_t("LANGUAGE", "GTE", "English C1"), cam_185).outcome == "SATISFIED"
+    assert decide(_t("LANGUAGE", "GTE", "English IELTS 7.0"), cam_185).outcome == "SATISFIED"
+    assert decide(_t("LANGUAGE", "GTE", "English IELTS 7.5"), cam_185).outcome == "FAILED"
+    cam_202 = _Profile(language_evidence=(_Language("English", "C1 Advanced 202"),))
+    assert decide(_t("LANGUAGE", "GTE", "English C2"), cam_202).outcome == "SATISFIED"
+
+    # 3. TORFL / TRKI (I-IV / 1-4 / ТБУ / ТЭУ) Russian proficiency mapping
+    ru_torfl2 = _Profile(language_evidence=(_Language("Russian", "TORFL-II"),))
+    assert decide(_t("LANGUAGE", "GTE", "Russian B2"), ru_torfl2).outcome == "SATISFIED"
+    assert decide(_t("LANGUAGE", "GTE", "Russian C1"), ru_torfl2).outcome == "FAILED"
+    ru_trki3 = _Profile(language_evidence=(_Language("Russian", "ТРКИ-3"),))
+    assert decide(_t("LANGUAGE", "GTE", "Russian C1"), ru_trki3).outcome == "SATISFIED"
+
+    # 4. Australian 7.0, New Zealand 9.0, Bulgarian 2-6, and Hungarian 1-5 scales
+    au_prof = _Profile(
+        academic_history=(_Academic(grade="5.5", grading_scale="7.0", country_code="AU"),)
+    )
+    assert decide(_t("GRADE", "GTE", "5.5/7.0"), au_prof).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), au_prof).outcome == "SATISFIED"
+
+    nz_prof = _Profile(
+        academic_history=(_Academic(grade="6.5", grading_scale="9.0", country_code="NZ"),)
+    )
+    assert decide(_t("GRADE", "GTE", "6.0/9.0"), nz_prof).outcome == "SATISFIED"
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), nz_prof).outcome == "SATISFIED"
+
+    bg_prof = _Profile(
+        academic_history=(_Academic(grade="4.5", grading_scale="2-6", country_code="BG"),)
+    )
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), bg_prof).outcome == "SATISFIED"
+
+    hu_prof = _Profile(
+        academic_history=(_Academic(grade="3.5", grading_scale="1-5", country_code="HU"),)
+    )
+    assert decide(_t("GRADE", "GTE", "3.0/4.0"), hu_prof).outcome == "SATISFIED"
+
+
+def test_prior_institution_alias_acronym_translation_and_operators():
+    tum_profile = _Profile(
+        academic_history=(
+            _Academic(institution="Technical University of Munich", country_code="DE"),
+        )
+    )
+    assert (
+        decide(
+            _t("PRIOR_INSTITUTION", "IN", "Technische Universität München"), tum_profile
+        ).outcome
+        == "SATISFIED"
+    )
+    assert decide(_t("PRIOR_INSTITUTION", "IN", "TU Munich"), tum_profile).outcome == "SATISFIED"
+    assert decide(_t("PRIOR_INSTITUTION", "IN", "TUM"), tum_profile).outcome == "SATISFIED"
+    assert (
+        decide(
+            _t("PRIOR_INSTITUTION", "EQ", "Technische Universität München (TUM)"), tum_profile
+        ).outcome
+        == "SATISFIED"
+    )
+    assert decide(_t("PRIOR_INSTITUTION", "NOT_IN", "TUM"), tum_profile).outcome == "FAILED"
+    assert (
+        decide(
+            _t("PRIOR_INSTITUTION", "NOT_IN", "Baku State University"), tum_profile
+        ).outcome
+        == "SATISFIED"
+    )
+    assert decide(_t("PRIOR_INSTITUTION", "NOT_IN", "DE"), tum_profile).outcome == "FAILED"
+    assert decide(_t("PRIOR_INSTITUTION", "NOT_IN", "AZ"), tum_profile).outcome == "SATISFIED"
+
+    bsu_profile = _Profile(
+        academic_history=(_Academic(institution="Bakı Dövlət Universiteti", country_code="AZ"),)
+    )
+    assert (
+        decide(_t("PRIOR_INSTITUTION", "IN", "Baku State University"), bsu_profile).outcome
+        == "SATISFIED"
+    )
+    assert decide(_t("PRIOR_INSTITUTION", "IN", "BSU"), bsu_profile).outcome == "SATISFIED"
+
+
+def test_language_infers_language_from_unambiguous_standardized_test():
+    de_prof = _Profile(language_evidence=(_Language("German", "C1"),))
+    assert decide(_t("LANGUAGE", "GTE", "TestDaF TDN 4"), de_prof).outcome == "SATISFIED"
+    assert decide(_t("LANGUAGE", "GTE", "DSH-2"), de_prof).outcome == "SATISFIED"
+    assert decide(_t("LANGUAGE", "GTE", "DSH-3"), de_prof).outcome == "FAILED"
+
+    fr_prof = _Profile(language_evidence=(_Language("French", "C1"),))
+    assert decide(_t("LANGUAGE", "GTE", "DELF B2"), fr_prof).outcome == "SATISFIED"
+    assert decide(_t("LANGUAGE", "GTE", "DALF C2"), fr_prof).outcome == "FAILED"
+
+    en_prof = _Profile(language_evidence=(_Language("English", "IELTS 7.0"),))
+    assert decide(_t("LANGUAGE", "GTE", "IELTS 6.5"), en_prof).outcome == "SATISFIED"
+    assert decide(_t("LANGUAGE", "GTE", "TOEFL 100"), en_prof).outcome == "SATISFIED"
+    assert decide(_t("LANGUAGE", "GTE", "TOEFL 105"), en_prof).outcome == "FAILED"
+
+    test_named_prof = _Profile(language_evidence=(_Language("TestDaF", "TDN 4"),))
+    assert decide(_t("LANGUAGE", "GTE", "German C1"), test_named_prof).outcome == "SATISFIED"
+
+
+
+
+

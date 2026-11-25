@@ -907,9 +907,61 @@ _GOOGLE_ARC = (
             "mx.google.com; spf=pass smtp.mailfrom=\u00e9@x.example; dmarc=pass header.from=tum.de",
             False,
         ),
+        # RFC 8601 quoted header.from domain passes while unbalanced quote fails.
+        (
+            "admissions@uni-heidelberg.de",
+            'mx.google.com; dmarc=pass header.from="uni-heidelberg.de"',
+            True,
+        ),
+        (
+            "admissions@uni-heidelberg.de",
+            'mx.google.com; dmarc=pass header.from="uni-heidelberg.de',
+            False,
+        ),
     ],
 )
 def test_google_reads_the_dmarc_result_itself_for_the_from_domain(
     sender, auth_results, expected
 ) -> None:
     assert _gmail_verdict(sender, auth_results) is expected
+
+
+def test_google_and_microsoft_extract_recipients_from_cc_and_delivered_to() -> None:
+    from apps.mailbox.providers import _google_header, _graph_headers
+
+    g_header = _google_header(
+        {
+            "id": "g-cc-1",
+            "internalDate": "1756684800000",
+            "payload": {
+                "headers": [
+                    {"name": "From", "value": "Admissions <admissions@tum.de>"},
+                    {"name": "To", "value": "office@tum.de"},
+                    {"name": "Cc", "value": "Student <leyla.apply+tag1@gmail.com>"},
+                    {"name": "Delivered-To", "value": "leyla.apply+tag2@gmail.com"},
+                ]
+            },
+        }
+    )
+    assert g_header is not None
+    assert g_header.recipients == (
+        "office@tum.de",
+        "leyla.apply+tag1@gmail.com",
+        "leyla.apply+tag2@gmail.com",
+    )
+
+    m_headers = _graph_headers(
+        {
+            "value": [
+                {
+                    "id": "m-cc-1",
+                    "receivedDateTime": "2026-09-01T12:00:00Z",
+                    "from": {"emailAddress": {"address": "admissions@tum.de"}},
+                    "toRecipients": [{"emailAddress": {"address": "office@tum.de"}}],
+                    "ccRecipients": [{"emailAddress": {"address": "leyla.apply+tag3@outlook.com"}}],
+                }
+            ]
+        }
+    )
+    assert len(m_headers) == 1
+    assert m_headers[0].recipients == ("office@tum.de", "leyla.apply+tag3@outlook.com")

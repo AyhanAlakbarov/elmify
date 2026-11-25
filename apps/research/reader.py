@@ -138,6 +138,9 @@ _ADMISSION_TERMS = re.compile(
     r"|requirement|qualification|who can apply|applicant|application|bachelor|master"
     r"|degree|diploma|credit|ects|gpa|transcript|curricul|module|syllabus|proficiency"
     r"|ielts|toefl|portfolio"
+    r"|zulassung|voraussetzung|bewerbung|unterlagen|conditions d'admission|candidature"
+    r"|requisitos|admisi[óo]n|ammissione|requisiti|toelating|başvuru|koşul|belgeler"
+    r"|поступление|требования|出願|募集要項|지원자격|제출서류"
     r"|\bcv\b|résumé|resume|lebenslauf|europass|document|upload|format|template|pages?\b",
     re.IGNORECASE,
 )

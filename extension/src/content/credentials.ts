@@ -3,20 +3,29 @@
  *
  * Read the way a password manager reads them, not from a FieldMap: a password
  * box is the one control a page cannot disguise, so the page kind and the
- * password boxes come from `type="password"` alone. The address goes into the
- * one box before the first password box that asks for it -- and when that is
- * not exactly one box, nothing is typed at all, because a password in the
- * wrong box is the mistake this file exists not to make. Never clicks: the
- * student presses Log in / Register.
- *
- * ponytail: a login whose username is a portal-issued number gets the address
- * typed into its one box and the portal refuses it -- the student logs in, as
- * before this plan. Learn the username box from the bench (plan 6) when a
- * measured portal needs it.
+ * password boxes come from `type="password"` alone. The address (or the
+ * portal-issued applicant number when the login box explicitly asks for one)
+ * goes into the one box before the first password box that asks for it -- and
+ * when that is not exactly one box, nothing is typed at all, because a password
+ * in the wrong box is the mistake this file exists not to make. Never clicks:
+ * the student presses Log in / Register.
  */
 import { fillVerified, onScreen } from "./fill.js";
+import { accessibleName } from "./snapshot.js";
 import type { VerifiedEntry } from "./verify.js";
 import { visible } from "./verify.js";
+
+const APPLICANT_ID_WORDS =
+  /\b(?:applicant|application)\s*(?:id|number|no|nr)|bewerber(?:nummer|kennung|\s*nr)|benutzerkennung|matrikelnummer|candidat(?:e|ure)?\s*(?:id|number|no)|başvuru\s*numarası|müraciət\s*nömrəsi|номер\s*заявки\b/i;
+const EMAIL_WORDS = /\be-?mail\b|correo|courriel|почт/i;
+
+/** True when a login's identifier box explicitly asks for a portal-issued
+ *  applicant number rather than an email address. */
+export function wantsApplicationNumber(input: HTMLInputElement): boolean {
+  if (input.type === "email" || input.autocomplete === "email") return false;
+  const label = `${accessibleName(input)} ${input.name} ${input.id} ${input.placeholder}`;
+  return APPLICANT_ID_WORDS.test(label) && !EMAIL_WORDS.test(label);
+}
 
 export interface CredentialPage {
   kind: "login" | "signup";

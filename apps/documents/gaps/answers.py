@@ -117,11 +117,25 @@ def answer_questions(
         if question.payload_key in _NAME_PART_KEYS and len(value) > NAME_PART_MAX:
             # No input in the message or the cause: it is the student's own data.
             raise UnanswerableQuestion(f"keep it to {NAME_PART_MAX} characters") from None
+        target_key = question.payload_key
         stored_value: object = value
-        if question.payload_key == "self_author_index" and value.isdigit():
+        if target_key == "self_author_index" and value.isdigit():
             parsed_idx = int(value)
             stored_value = parsed_idx - 1 if parsed_idx >= 1 else 0
-        updates.setdefault(question.fact_id, {})[question.payload_key] = stored_value
+        elif target_key == "doi":
+            for prefix in (
+                "https://doi.org/",
+                "http://doi.org/",
+                "https://dx.doi.org/",
+                "http://dx.doi.org/",
+            ):
+                if value.casefold().startswith(prefix):
+                    stored_value = value[len(prefix) :].strip()
+                    break
+            else:
+                if value.casefold().startswith(("http://", "https://")):
+                    target_key = "url"
+        updates.setdefault(question.fact_id, {})[target_key] = stored_value
     if not updates and not creations:
         return ()
 
@@ -198,8 +212,10 @@ def answer_questions(
             and not is_author_pick
         ):
             raise UnanswerableQuestion("an authoritative fact cannot be answered over")
-        allowed = payload_keys(target.category)
-        unknown = sorted(set(update_fields) - set(allowed))
+        allowed = set(payload_keys(target.category))
+        if target.category == VerifiedFact.Category.PUBLICATION:
+            allowed.add("url")
+        unknown = sorted(set(update_fields) - allowed)
         if unknown:
             raise UnanswerableQuestion(
                 f"{target.category} facts do not carry {', '.join(unknown)}"

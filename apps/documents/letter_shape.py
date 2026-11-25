@@ -434,7 +434,7 @@ def validate_shape_bounds(shape: LetterShape, document_language: str = "en") -> 
             f"letter shape unsatisfiable: floor of {shape.min_chars} characters exceeds "
             f"cap of {shape.max_chars} characters"
         )
-    if shape.min_chars and shape.max_chars:
+    if shape.min_chars and shape.max_chars and not counts_characters(document_language):
         # min_chars > max_chars above catches the case where the floor
         # (without spaces) already exceeds the cap (with spaces) on its own
         # numbers. This catches the tighter, commoner case: the floor is

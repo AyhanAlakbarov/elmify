@@ -23,11 +23,12 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping, Sequence
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, cast
 
 from apps.accounts.schemas import EvaluationDimension, StudentProfileSnapshot
 from apps.funding.card import award_card
+from apps.funding.eligibility import _normalize_language
 from apps.funding.evaluation import (
     _UPSTREAM_DIMENSIONS,
     ApplicantConditionFact,
@@ -36,7 +37,7 @@ from apps.funding.evaluation import (
     CandidateFacts,
     CostLineItem,
     ReturnServiceFact,
-    duration_category,
+    duration_band,
 )
 from apps.funding.fx import round_money
 from apps.funding.models import (
@@ -49,10 +50,94 @@ from apps.funding.models import (
 )
 from apps.funding.regions import REGIONS
 from apps.funding.transcript_eligibility import (
+    _evaluate_grade_or_gpa_statement,
+    convert_grade_to_bavarian,
     evaluate_program_statement,
     is_coursework_or_credit_statement,
 )
 from apps.funding.validity import Evidence
+
+_LOCALIZED_LANGUAGE_ALIASES: Mapping[str, str] = {
+    "englisch": "english",
+    "anglais": "english",
+    "inglese": "english",
+    "inglés": "english",
+    "ingles": "english",
+    "allemand": "german",
+    "französisch": "french",
+    "franzosisch": "french",
+    "italienisch": "italian",
+    "spanisch": "spanish",
+    "niederländisch": "dutch",
+    "niederlandisch": "dutch",
+}
+
+
+def _norm_teaching_lang(raw: str) -> str:
+    norm = _normalize_language(raw)
+    return _LOCALIZED_LANGUAGE_ALIASES.get(norm, norm)
+
+
+def _best_student_bavarian_grade(profile: StudentProfileSnapshot) -> Decimal | None:
+    """Return the strongest (lowest numerical) Bavarian grade across the student's history."""
+    grades: list[Decimal] = []
+    for record in profile.academic_history:
+        if not record.grade or not record.grade.strip():
+            continue
+        bav = convert_grade_to_bavarian(
+            record.grade,
+            record.grading_scale,
+            record.country_code,
+        )
+        if bav is not None:
+            grades.append(bav)
+    return min(grades) if grades else None
+
+
+def _gpa_academic_fit_adjustment(
+    profile: StudentProfileSnapshot,
+    statements: Sequence[ProgramStatement],
+    evidence_claims: Sequence[str] = (),
+) -> Decimal:
+    """Compute GPA-based ACADEMIC_FIT adjustment from student standing and GPA statements."""
+    delta = Decimal("0")
+    best_bav = _best_student_bavarian_grade(profile)
+    if best_bav is not None:
+        if best_bav <= Decimal("1.15"):
+            delta += Decimal("5")
+        elif best_bav > Decimal("2.50"):
+            penalty = ((best_bav - Decimal("2.50")) * Decimal("10")).quantize(
+                Decimal("1"), rounding=ROUND_HALF_UP
+            )
+            delta -= min(Decimal("15"), max(Decimal("1"), penalty))
+
+    gpa_outcomes: list[str] = []
+    if statements:
+        for stmt in statements:
+            if (
+                stmt.requirement == "REQUIRED"
+                and stmt.kind in ("COMPETENCY", "OTHER")
+                and not is_coursework_or_credit_statement(stmt.text)
+            ):
+                gpa_eval = _evaluate_grade_or_gpa_statement(stmt.text, profile)
+                if gpa_eval is not None:
+                    gpa_outcomes.append(gpa_eval.outcome)
+    if evidence_claims:
+        for claim_text in evidence_claims:
+            if claim_text and claim_text.startswith(("GRADE:", "GRADE_EQUIVALENCE")):
+                gpa_eval = _evaluate_grade_or_gpa_statement(claim_text, profile)
+                if gpa_eval is not None:
+                    gpa_outcomes.append(gpa_eval.outcome)
+    if gpa_outcomes:
+        if "FAILED" in gpa_outcomes:
+            delta -= Decimal("15")
+        elif any(o in ("BORDERLINE", "CONDITIONAL_BRIDGE") for o in gpa_outcomes):
+            delta -= Decimal("5")
+        elif all(o == "SATISFIED" for o in gpa_outcomes):
+            delta += Decimal("5")
+
+    return delta
+
 
 #: Nothing in the catalogue scores qualitative fit yet, so every programme
 #: enters on the same neutral figure and the ranking is decided by
@@ -109,7 +194,9 @@ def _counted(
         return None, None, benefit.period
     if benefit.period not in ("MONTHLY", "ANNUAL"):
         return benefit.amount, benefit.currency, benefit.period
-    if award_months is None or programme_months is None:
+    if programme_months is None:
+        return benefit.amount, benefit.currency, benefit.period
+    if award_months is None:
         return None, None, benefit.period
     span_months = min(award_months, programme_months)
     if benefit.period == "MONTHLY":
@@ -150,14 +237,61 @@ def _tuition_total(
     return (round_money(total), currency) if total > 0 else None
 
 
+def _resolve_benefit_scope(
+    b_rules: Sequence[BenefitRule],
+) -> tuple[str, str | None, str | None, str | None]:
+    for r in b_rules:
+        if r.scope_type == "PROGRAM" and r.program_id is not None:
+            return ("PROGRAM", None, None, str(r.program_id))
+    for r in b_rules:
+        if r.scope_type == "CITY" and r.location_key and r.location_key.strip():
+            return ("CITY", None, r.location_key.strip(), None)
+    country_codes = tuple(
+        dict.fromkeys(
+            r.country_code.strip().upper()
+            for r in b_rules
+            if r.scope_type == "COUNTRY" and r.country_code and r.country_code.strip()
+        )
+    )
+    if country_codes:
+        return ("COUNTRY", ",".join(country_codes), None, None)
+    return ("GLOBAL", None, None, None)
+
+
+def _scope_specificity_and_match(
+    scope_type: str,
+    country_code: str | None,
+    location_key: str | None,
+    program_id: str | None,
+    *,
+    target_country_code: str | None,
+    target_location_key: str | None,
+    target_program_id: str | None,
+) -> tuple[int, bool]:
+    if scope_type == "PROGRAM":
+        return (3, bool(target_program_id and program_id == target_program_id))
+    if scope_type == "CITY":
+        return (2, bool(target_location_key and location_key == target_location_key))
+    if scope_type == "COUNTRY":
+        if not target_country_code or not country_code:
+            return (1, False)
+        allowed = {c.strip().upper() for c in country_code.split(",") if c.strip()}
+        return (1, target_country_code.strip().upper() in allowed)
+    return (0, True)
+
+
 def _benefit_facts(
     benefits: Sequence[FundingBenefit],
     routes: Mapping[object, str] | None = None,
     *,
+    rules: Sequence[BenefitRule] = (),
     durations: Mapping[object, int | None] | None = None,
     programme_months: int | None = None,
     tuition_levels: Mapping[object, str] | None = None,
     tuition_total: tuple[Decimal, str] | None = None,
+    target_country_code: str | None = None,
+    target_location_key: str | None = None,
+    target_program_id: str | None = None,
 ) -> tuple[BenefitFact, ...]:
     """`routes` is opportunity id -> published route, for the programme side;
     `durations` is opportunity id -> the months the award's page states.
@@ -167,8 +301,42 @@ def _benefit_facts(
     them by -- and no read periodic figure is totalled, because there is no
     programme to total it over.
     """
-    facts: list[BenefitFact] = []
+    rules_by_benefit: dict[object, list[BenefitRule]] = {}
+    for rule in rules:
+        rules_by_benefit.setdefault(rule.benefit_id, []).append(rule)
+
+    has_target = any(
+        x is not None for x in (target_country_code, target_location_key, target_program_id)
+    )
+    best_matching_specificity: dict[tuple[object, str], int] = {}
+    resolved_scopes: list[tuple[str, str | None, str | None, str | None, int, bool]] = []
     for benefit in benefits:
+        scope_type, cc, loc, pid = _resolve_benefit_scope(rules_by_benefit.get(benefit.id, ()))
+        spec, matched = _scope_specificity_and_match(
+            scope_type,
+            cc,
+            loc,
+            pid,
+            target_country_code=target_country_code,
+            target_location_key=target_location_key,
+            target_program_id=target_program_id,
+        )
+        resolved_scopes.append((scope_type, cc, loc, pid, spec, matched))
+        if has_target and matched:
+            group_key = (benefit.opportunity_id, benefit.kind)
+            prev = best_matching_specificity.get(group_key, -1)
+            if spec > prev:
+                best_matching_specificity[group_key] = spec
+
+    facts: list[BenefitFact] = []
+    for benefit, (scope_type, cc, loc, pid, spec, matched) in zip(
+        benefits, resolved_scopes, strict=True
+    ):
+        if has_target:
+            group_key = (benefit.opportunity_id, benefit.kind)
+            best_spec = best_matching_specificity.get(group_key, -1)
+            if matched and spec < best_spec:
+                continue
         amount, currency, period = _counted(
             benefit,
             award_months=(durations or {}).get(benefit.opportunity_id),
@@ -195,7 +363,10 @@ def _benefit_facts(
                 amount=amount,
                 currency=currency,
                 period=cast(Any, period),
-                scope_type="GLOBAL",
+                scope_type=cast(Any, scope_type),
+                country_code=cc,
+                location_key=loc,
+                program_id=pid,
                 accessibility=(
                     "ORDINARY"
                     if routes is None or routes.get(benefit.opportunity_id) == GUARANTEED_ROUTE
@@ -329,7 +500,7 @@ def award_facts(
         money_form=award.money_form,
         route=award.route,
         unconfirmed=tuple(part for part in award.unconfirmed.split(";") if part),
-        benefits=_benefit_facts(benefits),
+        benefits=_benefit_facts(benefits, rules=rules),
         applicant_conditions=(
             *published,
             *_nationality_condition(award, published, country_code=country_code),
@@ -344,7 +515,7 @@ def award_facts(
         # present, falling back to Step-0 evidence on the opportunity row.
         evidence=evidence if evidence is not None else default_evidence,
         coverage_is_unstated=not benefits,
-        card=award_card(award, benefits),
+        card=award_card(award, benefits, rules=rules),
         scope=award.scope_type,
         institution_id=str(award.institution_id) if award.institution_id else "",
         country_code=country_code,
@@ -402,6 +573,7 @@ def score_program_fit(
     profile: StudentProfileSnapshot,
     *,
     statements: Sequence[ProgramStatement] = (),
+    evidence_claims: Sequence[str] = (),
     today: date | None = None,
 ) -> dict[EvaluationDimension, Decimal]:
     """Deterministic, zero-query fit scoring across `_UPSTREAM_DIMENSIONS`."""
@@ -481,9 +653,15 @@ def score_program_fit(
         academic_fit = Decimal("85")
     else:
         academic_fit = Decimal("65")
-    taught = {lang.casefold() for lang in program.teaching_languages}
-    accepted = {lang.casefold() for lang in profile.acceptable_teaching_languages}
-    evidenced = {item.language.casefold() for item in profile.language_evidence}
+    taught = {_norm_teaching_lang(lang) for lang in program.teaching_languages if lang}
+    accepted = {
+        _norm_teaching_lang(lang) for lang in profile.acceptable_teaching_languages if lang
+    }
+    evidenced = {
+        _norm_teaching_lang(item.language)
+        for item in profile.language_evidence
+        if item.language
+    }
     if taught & (accepted | evidenced):
         academic_fit = min(Decimal("95"), academic_fit + Decimal("5"))
 
@@ -509,6 +687,10 @@ def score_program_fit(
             elif all(o == "SATISFIED" for o in subject_outcomes):
                 academic_fit = min(Decimal("95"), academic_fit + Decimal("5"))
 
+    gpa_delta = _gpa_academic_fit_adjustment(profile, statements, evidence_claims)
+    if gpa_delta != Decimal("0"):
+        academic_fit = max(Decimal("0"), min(Decimal("95"), academic_fit + gpa_delta))
+
     if profile.career_intent == "PHD":
         is_research = (
             getattr(program, "academic_track", "") == "research" or "research" in program_tokens
@@ -520,35 +702,39 @@ def score_program_fit(
     else:
         career_fit = Decimal("50")
 
-    category = duration_category(program.duration_months)
-    if profile.duration_preference == "NONE" or category == profile.duration_preference:
+    band = duration_band(program.duration_months)
+    if profile.duration_preference == "NONE" or band == profile.duration_preference:
         duration_score = Decimal("90")
-    elif profile.duration_flexibility == "WEIGHTED":
-        justifications = set(profile.longer_program_justifications or ())
-        has_research_track = (
-            getattr(program, "academic_track", "") == "research" or "research" in program_tokens
-        )
-        has_internship_track = bool(
-            program_tokens
-            & {
-                "internship",
-                "industrial",
-                "industry",
-                "placement",
-                "applied",
-                "coop",
-                "practicum",
-            }
-        )
-        if category == "TWO_YEAR" and (
-            ("RESEARCH" in justifications and has_research_track)
-            or ("INTERNSHIP" in justifications and has_internship_track)
-        ):
-            duration_score = Decimal("85")
-        else:
-            duration_score = Decimal("65")
     else:
-        duration_score = Decimal("40")
+        is_adjacent_half_year = (
+            band == "ONE_AND_HALF_YEAR" or profile.duration_preference == "ONE_AND_HALF_YEAR"
+        )
+        if profile.duration_flexibility == "WEIGHTED":
+            justifications = set(profile.longer_program_justifications or ())
+            has_research_track = (
+                getattr(program, "academic_track", "") == "research" or "research" in program_tokens
+            )
+            has_internship_track = bool(
+                program_tokens
+                & {
+                    "internship",
+                    "industrial",
+                    "industry",
+                    "placement",
+                    "applied",
+                    "coop",
+                    "practicum",
+                }
+            )
+            if band in {"ONE_AND_HALF_YEAR", "TWO_YEAR"} and (
+                ("RESEARCH" in justifications and has_research_track)
+                or ("INTERNSHIP" in justifications and has_internship_track)
+            ):
+                duration_score = Decimal("88") if is_adjacent_half_year else Decimal("85")
+            else:
+                duration_score = Decimal("78") if is_adjacent_half_year else Decimal("65")
+        else:
+            duration_score = Decimal("72") if is_adjacent_half_year else Decimal("40")
 
     _post_study_work_countries = frozenset(REGIONS["EEA"].countries) | {
         "CH", "GB", "CA", "AU", "NZ", "US", "JP", "KR", "SG", "AE", "TW",
@@ -644,6 +830,8 @@ def program_facts(
     tuition_levels: Mapping[object, str] | None = None,
     profile: StudentProfileSnapshot | None = None,
     statements: Sequence[ProgramStatement] = (),
+    evidence_claims: Sequence[str] = (),
+    winner_cohort: Any = None,
     today: date | None = None,
     application_deadline: date | None = None,
     scholarship_decision_deadline: date | None = None,
@@ -656,7 +844,13 @@ def program_facts(
     a gate that silently skips is worse than a crash in this repo.
     """
     scores = (
-        score_program_fit(program, profile, statements=statements, today=today)
+        score_program_fit(
+            program,
+            profile,
+            statements=statements,
+            evidence_claims=evidence_claims,
+            today=today,
+        )
         if profile is not None
         else {dimension: _NEUTRAL for dimension in _UPSTREAM_DIMENSIONS}
     )
@@ -687,8 +881,24 @@ def program_facts(
             ):
                 confirmed_failure = True
                 break
+    if not confirmed_failure and profile is not None and evidence_claims:
+        for claim_text in evidence_claims:
+            if not claim_text or not claim_text.startswith(("GRADE:", "GRADE_EQUIVALENCE")):
+                continue
+            if (
+                evaluate_program_statement(
+                    claim_text,
+                    profile,
+                    kind="COMPETENCY",
+                    as_of=today,
+                    include_coursework=False,
+                ).outcome
+                == "FAILED"
+            ):
+                confirmed_failure = True
+                break
 
-    return CandidateFacts(
+    cand = CandidateFacts(
         program_id=str(program.id),
         institution_id=str(program.institution_id or ""),
         program_country_code=program.country_code,
@@ -725,12 +935,29 @@ def program_facts(
         benefits=_benefit_facts(
             benefits,
             routes,
+            rules=rules,
             durations=durations,
             programme_months=program.duration_months,
             tuition_levels=tuition_levels,
             tuition_total=_tuition_total(costs, program.duration_months),
+            target_country_code=program.country_code,
+            target_location_key=program.location_key,
+            target_program_id=str(program.id),
         ),
         applicant_conditions=_condition_facts(rules),
         return_service=_return_service_facts(rules),
         dimension_scores=scores,
     )
+    if (
+        statements or evidence_claims or winner_cohort is not None
+    ) and cand.admission_baseline_pct is None:
+        from apps.funding.probability import is_selective_candidate
+
+        if is_selective_candidate(
+            cand,
+            statements=statements,
+            evidence_claims=evidence_claims,
+            winner_cohort=winner_cohort,
+        ):
+            cand = cand.model_copy(update={"admission_baseline_pct": Decimal("25.00")})
+    return cand

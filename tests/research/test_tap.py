@@ -370,7 +370,7 @@ def test_the_first_search_stages_coverage_then_local_then_deep(tapping_student) 
     queries = [(r.query, r.max_results) for r in exa.requests]
     # Coverage (English, no query cap), then local (German, for DE), then deep.
     assert [q for q, _ in queries[:5]] == [f"v{i} physical chemistry" for i in range(5)]
-    assert queries[5] == ("physical chemistry Masterstudiengang in Deutschland", 12)
+    assert queries[5] == ("Chemie Masterstudiengang in Deutschland", 12)
     # Top 20% of 5 coverage queries by new hosts: the one query that found any, at 100.
     assert queries[6:] == [("v2 physical chemistry", 100)]
     assert all(r.max_results < 100 for r in brave.requests)
@@ -403,7 +403,7 @@ def test_a_coverage_stage_that_runs_dry_still_runs_the_local_stage(tapping_stude
     run_tap(tap.id, seams=seams, providers=[exa])
     queries = [r.query for r in exa.requests if r.max_results < 100]
     assert len(queries) == 11  # ten dry coverage queries are the plateau; then local
-    assert queries[-1] == "physical chemistry Masterstudiengang in Deutschland"
+    assert queries[-1] == "Chemie Masterstudiengang in Deutschland"
     assert _ended(tap) == ("DONE", "PLATEAU")
 
 
@@ -1442,3 +1442,47 @@ def test_a_continuation_that_cannot_be_saved_ends_the_tap_failed(
         run_tap(tap.id, seams=_Seams(by_language={"en": _angles(5)}),
                 providers=[_Provider(_out_of_time_at(clock, 1))])
     assert _ended(tap) == ("DONE", "FAILED") and queued == []
+
+
+def test_multi_country_plateau_in_one_country_does_not_cut_off_second_country(
+    agency_a, django_user_model, settings
+) -> None:
+    """When DE plateaus after FIRST_SEARCH_PLATEAU_BATCH dry queries, remaining DE
+    queries are skipped while FR still executes all of its queries."""
+    from tests.research.coverage_factories import make_published_student
+
+    settings.FIRST_SEARCH_PLATEAU_BATCH = 4
+    settings.FIRST_SEARCH_PLATEAU_MIN_NEW = 2
+
+    student = make_published_student(
+        agency_a,
+        django_user_model,
+        allowed=("DE", "FR"),
+        target_field="Physical chemistry",
+        research_interests=("catalysis",),
+    )
+    with tenant_scope(agency_a.id):
+        tap = request_tap(student, kind=FIRST)
+        fresh = count()
+
+        def urls(request, n):
+            if "France" in request.query:
+                return [f"https://fr-uni-{next(fresh)}.fr/"]
+            return []  # Germany returns 0 new hosts
+
+        dest_angles = tuple(
+            AngleRow(f"en{i}", "en", f"v{i} {{field}} in {{destination}}") for i in range(6)
+        )
+        exa = _Provider(urls)
+        run_tap(
+            tap.id,
+            seams=_Seams(by_language={"en": dest_angles}, reads=False),
+            providers=[exa],
+        )
+        coverage_queries = [r.query for r in exa.requests if r.max_results < 100]
+        de_queries = [q for q in coverage_queries if "Germany" in q]
+        fr_queries = [q for q in coverage_queries if "France" in q]
+        # DE stopped after 4 dry queries; FR ran all 6 of its queries!
+        assert len(de_queries) == 4
+        assert len(fr_queries) == 6
+

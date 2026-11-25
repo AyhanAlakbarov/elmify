@@ -1339,5 +1339,63 @@ def test_partner_domain_match_passes_partner_institution_name_to_paper_lookup(
         assert captured_kwargs["domains"][0] == "polimi.example.test"
 
 
+def test_named_person_prefetches_paper_before_judge_and_reuses_it_on_record(
+    agency_a, membership_a, program_factory
+):
+    from apps.documents.research_fit.anchors import TopicPhrase
+    from apps.documents.research_fit.papers import PaperMatch
+
+    html = (
+        b"<html><body><main>"
+        b"<p>Prof. Sarah Chen is Associate Professor in the Department of Chemistry.</p>"
+        b"</main></body></html>"
+    )
+    with tenant_scope(agency_a.id):
+        program = program_factory(country_code="GB")
+        prompt = _prompt(program)
+        fact = _research_fact(membership_a)
+        lookup_calls = []
+
+        def _lookup(**kwargs):
+            lookup_calls.append(kwargs)
+            return PaperMatch(
+                title="Equivariant Diffusion for Transition-State Geometry",
+                year=2025,
+                url="https://doi.org/10.1000/chem.2025",
+                finding="Predicts 3D barrier heights within 1.1 kcal/mol.",
+                method_or_question=(
+                    "Whether message-passing equivariance generalizes across organometallic "
+                    "spin states remains an open question."
+                ),
+            )
+
+        parser = _Parser(TopicPhrase(phrase="legged locomotion control"), _strong(), _strong())
+        out = propose_research_fit(
+            student=membership_a,
+            program=program,
+            prompt=prompt,
+            facts={fact.id: fact},
+            storyline=None,
+            parser=parser,
+            claude=None,
+            classifier=_Classifier(
+                ClassifiedSentence(0, 0.92, "named_person", "Prof. Sarah Chen")
+            ),
+            search=_search(),
+            fallback_search=None,
+            fetch=lambda url, **_: FetchResult(url, (), "text/html", html),
+            paper_lookup=_lookup,
+        )
+        assert out.status == "matched"
+        assert len(lookup_calls) == 1
+        judge_call_content = str(parser.calls[1]["input"][1]["content"])
+        assert "Equivariant Diffusion for Transition-State Geometry" in judge_call_content
+        assert "Predicts 3D barrier heights within 1.1 kcal/mol." in judge_call_content
+        assert "remains an open question" in judge_call_content
+        prov = out.narrative_input.provenance
+        assert prov["paper_method_or_question"].endswith("remains an open question.")
+
+
+
 
 

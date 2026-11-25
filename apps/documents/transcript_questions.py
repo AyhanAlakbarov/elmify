@@ -35,7 +35,25 @@ ROW_KINDS = (
     "header",
     "other",
 )
-CREDIT_SYSTEMS = ("ECTS", "US_SEMESTER_HOUR", "LOCAL", "UNKNOWN")
+CREDIT_SYSTEMS = (
+    "ECTS",
+    "US_SEMESTER_HOUR",
+    "US_QUARTER_HOUR",
+    "UK_CATS",
+    "RU_ZET",
+    "DE_SWS",
+    "LV_KP",
+    "CA_FCE",
+    "TR_LOCAL_KREDI",
+    "ACADEMIC_HOUR",
+    "JP_CREDIT",
+    "KR_CREDIT",
+    "IN_CBCS",
+    "CN_CREDIT",
+    "AU_EFTSL",
+    "LOCAL",
+    "UNKNOWN",
+)
 NONE = "none"
 
 
@@ -130,10 +148,29 @@ def transcript(lines: list[str], numbers: list[str], dates: list[str]) -> dict[s
             question="Which credit system does this transcript use?",
             options=CREDIT_SYSTEMS,
             criteria={
-                "ECTS": "ECTS or AKTS credits",
-                "US_SEMESTER_HOUR": "semester hours or credit hours of a United States institution",
-                "LOCAL": "another national or institutional credit system, such as 'kredi' "
-                "without AKTS or 'кредит'",
+                "ECTS": "ECTS, AKTS (Turkey), CFU (Italy), EC (Netherlands), LP/CP (Germany), "
+                "hp (Sweden), or EAP (Estonia) credits (60 per full-time year)",
+                "US_SEMESTER_HOUR": "semester hours or credit hours of a United States or "
+                "30-credit/year Canadian institution",
+                "US_QUARTER_HOUR": "quarter hours or quarter units of a United States "
+                "quarter-system institution (45 per full-time year)",
+                "UK_CATS": "United Kingdom CATS or SCQF credits (120 per full-time year)",
+                "RU_ZET": "Russian or EAEU зачётные единицы (ЗЕТ / з.е., 60 per full-time year)",
+                "DE_SWS": "German or Austrian Semesterwochenstunden (SWS, weekly contact hours)",
+                "LV_KP": "Latvian legacy credit points (KP / kredītpunkti, 40 per full-time year)",
+                "CA_FCE": "Canadian Full-Course Equivalents (FCE, 5.0 per full-time year)",
+                "TR_LOCAL_KREDI": (
+                    "Turkish local credits (Ulusal Kredi / Yerel Kredi, ~35 per year) "
+                    "when AKTS is not used"
+                ),
+                "ACADEMIC_HOUR": "curriculum or contact hours (академические часы, saat, hours) "
+                "without credit points",
+                "JP_CREDIT": "Japanese university credits (単位 / tani, ~31 per full-time year)",
+                "KR_CREDIT": "Korean university credits (학점 / hakjeom, ~33 per full-time year)",
+                "IN_CBCS": "Indian UGC CBCS credits (~40 per full-time year)",
+                "CN_CREDIT": "Chinese university credits (学分 / xuefen, ~40 per full-time year)",
+                "AU_EFTSL": "Australian EFTSL (1.0 per full-time year)",
+                "LOCAL": "another national or institutional credit system not listed above",
                 "UNKNOWN": "the transcript does not say",
             },
         ),

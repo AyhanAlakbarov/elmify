@@ -458,3 +458,105 @@ def test_resolving_named_programmes_is_rate_limited_per_counsellor(
     blocked = counsellor_client.post(url, {}, HTTP_HOST=domain_a.host)
     assert blocked.status_code == 429
     assert blocked.context["error"] == "Too many requests. Try again shortly."
+
+
+def test_worker_auto_resolves_checking_named_candidate_and_propagates_portal_url(
+    agency_a, membership_a, institution_factory, program_factory
+) -> None:
+    from apps.funding.models import ApplicationPrompt, OfficialEvidenceClaim, OfficialSource
+    from apps.research.models import ConsultantResearchTask
+    from apps.research.provenance import Verdict
+    from apps.research.provenance_sweep import sweep
+    from apps.research.register import record_organisation
+
+    inst = institution_factory(
+        name="Technische Universität München",
+        country_code="DE",
+        official_website="https://www.tum.de",
+    )
+    prog = program_factory(
+        institution=inst,
+        name="MSc Informatics",
+        country_code="DE",
+        evidence_domain="tum.de",
+        evidence_institutional=True,
+    )
+    src = OfficialSource.objects.create(
+        canonical_url="https://www.tum.de/study/msc-informatics",
+        publisher="TUM",
+        source_type="PROGRAM",
+    )
+    claim = OfficialEvidenceClaim.objects.create(
+        source=src,
+        claim="MSc Informatics at TUM.",
+        evidence_strength="DIRECT",
+        visibility="STUDENT_FACING",
+        claim_class="IDENTITY",
+        last_checked_at=timezone.now(),
+    )
+    prog.evidence_claims.add(claim)
+    ApplicationPrompt.objects.create(
+        programme=prog,
+        cycle="2026/27",
+        source_url="https://campus.tum.de/tumonline/apply",
+        confidence=0.95,
+        source="VERIFIED",
+        funder_kind="UNIVERSITY_ADMISSION",
+        structure="CONTINUOUS_LETTER",
+        document_language="en",
+    )
+    body = record_organisation(
+        domain="tum.de", name="TUM", kind="INSTITUTION", country_code="DE", found_via="REGISTER"
+    )
+    record_verdict(
+        body,
+        "tum.de",
+        verdict=Verdict.RECOGNISED,
+        reason_code="register",
+        evidence={},
+        now=timezone.now(),
+        next_check_at=None,
+    )
+
+    pack, _first, _named = _pack(agency_a, membership_a, code="")
+    with tenant_scope(agency_a.id):
+        pending = consider_named_program(
+            pack,
+            "Master of Science in Informatics - Technical University of Munich",
+            membership_a,
+        )
+        assert pending.state == RecommendationCandidate.State.CHECKING
+        assert ConsultantResearchTask.objects.filter(
+            state=ConsultantResearchTask.State.OPEN
+        ).exists()
+
+    queued: list[ResearchMessage] = []
+    sweep(now=timezone.now(), dispatch=lambda *_a, **_kw: None, enqueue=queued.append)
+    assert any(m.candidate_id == pending.id and m.kind == "check_named_program" for m in queued)
+
+    check_named_program(
+        ResearchMessage(
+            kind="check_named_program",
+            tenant_id=agency_a.id,
+            run_id=pack.run_id,
+            candidate_id=pending.id,
+        )
+    )
+
+    with tenant_scope(agency_a.id):
+        pending.refresh_from_db()
+        pending.evidence.refresh_from_db()
+        assert pending.state == RecommendationCandidate.State.VISIBLE
+        assert pending.eligible is True
+        assert pending.program_id is None
+        assert pending.institution_name == "Technische Universität München"
+        assert pending.country_code == "DE"
+        assert pending.provenance_reason_code == "register"
+        assert pending.provenance_body_id == body.id
+        assert pending.estimated_chance_pct is not None
+        assert pending.evidence.source_url == "https://www.tum.de/study/msc-informatics"
+        assert pending.details.get("portal_url") == "https://campus.tum.de/tumonline/apply"
+        assert not ConsultantResearchTask.objects.filter(
+            state=ConsultantResearchTask.State.OPEN
+        ).exists()
+

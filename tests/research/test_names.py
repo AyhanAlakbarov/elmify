@@ -69,3 +69,29 @@ def test_a_name_with_one_token_and_no_kind_word_cannot_be_resolved_from_search()
     assert profile(["Cusanuswerk"], vocab()).one_token
     assert not profile(["TEMA Vakfı"], vocab()).one_token
     assert not profile(["Hrant Dink Vakfı"], vocab()).one_token
+
+
+def test_head_initial_and_tail_compounds_and_non_german_vowel_preservation() -> None:
+    v = vocab()
+    # Non-German Romance/Dutch vowel sequences are not corrupted by German digraph folding
+    assert fold("puerto") == "puerto"
+    assert fold("maestro") == "maestro"
+    assert fold("oeuvre") == "oeuvre"
+    assert fold("boekman") == "boekman"
+    assert fold("Boekmanstichting") == "boekmanstichting"
+    # German ASCII umlaut digraphs still fold symmetrically
+    assert fold("Kind Hörstiftung") == fold("kind hoerstiftung") == "kind horstiftung"
+
+    # Head-initial institutional compounds and cross-lingual stems resolve to kind QIDs
+    assert kind_of("fondationcarlsberg", v) == {FOUNDATION}
+    assert kind_of("fundacioncarolina", v) == {FOUNDATION}
+    assert kind_of("stichtingdoen", v) == {FOUNDATION}
+    assert kind_of("yayasankhazanah", v) == {FOUNDATION}
+    assert kind_of("fondation", v) == {FOUNDATION}
+    assert kind_of("fundacion", v) == {FOUNDATION}
+    assert kind_of("stichting", v) == {FOUNDATION}
+    assert kind_of("yayasan", v) == {FOUNDATION}
+    # Tail compounds across languages
+    assert kind_of("boekmanstichting", v) == {FOUNDATION}
+    assert kind_of("landesuniversitat", v) == {UNIVERSITY}
+    assert kind_of("universiteparis", v) == {UNIVERSITY}

@@ -45,16 +45,22 @@ def needs_acceptance(student: Membership) -> bool:
     """
     if student.role != Membership.Role.STUDENT:
         return False
-    accepted_rows = Acceptance.objects.filter(student=student)
-    last = accepted_rows.order_by("-accepted_at").first()
-    fallback_language = last.language if last else "en"
-    for kind in required_kinds(student.tenant_id):
-        last_for_kind = (
-            accepted_rows.filter(document__kind=kind)
-            .select_related("document")
-            .order_by("-accepted_at", "-document__version")
-            .first()
-        )
+    rows = list(
+        Acceptance.objects.filter(student=student)
+        .select_related("document")
+        .order_by("-accepted_at", "-document__version")
+    )
+    fallback_language = rows[0].language if rows else "en"
+    kinds = required_kinds(student.tenant_id)
+    material_versions: dict[tuple[str, str], int] = {}
+    for doc_kind, doc_lang, ver in (
+        LegalDocument.objects.filter(kind__in=kinds, material=True)
+        .order_by("version")
+        .values_list("kind", "language", "version")
+    ):
+        material_versions[(doc_kind, doc_lang)] = ver
+    for kind in kinds:
+        last_for_kind = next((r for r in rows if r.document.kind == kind), None)
         if last_for_kind is not None:
             language = last_for_kind.document.language
         else:
@@ -62,18 +68,15 @@ def needs_acceptance(student: Membership) -> bool:
             if doc is None:
                 continue
             language = doc.language
-        newest_material = (
-            LegalDocument.objects.filter(kind=kind, language=language, material=True)
-            .order_by("-version")
-            .values_list("version", flat=True)
-            .first()
-        ) or 0
-        accepted = (
-            accepted_rows.filter(document__kind=kind, document__language=language)
-            .order_by("-document__version")
-            .values_list("document__version", flat=True)
-            .first()
-        ) or 0
+        newest_material = material_versions.get((kind, language), 0)
+        accepted = max(
+            (
+                r.document.version
+                for r in rows
+                if r.document.kind == kind and r.document.language == language
+            ),
+            default=0,
+        )
         if accepted < newest_material:
             return True
     return False

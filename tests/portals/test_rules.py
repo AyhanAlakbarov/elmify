@@ -4,9 +4,11 @@ from apps.portals.rules import format_value
 
 
 @pytest.mark.parametrize("fmt, expected", [
-    ("DD.MM.YYYY", "07.03.2001"), ("MM/DD/YYYY", "03/07/2001"),
+    ("DD.MM.YYYY", "07.03.2001"), ("DD-MM-YYYY", "07-03-2001"),
+    ("MM/DD/YYYY", "03/07/2001"),
     ("YYYY-MM-DD", "2001-03-07"), ("DD/MM/YYYY", "07/03/2001"),
     ("MM/YYYY", "03/2001"), ("MM.YYYY", "03.2001"), ("YYYY-MM", "2001-03"),
+    ("YYYY", "2001"),
 ])
 def test_an_iso_date_is_written_in_the_portals_format(fmt: str, expected: str) -> None:
     assert format_value("2001-03-07", fmt) == expected
@@ -16,6 +18,7 @@ def test_an_iso_date_is_written_in_the_portals_format(fmt: str, expected: str) -
     ("MM/YYYY", "09/2018"),
     ("MM.YYYY", "09.2018"),
     ("YYYY-MM", "2018-09"),
+    ("YYYY", "2018"),
     ("DD.MM.YYYY", "2018-09"),
 ])
 def test_an_iso_month_date_formats_to_month_year_without_inventing_a_day(

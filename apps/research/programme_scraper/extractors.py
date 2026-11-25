@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 import logging
 import re
@@ -79,8 +80,24 @@ _PERIOD_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "PER_ECTS",
         ("per ects", "/ects", "each ects", "pro ects", "par crédit ects", "per credit ects"),
     ),
-    ("PER_CREDIT", ("per credit", "/credit", "each credit", "per unit")),
+    (
+        "PER_CREDIT",
+        (
+            "per credit",
+            "/credit",
+            "each credit",
+            "per unit",
+            "per credit hour",
+            "/credit hour",
+        ),
+    ),
     ("SEMESTER", ("per semester", "/semester", "each semester", "pro semester", "semestral")),
+    (
+        "TRIMESTER",
+        ("per trimester", "/trimester", "each trimester", "par trimestre", "pro trimester"),
+    ),
+    ("QUARTER", ("per quarter", "/quarter", "each quarter")),
+    ("TERM", ("per term", "/term", "each term")),
     ("MONTHLY", ("per month", "/month", "monthly", "monatlich", "par mois")),
     (
         "FULL_PROGRAM",
@@ -115,9 +132,15 @@ def _normalize_tuition_amount_and_period(
     if raw_period == "PER_ECTS":
         # 1 full-time academic year = 60 ECTS
         return amount * Decimal(60), "ANNUAL"
+    if raw_period == "PER_CREDIT":
+        # 1 full-time academic year = 30 US/Canadian credit hours
+        return amount * Decimal(30), "ANNUAL"
     if raw_period == "SEMESTER":
         # Convert semester tuition to annual for CostComponent (which uses Period choices)
         return amount * Decimal(2), "ANNUAL"
+    if raw_period in ("TRIMESTER", "QUARTER", "TERM"):
+        # Convert 3-term / trimester / quarter academic year to annual
+        return amount * Decimal(3), "ANNUAL"
     return amount, raw_period
 
 
@@ -229,37 +252,68 @@ def _is_application_fee_for_amount(line: Line, amt: Amount, *, from_header: bool
 
 
 def _candidates_with_header_currency(lines: Sequence[Line]) -> Candidates:
-    """Return `find_all(lines)` augmented with synthesized `Amount` candidates for any
-    structured `<table>`/`<dl>` line whose `line.header` carries the currency (e.g.
-    `Annual Tuition (EUR)`) and whose `line.text` carries a bare number (`15,000`)."""
+    """Return `find_all(lines)` augmented with synthesized `Amount` and `Requirement`
+    candidates for any structured `<table>`/`<dl>` line whose `line.header` carries the
+    currency or test/GPA name (e.g. `Annual Tuition (EUR)`, `Minimum GPA`) and whose
+    `line.text` carries the bare value (`15,000`, `3.5 / 4.0`)."""
     base = find_all(lines)
     lines_with_amounts = {fa.line for fa in base.amounts.values() if not fa.from_header}
     extra_amounts: dict[str, Found[Amount]] = dict(base.amounts)
+    extra_reqs: dict[str, Found[Requirement]] = dict(base.requirements)
+    seen_req_sigs = {
+        (fr.line, fr.value.kind, fr.value.test, fr.value.score, fr.value.cefr, fr.value.scale)
+        for fr in base.requirements.values()
+    }
     for line_idx, line in enumerate(lines):
-        if line_idx in lines_with_amounts or not line.header:
+        if not line.header:
             continue
-        m_hdr_curr = _HEADER_CURRENCY_RE.search(line.header)
-        if not m_hdr_curr or not re.search(r"\d", line.text):
-            continue
-        curr_tok = m_hdr_curr.group(1)
-        for synth in find_amounts(f"{curr_tok} {line.text}"):
-            if synth.low is not None and synth.currency:
-                num_match = re.search(r"\d[\d.,\s]*", line.text)
-                verbatim_txt = num_match.group(0).strip() if num_match else line.text.strip()
-                key = f"m{len(extra_amounts) + 1}"
-                extra_amounts[key] = Found(
+        if line_idx not in lines_with_amounts:
+            m_hdr_curr = _HEADER_CURRENCY_RE.search(line.header)
+            if m_hdr_curr and re.search(r"\d", line.text):
+                curr_tok = m_hdr_curr.group(1)
+                for synth in find_amounts(f"{curr_tok} {line.text}"):
+                    if synth.low is not None and synth.currency:
+                        num_match = re.search(r"\d[\d.,\s]*", line.text)
+                        verbatim_txt = (
+                            num_match.group(0).strip() if num_match else line.text.strip()
+                        )
+                        key = f"m{len(extra_amounts) + 1}"
+                        extra_amounts[key] = Found(
+                            line=line_idx,
+                            value=replace(
+                                synth,
+                                text=verbatim_txt,
+                                start=num_match.start() if num_match else 0,
+                                end=num_match.end() if num_match else len(line.text),
+                            ),
+                            from_header=False,
+                        )
+        header_parts = [p.strip() for p in line.header.split("|") if p.strip()]
+        probe_strings = [
+            *(f"{part} {line.text}" for part in header_parts),
+            re.sub(r"[|:]", " ", f"{line.header} {line.text}"),
+        ]
+        for probe in probe_strings:
+            for req in find_requirements(probe):
+                sig = (line_idx, req.kind, req.test, req.score, req.cefr, req.scale)
+                if sig in seen_req_sigs:
+                    continue
+                seen_req_sigs.add(sig)
+                verbatim_req_txt = line.text.strip()
+                key = f"c{len(extra_reqs) + 1}"
+                extra_reqs[key] = Found(
                     line=line_idx,
                     value=replace(
-                        synth,
-                        text=verbatim_txt,
-                        start=num_match.start() if num_match else 0,
-                        end=num_match.end() if num_match else len(line.text),
+                        req,
+                        text=verbatim_req_txt,
+                        start=0,
+                        end=len(line.text),
                     ),
                     from_header=False,
                 )
-    if len(extra_amounts) == len(base.amounts):
+    if len(extra_amounts) == len(base.amounts) and len(extra_reqs) == len(base.requirements):
         return base
-    return replace(base, amounts=extra_amounts)
+    return replace(base, amounts=extra_amounts, requirements=extra_reqs)
 
 
 def _detect_fee_category_ref(
@@ -503,7 +557,11 @@ def extract_tier0_programme_facts(
     if app_fee_specs:
         intl_app = [a for a in app_fee_specs if a.audience == "INTERNATIONAL"]
         all_app = [a for a in app_fee_specs if a.audience == "ALL"]
-        selected_costs.append((intl_app or all_app or app_fee_specs)[0])
+        chosen_app_pool = intl_app or all_app or app_fee_specs
+        if len({(a.amount, a.currency) for a in chosen_app_pool}) > 1:
+            unresolved_slots.add("application_fee")
+            high_risk_flags.add("ambiguous_application_fee")
+        selected_costs.append(chosen_app_pool[0])
 
     # 5. Hard Eligibility (Language tests, CEFR, Grade/GPA, Deadlines — from text, header, and
     #    header+cell pairs when a <table> or <dl> splits the test/GPA name and score)
@@ -593,7 +651,12 @@ def extract_tier0_programme_facts(
             default_intake_yr = today_dt.year + 1 if today_dt.month >= 6 else today_dt.year
             intake_yr = min(ctx_years) if ctx_years else default_intake_yr
             resolved_year = intake_yr - 1 if d.month >= 9 else intake_yr
-        iso_str = f"{resolved_year:04d}-{d.month:02d}-{d.day or 1:02d}"
+            cmp_day = min(d.day or 1, 28)
+            while dt.date(resolved_year, d.month, cmp_day) < today_dt - dt.timedelta(days=60):
+                resolved_year += 1
+        max_day = calendar.monthrange(resolved_year, d.month)[1]
+        clamped_day = min(d.day or 1, max_day)
+        iso_str = f"{resolved_year:04d}-{d.month:02d}-{clamped_day:02d}"
         deadline_specs.append(
             EligibilitySpec(
                 kind="DEADLINE",
@@ -607,12 +670,29 @@ def extract_tier0_programme_facts(
     if deadline_specs:
         intl_dl = [dl for dl in deadline_specs if dl.audience == "INTERNATIONAL"]
         all_dl = [dl for dl in deadline_specs if dl.audience == "ALL"]
-        eligibility_specs.append((intl_dl or all_dl or deadline_specs)[0])
+        chosen_dl_pool = intl_dl or all_dl or deadline_specs
+        if len({dl.value for dl in chosen_dl_pool}) > 1:
+            unresolved_slots.add("deadline")
+            high_risk_flags.add("ambiguous_deadline")
+        eligibility_specs.append(chosen_dl_pool[0])
     elif base_profile is not None and base_profile.default_deadline is not None:
         eligibility_specs.append(base_profile.default_deadline)
 
     if not any(e.kind == "LANGUAGE" for e in eligibility_specs) and base_profile is not None:
         eligibility_specs.extend(base_profile.language_requirements)
+
+    grade_values = {e.value for e in eligibility_specs if e.kind == "GRADE"}
+    if len(grade_values) > 1:
+        unresolved_slots.add("min_gpa")
+        high_risk_flags.add("ambiguous_min_gpa")
+
+    lang_values_by_test: dict[str, set[str]] = {}
+    for e in eligibility_specs:
+        if e.kind == "LANGUAGE":
+            lang_values_by_test.setdefault(e.label, set()).add(e.value)
+    if any(len(vals) > 1 for vals in lang_values_by_test.values()):
+        unresolved_slots.add("ielts_bar")
+        high_risk_flags.add("ambiguous_ielts_bar")
 
     # 6. Required Documents, CV format, Motivation Letter, and Referee rules
     statements: list[DocumentStatementSpec] = []
@@ -895,6 +975,8 @@ def extract_tier0_programme_facts(
 
         if parse_scholarship_status_statement(line.text) is not None:
             _add_stmt("OTHER", "REQUIRED", "Scholarship / Funding Status", line, idx)
+            unresolved_slots.add("scholarship_suspended")
+            high_risk_flags.add("scholarship_suspended")
 
         if is_scraper_competency_statement(line.text):
             label_comp = (
@@ -925,7 +1007,13 @@ def extract_tier0_programme_facts(
             stmt_kind: Literal["LANGUAGE", "COMPETENCY"] = (
                 "LANGUAGE" if elig.kind == "LANGUAGE" else "COMPETENCY"
             )
-            stmt_text = elig.quote.text[:1000]
+            if (
+                elig.kind in ("GRADE", "LANGUAGE")
+                and elig.label.lower() not in elig.quote.text.lower()
+            ):
+                stmt_text = f"{elig.label} ({elig.value}): {elig.quote.text}"[:1000]
+            else:
+                stmt_text = elig.quote.text[:1000]
             norm_elig = " ".join(stmt_text.casefold().split())
             if norm_elig not in seen_stmt_texts:
                 seen_stmt_texts.add(norm_elig)

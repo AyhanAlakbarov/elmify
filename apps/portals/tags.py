@@ -25,7 +25,9 @@ import logging
 import secrets
 import string
 from datetime import datetime
+from uuid import UUID
 
+from apps.tenancy.models import Agency
 from apps.watch.rules import REGISTRATION_MAIL_WINDOW
 
 from .models import Application, PortalAccount, PortalForm
@@ -37,6 +39,9 @@ _TAG_LENGTH = 6
 _UNKNOWN = PortalForm.TagStatus.UNKNOWN
 _KEEPS = PortalForm.TagStatus.KEEPS
 _REJECTS = PortalForm.TagStatus.REJECTS
+
+_TAG_OUTCOME_BY_HOST_TENANT: dict[str, dict[UUID, str]] = {}
+_CONFIRMED_SENDER_TENANTS: dict[tuple[str, str], set[UUID]] = {}
 
 
 def tagged(address: str, tag: str) -> str:
@@ -136,6 +141,10 @@ def record_tag_outcome(account: PortalAccount, outcome: str, *, force: bool = Fa
         return False
     for field, value in updates.items():
         setattr(account, field, value)
+    if not force and account.tenant_id is not None and account.portal_host:
+        _TAG_OUTCOME_BY_HOST_TENANT.setdefault(account.portal_host, {})[account.tenant_id] = (
+            outcome
+        )
     if (
         PortalForm.objects.filter(portal_host=account.portal_host)
         .exclude(tag_status__in=(outcome, _UNKNOWN))
@@ -168,8 +177,110 @@ def restore_tag(account: PortalAccount) -> bool:
     )
     if moved:
         account.tag_outcome, account.address = _KEEPS, address
+        if account.tenant_id is not None and account.portal_host:
+            _TAG_OUTCOME_BY_HOST_TENANT.setdefault(account.portal_host, {})[account.tenant_id] = (
+                _KEEPS
+            )
         logger.info("TagRestored portal=%s", account.portal_host)
     return moved
+
+
+def promote_tag_status_consensus(portal_host: str, *, min_tenants: int = 2) -> str | None:
+    """Promote ``PortalForm.tag_status`` when ``>= min_tenants`` distinct tenants
+    report the exact same measured outcome and zero report a different one.
+
+    Never overturns an already-set status on ``portal_host``.
+    """
+    if not portal_host or min_tenants < 1:
+        return None
+    if (
+        PortalForm.objects.filter(portal_host=portal_host)
+        .exclude(tag_status=_UNKNOWN)
+        .exists()
+    ):
+        return None
+
+    outcomes_by_tenant: dict[UUID, set[str]] = {}
+    tracked = _TAG_OUTCOME_BY_HOST_TENANT.get(portal_host, {})
+    if tracked:
+        live_tenants = set(
+            Agency.objects.filter(id__in=list(tracked.keys())).values_list("id", flat=True)
+        )
+        for tid in list(tracked.keys()):
+            if tid not in live_tenants:
+                tracked.pop(tid, None)
+                continue
+            out = tracked[tid]
+            if out and out != _UNKNOWN:
+                outcomes_by_tenant.setdefault(tid, set()).add(out)
+
+    for tid, out in (
+        PortalAccount._base_manager.filter(
+            portal_host=portal_host, tag_dropped_by_student=False
+        )
+        .exclude(tag_outcome=_UNKNOWN)
+        .values_list("tenant_id", "tag_outcome")
+    ):
+        if tid is not None and out and out != _UNKNOWN:
+            outcomes_by_tenant.setdefault(tid, set()).add(out)
+
+    all_outcomes = {out for outs in outcomes_by_tenant.values() for out in outs}
+    if len(outcomes_by_tenant) < min_tenants or len(all_outcomes) != 1:
+        return None
+    [agreed_outcome] = list(all_outcomes)
+    PortalForm.objects.filter(portal_host=portal_host, tag_status=_UNKNOWN).update(
+        tag_status=agreed_outcome
+    )
+    return agreed_outcome
+
+
+def promote_sender_domain_consensus(
+    portal_host: str,
+    domain: str,
+    *,
+    tenant_id: UUID | None = None,
+    min_tenants: int = 2,
+) -> bool:
+    """Promote ``domain`` into ``PortalForm.sender_domains`` for ``portal_host``
+    once ``>= min_tenants`` distinct tenants have confirmed or authenticated it.
+    """
+    from apps.mailbox.models import LearnedSender
+
+    host = portal_host.strip().casefold()
+    norm_domain = domain.strip().casefold()
+    if not host or not norm_domain or min_tenants < 1:
+        return False
+    key = (host, norm_domain)
+    tracked = _CONFIRMED_SENDER_TENANTS.setdefault(key, set())
+    if tenant_id is not None:
+        tracked.add(tenant_id)
+    if tracked:
+        live_tenants = set(
+            Agency.objects.filter(id__in=list(tracked)).values_list("id", flat=True)
+        )
+        tracked.intersection_update(live_tenants)
+
+    tenants: set[UUID] = set(tracked)
+    for tid in (
+        LearnedSender._base_manager.filter(
+            portal_host=host,
+            domain=norm_domain,
+            confirmed_at__isnull=False,
+        ).values_list("tenant_id", flat=True)
+    ):
+        if tid is not None:
+            tenants.add(tid)
+
+    if len(tenants) < min_tenants:
+        return False
+
+    for form in PortalForm.objects.filter(portal_host=host):
+        current = list(form.sender_domains or [])
+        if norm_domain not in current:
+            current.append(norm_domain)
+            form.sender_domains = current
+            form.save(update_fields=["sender_domains"])
+    return True
 
 
 def mark_registered(account: PortalAccount, now: datetime) -> bool:

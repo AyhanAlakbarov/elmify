@@ -14,11 +14,11 @@
     "Study-abroad agencies and educational counsellors in Baku and abroad"
   ],
   "capabilities": [
-    "Reads official university and scholarship pages for master's degrees with sentence-level source links",
-    "Evaluates student GPA, Bachelor's ECTS credits, IELTS/TOEFL/TestDaF scores, citizenship, and AZN/EUR/GBP/USD budgets against programme and funder rules",
-    "Groups matched master's programmes under the scholarship that funds them across both flagship national scholarships (Azerbaijan State Program Dövlət Proqramı 2022–2028, HTP / Stipendium Hungaricum, Erasmus Mundus, DAAD, Swedish Institute SISGP, Chevening, Türkiye Bursları, NL Scholarship) and 5 low-competition funding layers (automatic faculty waivers like French IdEx/LabEx, Italian regional DSU income-based grants, Visegrad/ADB-JSP regional bloc funds, local-language Stiftungen/vakıflar, and departmental RA/TA assistantships)",
-    "Generates zero-fabrication academic CVs, programme-specific motivation letters, scholarship essays, and distinct referee talking-point briefs",
-    "Provides a glass-box browser extension co-pilot that autofills verified fields and approved PDFs on official portals (DreamApply, uni-assist, Studielink) while stopping before the Submit button",
+    "Reads official university and scholarship regulations across 50+ countries in 40+ local languages for master's degrees with sentence-level source links",
+    "Evaluates student GPA across national grading scales, Bachelor's ECTS subject credits, IELTS/TOEFL/TestDaF scores, citizenship, and AZN/EUR/GBP/USD budgets against programme and funder rules",
+    "Groups matched master's programmes under the scholarship that funds them across both flagship national scholarships (Azerbaijan State Program Dövlət Proqramı 2022–2028, HTP / Stipendium Hungaricum, Erasmus Mundus, DAAD, Swedish Institute SISGP, Chevening, Fulbright, Türkiye Bursları, NL Scholarship) and 5 low-competition scholarship categories (automatic faculty waivers like French IdEx/LabEx, Italian regional DSU income-based grants, Visegrad/ADB-JSP regional bloc funds, local-language Stiftungen/vakıflar, and departmental RA/TA assistantships)",
+    "Generates tailored zero-fabrication academic CVs (German Tabular, Europass, and standard academic formats), programme-tailored motivation letters anchored to each department's faculty and courses, scholarship essays, and distinct referee talking-point briefs",
+    "Provides a glass-box browser extension co-pilot that autofills verified fields and attaches tailored PDFs on official portals (DreamApply, uni-assist, Studielink, and university portals) while stopping before the Submit button",
     "Provides a white-label trilingual (AZ/EN/RU) multi-counsellor application management workspace for study-abroad agencies"
   ]
 }

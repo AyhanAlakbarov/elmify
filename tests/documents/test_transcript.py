@@ -714,3 +714,25 @@ def test_transcript_owner_matches_accepts_transliterated_owner_and_rejects_frien
     assert transcript_owner_matches((page_owner,), ["Narmin Aliyeva"]) is True
     assert transcript_owner_matches((page_friend,), ["Narmin Aliyeva"]) is False
 
+
+def test_written_month_dates_in_multiple_languages_are_extracted_as_candidate_dates():
+    from apps.documents.transcript import _candidates
+
+    numbers, dates = _candidates(
+        [
+            "Дата выдачи: 16 марта 2026 года",
+            "Verilmə tarixi: 15 İyun 2027",
+            "Mezuniyet tarihi: 20 Haziran 2027",
+            "Issued on June 15, 2025",
+            "GPA: 91.5 / 100",
+        ]
+    )
+    extracted_dates = [d[0] for d in dates]
+    assert extracted_dates == [
+        date(2026, 3, 16),
+        date(2027, 6, 15),
+        date(2027, 6, 20),
+        date(2025, 6, 15),
+    ]
+    assert [n[0] for n in numbers] == ["91.5", "100"]
+

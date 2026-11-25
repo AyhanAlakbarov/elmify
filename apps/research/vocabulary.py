@@ -22,6 +22,7 @@ from . import wikidata
 from .names import tokens
 
 DATA_DIR = Path(__file__).resolve().parent / "resolver_data"
+_REPO_DATA_DIR = DATA_DIR
 
 _ISO2 = re.compile(r"^[A-Z]{2}$")
 #: Assertions, not tuning: a count outside these bounds is a changed query or a
@@ -29,6 +30,18 @@ _ISO2 = re.compile(r"^[A-Z]{2}$")
 _GEO_FLOOR, _GEO_CEILING = 20, 150_000
 _ORG_FLOOR, _ORG_LIMIT = 50, 30_000
 _KINDS_FLOOR, _KINDS_CEILING = 20, 3_000
+#: Microstates have fewer cities/divisions and registered organisations in Wikidata,
+#: so `build_country_doc` scales `_GEO_FLOOR`, `_ORG_FLOOR`, and `_GENERIC_MIN_LABELS`
+#: proportionally for them rather than failing the shape check.
+_MICROSTATE_FLOOR_SCALE: Mapping[str, float] = {
+    "LU": 0.25,
+    "MT": 0.25,
+    "IS": 0.25,
+    "LI": 0.15,
+    "MC": 0.15,
+    "AD": 0.15,
+    "SM": 0.15,
+}
 #: A token in at least this share of the country's organisation names, and in
 #: at least ten of them, is common vocabulary -- never evidence of which body.
 _GENERIC_SHARE, _GENERIC_MIN_LABELS = 0.01, 10
@@ -155,23 +168,30 @@ def build_country_doc(
     ))
     tld = next((r["tld"].lstrip(".").lower() for r in rows if r.get("tld")), iso2.lower())
 
+    scale = _MICROSTATE_FLOOR_SCALE.get(iso2, 1.0)
+    geo_floor = max(1, math.floor(_GEO_FLOOR * scale)) if scale < 1.0 else _GEO_FLOOR
+    org_floor = max(1, math.floor(_ORG_FLOOR * scale)) if scale < 1.0 else _ORG_FLOOR
+    generic_min = (
+        max(2, math.floor(_GENERIC_MIN_LABELS * scale)) if scale < 1.0 else _GENERIC_MIN_LABELS
+    )
+
     geo: set[str] = set()
     for row in sparql(_GEO_Q.format(qid=qid, langs=_in(languages))):
         toks = tokens(row["label"])
         geo.update(t for t in toks if len(t) >= 3)
         if len(toks) > 1:
             geo.add("".join(toks))  # "Ha Noi" is "hanoi" in a domain label
-    if not _GEO_FLOOR <= len(geo) <= _GEO_CEILING:
+    if not geo_floor <= len(geo) <= _GEO_CEILING:
         raise VocabularyShape(f"{iso2}: {len(geo)} place tokens")
 
     labels = [
         set(tokens(row["label"]))
         for row in sparql(_ORG_Q.format(qid=qid, langs=_in(languages), limit=_ORG_LIMIT))
     ]
-    if len(labels) < _ORG_FLOOR:
+    if len(labels) < org_floor:
         raise VocabularyShape(f"{iso2}: only {len(labels)} organisation labels")
     frequency = Counter(t for toks in labels for t in toks)
-    threshold = max(_GENERIC_MIN_LABELS, math.ceil(len(labels) * _GENERIC_SHARE))
+    threshold = max(generic_min, math.ceil(len(labels) * _GENERIC_SHARE))
     return {
         "iso2": iso2, "country_qid": qid, "cctld": tld, "languages": languages,
         "geo": sorted(geo),
@@ -226,3 +246,374 @@ def load_vocabulary(country_code: str) -> Vocabulary:
         kinds={word: frozenset(qids) for word, qids in kinds.items()},
         geo=frozenset(country["geo"]), generic=frozenset(country["generic"]),
     )
+
+
+_ISO2_COUNTRY_QIDS: Mapping[str, str] = {
+    "AD": "Q228",
+    "AT": "Q40",
+    "AU": "Q408",
+    "AZ": "Q227",
+    "BE": "Q31",
+    "BR": "Q155",
+    "CA": "Q16",
+    "CH": "Q39",
+    "CN": "Q148",
+    "CZ": "Q213",
+    "DE": "Q183",
+    "DK": "Q35",
+    "EE": "Q191",
+    "ES": "Q29",
+    "FI": "Q33",
+    "FR": "Q142",
+    "GB": "Q145",
+    "GE": "Q230",
+    "GR": "Q41",
+    "HR": "Q224",
+    "HU": "Q28",
+    "ID": "Q252",
+    "IE": "Q27",
+    "IN": "Q668",
+    "IS": "Q189",
+    "IT": "Q38",
+    "JP": "Q17",
+    "KR": "Q884",
+    "KZ": "Q232",
+    "LI": "Q347",
+    "LT": "Q37",
+    "LU": "Q32",
+    "LV": "Q211",
+    "MC": "Q235",
+    "MT": "Q233",
+    "MX": "Q96",
+    "NL": "Q55",
+    "NO": "Q20",
+    "NZ": "Q664",
+    "PK": "Q843",
+    "PL": "Q36",
+    "PT": "Q45",
+    "RO": "Q218",
+    "RS": "Q403",
+    "RU": "Q159",
+    "SE": "Q34",
+    "SG": "Q334",
+    "SI": "Q215",
+    "SK": "Q214",
+    "SM": "Q238",
+    "TR": "Q43",
+    "US": "Q30",
+    "UZ": "Q265",
+    "VN": "Q881",
+    "ZA": "Q258",
+}
+
+_CCTLD_OVERRIDES: Mapping[str, str] = {
+    "GB": "uk",
+}
+
+_BASELINE_KIND_QIDS: Mapping[str, frozenset[str]] = {
+    "foundation": frozenset({"Q157031"}),
+    "fondation": frozenset({"Q157031"}),
+    "fundacion": frozenset({"Q157031"}),
+    "fondazione": frozenset({"Q157031"}),
+    "fundacao": frozenset({"Q157031"}),
+    "fundacja": frozenset({"Q157031"}),
+    "stichting": frozenset({"Q157031"}),
+    "stiftelse": frozenset({"Q157031"}),
+    "stiftelsen": frozenset({"Q157031"}),
+    "yayasan": frozenset({"Q157031"}),
+    "stiftung": frozenset({"Q157031"}),
+    "vakif": frozenset({"Q157031"}),
+    "charity": frozenset({"Q708676", "Q157031"}),
+    "trust": frozenset({"Q157031", "Q708676"}),
+    "university": frozenset({"Q3918"}),
+    "universitat": frozenset({"Q3918"}),
+    "universite": frozenset({"Q3918"}),
+    "universidad": frozenset({"Q3918"}),
+    "universita": frozenset({"Q3918"}),
+    "universiteit": frozenset({"Q3918"}),
+    "universitet": frozenset({"Q3918"}),
+    "uniwersytet": frozenset({"Q3918"}),
+    "hochschule": frozenset({"Q3918"}),
+    "college": frozenset({"Q189004", "Q3918"}),
+    "institute": frozenset({"Q31855", "Q3918"}),
+    "institut": frozenset({"Q31855", "Q3918"}),
+    "istituto": frozenset({"Q31855", "Q3918"}),
+    "instituto": frozenset({"Q31855", "Q3918"}),
+    "academy": frozenset({"Q414147", "Q3918"}),
+    "akademie": frozenset({"Q414147", "Q3918"}),
+    "association": frozenset({"Q48204", "Q15911314"}),
+    "asociacion": frozenset({"Q48204", "Q15911314"}),
+    "associazione": frozenset({"Q48204", "Q15911314"}),
+    "vereniging": frozenset({"Q48204", "Q15911314"}),
+    "verein": frozenset({"Q48204", "Q15911314"}),
+    "dernegi": frozenset({"Q48204", "Q15911314"}),
+    "society": frozenset({"Q48204", "Q1685451"}),
+    "federation": frozenset({"Q48204"}),
+    "embassy": frozenset({"Q3917681"}),
+    "ambassade": frozenset({"Q3917681"}),
+    "ambasciata": frozenset({"Q3917681"}),
+    "embajada": frozenset({"Q3917681"}),
+    "botschaft": frozenset({"Q3917681"}),
+    "consulate": frozenset({"Q7843791"}),
+    "ministry": frozenset({"Q192350"}),
+    "ministere": frozenset({"Q192350"}),
+    "ministerio": frozenset({"Q192350"}),
+    "ministero": frozenset({"Q192350"}),
+    "ministerium": frozenset({"Q192350"}),
+    "agency": frozenset({"Q327333"}),
+    "company": frozenset({"Q783794"}),
+    "enterprise": frozenset({"Q6881511"}),
+    "npo": frozenset({"Q163740"}),
+}
+
+_UNIVERSAL_GENERIC_TOKENS: frozenset[str] = frozenset({
+    "national",
+    "nationale",
+    "nacional",
+    "nazionale",
+    "international",
+    "internationale",
+    "royal",
+    "federal",
+    "federale",
+    "state",
+    "public",
+    "publique",
+    "general",
+    "central",
+    "education",
+    "educational",
+    "egitim",
+    "pendidikan",
+    "bildungs",
+    "research",
+    "recherche",
+    "forschung",
+    "ricerca",
+    "investigacion",
+    "onderzoek",
+    "science",
+    "sciences",
+    "wissenschaft",
+    "wetenschappen",
+    "scienze",
+    "ciencias",
+    "scientific",
+    "technology",
+    "technologie",
+    "cultural",
+    "culture",
+    "kultur",
+    "cultura",
+    "social",
+    "development",
+    "health",
+    "medical",
+    "center",
+    "centre",
+    "centro",
+    "zentrum",
+})
+
+_COUNTRY_EXTRA_GEO: Mapping[str, tuple[str, ...]] = {
+    "GB": (
+        "Britain", "British", "England", "English", "Scotland", "Scottish", "Wales", "Welsh",
+        "Northern Ireland", "London", "Oxford", "Cambridge", "Edinburgh", "Glasgow", "Manchester",
+        "Birmingham", "Bristol", "Leeds", "Sheffield", "Nottingham", "Southampton", "Warwick",
+    ),
+    "US": (
+        "America", "American", "United States", "New York", "Boston", "Cambridge", "Chicago",
+        "San Francisco", "Los Angeles", "Washington", "Philadelphia", "Seattle", "Atlanta",
+        "Austin", "Houston", "California", "Texas", "Massachusetts", "Illinois",
+    ),
+    "FR": (
+        "France", "French", "Francais", "Francaise", "Paris", "Lyon", "Marseille", "Toulouse",
+        "Bordeaux", "Lille", "Strasbourg", "Grenoble", "Montpellier", "Nantes", "Nice", "Saclay",
+    ),
+    "NL": (
+        "Netherlands", "Nederland", "Nederlandse", "Dutch", "Holland", "Amsterdam", "Rotterdam",
+        "Utrecht", "Leiden", "Delft", "Groningen", "Eindhoven", "Maastricht", "Wageningen",
+        "Tilburg", "Nijmegen", "Enschede", "Twente", "Den Haag", "The Hague",
+    ),
+    "IT": (
+        "Italy", "Italia", "Italiana", "Italiano", "Italian", "Rome", "Roma", "Milan", "Milano",
+        "Bologna", "Turin", "Torino", "Padua", "Padova", "Florence", "Firenze", "Naples", "Napoli",
+        "Pisa", "Venice", "Venezia", "Trento", "Trieste", "Sapienza",
+    ),
+    "ES": (
+        "Spain", "Espana", "Espanola", "Espanol", "Spanish", "Madrid", "Barcelona", "Valencia",
+        "Seville", "Sevilla", "Granada", "Salamanca", "Bilbao", "Zaragoza", "Malaga", "Catalonia",
+        "Catalunya", "Andalucia", "Galicia",
+    ),
+    "CH": (
+        "Switzerland", "Schweiz", "Schweizerische", "Suisse", "Svizzera", "Swiss", "Zurich",
+        "Geneva", "Geneve", "Basel", "Bern", "Lausanne", "St Gallen", "Lucerne", "Luzern",
+        "Lugano", "Fribourg", "Neuchatel",
+    ),
+    "SE": (
+        "Sweden", "Sverige", "Svenska", "Swedish", "Stockholm", "Uppsala", "Lund", "Gothenburg",
+        "Goteborg", "Linkoping", "Umea", "Karolinska", "Malmo",
+    ),
+    "CA": (
+        "Canada", "Canadian", "Canadienne", "Toronto", "Montreal", "Vancouver", "Ottawa",
+        "Calgary", "Edmonton", "Waterloo", "Quebec", "McGill", "Ontario", "British Columbia",
+        "Alberta",
+    ),
+    "AU": (
+        "Australia", "Australian", "Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide",
+        "Canberra", "Monash", "Queensland", "Victoria", "New South Wales",
+    ),
+    "JP": (
+        "Japan", "Japanese", "Nihon", "Nippon", "Tokyo", "Kyoto", "Osaka", "Tohoku", "Sendai",
+        "Nagoya", "Hokkaido", "Sapporo", "Fukuoka", "Kyushu", "Tsukuba", "Kobe", "Yokohama",
+    ),
+    "KR": (
+        "Korea", "Korean", "South Korea", "Hanguk", "Daehan", "Seoul", "Busan", "Daejeon",
+        "Incheon", "Daegu", "Gwangju", "Suwon", "Pohang", "Ulsan",
+    ),
+    "PL": (
+        "Poland", "Polska", "Polski", "Polskiej", "Polish", "Warsaw", "Warszawa", "Krakow",
+        "Cracow", "Wroclaw", "Poznan", "Gdansk", "Lodz", "Katowice", "Lublin",
+    ),
+    "LU": ("Luxembourg", "Luxemburg", "Letzebuerg", "Esch-sur-Alzette", "Belval"),
+    "MT": ("Malta", "Maltese", "Valletta", "Msida", "Gozo"),
+    "IS": ("Iceland", "Island", "Icelandic", "Reykjavik", "Akureyri"),
+    "LI": ("Liechtenstein", "Vaduz", "Schaan", "Bendern"),
+    "MC": ("Monaco", "Monte Carlo", "Monegasque"),
+    "AD": ("Andorra", "Andorra la Vella", "Sant Julia de Loria"),
+    "SM": ("San Marino", "Sammarinese"),
+}
+
+
+@functools.cache
+def _universal_kinds_map() -> Mapping[str, frozenset[str]]:
+    kinds: dict[str, set[str]] = {
+        word: set(qids) for word, qids in _BASELINE_KIND_QIDS.items()
+    }
+    for base_dir in (DATA_DIR, _REPO_DATA_DIR):
+        kinds_path = base_dir / "kinds.json"
+        if kinds_path.exists():
+            try:
+                kinds_doc = json.loads(kinds_path.read_text("utf-8"))
+                for qid, words in kinds_doc.get("kinds", {}).items():
+                    for word in words:
+                        if len(word) >= 3:
+                            kinds.setdefault(word, set()).add(qid)
+            except (OSError, ValueError, KeyError):
+                pass
+        kw_path = base_dir / "kind_words.json"
+        if kw_path.exists():
+            try:
+                kw_doc = json.loads(kw_path.read_text("utf-8"))
+                items_map: Mapping[str, Sequence[str]] = kw_doc.get("items", {})
+                words_map: Mapping[str, Mapping[str, Sequence[str]]] = kw_doc.get("words", {})
+                for holder_kind, by_lang in words_map.items():
+                    qids = tuple(items_map.get(holder_kind, ()))
+                    if not qids:
+                        continue
+                    for lang_words in by_lang.values():
+                        for raw_word in lang_words:
+                            toks = tokens(raw_word)
+                            if len(toks) == 1 and len(toks[0]) >= 3:
+                                kinds.setdefault(toks[0], set()).update(qids)
+            except (OSError, ValueError, KeyError):
+                pass
+    return {word: frozenset(qids) for word, qids in kinds.items()}
+
+
+@functools.cache
+def universal_vocabulary_for(country_code: str) -> Vocabulary:
+    """Synthesize a deterministic `Vocabulary` for any ISO 3166-1 alpha-2 country code
+    using Unicode CLDR (`babel`), `kind_words.json`/`kinds.json`, and `domains.py`."""
+    from babel import Locale
+    from babel.core import UnknownLocaleError, get_global
+    from babel.languages import get_official_languages, get_territory_language_info
+
+    from .domains import CATALOGUE_DOMAINS
+
+    iso2 = country_code.strip().upper()
+    if not _ISO2.match(iso2):
+        raise ValueError(f"not an ISO 3166-1 alpha-2 code: {country_code!r}")
+
+    share = get_territory_language_info(iso2)
+    official: list[str] = []
+    for raw in get_official_languages(iso2, regional=True, de_facto=True):
+        pct = float(share.get(raw, {}).get("population_percent") or 0.0)
+        is_de_facto = raw in get_official_languages(iso2, regional=False, de_facto=True)
+        if not is_de_facto and pct < 5.0:
+            continue
+        lang = raw.split("_")[0].lower()
+        if _LANG.match(lang) and lang not in official:
+            official.append(lang)
+    if "no" in official and "nb" in official:
+        official.remove("no")
+    languages = tuple(dict.fromkeys([*official, "en", "ru"]))
+
+    cctld = _CCTLD_OVERRIDES.get(iso2, iso2.lower())
+    country_qid = _ISO2_COUNTRY_QIDS.get(iso2, f"Q_{iso2}")
+
+    geo: set[str] = set()
+
+    def _add_place_label(label: str) -> None:
+        toks = tokens(label)
+        geo.update(t for t in toks if len(t) >= 3)
+        if len(toks) > 1:
+            geo.add("".join(toks))
+
+    probe_locales = tuple(
+        dict.fromkeys(
+            [*languages, "en", "de", "fr", "es", "it", "nl", "pt", "tr", "ru", "pl", "sv"]
+        )
+    )
+    tz_zones = get_global("territory_zones").get(iso2, ())
+    for zone in tz_zones:
+        city_slug = zone.rsplit("/", 1)[-1].replace("_", " ")
+        _add_place_label(city_slug)
+
+    for loc_code in probe_locales:
+        try:
+            loc = Locale.parse(loc_code)
+        except (UnknownLocaleError, ValueError):
+            continue
+        terr_name = loc.territories.get(iso2)
+        if terr_name:
+            _add_place_label(terr_name)
+        for zone in tz_zones:
+            tz_info = loc.time_zones.get(zone, {})
+            city_name = tz_info.get("city") if isinstance(tz_info, Mapping) else None
+            if city_name:
+                _add_place_label(str(city_name))
+
+    for extra in _COUNTRY_EXTRA_GEO.get(iso2, ()):
+        _add_place_label(extra)
+
+    for dom in CATALOGUE_DOMAINS:
+        host_parts = dom.lower().split(".")
+        if host_parts[-1] in {cctld, iso2.lower()}:
+            first = host_parts[0]
+            for prefix in ("studyin-", "studyin", "study-in-", "study"):
+                if first.startswith(prefix) and len(first) > len(prefix) + 2:
+                    _add_place_label(first[len(prefix):])
+
+    if not geo:
+        geo.add(iso2.lower())
+
+    return Vocabulary(
+        country_code=iso2,
+        country_qid=country_qid,
+        cctld=cctld,
+        languages=languages,
+        kinds=_universal_kinds_map(),
+        geo=frozenset(geo),
+        generic=_UNIVERSAL_GENERIC_TOKENS,
+    )
+
+
+def load_or_build_vocabulary(country_code: str) -> Vocabulary:
+    """Load the committed Wikidata vocabulary for `country_code` when present,
+    falling back to `universal_vocabulary_for(country_code)` when `resolver_data/{CC}.json`
+    is absent."""
+    try:
+        return load_vocabulary(country_code)
+    except VocabularyMissing:
+        return universal_vocabulary_for(country_code)

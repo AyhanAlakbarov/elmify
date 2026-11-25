@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from datetime import date
 
+from .cv_fixes import subject_of
 from .evidence.readings import UsableReading, reading_key
 from .schemas import CVContent, ExperienceEntry, ProjectEntry, ResearchEntry
 
@@ -34,7 +35,7 @@ _GENERIC_WORDS = frozenset(
         "at",
     }
 )
-_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+_WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
 _NORM_RE = re.compile(r"\W+")
 _MAX_EXPERIENCE_BULLETS = 12
 _MAX_ADDED_EXPERIENCE_BULLETS = 2
@@ -162,6 +163,21 @@ def _project_title(reading: UsableReading) -> str:
     return (reading.summary.strip() or "Project")[:300]
 
 
+def _is_undone(
+    fix_kind: str, r_key: str, target_str: str, undone: frozenset[str]
+) -> bool:
+    if not undone:
+        return False
+    raw = f"{r_key}@{target_str}"
+    if r_key in undone or raw in undone:
+        return True
+    kinds = (fix_kind, "added_from_thesis") if fix_kind == "added_from_pdf" else (fix_kind,)
+    return any(
+        subject_of(k, r_key) in undone or subject_of(k, raw) in undone
+        for k in kinds
+    )
+
+
 def apply_cv_evidence(
     content: CVContent,
     readings: Sequence[UsableReading],
@@ -169,25 +185,36 @@ def apply_cv_evidence(
     undone: frozenset[str] = frozenset(),
     include_projects: bool = True,
     switching_fields: bool = False,
-) -> tuple[CVContent, tuple[dict[str, str], ...]]:
+) -> tuple[CVContent, tuple[dict[str, object], ...]]:
     """Place `readings` onto `content` per spec §10.2–§10.6.
 
     Returns `(updated_content, applied_fixes)` where each fix is
     `{"kind": "added_from_github" | "added_from_pdf", "reading": key, "target": target}`.
     """
-    active = [r for r in readings if reading_key(r) not in undone]
-    if not active:
+    if not readings:
         return content, ()
 
     matched_by_target: dict[tuple[str, int], UsableReading] = {}
     unmatched: list[UsableReading] = []
-    for reading in active:
+    fixes: list[dict[str, object]] = []
+    for reading in readings:
+        r_key = reading_key(reading)
+        fix_kind = "added_from_github" if reading.source == "github" else "added_from_pdf"
         target = match_reading_target(reading, content)
         if target is None:
             unmatched.append(reading)
             continue
         target_str = f"{target[0]}:{target[1]}"
-        if f"{reading_key(reading)}@{target_str}" in undone:
+        if _is_undone(fix_kind, r_key, target_str, undone):
+            if target[0] != "education":
+                fixes.append(
+                    {
+                        "kind": fix_kind,
+                        "reading": r_key,
+                        "target": target_str,
+                        "undone": True,
+                    }
+                )
             continue
         existing = matched_by_target.get(target)
         matched_by_target[target] = (
@@ -197,7 +224,6 @@ def apply_cv_evidence(
         )
 
     placed_names: set[str] = set()
-    fixes: list[dict[str, str]] = []
 
     experience: list[ExperienceEntry] = list(content.experience)
     research: list[ResearchEntry] = list(content.research)
@@ -294,8 +320,10 @@ def apply_cv_evidence(
         )
         candidate_projects: list[tuple[date, ProjectEntry, UsableReading]] = []
         for reading in unmatched:
-            if f"{reading_key(reading)}@projects" in undone:
-                continue
+            r_key = reading_key(reading)
+            fix_kind = (
+                "added_from_github" if reading.source == "github" else "added_from_pdf"
+            )
             if reading.kind not in ("project", "course_project"):
                 continue
             if any(_norm(n) in placed_names for n in reading.names if _norm(n)):
@@ -304,6 +332,16 @@ def apply_cv_evidence(
                 b.text[:500] for b in reading.bullets if b.verdict == "supported"
             ]
             if not supported:
+                continue
+            if _is_undone(fix_kind, r_key, "projects", undone):
+                fixes.append(
+                    {
+                        "kind": fix_kind,
+                        "reading": r_key,
+                        "target": "projects",
+                        "undone": True,
+                    }
+                )
                 continue
             proj = ProjectEntry(
                 title=_project_title(reading),

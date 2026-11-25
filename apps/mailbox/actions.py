@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from collections.abc import Iterable
 from datetime import UTC, date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -26,7 +27,7 @@ from django.utils import timezone
 from apps.concierge.models import Notification, RoadmapItem
 from apps.documents.models import RefereeRequest
 from apps.mailbox.classify import MailVerdict
-from apps.mailbox.filter import host_in
+from apps.mailbox.filter import _host_of, _key, host_in
 from apps.mailbox.models import MailSignal
 from apps.portals.actions import queue_action
 from apps.portals.fees import mark_fee_paid
@@ -48,7 +49,7 @@ _MAILBOX_ACTION_TTL = timedelta(hours=1, minutes=30)
 #: A verification code a human is expected to type. Anything longer is not a
 #: code, and the extension types what it is given.
 _MAX_CODE_LENGTH = 12
-_FORMATTED_CODE_RE = re.compile(r"^[A-Za-z0-9]{2,6}(?:[- ][A-Za-z0-9]{2,6})+$")
+_FORMATTED_CODE_RE = re.compile(r"^[A-Za-z0-9]{1,6}(?:[- ][A-Za-z0-9]{1,6})+$")
 
 #: Labels that mean the student has something to do or read now. The message
 #: never carries the email's own words -- only who wrote and what kind of thing.
@@ -195,18 +196,85 @@ def _alert_student(
     )
 
 
-def _referee_submitted(signal: MailSignal, application: Application) -> None:
+_REFEREE_TITLES = frozenset(
+    {
+        "prof",
+        "professor",
+        "dr",
+        "assoc",
+        "asst",
+        "mr",
+        "mrs",
+        "ms",
+        "mx",
+        "phd",
+        "md",
+        "jr",
+        "sr",
+    }
+)
+
+
+def _fold_referee_text(text: str, *, schwa: str = "a") -> str:
+    decomposed = unicodedata.normalize("NFKD", text)
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return " ".join(stripped.replace("ı", "i").casefold().replace("ə", schwa).split())
+
+
+def _referee_matches_body(req: RefereeRequest, body: str) -> bool:
+    if not body or not body.strip():
+        return False
+    raw_email = str(
+        getattr(req, "professor_email", "")
+        or (req.referee.email if req.referee_id else "")
+        or ""
+    ).strip()
+    if raw_email and raw_email.casefold() in body.casefold():
+        return True
+    raw_name = str(
+        getattr(req, "professor_name", "")
+        or (req.referee.name if req.referee_id else "")
+        or ""
+    ).strip()
+    if not raw_name:
+        return False
+    for schwa in ("a", "e"):
+        folded_body = _fold_referee_text(body, schwa=schwa)
+        folded_name = _fold_referee_text(raw_name, schwa=schwa)
+        if not folded_name or not folded_body:
+            continue
+        if re.search(rf"\b{re.escape(folded_name)}\b", folded_body):
+            return True
+        tokens = [
+            tok
+            for tok in re.findall(r"[a-z0-9]+", folded_name)
+            if tok not in _REFEREE_TITLES
+        ]
+        if not tokens:
+            continue
+        full_clean = " ".join(tokens)
+        if len(tokens) >= 2 and re.search(rf"\b{re.escape(full_clean)}\b", folded_body):
+            return True
+        surname = tokens[-1]
+        if len(surname) >= 3 and re.search(rf"\b{re.escape(surname)}\b", folded_body):
+            return True
+    return False
+
+
+def _referee_submitted(
+    signal: MailSignal, application: Application, *, body: str = ""
+) -> None:
     """Spec §11.3: a trusted "your referee has submitted" mail marks a professor
     SUBMITTED only when they are the card's one request outside DECLINED and SUBMITTED,
-    and were ASKED or AGREED. Any other professor still in play -- proposed (the student
-    may have sent them the package too), asked, agreed, or already submitted (the mail
-    may be that one's confirmation) -- means the mail cannot say which, so nothing
-    changes and the student is asked. Reached only behind apply_verdict's trust gate:
-    untrusted mail never changes a referee status (spec §15)."""
+    and were ASKED or AGREED -- or when the receipt text unambiguously names that
+    single open ASKED/AGREED referee. Any other professor still in play without a
+    unique match means the mail cannot say which, so nothing changes and the student
+    is asked. Reached only behind apply_verdict's trust gate: untrusted mail never
+    changes a referee status (spec §15)."""
     requests = list(
-        RefereeRequest.objects.filter(application=application).exclude(
-            state=RefereeRequest.State.DECLINED
-        )
+        RefereeRequest.objects.filter(application=application)
+        .exclude(state=RefereeRequest.State.DECLINED)
+        .select_related("referee")
     )
     open_requests = [r for r in requests if r.state != RefereeRequest.State.SUBMITTED]
     if not open_requests:
@@ -215,6 +283,12 @@ def _referee_submitted(signal: MailSignal, application: Application) -> None:
         open_requests[0].state = RefereeRequest.State.SUBMITTED
         open_requests[0].save(update_fields=["state", "updated_at"])
         return
+    if len(requests) > 1 and body:
+        matched = [r for r in requests if _referee_matches_body(r, body)]
+        if len(matched) == 1 and matched[0].state in ("ASKED", "AGREED"):
+            matched[0].state = RefereeRequest.State.SUBMITTED
+            matched[0].save(update_fields=["state", "updated_at"])
+            return
     student = signal.connection.membership
     Notification.raise_card(
         student=student,
@@ -278,6 +352,97 @@ def _verification_url(value: str, link_hosts: Iterable[str]) -> str:
     return urlunsplit(parsed)
 
 
+def _application_numbers(app: Application) -> set[str]:
+    numbers: set[str] = set()
+    direct = str(getattr(app, "application_number", "") or "").strip()
+    if direct:
+        numbers.add(direct.casefold())
+    snap_num = str((app.route_snapshot or {}).get("application_number", "") or "").strip()
+    if snap_num:
+        numbers.add(snap_num.casefold())
+    for step in app.steps.all():
+        if isinstance(step.detail, dict):
+            step_num = str(step.detail.get("application_number", "") or "").strip()
+            if step_num:
+                numbers.add(step_num.casefold())
+    return numbers
+
+
+def resolve_ambiguous_application(
+    signal: MailSignal,
+    verdict: MailVerdict,
+    reading: DecisionReading | None = None,
+) -> tuple[Application | None, Application | None]:
+    """Find candidate applications for ``signal.sender_domain`` when ``signal.application_id``
+    is ``None`` (e.g. multiple applications on the same university or central portal host),
+    and return ``(matched_application, context_application)``."""
+    student = signal.connection.membership
+    domain = _key(signal.sender_domain) or signal.sender_domain
+    if not domain:
+        return None, None
+    all_apps = list(
+        Application.objects.filter(student=student)
+        .select_related("candidate", "candidate__evidence", "portal_form", "student__user")
+        .prefetch_related("steps")
+    )
+    candidates: list[Application] = []
+    for app in all_apps:
+        matched_host = False
+        if app.portal_form is not None:
+            portal_host = app.portal_form.portal_host or ""
+            if portal_host and (
+                host_in(portal_host, (signal.sender_domain,))
+                or _key(portal_host).endswith(f".{domain}")
+            ):
+                matched_host = True
+            for entry in (portal_host, *(app.portal_form.sender_domains or ())):
+                if entry and _key(str(entry)) == domain:
+                    matched_host = True
+                    break
+        if not matched_host and app.candidate is not None:
+            evidence_rel = getattr(app.candidate, "evidence", None)
+            all_fn = getattr(evidence_rel, "all", None)
+            if callable(all_fn):
+                evs = all_fn()
+            else:
+                evs = (evidence_rel,) if evidence_rel is not None else ()
+            for ev in evs:
+                if ev.source_url and (
+                    _key(_host_of(ev.source_url)) == domain
+                    or host_in(_host_of(ev.source_url), (signal.sender_domain,))
+                ):
+                    matched_host = True
+                    break
+        if matched_host:
+            candidates.append(app)
+    if not candidates:
+        return None, None
+    context_app = candidates[0]
+    app_num = verdict.application_number.strip().casefold()
+    if app_num:
+        by_num = [app for app in candidates if app_num in _application_numbers(app)]
+        if len(by_num) == 1:
+            return by_num[0], by_num[0]
+    is_alternative_offer = reading is not None and (
+        getattr(reading, "outcome", "") == "REJECTED"
+        or bool(getattr(reading, "other_programme_offered", None))
+    )
+    offered = "" if is_alternative_offer else verdict.offered_programme.strip().casefold()
+    if offered:
+        by_exact = [app for app in candidates if app.title.strip().casefold() == offered]
+        if len(by_exact) == 1:
+            return by_exact[0], by_exact[0]
+        by_sub = [
+            app
+            for app in candidates
+            if offered in app.title.strip().casefold()
+            or app.title.strip().casefold() in offered
+        ]
+        if len(by_sub) == 1:
+            return by_sub[0], by_sub[0]
+    return None, context_app
+
+
 def apply_verdict(
     signal: MailSignal,
     verdict: MailVerdict,
@@ -287,6 +452,7 @@ def apply_verdict(
     vouched: bool = False,
     shared_portal: tuple[str, int] | None = None,
     reading: DecisionReading | None = None,
+    body: str = "",
 ) -> DeviceAction | None:
     """Record the label, act on at most one thing, and return the action if any.
 
@@ -329,6 +495,22 @@ def apply_verdict(
     """
     signal.label = verdict.label
     fields = ["label"]
+    resolved_ambiguous = False
+    if signal.application_id is None and verdict.label in (
+        "DECISION",
+        "RECEIVED",
+        "FEE",
+        "FEE_PAID",
+        "REFEREE_SUBMITTED",
+        "INTERVIEW",
+        "DOCUMENT_REQUEST",
+    ):
+        matched_app, _ = resolve_ambiguous_application(signal, verdict, reading=reading)
+        if matched_app is not None:
+            signal.application = matched_app
+            resolved_ambiguous = True
+    if signal.application_id is not None:
+        fields.append("application")
     if verdict.label == "DOCUMENT_REQUEST":
         signal.document_name = verdict.document_name.strip()[:120]
         signal.document_due = _due_date(verdict.document_due)
@@ -362,7 +544,13 @@ def apply_verdict(
         logger.info("signal %s carries no delivery authentication; not acting", signal.id)
         return None
 
-    _alert_student(signal, verdict.label, shared_portal=shared_portal)
+    _alert_student(
+        signal,
+        verdict.label,
+        shared_portal=(
+            None if (resolved_ambiguous or signal.application_id is not None) else shared_portal
+        ),
+    )
 
     application = signal.application
     if application is not None:
@@ -392,7 +580,7 @@ def apply_verdict(
         if reading is not None:
             record_from_mail(application, signal, reading)
         if verdict.label == "REFEREE_SUBMITTED":
-            _referee_submitted(signal, application)
+            _referee_submitted(signal, application, body=body)
 
     if verdict.action_kind == "OPEN_VERIFICATION_URL":
         url = _verification_url(verdict.action_value, link_hosts)
@@ -411,7 +599,9 @@ def apply_verdict(
     if verdict.action_kind == "TYPE_CODE":
         code = verdict.action_value.strip()
         if _FORMATTED_CODE_RE.fullmatch(code):
-            code = code.replace("-", "").replace(" ", "")
+            stripped = code.replace("-", "").replace(" ", "")
+            if len(stripped) >= 4:
+                code = stripped
         # ASCII only: "٤١٨" is isalnum() too, and the extension types only what
         # a portal's code box takes (extension/src/content/code.ts::CODE_RE).
         if not code or len(code) > _MAX_CODE_LENGTH or not (code.isascii() and code.isalnum()):

@@ -84,3 +84,18 @@ def test_duration_dimension_is_included_when_a_preference_is_set() -> None:
 
     assert "DURATION" in {score.dimension for score in scores.dimensions}
     assert sum((score.weight for score in scores.dimensions), Decimal("0")) == Decimal("1")
+
+
+def test_one_and_half_year_non_negotiable_accepts_18_month_and_excludes_12_or_24_month() -> None:
+    profile = make_profile(
+        duration_preference="ONE_AND_HALF_YEAR",
+        duration_flexibility="NON_NEGOTIABLE",
+    )
+    cand_18 = make_candidate(duration_months=18, cost_components=())
+    cand_12 = make_candidate(duration_months=12, cost_components=())
+    cand_24 = make_candidate(duration_months=24, cost_components=())
+
+    assert evaluate(profile, cand_18, EUR_RATES).outcome != "NOT_ELIGIBLE"
+    assert evaluate(profile, cand_12, EUR_RATES).outcome == "NOT_ELIGIBLE"
+    assert evaluate(profile, cand_24, EUR_RATES).outcome == "NOT_ELIGIBLE"
+

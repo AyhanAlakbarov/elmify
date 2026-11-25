@@ -7,6 +7,8 @@ template is a schema, not a stylesheet: no section may be added or reordered.
 
 from __future__ import annotations
 
+from datetime import date
+
 from django.template.loader import render_to_string
 
 from apps.documents.entry_selection import select_best_entries
@@ -27,16 +29,22 @@ def render_sisgp(content: CVContent) -> RenderedArtifact:
     paid = tuple(entry for entry in clean.experience if not entry.unpaid)
     unpaid = tuple(entry for entry in clean.experience if entry.unpaid)
     capped = select_best_entries(
-        paid, limit=_WORK_EXPERIENCE_CAP, key=lambda entry: entry.start_date
+        paid,
+        limit=_WORK_EXPERIENCE_CAP,
+        key=lambda entry: (entry.start_date is not None, entry.start_date or date.min),
     )
     engagement = select_best_entries(
-        unpaid, limit=len(unpaid), key=lambda entry: entry.start_date
+        unpaid,
+        limit=len(unpaid),
+        key=lambda entry: (entry.start_date is not None, entry.start_date or date.min),
     )
     # R-078: reverse-chronological within every category, not just the
     # capped WORK EXPERIENCE -- select_best_entries already does the sort,
     # so reuse it at limit=len(...) to reorder EDUCATION AND TRAINING too.
     education = select_best_entries(
-        clean.education, limit=len(clean.education), key=lambda entry: entry.start_date
+        clean.education,
+        limit=len(clean.education),
+        key=lambda entry: (entry.start_date is not None, entry.start_date or date.min),
     )
     html = render_to_string(
         "documents/cv_funder_sisgp.html",

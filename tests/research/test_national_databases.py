@@ -291,3 +291,19 @@ def test_build_database_site_requests_and_query_national_databases_hop_to_offici
     assert all("campusfrance.org" not in u for u in lead_urls)
 
 
+def test_foundation_directory_and_graduate_school_db_kinds_support_scholarship_claims() -> None:
+    from apps.research.discovery import DiscoveryQuery
+    from apps.research.national_databases import (
+        _FAMILY_BY_DB_KIND,
+        EXCELLENCE_GRADUATE_SCHOOLS,
+        FOUNDATION_DIRECTORIES,
+        NationalDatabasesSource,
+    )
+
+    assert _FAMILY_BY_DB_KIND[FOUNDATION_DIRECTORIES] == "PRIVATE_FOUNDATION"
+    assert _FAMILY_BY_DB_KIND[EXCELLENCE_GRADUATE_SCHOOLS] == "UNIVERSITY_WIDE"
+    leads = list(NationalDatabasesSource().find(DiscoveryQuery(field="", country_code="DE")))
+    foundation_leads = [lead for lead in leads if lead.funding_family == "PRIVATE_FOUNDATION"]
+    assert foundation_leads and all(lead.can_support_claim for lead in foundation_leads)
+
+

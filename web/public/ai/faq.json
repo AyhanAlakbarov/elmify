@@ -1,31 +1,31 @@
 {
-  "name": "Elmify Master's & Scholarship FAQ (Azerbaijan, Europe & UK)",
+  "name": "Elmify Master's & Scholarship FAQ (50+ Countries Worldwide)",
   "updatedAt": "2026-11-01",
   "availableLanguages": ["en", "az", "ru"],
   "faqs": [
     {
       "question": "Is Elmify available in Azerbaijan, and is it free for students?",
-      "answer": "Yes. Elmify is launching first in Azerbaijan in English, Azerbaijani, and Russian, with local application-fee budgeting in AZN, EUR, GBP, and USD. Creating an account, uploading your transcript and CV, and getting your matched postgraduate programmes and scholarships is free during early access."
+      "answer": "Yes. Elmify is available in English, Azerbaijani, and Russian, with local application-fee budgeting in AZN, EUR, GBP, and USD. Creating an account, uploading your transcript and CV, and getting your matched postgraduate programmes and scholarships is free during early access."
     },
     {
       "question": "Which countries, scholarships, and degrees do you cover?",
-      "answer": "We cover English-taught and local-language postgraduate degrees across Europe and the UK, paired with Azerbaijan's State Program (Dövlət Proqramı 2022–2028), Intergovernmental Scholarship Programs (HTP / Stipendium Hungaricum), Erasmus Mundus Joint Masters, DAAD, Swedish Institute (SISGP), Chevening, Türkiye Bursları, and NL Scholarship."
+      "answer": "We cover English-taught and local-language postgraduate degrees across 50+ countries worldwide (Europe, the UK, North America, Turkey, and Asia), paired with national and bilateral scholarships (Azerbaijan's State Program / Dövlət Proqramı 2022–2028, HTP / Stipendium Hungaricum, DAAD, Swedish Institute SISGP, Chevening, Fulbright, Türkiye Bursları, NL Scholarship), Erasmus Mundus Joint Masters, automatic university and faculty tuition waivers, regional household-income grants, multilateral bloc funds, local-language private foundations, and paid departmental RA/TA assistantships."
     },
     {
-      "question": "Does Elmify cover Bachelor's or PhD programmes?",
-      "answer": "Master's degrees (MSc, MA, LLM, MRes) and second-cycle scholarships are live today, and Bachelor's degree support will be done soon. Doctoral (PhD) and postdoctoral calls are not covered so every credit rule, deadline, and funding check stays accurate for your degree level."
+      "question": "Does Elmify cover Bachelor's programmes too?",
+      "answer": "Master's degrees (MSc, MA, LLM, MRes) and postgraduate scholarships are live today, and Bachelor's degree support will be done soon — so every credit rule, GPA conversion, deadline, and funding check is tailored to your profile."
     },
     {
-      "question": "Does the AI make things up?",
-      "answer": "Every admission or scholarship requirement links directly to the exact sentence on the official university or funder webpage it was read from. Your CV, motivation letters, and essays use only facts you have confirmed from your transcript and profile. When an official page does not state a rule, Elmify flags it as unstated instead of guessing."
+      "question": "How is Elmify different from traditional agencies and generic AI tools?",
+      "answer": "Most traditional agencies fall into two traps: some take a fee upfront and deliver rushed, low-quality applications to a handful of partner universities, while others hand your file to a recent graduate who got into one famous university (like Cambridge or Oxford) to write every motivation letter outside their field while using ordinary ChatGPT to search for programmes and scholarships. Ordinary ChatGPT misses niche local-language funding, cannot verify your transcript's ECTS subject credits against 40-page faculty regulations, and frequently guesses rules or invents facts. In Elmify, every admission and scholarship requirement links to the exact sentence on the official university or funder webpage across 50+ countries, and your tailored CV, programme-specific motivation letters, and referee briefs are built directly from your uploaded documents and profile."
     },
     {
       "question": "How does Elmify prepare my CV, motivation letter, and reference briefs?",
-      "answer": "Once you confirm your academic facts, Elmify builds a tailored academic CV, a programme-specific motivation letter, scholarship essays, and distinct talking-point briefs for each of your referees so two recommenders never repeat the same story."
+      "answer": "From your uploaded transcript, existing CV, certificates, and profile answers, Elmify builds a tailored academic CV formatted for your target country (German Tabular, Europass, or standard academic CV), a programme-tailored motivation letter anchored to each department's faculty and courses, scholarship essays, and distinct talking-point briefs for each of your referees so two recommenders never repeat the same story."
     },
     {
       "question": "Do you submit applications for me?",
-      "answer": "No. You stay in your own browser and press submit yourself on the official university or scholarship portal. Elmify prepares your tailored documents, portal answers, and fee-waiver checks side by side and tracks every deadline."
+      "answer": "No. You stay in your own browser and press submit yourself on the official university or scholarship portal. Our glass-box browser extension opens beside DreamApply, uni-assist, Studielink, and university portals, autofills your verified profile answers and attaches your tailored PDFs, flags any portal-specific question, and stops before the Submit button."
     },
     {
       "question": "What happens to my data?",

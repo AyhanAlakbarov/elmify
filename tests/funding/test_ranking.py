@@ -1196,6 +1196,68 @@ def test_post_admission_government_scholarship_risk_portfolio() -> None:
     assert pack_cond_award.paid[0].estimated_funded_chance_pct == 47
 
 
+def test_wp3_top_only_prestige_proxy_and_bank_margin_cumulative_budget() -> None:
+    from apps.accounts.schemas import ProfileConstraint
+
+    # 1. top_only sorts by selectivity / fit and positively rewards eff_chance on tie
+    # rather than penalizing a strong student's higher effective chance.
+    top_profile = make_profile(
+        strategy="BALANCED",
+        application_budget={"amount": Decimal("200.00"), "currency": "EUR"},
+        negotiable_preferences=(ProfileConstraint(kind="OTHER", value="TOP_UNIVERSITIES_ONLY"),),
+    )
+    eth_strong = make_candidate(
+        program_id="eth-msc",
+        institution_id="eth",
+        admission_baseline_pct=Decimal("15"),
+        cost_components=(make_cost("APPLICATION_FEE", "0.00", period="ONE_OFF"),),
+        dimension_scores=_STRONG_SCORES,
+    )
+    tum_strong = make_candidate(
+        program_id="tum-msc",
+        institution_id="tum",
+        admission_baseline_pct=Decimal("15"),
+        cost_components=(make_cost("APPLICATION_FEE", "0.00", period="ONE_OFF"),),
+        dimension_scores=_STRONG_SCORES,
+    )
+    pack_top = build_pack(
+        top_profile,
+        [tum_strong, eth_strong],
+        EUR_RATES,
+        probabilities={"eth-msc": 35, "tum-msc": 20},
+    )
+    # With equal baseline selectivity (15%) and fit, higher student chance wins on tie
+    assert [a.program_id for a in pack_top.fee_free] == ["eth-msc", "tum-msc"]
+
+    # 2. Cumulative fee * BANK_MARGIN (1.03) must not exceed budget (100 EUR):
+    # Two 49 EUR applications cost 98 EUR nominal, which is 98 * 1.03 = 100.94 EUR > 100 EUR.
+    margin_profile = make_profile(
+        strategy="BALANCED",
+        application_budget={"amount": Decimal("100.00"), "currency": "EUR"},
+    )
+    paid_1 = make_candidate(
+        program_id="paid-1",
+        institution_id="inst-1",
+        cost_components=(make_cost("APPLICATION_FEE", "49.00", currency="EUR", period="ONE_OFF"),),
+        dimension_scores=_STRONG_SCORES,
+    )
+    paid_2 = make_candidate(
+        program_id="paid-2",
+        institution_id="inst-2",
+        cost_components=(make_cost("APPLICATION_FEE", "49.00", currency="EUR", period="ONE_OFF"),),
+        dimension_scores=_STRONG_SCORES,
+    )
+    pack_margin = build_pack(
+        margin_profile,
+        [paid_1, paid_2],
+        EUR_RATES,
+        probabilities={"paid-1": 60, "paid-2": 55},
+    )
+    assert [a.program_id for a in pack_margin.paid] == ["paid-1"]
+    assert [a.program_id for a in pack_margin.over_budget] == ["paid-2"]
+
+
+
 
 
 

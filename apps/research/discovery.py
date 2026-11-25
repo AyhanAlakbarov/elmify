@@ -112,6 +112,9 @@ class ResearchLead:
                 "GOVERNMENT_SCHOLARSHIP",
                 "MULTILATERAL",
                 "PRIVATE_FOUNDATION",
+                "FOUNDATION_SCHOLARSHIP",
+                "UNIVERSITY_SCHOLARSHIP",
+                "UNIVERSITY_WIDE",
                 "AFFINITY_OR_DIASPORA",
             }
         )

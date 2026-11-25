@@ -3,16 +3,16 @@
 {% block title %}{{ application.title }}: documents{% endblock %}
 {% block content %}
 {% with c=candidate latest=row.latest %}
-<nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-writing' %}">CV &amp; letters</a><span aria-hidden="true">/</span><a href="{% url 'student-option' application.id %}">{{ application.title }}</a><span aria-hidden="true">/</span><span aria-current="page">Side-by-side workspace</span></nav>
+<nav class="crumbs" aria-label="Breadcrumb"><a href="{% url 'student-writing' %}">CV &amp; Motivation Letters</a><span aria-hidden="true">/</span><a href="{% url 'student-option' application.id %}">{{ application.title }}</a><span aria-hidden="true">/</span><span aria-current="page">Documents</span></nav>
 <div class="page-head ws-head">
   <div>
-    <h1>Side-by-side review: {% if c.country_code %}{{ c.country_code|flag }}{% endif %}{{ application.title }}</h1>
+    <h1>{% if c.country_code %}{{ c.country_code|flag }}{% endif %}{{ application.title }}</h1>
     <p>Official requirements on the left &middot; Your tailored document on the right{% if c.institution_name %} &middot; {{ c.institution_name }}{% endif %}{% if c.country_code %}{% if c.institution_name %}, {% else %} &middot; {% endif %}{{ c.country_code|country_name }}{% endif %}{% if application.deadline %}. Deadline <time datetime="{{ application.deadline|date:'c' }}">{{ application.deadline|date:"j M Y" }}</time>{% endif %}</p>
   </div>
   <a class="btn btn-quiet btn-small" href="{% url 'student-option' application.id %}">View application card &rarr;</a>
 </div>
 
-<nav class="doc-tabs" aria-label="Documents for this application">
+<nav class="doc-tabs" hx-boost="false" aria-label="Documents for this application">
   {% for key, label in tabs %}
     <a href="?doc={{ key }}"{% if key == tab %} aria-current="page"{% endif %}>{{ label }}{% if key == "letter" %}{% if latest.status == "APPROVED" %}<span class="dot dot-ok" aria-label="approved"></span>{% elif latest %}<span class="dot dot-warn" aria-label="draft"></span>{% endif %}{% elif key == "references" %}{% if referee_requests %}<span class="count">{{ referee_requests|length }}</span>{% endif %}{% elif key == "essay" %}{% if essay_row.latest.status == "APPROVED" %}<span class="dot dot-ok" aria-label="approved"></span>{% elif essay_row.latest %}<span class="dot dot-warn" aria-label="draft"></span>{% else %}<span class="soon">Soon</span>{% endif %}{% endif %}</a>
   {% endfor %}
@@ -20,10 +20,10 @@
 
 <div class="ws-split">
   {# ------------------------------------------------------------ left: what is asked #}
-  <aside class="ws-brief" aria-labelledby="brief-heading">
+  <aside class="ws-brief" aria-label="Official requirements">
     <p class="ws-pane-kicker">Left &middot; Official requirements</p>
-    {% if tab == "letter" %}
-      <h2 id="brief-heading">What this letter needs</h2>
+    <div data-ws-tab-panel="letter"{% if tab != "letter" %} hidden{% endif %}>
+      <h2 id="brief-heading-letter">What this letter needs</h2>
       {% if requirements.letter %}
         <p class="ws-source">From the programme's own page</p>
         <ul class="ws-reqs">{% for text in requirements.letter %}<li>{{ text }}</li>{% endfor %}</ul>
@@ -44,23 +44,29 @@
       {% endif %}
 
       <section class="ws-questions" aria-labelledby="questions-heading">
-        <div class="ws-q-head"><h3 id="questions-heading">Tell us more for this letter</h3><span class="soon">Coming soon</span></div>
-        <p class="muted small">Answers here will go into this letter only. Saving them is not switched on yet, so for now the AI writes from your confirmed details and your <a href="{% url 'student-gap-interview' %}">answered questions</a>.</p>
-        <details class="ws-more">
-          <summary>Preview upcoming letter-specific questions</summary>
-          <form class="ws-q-form" aria-describedby="questions-heading">
-            <fieldset disabled>
-              {% for key, question in questions %}
-                <p><label for="q-{{ key }}">{{ question }}</label><textarea id="q-{{ key }}" name="{{ key }}" rows="2"></textarea></p>
-              {% endfor %}
-              <button type="button">Save answers</button>
-            </fieldset>
+        <div class="ws-q-head">
+          <h3 id="questions-heading">Tell us more for this letter</h3>
+          {% if saved_notes_count %}<span class="badge badge-ok">{{ saved_notes_count }} saved</span>{% endif %}
+        </div>
+        <p class="muted small">Your answers here are saved to your verified profile and used alongside your <a href="{% url 'student-gap-interview' %}">answered questions</a> whenever you generate a motivation letter.</p>
+        <details class="ws-more"{% if saved_notes_count %} open{% endif %}>
+          <summary>{% if saved_notes_count %}Edit your letter-specific notes ({{ saved_notes_count }} of {{ letter_questions|length }} answered){% else %}Add letter-specific notes ({{ letter_questions|length }} prompts){% endif %}</summary>
+          <form class="ws-q-form" method="post" action="{% url 'student-letter-notes' application.id %}" aria-describedby="questions-heading">
+            {% csrf_token %}
+            {% for q in letter_questions %}
+              <p>
+                <label for="q-{{ q.key }}">{{ q.label }}</label>
+                <textarea id="q-{{ q.key }}" name="{{ q.key }}" rows="3" placeholder="{{ q.placeholder }}">{{ q.value }}</textarea>
+              </p>
+            {% endfor %}
+            <button type="submit">Save letter notes</button>
           </form>
         </details>
       </section>
+    </div>
 
-    {% elif tab == "references" %}
-      <h2 id="brief-heading">What referees need to send</h2>
+    <div data-ws-tab-panel="references"{% if tab != "references" %} hidden{% endif %}>
+      <h2 id="brief-heading-references">What referees need to send</h2>
       {% if requirements.references %}
         <p class="ws-source">From the programme's own page</p>
         <ul class="ws-reqs">{% for text in requirements.references %}<li>{{ text }}</li>{% endfor %}</ul>
@@ -73,50 +79,55 @@
         <li>We email them a private link with this programme's rules.</li>
         <li>They upload their letter. You see that it arrived, not what it says.</li>
       </ol>
+    </div>
 
-    {% else %}
-      <h2 id="brief-heading">What the scholarship asks for</h2>
+    <div data-ws-tab-panel="essay"{% if tab != "essay" %} hidden{% endif %}>
+      <h2 id="brief-heading-essay">What the scholarship asks for</h2>
       {% if scholarship_apps|length > 1 %}
-        <div class="ws-award-switch" role="navigation" aria-label="Linked scholarships">
+        <div class="ws-award-switch" hx-boost="false" role="navigation" aria-label="Linked scholarships">
           {% for app in scholarship_apps %}
-            <a href="?doc=essay&amp;award={{ app.id }}"{% if app.id == scholarship_app.id %} aria-current="page"{% endif %}>{{ app.title }}</a>
+            <a href="?doc=essay&amp;award={{ app.id }}" data-ws-award="{{ app.id }}"{% if app.id == scholarship_app.id %} aria-current="page"{% endif %}>{{ app.title }}</a>
           {% endfor %}
         </div>
       {% elif scholarship_app and not is_award %}
         <p class="ws-source">{{ scholarship_app.title }}</p>
       {% endif %}
-      {% if essay_requirements.letter %}
-        <p class="ws-source">From the scholarship's own page</p>
-        <ul class="ws-reqs">{% for text in essay_requirements.letter %}<li>{{ text }}</li>{% endfor %}</ul>
-        {% if essay_requirements.other or essay_requirements.references %}
-          <details class="ws-more">
-            <summary>Everything else this scholarship asks for</summary>
-            <ul class="ws-reqs">{% for text in essay_requirements.other %}<li>{{ text }}</li>{% endfor %}{% for text in essay_requirements.references %}<li>{{ text }}</li>{% endfor %}</ul>
-          </details>
-        {% endif %}
-      {% elif essay_requirements.other or essay_requirements.references %}
-        <p class="ws-source">From the scholarship's own page</p>
-        <ul class="ws-reqs">{% for text in essay_requirements.other %}<li>{{ text }}</li>{% endfor %}{% for text in essay_requirements.references %}<li>{{ text }}</li>{% endfor %}</ul>
-      {% else %}
-        {% with docs=c.details.required_documents %}
-          {% if docs %}
-            <p class="ws-source">From the scholarship's own page</p>
-            <ul class="ws-reqs">{% for d in docs %}<li>{{ d|lower|capfirst }}</li>{% endfor %}</ul>
-          {% else %}
-            <p class="muted">We have not read a list of documents for this scholarship yet.</p>
+      {% for b in essay_bundles %}
+      <div data-ws-award-panel="{{ b.id }}"{% if scholarship_app and b.id != scholarship_app.id|stringformat:"s" %} hidden{% endif %}>
+        {% if b.requirements.letter %}
+          <p class="ws-source">From the scholarship's own page</p>
+          <ul class="ws-reqs">{% for text in b.requirements.letter %}<li>{{ text }}</li>{% endfor %}</ul>
+          {% if b.requirements.other or b.requirements.references %}
+            <details class="ws-more">
+              <summary>Everything else this scholarship asks for</summary>
+              <ul class="ws-reqs">{% for text in b.requirements.other %}<li>{{ text }}</li>{% endfor %}{% for text in b.requirements.references %}<li>{{ text }}</li>{% endfor %}</ul>
+            </details>
           {% endif %}
-        {% endwith %}
-      {% endif %}
-      {% if scholarship_holder %}<p class="muted small">Awarded by {{ scholarship_holder }}.</p>{% endif %}
-    {% endif %}
+        {% elif b.requirements.other or b.requirements.references %}
+          <p class="ws-source">From the scholarship's own page</p>
+          <ul class="ws-reqs">{% for text in b.requirements.other %}<li>{{ text }}</li>{% endfor %}{% for text in b.requirements.references %}<li>{{ text }}</li>{% endfor %}</ul>
+        {% else %}
+          {% with docs=c.details.required_documents %}
+            {% if docs %}
+              <p class="ws-source">From the scholarship's own page</p>
+              <ul class="ws-reqs">{% for d in docs %}<li>{{ d|lower|capfirst }}</li>{% endfor %}</ul>
+            {% else %}
+              <p class="muted">We have not read a list of documents for this scholarship yet.</p>
+            {% endif %}
+          {% endwith %}
+        {% endif %}
+        {% if b.holder %}<p class="muted small">Awarded by {{ b.holder }}.</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
   </aside>
 
   {# ------------------------------------------------------------ right: the document #}
-  <section class="ws-doc" aria-labelledby="doc-heading">
+  <section class="ws-doc" aria-label="Your tailored document">
     <p class="ws-pane-kicker">Right &middot; Your tailored document</p>
-    {% if tab == "letter" %}
+    <div data-ws-tab-panel="letter"{% if tab != "letter" %} hidden{% endif %}>
       <div class="ws-doc-head">
-        <h2 id="doc-heading">Motivation letter{% if latest %}, version {{ latest.version }}{% endif %}</h2>
+        <h2 id="doc-heading-letter">Motivation letter{% if latest %}, version {{ latest.version }}{% endif %}</h2>
         {% if application.letter_state == "QUEUED" %}<span class="badge badge-brand">Writing…</span>
         {% elif application.letter_state == "CHECKING" %}<span class="badge badge-brand">Checking…</span>
         {% elif latest.status == "APPROVED" %}<span class="badge badge-ok">Approved</span>
@@ -130,6 +141,22 @@
           {% if row.header %}<p class="paper-date">{{ row.header|linebreaksbr }}</p>{% endif %}
           {% for paragraph in row.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
         </article>
+        <details class="ws-more">
+          <summary>Edit and refine this letter</summary>
+          <form method="post" action="{% url 'student-letter-refine' latest.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ here }}?doc=letter">
+            <p>
+              <label for="refine-letter-{{ latest.id }}">Refine paragraphs (separate paragraphs with a blank line)</label>
+              <textarea id="refine-letter-{{ latest.id }}" name="refined_text" rows="16">{% for paragraph in row.paragraphs %}{{ paragraph }}{% if not forloop.last %}
+
+{% endif %}{% endfor %}</textarea>
+            </p>
+            <div class="row-actions">
+              <button type="submit">Save refined version</button>
+            </div>
+          </form>
+        </details>
       {% elif application.letter_state == "QUEUED" %}
         <div class="ws-empty"><p><strong>The AI is writing your letter.</strong></p><p class="muted">It takes about a minute. Reload this page to see it.</p></div>
       {% elif not row.writable %}
@@ -152,7 +179,7 @@
             {% if identity_confirmed %}
               <form method="post" action="{% url 'student-letter-write' application.id %}">{% csrf_token %}<input type="hidden" name="next" value="{{ here }}?doc=letter"><button type="submit"{% if latest %} class="btn-quiet"{% endif %}>{% if latest %}Write a new version{% else %}Write my letter{% endif %}</button></form>
             {% else %}
-              <p class="muted small">Confirm your name and contact details on <a href="{% url 'student-writing' %}#facts">CV &amp; letters</a> first.</p>
+              <p class="muted small">Confirm your name and contact details on <a href="{% url 'student-writing' %}#facts">CV &amp; Motivation Letters</a> first.</p>
             {% endif %}
           {% endif %}
           {% if latest.status == "DRAFT" and application.letter_note != "blocked" and application.letter_note != "flagged" %}
@@ -167,9 +194,10 @@
       {% if row.drafts|length > 1 %}
         <p class="muted small">Earlier versions: {% for d in row.drafts|slice:"1:" %}{{ d.version }}{% if not forloop.last %}, {% endif %}{% endfor %}. Only the newest can be approved.</p>
       {% endif %}
+    </div>
 
-    {% elif tab == "references" %}
-      <div class="ws-doc-head"><h2 id="doc-heading">Recommendation letters</h2></div>
+    <div data-ws-tab-panel="references"{% if tab != "references" %} hidden{% endif %}>
+      <div class="ws-doc-head"><h2 id="doc-heading-references">Recommendation letters</h2></div>
       <div class="write-callout">
         <div class="write-callout-copy">
           <strong>How recommendation letters are prepared</strong>
@@ -182,13 +210,23 @@
       </div>
       {% if referee_requests %}
         <h3>Referees assigned to this application</h3>
-        <ul class="item-list">
+        <ul class="item-list ref-plan-list">
           {% for req in referee_requests %}
-            <li>
+            <li class="ref-plan-row ref-plan-row--{{ req.state|lower }}">
               <div class="ref-row-info">
                 <div class="ref-row-title">
                   <strong>{{ req.referee.label }}</strong>
-                  <span class="badge {% if req.state == 'AGREED' or req.state == 'SUBMITTED' %}badge-ok{% elif req.state == 'ASKED' %}badge-brand{% else %}badge{% endif %}">{{ req.get_state_display }}</span>
+                  {% if req.state == "AGREED" %}
+                    <span class="ref-status-badge ref-status-badge--agreed">&#10003; Agreed to write</span>
+                  {% elif req.state == "SUBMITTED" %}
+                    <span class="ref-status-badge ref-status-badge--submitted">&#10003; Letter submitted</span>
+                  {% elif req.state == "ASKED" %}
+                    <span class="ref-status-badge ref-status-badge--asked">&#9203; Asked — awaiting reply</span>
+                  {% elif req.state == "DECLINED" %}
+                    <span class="ref-status-badge ref-status-badge--declined">&#10005; Not agreed (declined)</span>
+                  {% else %}
+                    <span class="ref-status-badge ref-status-badge--proposed">Proposed — not asked yet</span>
+                  {% endif %}
                 </div>
                 {% if req.mode != "NOT_STATED" %}<small class="muted">{{ req.get_mode_display }}</small>{% endif %}
               </div>
@@ -216,27 +254,46 @@
         </form>
       </details>
       <p class="small"><a href="{% url 'student-references' %}">All your recommendation requests</a></p>
+    </div>
 
-    {% else %}
-      {% with essay=essay_row.latest %}
+    <div data-ws-tab-panel="essay"{% if tab != "essay" %} hidden{% endif %}>
+      {% for b in essay_bundles %}
+      {% with essay=b.row.latest b_app=b.app %}
+      <div data-ws-award-panel="{{ b.id }}"{% if scholarship_app and b.id != scholarship_app.id|stringformat:"s" %} hidden{% endif %}>
         <div class="ws-doc-head">
-          <h2 id="doc-heading">Scholarship essay{% if scholarship_app and not is_award %} — {{ scholarship_app.title }}{% endif %}{% if essay %}, version {{ essay.version }}{% endif %}</h2>
+          <h2 id="doc-heading-essay-{{ b.id }}">Scholarship essay{% if b_app and not is_award %} — {{ b_app.title }}{% endif %}{% if essay %}, version {{ essay.version }}{% endif %}</h2>
           {% if essay.status == "APPROVED" %}<span class="badge badge-ok">Approved</span>
           {% elif essay %}<span class="badge badge-warn">Draft, not approved</span>
           {% else %}<span class="soon">Coming soon</span>{% endif %}
         </div>
-        {% if essay_row.paragraphs %}
+        {% if b.row.paragraphs %}
           <article class="paper paper-letter ws-paper" id="essay-text-{{ essay.id }}" aria-label="Your scholarship essay">
-            {% if essay_row.header %}<p class="paper-date">{{ essay_row.header|linebreaksbr }}</p>{% endif %}
-            {% for paragraph in essay_row.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+            {% if b.row.header %}<p class="paper-date">{{ b.row.header|linebreaksbr }}</p>{% endif %}
+            {% for paragraph in b.row.paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
           </article>
+          <details class="ws-more">
+            <summary>Edit and refine this essay</summary>
+            <form method="post" action="{% url 'student-letter-refine' essay.id %}">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="{{ here }}?doc=essay{% if b_app %}&amp;award={{ b_app.id }}{% endif %}">
+              <p>
+                <label for="refine-essay-{{ essay.id }}">Refine paragraphs (separate paragraphs with a blank line)</label>
+                <textarea id="refine-essay-{{ essay.id }}" name="refined_text" rows="14">{% for paragraph in b.row.paragraphs %}{{ paragraph }}{% if not forloop.last %}
+
+{% endif %}{% endfor %}</textarea>
+              </p>
+              <div class="row-actions">
+                <button type="submit">Save refined version</button>
+              </div>
+            </form>
+          </details>
           <div class="ws-actions-bar">
             {% if essay.status == "APPROVED" and essay.rendered_filename %}
               <a class="btn" hx-boost="false" href="{% url 'documents-download' essay.id essay.rendered_filename %}">Download PDF</a>
             {% endif %}
             <button type="button" class="btn-quiet" data-copy="essay-text-{{ essay.id }}">Copy text</button> <span role="status" aria-live="polite"></span>
-            {% if scholarship_app and not is_award %}
-              <a class="btn btn-quiet btn-small" href="{% url 'student-option' scholarship_app.id %}">Open scholarship card &rarr;</a>
+            {% if b_app and not is_award %}
+              <a class="btn btn-quiet btn-small" href="{% url 'student-option' b_app.id %}">Open scholarship card &rarr;</a>
             {% endif %}
           </div>
         {% else %}
@@ -251,8 +308,10 @@
             </div>
           </div>
         {% endif %}
+      </div>
       {% endwith %}
-    {% endif %}
+      {% endfor %}
+    </div>
   </section>
 </div>
 {% endwith %}

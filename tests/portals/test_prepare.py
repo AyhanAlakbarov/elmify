@@ -459,9 +459,16 @@ def test_a_pattern_fills_only_what_it_names(pattern, expected):
 
 
 def test_a_name_that_does_not_fold_to_ascii_falls_back_rather_than_vanishing():
-    """A Cyrillic name would fold to "_CV.pdf": the page's pattern, minus the name."""
+    """Non-Latin names transliterate via anyascii, while a name with no transliteratable
+    letters falls back rather than vanishing."""
     assert file_name(
-        "{full_name}_CV.pdf", full_name="Айсель", fallback="cv-standard.pdf", extension=".pdf"
+        "{full_name}_CV.pdf",
+        full_name="Айсель Мамедова",
+        fallback="cv-standard.pdf",
+        extension=".pdf",
+    ) == ("Aisel_Mamedova_CV.pdf", "")
+    assert file_name(
+        "{full_name}_CV.pdf", full_name="ьъ", fallback="cv-standard.pdf", extension=".pdf"
     ) == ("cv-standard.pdf", "name_unsafe")
     assert file_name(
         "{full_name}_CV.pdf", full_name="", fallback="cv-standard.pdf", extension=".pdf"

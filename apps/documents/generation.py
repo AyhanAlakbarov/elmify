@@ -21,13 +21,16 @@ from .cv_evidence import apply_cv_evidence
 from .cv_fixes import (
     AppliedFix,
     drop_soft_skills,
+    fold,
     full_titles,
     place_theses,
     reverted_subjects,
     stamp_from_ledger,
+    subject_of,
 )
 from .cv_verbs import verb_fixes
 from .evidence.readings import usable_readings
+from .letter_exemplars import resolve_rhetorical_discipline
 from .models import VerifiedFact
 from .render import select_render_variant, without_banned_content
 from .requirement_list import RequirementList
@@ -383,8 +386,25 @@ def _stamp_from_facts(
                     edu = edu.model_copy(update={"relevant_coursework": line})
         education.append(edu)
 
+    personal = content.personal_information
+    personal_updates: dict[str, object] = {}
+    for fact in facts:
+        if fact.category != VerifiedFact.Category.IDENTITY or not isinstance(fact.payload, dict):
+            continue
+        if not personal.surname and not personal_updates.get("surname"):
+            s_val = fact.payload.get("surname")
+            if isinstance(s_val, str) and s_val.strip():
+                personal_updates["surname"] = s_val.strip()[:100]
+        if not personal.given_name and not personal_updates.get("given_name"):
+            g_val = fact.payload.get("given_name") or fact.payload.get("given_names")
+            if isinstance(g_val, str) and g_val.strip():
+                personal_updates["given_name"] = g_val.strip()[:100]
+    if personal_updates:
+        personal = personal.model_copy(update=personal_updates)
+
     return content.model_copy(
         update={
+            "personal_information": personal,
             "education": tuple(education),
             "projects": (),
         }
@@ -396,6 +416,7 @@ _PRESERVABLE_SECTIONS = (
     "education",
     "experience",
     "research",
+    "projects",
     "publications",
     "awards",
     "certifications",
@@ -468,6 +489,50 @@ def _required_fields_for(
     return tuple(targets)
 
 
+def _requirement_competency_terms(requirements: RequirementList | None) -> tuple[str, ...]:
+    if requirements is None:
+        return ()
+    terms: list[str] = []
+    cv_comp = getattr(requirements, "cv_competencies", None)
+    if callable(cv_comp):
+        for item in cv_comp():
+            if isinstance(item, str) and item.strip():
+                terms.append(item.strip())
+    raw_comp = getattr(requirements, "competencies", None)
+    if callable(raw_comp):
+        raw_comp = raw_comp()
+    if isinstance(raw_comp, list | tuple | set | frozenset):
+        for item in raw_comp:
+            if isinstance(item, str) and item.strip():
+                terms.append(item.strip())
+            elif hasattr(item, "text") or hasattr(item, "label"):
+                for attr in ("text", "label"):
+                    val = getattr(item, attr, "")
+                    if isinstance(val, str) and val.strip():
+                        terms.append(val.strip())
+    for req in getattr(requirements, "items", ()):
+        if getattr(req, "key", "") == "competency":
+            for attr in ("sentence", "value"):
+                val = getattr(req, attr, "")
+                if isinstance(val, str) and val.strip():
+                    terms.append(val.strip())
+    return tuple(terms)
+
+
+def _evidence_applied_fix(ef: dict[str, object]) -> AppliedFix:
+    kind = str(ef["kind"])
+    raw_subject = f"{ef['reading']}@{ef['target']}"
+    subject = subject_of(kind, raw_subject) if len(raw_subject) > 64 else raw_subject
+    return AppliedFix(
+        kind,
+        subject,
+        str(ef["target"]),
+        str(ef["reading"]),
+        str(ef["target"]),
+        undone=bool(ef.get("undone")),
+    )
+
+
 def _quality_fixes(
     content: CVContent,
     *,
@@ -475,13 +540,42 @@ def _quality_fixes(
     facts: list[VerifiedFact],
     verification_facts: list[VerifiedFact],
     decisions_client: Client | None,
+    programme: Program | None = None,
+    requirements: RequirementList | None = None,
 ) -> tuple[CVContent, tuple[AppliedFix, ...]]:
     """Spec §5.6 then §5.1-§5.4, after the model and before tailoring and
     verification. Before tailoring on purpose: _apply_tailoring falls back to
     the content it is given, so an omitted skill cannot come back through it."""
     undone = reverted_subjects(student)
     content = stamp_from_ledger(content, facts)
-    content, soft = drop_soft_skills(content, facts, undone)
+    discipline = resolve_rhetorical_discipline(
+        programme_name=programme.name if programme is not None else "",
+        facts={f.id: f for f in facts},
+        student=student,
+    )
+    prog_terms = (
+        tuple(
+            text
+            for row in ProgramStatement.objects.filter(
+                program=programme, kind=ProgramStatement.Kind.COMPETENCY
+            ).values_list("text", "label")
+            for text in row
+            if text
+        )
+        if programme is not None
+        else ()
+    )
+    req_terms = _requirement_competency_terms(requirements)
+    programme_requested_terms: frozenset[str] = frozenset(
+        fold(text) for text in (*prog_terms, *req_terms) if text
+    )
+    content, soft = drop_soft_skills(
+        content,
+        facts,
+        undone,
+        discipline=discipline,
+        programme_requested_terms=programme_requested_terms,
+    )
     content, theses = place_theses(content, undone)
     content, titles = full_titles(content, verification_facts, undone)
     content, verbs = verb_fixes(
@@ -559,6 +653,8 @@ def generate_cv(
         facts=prompt_facts,
         verification_facts=verification_facts,
         decisions_client=decisions_client,
+        programme=programme,
+        requirements=requirements,
     )
     if getattr(settings, "CV_REPO_BULLETS_ENABLED", False):
         content, evidence_fixes = apply_cv_evidence(
@@ -569,16 +665,7 @@ def generate_cv(
         )
         fixes = (
             *fixes,
-            *(
-                AppliedFix(
-                    ef["kind"],
-                    f"{ef['reading']}@{ef['target']}",
-                    ef["target"],
-                    ef["reading"],
-                    ef["target"],
-                )
-                for ef in evidence_fixes
-            ),
+            *(_evidence_applied_fix(ef) for ef in evidence_fixes),
         )
     if ban_rules:
         content = without_banned_content(content, ban_rules)
@@ -621,6 +708,8 @@ def generate_cv(
     # reopen the leak this comment exists to avoid.
     first_content = content
     first_verdicts = verdicts
+    first_fixes = fixes
+    first_left_out = selection.left_out
     failed = ", ".join(
         f"{verdict.claim_path} ({verdict.verdict})"
         for verdict in verdicts
@@ -646,6 +735,8 @@ def generate_cv(
         facts=prompt_facts,
         verification_facts=verification_facts,
         decisions_client=decisions_client,
+        programme=programme,
+        requirements=requirements,
     )
     if getattr(settings, "CV_REPO_BULLETS_ENABLED", False):
         content, evidence_fixes = apply_cv_evidence(
@@ -656,16 +747,7 @@ def generate_cv(
         )
         fixes = (
             *fixes,
-            *(
-                AppliedFix(
-                    ef["kind"],
-                    f"{ef['reading']}@{ef['target']}",
-                    ef["target"],
-                    ef["reading"],
-                    ef["target"],
-                )
-                for ef in evidence_fixes
-            ),
+            *(_evidence_applied_fix(ef) for ef in evidence_fixes),
         )
     if ban_rules:
         content = without_banned_content(content, ban_rules)
@@ -680,7 +762,22 @@ def generate_cv(
     content = selection.content
     verdicts = verify_against_facts(content, verification_facts)
     merged = _preserve_clean_sections(first_content, first_verdicts, content, verdicts)
+    left_out = selection.left_out
     if merged is not content:
+        seen_subjects = {f.subject for f in fixes}
+        fixes = (
+            *fixes,
+            *(f for f in first_fixes if f.subject not in seen_subjects),
+        )
+        seen_left_out = {(item.section, item.digest) for item in left_out}
+        left_out = (
+            *left_out,
+            *(
+                item
+                for item in first_left_out
+                if (item.section, item.digest) not in seen_left_out
+            ),
+        )
         content = merged
         verdicts = verify_against_facts(content, verification_facts)
     return GenerationResult(
@@ -689,5 +786,5 @@ def generate_cv(
         retried=True,
         gaps=gaps,
         applied_fixes=fixes,
-        left_out=selection.left_out,
+        left_out=left_out,
     )

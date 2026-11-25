@@ -89,6 +89,32 @@ def reading_key(reading: UsableReading) -> str:
     return f"pdf:{reading.document_id}"
 
 
+def _is_undone_reading(item: UsableReading, undone: frozenset[str]) -> bool:
+    from ..cv_fixes import subject_of
+
+    r_key = reading_key(item)
+    if r_key in undone or any(u.startswith(f"{r_key}@") for u in undone):
+        return True
+    kinds = (
+        ("added_from_github",)
+        if item.source == "github"
+        else ("added_from_pdf", "added_from_thesis")
+    )
+    targets = (
+        "projects",
+        *(f"experience:{i}" for i in range(20)),
+        *(f"research:{i}" for i in range(20)),
+        *(f"projects:{i}" for i in range(20)),
+        *(f"education:{i}" for i in range(20)),
+    )
+    for k in kinds:
+        if subject_of(k, r_key) in undone:
+            return True
+        if any(subject_of(k, f"{r_key}@{t}") in undone for t in targets):
+            return True
+    return False
+
+
 def usable_readings(
     student: Membership,
     *,
@@ -98,4 +124,4 @@ def usable_readings(
     items = tuple(_usable(stored) for stored in facts.stored_readings(student))
     if not undone:
         return items
-    return tuple(item for item in items if reading_key(item) not in undone)
+    return tuple(item for item in items if not _is_undone_reading(item, undone))

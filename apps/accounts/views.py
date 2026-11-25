@@ -73,7 +73,25 @@ from .schemas import Money, StudentProfileSnapshot
 logger = logging.getLogger(__name__)
 
 
-_ANGLOPHONE_CODES = frozenset({"GB", "UK", "US", "CA", "AU", "IE", "NZ"})
+_ANGLOPHONE_CODES = frozenset(
+    {
+        "GB",
+        "UK",
+        "US",
+        "CA",
+        "AU",
+        "IE",
+        "NZ",
+        "MT",
+        "SG",
+        "BB",
+        "JM",
+        "TT",
+        "BS",
+        "GY",
+        "BZ",
+    }
+)
 
 
 def _default_question_seed(draft: ConsultationDraft, key: str) -> object:
@@ -131,6 +149,13 @@ def _selected_ticks_for(key: str, seed: object) -> set[str]:
 def _language_context_note_for(draft: ConsultationDraft, key: str) -> str:
     if key != "language_evidence":
         return ""
+    teaching_langs = draft.answer("acceptable_teaching_languages")
+    if isinstance(teaching_langs, (list, tuple)) and teaching_langs:
+        folded_langs = {
+            str(lang).strip().casefold() for lang in teaching_langs if str(lang).strip()
+        }
+        if folded_langs and not (folded_langs & {"english", "en"}):
+            return ""
     acad = draft.answer("academic_history")
     if not isinstance(acad, list):
         return ""

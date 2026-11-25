@@ -23,23 +23,89 @@ if TYPE_CHECKING:
     from .vocabulary import Vocabulary
 
 _SPLIT = re.compile(r"[^a-z0-9]+")
+_WORD_RE = re.compile(r"[a-z]+")
 #: Applied to names AND domain labels, so it only ever makes them meet:
 #: German domains spell "Hör" as "hoer", anyascii spells it "hor".
 _DIGRAPHS = (("ae", "a"), ("oe", "o"), ("ue", "u"))
+#: Non-German Romance/Dutch/English stems and suffixes where `ae`, `oe`, `ue`
+#: are authentic vowel sequences (never German ASCII umlauts ä/ö/ü).
+_NON_GERMAN_CONTEXT_RE = re.compile(
+    r"\b(?:stichting|fondation|fundacion|fondazione|fundacao|universite|"
+    r"universidad|universita|universiteit)\b"
+)
+_PROTECTED_STEM_RE = re.compile(
+    r"(?:puer|maestr|oek|zoek|hoek|doen|goed|moed|bloed|broek|groep|voet|"
+    r"groen|stoel|proef|beroep|toekomst|genoeg|vroeg|ploeg|kroeg|voeg|"
+    r"nuev|buen|escuel|puent|fuerz|fuert|fuent|suert|muert|cuerp|cuent|"
+    r"abuel|fueg|jueg|lueg|suel|vuel|duel|huert|muestr|prueb|venezuel|"
+    r"huelv|manuel|miguel|samuel|teruel|cruel|rafael|israel|michael|"
+    r"caetan|gaetan|paell|faen|aero|vitae|influenc|frecuenc|secuenc|"
+    r"consecuenc|fluent|poet|poem|cooper|coordin|coexist)"
+)
+_ROMANCE_WORD_END_RE = re.compile(r"(?:[bcdfghjklmnpqrstvwxz](?:o|a|os|as))$")
+#: Cross-lingual institutional kind stems mapped to canonical lookup words in `vocab.kinds`.
+_CROSS_LINGUAL_KIND_STEMS: dict[str, tuple[str, ...]] = {
+    "foundation": ("foundation", "stiftung", "vakif"),
+    "fondation": ("foundation", "stiftung", "vakif"),
+    "fundacion": ("foundation", "stiftung", "vakif"),
+    "fondazione": ("foundation", "stiftung", "vakif"),
+    "fundacao": ("foundation", "stiftung", "vakif"),
+    "fundacja": ("foundation", "stiftung", "vakif"),
+    "stichting": ("foundation", "stiftung", "vakif"),
+    "stiftelse": ("foundation", "stiftung", "vakif"),
+    "stiftelsen": ("foundation", "stiftung", "vakif"),
+    "yayasan": ("foundation", "stiftung", "vakif"),
+    "stiftung": ("stiftung", "foundation", "vakif"),
+    "vakif": ("vakif", "foundation", "stiftung"),
+    "vakfi": ("vakif", "foundation", "stiftung"),
+    "university": ("university", "universitat", "universite"),
+    "universitat": ("university", "universitat", "universite"),
+    "universite": ("university", "universitat", "universite"),
+    "universidad": ("university", "universitat", "universite"),
+    "universita": ("university", "universitat", "universite"),
+    "universiteit": ("university", "universitat", "universite"),
+    "universitet": ("university", "universitat", "universite"),
+    "uniwersytet": ("university", "universitat", "universite"),
+    "hochschule": ("university", "universitat", "hochschule"),
+    "fachhochschule": ("university", "universitat", "hochschule"),
+    "association": ("association", "dernegi", "verein"),
+    "asociacion": ("association", "dernegi", "verein"),
+    "associazione": ("association", "dernegi", "verein"),
+    "vereniging": ("association", "dernegi", "verein"),
+    "verein": ("association", "dernegi", "verein"),
+    "embassy": ("embassy", "botschaft"),
+    "ambassade": ("embassy", "botschaft"),
+    "ambasciata": ("embassy", "botschaft"),
+    "embajada": ("embassy", "botschaft"),
+    "botschaft": ("embassy", "botschaft"),
+}
 #: A token shorter than this is never distinctive (v2: "a lone short common
 #: word is not evidence"); it still contributes to initials.
 MIN_DISTINCTIVE = 4
 #: Morphology and compounds only between words this long -- below it a one-edit
 #: or prefix match is coincidence, not inflection.
 _MIN_MORPH = 5
+_MIN_HEAD_COMPOUND = 7
 _MIN_INITIALS = 3
+
+
+def _fold_word(word: str) -> str:
+    if not ("ae" in word or "oe" in word or "ue" in word):
+        return word
+    if _PROTECTED_STEM_RE.search(word) or _ROMANCE_WORD_END_RE.search(word):
+        return word
+    # Protect French `oeu` (oeuvre, coeur, soeur, manoeuvre) and `[qg]ue` (que, guerra, league).
+    out = re.sub(r"ae", "a", word)
+    out = re.sub(r"oe(?!u)", "o", out)
+    out = re.sub(r"(?<![qg])ue", "u", out)
+    return out
 
 
 def fold(text: str) -> str:
     folded = anyascii(text).casefold()
-    for digraph, vowel in _DIGRAPHS:
-        folded = folded.replace(digraph, vowel)
-    return folded
+    if _NON_GERMAN_CONTEXT_RE.search(folded):
+        return folded
+    return _WORD_RE.sub(lambda m: _fold_word(m.group(0)), folded)
 
 
 def tokens(text: str) -> tuple[str, ...]:
@@ -68,12 +134,39 @@ def _one_edit(a: str, b: str) -> bool:
     return short[i:] == long_[i + 1 :]
 
 
+def _lookup_stem(stem: str, vocab: Vocabulary) -> frozenset[str]:
+    direct = vocab.kinds.get(stem)
+    if direct:
+        return direct
+    canonical_keys = _CROSS_LINGUAL_KIND_STEMS.get(stem)
+    if canonical_keys:
+        found: set[str] = set()
+        for key in canonical_keys:
+            if key in vocab.kinds:
+                found |= vocab.kinds[key]
+        if found:
+            return frozenset(found)
+    return frozenset()
+
+
 def _morph_kinds(token: str, vocab: Vocabulary) -> frozenset[str]:
-    # Rule 3: a token that ENDS with a kind word is a kind word (Bundesstiftung).
+    direct = _lookup_stem(token, vocab)
+    if direct:
+        return direct
+    # Rule 3a: a token that ENDS with a kind word is a kind word (Bundesstiftung).
     for start in range(1, len(token) - _MIN_MORPH + 1):
-        hit = vocab.kinds.get(token[start:])
+        tail = token[start:]
+        hit = _lookup_stem(tail, vocab) or inflected_kind(tail, vocab)
         if hit:
             return hit
+    # Rule 3b: a token that STARTS with an institutional head stem (fondation..., fundacion...,
+    # stichting..., yayasan..., universite..., universidad...) is a head-initial compound.
+    if len(token) >= _MIN_HEAD_COMPOUND + 3:
+        for end in range(len(token) - 3, _MIN_HEAD_COMPOUND - 1, -1):
+            head = token[:end]
+            hit = _lookup_stem(head, vocab)
+            if hit:
+                return hit
     for word in vocab.kinds_by_prefix.get(token[:3], ()):
         if len(word) < _MIN_MORPH:
             continue
@@ -109,7 +202,7 @@ def inflected_kind(token: str, vocab: Vocabulary) -> frozenset[str]:
     gatesfoundation.org) a directory, scored zero, and handed the title check
     to the runner-up -- which can be an adjacent body of the same kind.
     """
-    found = vocab.kinds.get(token)
+    found = _lookup_stem(token, vocab)
     if found:
         return found
     if len(token) < _MIN_MORPH:
@@ -120,6 +213,16 @@ def inflected_kind(token: str, vocab: Vocabulary) -> frozenset[str]:
         shared = len(os.path.commonprefix((token, word)))
         if shared >= max(_MIN_MORPH, len(word) - 2) or _one_edit(token, word):
             return vocab.kinds[word]
+    for stem in _CROSS_LINGUAL_KIND_STEMS:
+        if len(stem) < _MIN_MORPH or len(token) - len(stem) > _MAX_INFLECTION:
+            continue
+        if not token.startswith(stem[:3]):
+            continue
+        shared = len(os.path.commonprefix((token, stem)))
+        if shared >= max(_MIN_MORPH, len(stem) - 2) or _one_edit(token, stem):
+            hit = _lookup_stem(stem, vocab)
+            if hit:
+                return hit
     return frozenset()
 
 

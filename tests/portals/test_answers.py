@@ -374,3 +374,59 @@ def test_unsure_narrative_answers_match_narrative_values_and_confirm_guess(
     assert len(saved) == 1
     assert saved[0].outcome == PortalAnswer.Outcome.CONFIRMED_GUESS
     assert saved[0].matched_field == "narrative.career_plan"
+
+
+def test_identity_given_name_is_locked_and_checked_against_passport_given_names(
+    agency_a, membership_a, counselor_membership
+) -> None:
+    from django.utils import timezone
+
+    from apps.concierge.models import Notification
+    from apps.documents.models import VerifiedFact
+    from apps.funding.models import AuditEvent
+    from apps.portals.answers import (
+        _LOCKED_IDENTITY_FIELDS,
+        Answer,
+        _identity_value_matches,
+        record_answers,
+    )
+    from apps.portals.packets import mint_packet
+    from apps.tenancy.models import CounselorAssignment
+
+    assert "identity.given_name" in _LOCKED_IDENTITY_FIELDS
+    assert _identity_value_matches("identity.given_name", "Narmin", "NƏRMIN") is True
+    assert _identity_value_matches("identity.given_name", "Kamran", "NƏRMIN") is False
+
+    entry = {
+        "profile_field": "identity.given_name",
+        "sure": True,
+        "action": {"selector": "#first_name", "method": "fill", "arguments": ["%value%"]},
+    }
+    with tenant_scope(agency_a.id):
+        CounselorAssignment.objects.create(
+            tenant=agency_a, counselor=counselor_membership, student=membership_a
+        )
+        VerifiedFact.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            created_by=membership_a,
+            confirmed_by=membership_a,
+            category=VerifiedFact.Category.IDENTITY,
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:passport-gn",
+            confirmed_at=timezone.now(),
+            payload={"given_names": "Narmin", "surname": "Aliyeva"},
+        )
+        application = _application(agency_a, membership_a, entries=[entry])
+        mint_packet(application)
+        record_answers(
+            application, [Answer(selector="#first_name", kind="changed", value="Kamran")]
+        )
+        assert AuditEvent.objects.filter(
+            event="portal.identity_mismatch_typed", object_id=application.id
+        ).exists()
+        assert Notification.objects.filter(
+            roadmap_item__student=membership_a,
+            recipient=counselor_membership,
+            roadmap_item__stage="PORTAL_EXCEPTION",
+        ).exists()

@@ -157,3 +157,41 @@ def test_the_first_application_on_a_new_portal_asks_for_review_without_blocking(
             portal_form=application.portal_form,
         )
         assert request_first_portal_review(second) is None
+
+
+def test_a_portal_with_a_verified_shared_field_map_skips_first_portal_review(
+    agency_a, membership_a, counselor_membership
+):
+    from django.utils import timezone
+
+    from apps.concierge.models import Notification, RoadmapItem
+    from apps.portals.escalation import request_first_portal_review
+    from apps.portals.models import FieldMap
+    from apps.tenancy.models import CounselorAssignment
+
+    with tenant_scope(agency_a.id):
+        CounselorAssignment.objects.create(
+            tenant=agency_a, counselor=counselor_membership, student=membership_a
+        )
+        application = _application(agency_a, membership_a)
+        FieldMap.objects.create(
+            portal_form=application.portal_form,
+            version=1,
+            entries=[
+                {
+                    "profile_field": "identity.full_name",
+                    "sure": True,
+                    "action": {"selector": "#name", "method": "fill", "arguments": ["%value%"]},
+                }
+            ],
+            learned_by_tenant=None,
+            verified_at=timezone.now(),
+        )
+        assert application.portal_form.review_required is True
+        result = request_first_portal_review(application)
+        application.portal_form.refresh_from_db()
+
+        assert result is None
+        assert application.portal_form.review_required is False
+        assert not RoadmapItem.objects.filter(student=membership_a).exists()
+        assert not Notification.objects.filter(recipient=counselor_membership).exists()

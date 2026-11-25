@@ -312,6 +312,12 @@ def _duration_fields(
                 months = int(first.count)
             elif first.unit == "years":
                 months = int(first.count * 12)
+            elif first.unit == "semesters":
+                months = round(first.count * 6)
+            elif first.unit == "trimesters":
+                months = round(first.count * 4)
+            elif first.unit == "quarters":
+                months = round(first.count * 3)
         if months is not None and not (1 <= months <= 60):
             months = None
         return text, months
@@ -641,6 +647,13 @@ def _write_award_benefits_and_rules(
 
     created_benefits: list[FundingBenefit] = []
     place_scoped_benefits: set[UUID] = set()
+    award_eligible_nats: set[str] = set()
+    nat_cell_probe = award.fields.get("nationality")
+    if nat_cell_probe is not None and nat_cell_probe.state == "shown":
+        for nw in nat_cell_probe.values:
+            if isinstance(nw.value, Nationality) and nw.value.eligible:
+                award_eligible_nats.update(nw.value.eligible)
+
     benefits_cell = award.fields.get("benefits")
     if benefits_cell is not None and benefits_cell.state == "shown":
         for val_wrapper in benefits_cell.values:
@@ -693,27 +706,72 @@ def _write_award_benefits_and_rules(
                     benefit=benefit, evidence_claim=claim
                 )
             if not raw_val.for_all and (raw_val.places or raw_val.held_places):
-                place_scoped_benefits.add(benefit.id)
-                for chunk in _chunk_iso_codes(frozenset(raw_val.places)):
-                    _create_rule_for_benefits(
-                        (benefit,),
-                        key="CITIZENSHIP",
-                        operator="IN",
-                        value=chunk,
-                        rule_text=b_quote or opportunity.name,
-                        claims=claims,
-                        quote=b_quote,
+                place_codes = [
+                    c.strip().upper()
+                    for c in raw_val.places
+                    if len(c.strip()) == 2 and c.strip().isalpha()
+                ]
+                quote_cf = (b_quote or "").casefold()
+                is_host_country_scope = (
+                    bool(place_codes)
+                    and not raw_val.held_places
+                    and (
+                        (
+                            bool(award_eligible_nats)
+                            and set(place_codes).isdisjoint(award_eligible_nats)
+                        )
+                        or (
+                            bool(
+                                re.search(
+                                    r"\b(?:in|studying in|universities in|"
+                                    r"institutions in|host country)\b",
+                                    quote_cf,
+                                )
+                            )
+                            and not re.search(
+                                r"\b(?:from|citizens?\s+of|nationals?\s+of|"
+                                r"residents?\s+of|applicants?\s+from|students?\s+from)\b",
+                                quote_cf,
+                            )
+                        )
                     )
-                for chunk in _chunk_iso_codes(frozenset(raw_val.held_places)):
-                    _create_rule_for_benefits(
-                        (benefit,),
-                        key="CITIZENSHIP",
-                        operator="NOT_IN",
-                        value=chunk,
-                        rule_text=b_quote or opportunity.name,
-                        claims=claims,
-                        quote=b_quote,
-                    )
+                )
+                if is_host_country_scope:
+                    matching_claims = [c for c in claims if c.claim == b_quote] or claims
+                    for cc in place_codes:
+                        geo_rule = BenefitRule.objects.create(
+                            benefit=benefit,
+                            kind=BenefitRule.Kind.GEOGRAPHIC_SCOPE,
+                            scope_type=BenefitRule.Scope.COUNTRY,
+                            country_code=cc,
+                            rule_text=(b_quote or opportunity.name)[:4_000],
+                        )
+                        for claim in matching_claims:
+                            BenefitRuleEvidenceClaim.objects.get_or_create(
+                                benefit_rule=geo_rule, evidence_claim=claim
+                            )
+                else:
+                    place_scoped_benefits.add(benefit.id)
+                    for chunk in _chunk_iso_codes(frozenset(raw_val.places)):
+                        _create_rule_for_benefits(
+                            (benefit,),
+                            key="CITIZENSHIP",
+                            operator="IN",
+                            value=chunk,
+                            rule_text=b_quote or opportunity.name,
+                            claims=claims,
+                            quote=b_quote,
+                        )
+                    for chunk in _chunk_iso_codes(frozenset(raw_val.held_places)):
+                        _create_rule_for_benefits(
+                            (benefit,),
+                            key="CITIZENSHIP",
+                            operator="NOT_IN",
+                            value=chunk,
+                            rule_text=b_quote or opportunity.name,
+                            claims=claims,
+                            quote=b_quote,
+                        )
             created_benefits.append(benefit)
 
     existing_kinds = {b.kind for b in created_benefits}
@@ -875,9 +933,11 @@ def _date_iso(award_date: AwardDate) -> str:
     if not isinstance(d, Date) or d.year is None or d.month is None:
         return ""
     if award_date.role == "application_period" and d.end_year and d.end_month:
-        end_day = d.end_day or calendar.monthrange(d.end_year, d.end_month)[1]
+        max_end_day = calendar.monthrange(d.end_year, d.end_month)[1]
+        end_day = min(d.end_day, max_end_day) if d.end_day else max_end_day
         return dt.date(d.end_year, d.end_month, end_day).isoformat()
-    day = d.day or calendar.monthrange(d.year, d.month)[1]
+    max_day = calendar.monthrange(d.year, d.month)[1]
+    day = min(d.day, max_day) if d.day else max_day
     return dt.date(d.year, d.month, day).isoformat()
 
 

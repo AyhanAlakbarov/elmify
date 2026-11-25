@@ -24,9 +24,19 @@ GRID: tuple[float, ...] = (
 ALPHA = 0.05
 
 
+def min_admissible_n(delta: float, alpha: float = ALPHA) -> int:
+    """Smallest sample size n with (1 - delta)**n <= alpha (Proposition 3).
+
+    Fewer accepted rows at a candidate threshold can never reject H0: R(tau) > delta
+    even at zero observed errors, and must be excluded by the covariate-ancillary
+    admissible subgrid T_adm(S) before fixed-sequence testing begins.
+    """
+    return math.ceil(math.log(alpha) / math.log(1 - delta))
+
+
 def zero_error_rows_needed(delta: float, alpha: float = ALPHA) -> int:
     """Smallest n with (1 - delta)**n <= alpha: fewer clean rows can never reject H0."""
-    return math.ceil(math.log(alpha) / math.log(1 - delta))
+    return min_admissible_n(delta, alpha)
 
 
 def binom_cdf(k: int, n: int, p: float) -> float:
@@ -45,22 +55,65 @@ def binom_cdf(k: int, n: int, p: float) -> float:
     return min(1.0, total)
 
 
+def clopper_pearson_upper(errors: int, n: int, alpha: float = ALPHA) -> float:
+    """Exact one-sided (1 - alpha) Clopper-Pearson upper confidence bound on error rate (Prop. 2).
+
+    Returns 1.0 when n <= 0 or errors >= n, exact closed-form 1 - alpha**(1/n) when errors == 0,
+    and 60-step bisection root of binom_cdf(errors, n, p) == alpha otherwise.
+    """
+    if n <= 0 or errors >= n:
+        return 1.0
+    if errors <= 0:
+        return 1.0 - math.pow(alpha, 1.0 / n)
+    lo, hi = 0.0, 1.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if binom_cdf(errors, n, mid) > alpha:
+            lo = mid
+        else:
+            hi = mid
+    return hi
+
+
 def ltt_bar(
     scores_truth: list[tuple[float, bool]],
     delta: float,
     alpha: float = ALPHA,
     grid: Sequence[float] = GRID,
 ) -> float | None:
+    """Learn-then-Test (RCPS) threshold over the covariate-ancillary admissible subgrid
+    T_adm(S) = {bar in grid : N(bar) >= min_admissible_n(delta, alpha)}.
+
+    By Proposition 3, N(bar) depends solely on the unlabeled scores S_i. Skipping grid
+    points with N(bar) < min_admissible_n(delta, alpha) prevents top-down sample-starvation
+    deadlock at high thresholds (e.g. 0.999) while preserving exact finite-sample risk
+    control P(ErrorRate(hat_bar) > delta) <= alpha.
+    """
+    min_n = min_admissible_n(delta, alpha)
     passed: float | None = None
     for bar in sorted(grid, reverse=True):
         accepted = [truth for score, truth in scores_truth if score >= bar]
+        if len(accepted) < min_n:
+            continue
         errors = sum(1 for truth in accepted if not truth)
-        if not accepted:
-            continue  # accepting nothing carries no risk; the sequence goes on to a looser bar
         if binom_cdf(errors, len(accepted), delta) > alpha:
             break
         passed = bar
     return passed
+
+
+def ltt_negative_bar(
+    scores_truth: list[tuple[float, bool]],
+    delta: float,
+    alpha: float = ALPHA,
+    grid: Sequence[float] = GRID,
+) -> float | None:
+    """Learn-then-Test upper threshold tau_neg in (0, 0.5] for predicting False when
+    score <= tau_neg, controlling the False Omission Rate P(truth=True | score <= tau_neg) <= delta
+    at confidence 1 - alpha (Messoudi & Mansar 2026)."""
+    neg_pairs = [(1.0 - score, not truth) for score, truth in scores_truth if score <= 0.5]
+    bar_neg = ltt_bar(neg_pairs, delta, alpha=alpha, grid=grid)
+    return round(1.0 - bar_neg, 6) if bar_neg is not None else None
 
 
 def joint(jev_p: float | None, second_p: float | None) -> float | None:
@@ -129,16 +182,7 @@ def score_rows(
 
 def upper_error(errors: int, n: int) -> float:
     """Exact one-sided 95% upper bound on the error rate; 1.0 when nothing was observed."""
-    if n == 0:
-        return 1.0
-    lo, hi = 0.0, 1.0
-    for _ in range(60):
-        mid = (lo + hi) / 2
-        if binom_cdf(errors, n, mid) > 0.05:
-            lo = mid
-        else:
-            hi = mid
-    return hi
+    return clopper_pearson_upper(errors, n, alpha=ALPHA)
 
 
 def sweep_lines(

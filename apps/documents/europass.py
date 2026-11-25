@@ -12,6 +12,7 @@ one thing this plan changes from the spec".
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable
 from datetime import date
 from io import BytesIO
@@ -22,6 +23,7 @@ from urllib.parse import quote
 import urllib3
 from pypdf import PdfReader
 
+from apps.documents.cv_fixes import fold
 from apps.documents.schemas import (
     CVContent,
     EducationEntry,
@@ -275,35 +277,145 @@ def _call(
 #: ever outgrows a dict.
 _LANGUAGE_CODES = {
     "azerbaijani": "aze",
+    "azərbaycan": "aze",
+    "azərbaycanca": "aze",
+    "azerbaycan": "aze",
+    "azerbaycanca": "aze",
+    "azeri": "aze",
     "english": "eng",
+    "ingilizce": "eng",
+    "ingilis": "eng",
+    "ingiliscə": "eng",
+    "ingilisce": "eng",
     "russian": "rus",
+    "rusça": "rus",
+    "rusca": "rus",
+    "rus": "rus",
+    "русский": "rus",
     "turkish": "tur",
+    "türkçe": "tur",
+    "turkce": "tur",
+    "türk": "tur",
+    "turk": "tur",
     "german": "deu",
+    "deutsch": "deu",
+    "almanca": "deu",
+    "alman": "deu",
     "french": "fra",
+    "français": "fra",
+    "francais": "fra",
+    "fransızca": "fra",
+    "fransizca": "fra",
+    "fransız": "fra",
+    "fransiz": "fra",
     "spanish": "spa",
+    "español": "spa",
+    "espanol": "spa",
     "italian": "ita",
+    "italiano": "ita",
     "portuguese": "por",
+    "português": "por",
+    "portugues": "por",
     "dutch": "nld",
+    "nederlands": "nld",
     "polish": "pol",
+    "polski": "pol",
     "czech": "ces",
+    "čeština": "ces",
+    "cestina": "ces",
     "swedish": "swe",
+    "svenska": "swe",
     "norwegian": "nor",
+    "norsk": "nor",
     "danish": "dan",
+    "dansk": "dan",
     "finnish": "fin",
+    "suomi": "fin",
     "greek": "ell",
+    "ελληνικά": "ell",
     "hungarian": "hun",
+    "magyar": "hun",
     "romanian": "ron",
+    "română": "ron",
+    "romana": "ron",
     "arabic": "ara",
+    "العربية": "ara",
     "persian": "fas",
     "farsi": "fas",
+    "فارسی": "fas",
     "georgian": "kat",
+    "ქართული": "kat",
     "ukrainian": "ukr",
+    "українська": "ukr",
     "chinese": "zho",
+    "mandarin": "zho",
+    "mandarin chinese": "zho",
+    "中文": "zho",
+    "普通话": "zho",
     "japanese": "jpn",
+    "日本語": "jpn",
     "korean": "kor",
+    "한국어": "kor",
     "hindi": "hin",
     "urdu": "urd",
     "hebrew": "heb",
+    "עברית": "heb",
+    "kazakh": "kaz",
+    "қазақша": "kaz",
+    "uzbek": "uzb",
+    "oʻzbekcha": "uzb",
+    "kyrgyz": "kir",
+    "turkmen": "tuk",
+    "tajik": "tgk",
+    "armenian": "hye",
+    "vietnamese": "vie",
+    "thai": "tha",
+    "indonesian": "ind",
+    "malay": "msa",
+    "tagalog": "tgl",
+    "filipino": "fil",
+    "bengali": "ben",
+    "tamil": "tam",
+    "telugu": "tel",
+    "marathi": "mar",
+    "punjabi": "pan",
+    "gujarati": "guj",
+    "kannada": "kan",
+    "malayalam": "mal",
+    "swahili": "swa",
+    "amharic": "amh",
+    "yoruba": "yor",
+    "hausa": "hau",
+    "igbo": "ibo",
+    "afrikaans": "afr",
+    "albanian": "sqi",
+    "bosnian": "bos",
+    "bulgarian": "bul",
+    "catalan": "cat",
+    "croatian": "hrv",
+    "estonian": "est",
+    "galician": "glg",
+    "icelandic": "isl",
+    "irish": "gle",
+    "latvian": "lav",
+    "lithuanian": "lit",
+    "macedonian": "mkd",
+    "maltese": "mlt",
+    "montenegrin": "cnr",
+    "serbian": "srp",
+    "slovak": "slk",
+    "slovenian": "slv",
+    "welsh": "cym",
+    "basque": "eus",
+    "belarusian": "bel",
+    "kurdish": "kur",
+    "pashto": "pus",
+    "nepali": "nep",
+    "sinhala": "sin",
+    "burmese": "mya",
+    "khmer": "khm",
+    "lao": "lao",
+    "mongolian": "mon",
 }
 
 #: Europass's own key for each of the five CEFR sub-skills, in the order
@@ -315,36 +427,69 @@ _SUB_SKILL_KEYS = (
     "spokenProduction",
     "writing",
 )
+_CEFR_WORDS = frozenset({"A1", "A2", "B1", "B2", "C1", "C2"})
+_LANG_PARENS_RE = re.compile(r"\s*\([^)]*\)")
+_LANG_SUFFIX_RE = re.compile(r"\s+(?:dili|language)$")
 
 
 def _language_code(name: str) -> str:
-    try:
-        return _LANGUAGE_CODES[name.strip().casefold()]
-    except KeyError:
-        # Do not echo the student-supplied language text into an exception
-        # message -- ContentHygieneFailed's docstring states the convention.
-        raise EuropassUnavailable(
-            "no Europass language code for a declared language; add it to _LANGUAGE_CODES"
-        ) from None
+    raw = name.strip().casefold().replace("\u0307", "")
+    no_parens = _LANG_PARENS_RE.sub("", raw).strip()
+    folded = fold(no_parens)
+    for base in (raw, no_parens, folded):
+        if base in _LANGUAGE_CODES:
+            return _LANGUAGE_CODES[base]
+        stripped = _LANG_SUFFIX_RE.sub("", base).strip()
+        if stripped in _LANGUAGE_CODES:
+            return _LANGUAGE_CODES[stripped]
+    # Do not echo the student-supplied language text into an exception
+    # message -- ContentHygieneFailed's docstring states the convention.
+    raise EuropassUnavailable(
+        "no Europass language code for a declared language; add it to _LANGUAGE_CODES"
+    ) from None
 
 
-def _name_parts(full_name: str) -> tuple[str, str]:
-    """Europass wants two boxes; CVContent carries one verified name.
+_SURNAME_PARTICLES = frozenset(
+    {
+        "van", "von", "der", "den", "ter", "ten", "zu", "zum", "zur",
+        "de", "du", "des", "la", "le", "da", "do", "dos", "das", "di",
+        "bin", "binti", "ibn", "al", "el",
+    }
+)
 
-    ponytail: the last whitespace token is the family name. Wrong for Spanish
-    double surnames and patronymic-final orders, and knowingly so -- the
-    upgrade path is optional given_name/family_name on PersonalInformation,
-    sourced from the IDENTITY fact and used when present, which needs no
-    migration because CVContent is a pydantic schema.
 
-    Splitting at all is the one inference this design permits, for the same
-    reason generate_cv refuses to stamp full_name: a name can be wrong in a
-    way only a human catches, and the student sees this at the approval gate.
+def _name_parts(
+    full_name: str,
+    *,
+    given_name: str | None = None,
+    surname: str | None = None,
+) -> tuple[str, str]:
+    """Europass wants two boxes; CVContent carries `full_name` plus optional
+    verified `given_name` and `surname` from the student's `IDENTITY` facts.
+
+    Uses `given_name` / `surname` directly when present; otherwise splits
+    `full_name` while keeping contiguous surname particles (`van der`, `de la`,
+    `ibn`, ...) attached to the final surname token.
     """
+    clean_given = (given_name or "").strip()
+    clean_surname = (surname or "").strip()
+    if clean_given and clean_surname:
+        return clean_given, clean_surname
     parts = full_name.split()
     if len(parts) < 2:
-        return full_name, ""
-    return " ".join(parts[:-1]), parts[-1]
+        return full_name, clean_surname
+    if clean_surname and full_name.casefold().endswith(clean_surname.casefold()):
+        prefix = full_name[: len(full_name) - len(clean_surname)].strip()
+        if prefix:
+            return prefix, clean_surname
+    if clean_given and full_name.casefold().startswith(clean_given.casefold()):
+        suffix = full_name[len(clean_given) :].strip()
+        if suffix:
+            return clean_given, suffix
+    split_idx = len(parts) - 1
+    while split_idx > 1 and parts[split_idx - 1].casefold().rstrip(".") in _SURNAME_PARTICLES:
+        split_idx -= 1
+    return " ".join(parts[:split_idx]), " ".join(parts[split_idx:])
 
 
 def _date_obj(value: date | None) -> dict[str, object] | None:
@@ -375,7 +520,11 @@ def _language_entry(entry: LanguageEntry) -> dict[str, object]:
     if not entry.mother_tongue:
         levels = (level for _label, level in entry.self_assessment)
         payload.update(
-            {key: level for key, level in zip(_SUB_SKILL_KEYS, levels) if level is not None}
+            {
+                key: level
+                for key, level in zip(_SUB_SKILL_KEYS, levels)
+                if level is not None and level in _CEFR_WORDS
+            }
         )
     payload["mediaAttachments"] = []
     return payload
@@ -402,7 +551,7 @@ def _education_entry(order: int, entry: EducationEntry) -> dict[str, object]:
         "creationDate": None,
         "startDate": _date_obj(entry.start_date),
         "endDate": _date_obj(entry.end_date),
-        "ongoing": entry.end_date is None,
+        "ongoing": entry.start_date is not None and entry.end_date is None,
         "description": None,
         "studyFields": [],
         "finalGrade": None,
@@ -470,7 +619,7 @@ def _gap_entry(order: int, entry: TimelineEntry) -> dict[str, object]:
             "creationDate": None,
             "startDate": _date_obj(entry.start_date),
             "endDate": _date_obj(entry.end_date),
-            "ongoing": entry.end_date is None,
+            "ongoing": entry.start_date is not None and entry.end_date is None,
             "mainActivities": "",
             "mediaAttachments": None,
             "links": None,
@@ -515,7 +664,7 @@ def _work_experience_entry(order: int, entry: ExperienceEntry) -> dict[str, obje
             "creationDate": None,
             "startDate": _date_obj(entry.start_date),
             "endDate": _date_obj(entry.end_date),
-            "ongoing": entry.end_date is None,
+            "ongoing": entry.start_date is not None and entry.end_date is None,
             # Europass has one free-text field here, so the bullets join with
             # newlines rather than being flattened into a paragraph.
             "mainActivities": "\n".join(entry.bullets),
@@ -621,8 +770,12 @@ def europass_payload(content: CVContent, *, oldest_first: bool = False) -> dict[
     original task-5 brief's pre-data guesses -- see that report for the
     per-section field tables this function follows.
     """
-    first_name, last_name = _name_parts(content.personal_information.full_name)
     personal = content.personal_information
+    first_name, last_name = _name_parts(
+        personal.full_name,
+        given_name=personal.given_name,
+        surname=personal.surname,
+    )
     languages = content.languages
     return {
         "profile": {

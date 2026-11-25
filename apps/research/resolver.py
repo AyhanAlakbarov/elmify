@@ -35,7 +35,7 @@ from .hosts import registrable_domain
 from .models import ResolvedVia, UnresolvedReason
 from .names import MIN_DISTINCTIVE, NameProfile, fold, inflected_kind, kind_of, profile, tokens
 from .providers.base import ProviderUnavailable
-from .vocabulary import Vocabulary
+from .vocabulary import Vocabulary, load_or_build_vocabulary
 from .wikidata import WikidataMatch
 
 logger = logging.getLogger(__name__)
@@ -273,9 +273,9 @@ def _distinct(names: Sequence[str]) -> tuple[str, ...]:
 
 @dataclass
 class Resolver:
-    vocabulary: Vocabulary
-    candidates: Callable[[str], Sequence[str]]
-    tavily: CallBudget
+    vocabulary: Vocabulary | str | None = None
+    candidates: Callable[[str], Sequence[str]] = lambda _: ()
+    tavily: CallBudget = field(default_factory=lambda: CallBudget(0))
     fetch: Callable[..., FetchedPage] = fetch_page
     budget: SweepBudget | None = None
     wikidata: Callable[[Sequence[str]], WikidataMatch | None] | None = None
@@ -286,7 +286,43 @@ class Resolver:
     #: (or twice in one) costs one credit, and answers the same both times.
     _titles_by_host: dict[str, tuple[str, ...] | None] = field(default_factory=dict, repr=False)
 
+    def __post_init__(self) -> None:
+        if isinstance(self.vocabulary, str) and self.vocabulary.strip():
+            self.vocabulary = load_or_build_vocabulary(self.vocabulary)
+
+    @classmethod
+    def for_country(
+        cls,
+        country_code: str,
+        *,
+        candidates: Callable[[str], Sequence[str]],
+        tavily: CallBudget,
+        fetch: Callable[..., FetchedPage] = fetch_page,
+        budget: SweepBudget | None = None,
+        wikidata: Callable[[Sequence[str]], WikidataMatch | None] | None = None,
+        use_wikidata_website: bool = True,
+        diffbot: Callable[[str], str] | None = None,
+    ) -> Resolver:
+        return cls(
+            vocabulary=load_or_build_vocabulary(country_code),
+            candidates=candidates,
+            tavily=tavily,
+            fetch=fetch,
+            budget=budget,
+            wikidata=wikidata,
+            use_wikidata_website=use_wikidata_website,
+            diffbot=diffbot,
+        )
+
+    def _active_vocabulary(self, country_code: str) -> Vocabulary:
+        if isinstance(self.vocabulary, Vocabulary):
+            return self.vocabulary
+        if isinstance(self.vocabulary, str) and self.vocabulary.strip():
+            return load_or_build_vocabulary(self.vocabulary)
+        return load_or_build_vocabulary(country_code)
+
     def resolve(self, query: NameQuery) -> Resolution:
+        vocab = self._active_vocabulary(query.country_code)
         names = _distinct(query.names)
         if query.contact_email:
             domain = email_domain(query.contact_email)
@@ -302,22 +338,22 @@ class Resolver:
                                    if (d := registrable_domain(url)) and not is_catalogue(d)), "")
                     if domain:
                         return Resolution(domain, ResolvedVia.WIKIDATA, "", qid, names)
-        p = profile(names, self.vocabulary)
-        found = self._search(names, p)
+        p = profile(names, vocab)
+        found = self._search(names, p, vocab)
         asked = False
         if (not found.domain and found.reason in _DIFFBOT_REASONS
                 and self.diffbot is not None and query.allow_diffbot):
-            asked, found = self._residue(names, p, found)
+            asked, found = self._residue(names, p, found, vocab)
         return Resolution(found.domain, found.via, found.reason, qid, names, asked)
 
-    def _search(self, names: tuple[str, ...], p: NameProfile) -> _Found:
+    def _search(self, names: tuple[str, ...], p: NameProfile, vocab: Vocabulary) -> _Found:
         if p.one_token:
             return _Found(reason=UnresolvedReason.ONE_TOKEN_NAME)
         lists: list[Sequence[str]] = []
         for variant in names[:_MAX_QUERY_VARIANTS]:
             self.tavily.spend()
             lists.append(list(self.candidates(variant)))
-        scored = ranked(lists, p, self.vocabulary)
+        scored = ranked(lists, p, vocab)
         viable = [s for s in scored if s.score > 0]
         if not viable:
             directory = any(s.directory for s in scored)
@@ -325,10 +361,10 @@ class Resolver:
                           else UnresolvedReason.NO_CANDIDATE)
         if viable[0].tier == 3:
             return _Found(viable[0].domain, ResolvedVia.SEARCH_SLUG)
-        return self._verify(viable[:2], p, ResolvedVia.SEARCH_TITLE)
+        return self._verify(viable[:2], p, ResolvedVia.SEARCH_TITLE, vocab)
 
     def _residue(
-        self, names: tuple[str, ...], p: NameProfile, found: _Found
+        self, names: tuple[str, ...], p: NameProfile, found: _Found, vocab: Vocabulary
     ) -> tuple[bool, _Found]:
         """Rung 4. Diffbot's answer is a URL and goes through the same title
         check as a search pick; anything it cannot turn around leaves the
@@ -354,7 +390,7 @@ class Resolver:
             return True, found
         try:
             verified = self._verify(
-                [Scored(url, domain, 0, 0, 0.0, False)], p, ResolvedVia.DIFFBOT
+                [Scored(url, domain, 0, 0, 0.0, False)], p, ResolvedVia.DIFFBOT, vocab
             )
         except FetchBudgetSpent as spent:
             spent.diffbot_asked = True
@@ -363,13 +399,20 @@ class Resolver:
             return True, verified
         return True, found
 
-    def _verify(self, candidates: Sequence[Scored], p: NameProfile, via: str) -> _Found:
+    def _verify(
+        self,
+        candidates: Sequence[Scored],
+        p: NameProfile,
+        via: str,
+        vocab: Vocabulary | None = None,
+    ) -> _Found:
+        active_vocab = vocab if vocab is not None else self._active_vocabulary("GB")
         reasons: list[str] = []
         for s in candidates:
             titles = self._titles(s)
             if titles is None:
                 reasons.append(UnresolvedReason.FETCH_FAILED)
-            elif title_agrees(p, titles, self.vocabulary):
+            elif title_agrees(p, titles, active_vocab):
                 return _Found(s.domain, via)
             else:
                 reasons.append(UnresolvedReason.TITLE_MISMATCH)

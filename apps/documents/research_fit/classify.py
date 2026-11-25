@@ -75,12 +75,18 @@ def entity_in_sentence(entity: str | None, sentence: str) -> str | None:
 
 
 _INACTIVE_PERSON_RE = re.compile(
-    r"\b(?:"
-    r"emerit(?:us|a|i)|retired|im\s+ruhestand|emeritiert|"
-    r"visiting\s+(?:professor|scholar|fellow|lecturer)|"
+    r"(?:\b(?:"
+    r"emerit(?:us|a|i|o)|retired|im\s+ruhestand|emeritiert|"
+    r"visiting\s+(?:professor|scholar|fellow|lecturer|researcher)|"
     r"gastprofessor(?:in)?|adjunct|former\s+(?:professor|member|director|chair)|"
-    r"on\s+(?:sabbatical|leave)|in\s+memoriam|deceased"
-    r")\b",
+    r"on\s+(?:sabbatical|leave)|in\s+memoriam|deceased|"
+    r"émérite|retraité(?:e)?|professeur(?:e)?\s+invité(?:e)?|ancien(?:ne)?\s+(?:professeur|membre|directeur)|"
+    r"met\s+emeritaat|gepensioneerd|gastdocent|gasthoogleraar|"
+    r"in\s+pensione|fuori\s+ruolo|visitatore|"
+    r"jubilad[oa]|visitante|"
+    r"emekli|misafir\s+öğretim\s+üyesi|eski\s+üye|"
+    r"почетный\s+профессор|в\s+отставке|на\s+пенсии|приглашенный\s+профессор|бывший"
+    r")\b|名誉教授|榮譽教授|退官|退休|客員教授|客座教授|명예교수|초빙교수)",
     re.IGNORECASE,
 )
 

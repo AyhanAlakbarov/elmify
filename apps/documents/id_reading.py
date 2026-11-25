@@ -243,8 +243,12 @@ def _words(text: str) -> list[str]:
 
 
 #: "<father> qızı/oğlu": the marker and the father's name before it.
-_PATRONYMIC_MARKERS = frozenset({"QIZI", "OGLU", "KIZI", "OGLY", "KYZY", "UULU", "GIZI",
-                                 "GYZY"})
+_PATRONYMIC_SUFFIX_MARKERS = frozenset(
+    {"QIZI", "OGLU", "KIZI", "OGLY", "KYZY", "UULU", "GIZI", "GYZY"}
+)
+#: Malay/Arabic patronymic markers ("bin", "binti", "bt", "ibn", "bint").
+_PATRONYMIC_PREFIX_MARKERS = frozenset({"BIN", "BINTI", "BT", "IBN", "BINT"})
+_PATRONYMIC_MARKERS = _PATRONYMIC_SUFFIX_MARKERS | _PATRONYMIC_PREFIX_MARKERS
 #: Russian and Ukrainian patronymics. Note the H: Balkan -ović/-ević surnames
 #: fold to -OVIC/-EVIC and are never dropped.
 _PATRONYMIC_ENDINGS = ("OVICH", "EVICH", "OVNA", "EVNA", "ICHNA", "OVYCH", "IVNA")
@@ -259,8 +263,13 @@ def _known_words(name: str) -> tuple[list[str], int]:
     folded = [mrz.fold_tokens(word) for word in words]
     dropped: set[int] = set()
     for index, forms in enumerate(folded):
-        if forms & _PATRONYMIC_MARKERS:
+        if forms & _PATRONYMIC_SUFFIX_MARKERS:
             dropped |= {index, index - 1}
+        elif forms & _PATRONYMIC_PREFIX_MARKERS:
+            if len(words) >= 4 and index + 1 < len(words):
+                dropped |= {index, index + 1}
+            else:
+                dropped.add(index)
         elif index and len(words) >= 3 and any(
                 f.endswith(_PATRONYMIC_ENDINGS) for f in forms):
             dropped.add(index)
@@ -270,33 +279,48 @@ def _known_words(name: str) -> tuple[list[str], int]:
 def _owner_matches(values: list[ReadValue], known_names: list[str],
                    strip: mrz.Strip | None = None) -> bool:
     """Spec §5.2.4: the read belongs to the student we hold names for. One known
-    name must vouch for both halves: its first or last word equals the first
-    given name up to spelling (surname-first order works), and a surname word
-    matches another of its words -- never one that equals the given name, so
-    Marko Marković does not own MARKO MARKOV. Given name alone fails a namesake;
-    surname alone fails a parent; two halves from two different known names fail
-    both. Only when every known name is one word does the given name decide
+    name must vouch for both halves: its first or last word equals a given name
+    up to spelling (surname-first and compound given-name orders work), and a
+    surname word matches another of its words -- never one that equals the
+    matched given name, so Marko Marković does not own MARKO MARKOV. Given name
+    alone fails a namesake; surname alone fails a parent; two halves from two
+    different known names fail both. Only when every known name is one word (or
+    the passport carries a single mononym field) does a single name field decide
     alone. A strip fills in what the page lacks."""
     def printed(key: str) -> str:
         return next((v.value for v in values if v.key == key), "")
 
     given_words = _words(printed("identity.given_names") or (strip.given_names if strip else ""))
     surname_words = _words(printed("identity.surname") or (strip.surname if strip else ""))
-    if not given_words:
+    if not given_words and not surname_words:
         return False
-    first = given_words[0]
-
-    def given_ok(words: list[str]) -> bool:
-        return bool(words) and any(mrz.same_given_name(first, words[j]) for j in (0, -1))
 
     known = [_known_words(name) for name in known_names]
+    if not given_words or not surname_words:
+        single_tokens = given_words or surname_words
+        return any(
+            mrz.same_given_name(tok, word) or mrz.same_name_token(tok, word)
+            for words, _ in known if words
+            for word in (words[0], words[-1])
+            for tok in single_tokens
+        )
+
+    def matching_given(words: list[str]) -> list[str]:
+        if not words:
+            return []
+        return [
+            g for g in given_words
+            if any(mrz.same_given_name(g, words[j]) for j in (0, -1))
+        ]
+
     full = [words for words, count in known if count > 1]
     if not full:
-        return any(given_ok(words) for words, _ in known)
+        return any(bool(matching_given(words)) for words, _ in known)
     return any(
         mrz.same_name_token(surname, word)
-        for words in full if given_ok(words)
-        for word in words if not mrz.same_given_name(first, word)
+        for words in full
+        for matched_g in matching_given(words)
+        for word in words if not mrz.same_given_name(matched_g, word)
         for surname in surname_words
     )
 

@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from apps.accounts.schemas import StudentProfileSnapshot
 from apps.funding.affordability import AffordabilityResult, calculate_affordability
@@ -161,6 +162,10 @@ class Pack:
     #: Programmes stating no application fee: never "free", never charged an
     #: invented fee, at most MAX_FEE_NOT_KNOWN of them (owner, 2026-10-24).
     fee_not_known: tuple[PackedApplication, ...] = ()
+    #: Exact multi-funder common-shock portfolio success probability percentage
+    #: (1..99), i.e. probability of securing at least one affordable/funded offer
+    #: across active programmes in `fee_free + paid + fee_not_known`.
+    pack_success_probability_pct: int | None = None
 
 
 #: The most programmes with no stated application fee one pack holds (owner,
@@ -210,6 +215,496 @@ def _avoids_return_bond(profile: StudentProfileSnapshot) -> bool:
     return profile.career_intent == "WORK_ABROAD" or _has_profile_flag(
         profile, "NO_RETURN_BOND"
     )
+
+
+_INDEPENDENT_SCHEME_LABELS: frozenset[str] = frozenset(
+    {
+        "",
+        "none",
+        "affordable",
+        "self-funded",
+        "self funded",
+        "tuition waiver",
+        "university scholarship",
+        "university merit scholarship",
+        "departmental scholarship",
+    }
+)
+
+
+@dataclass(frozen=True)
+class FunderRiskTerms:
+    """Decomposition of a candidate's funded success indicator Z_i = F_k * A_i.
+
+    For independent candidates (`funder_key is None`):
+        - `q_funder == 1.0`
+        - `cond_admission_prob == effective_prob == p_i`
+    For shared external scholarship candidates (`funder_key == k`):
+        - `F_k ~ Bernoulli(q_funder)` is shared across all candidates in group `k`
+        - `A_i ~ Bernoulli(cond_admission_prob)` is conditionally independent given `F_k = 1`
+        - `q_funder * cond_admission_prob == effective_prob == p_i`
+    """
+
+    funder_key: str | None
+    q_funder: float
+    cond_admission_prob: float
+    effective_prob: float
+    has_known_prob: bool = True
+
+
+def _normalize_shared_funder_key(
+    scheme_name: str | None,
+    *,
+    uses_external_scheme: bool,
+) -> str | None:
+    if not uses_external_scheme or not scheme_name:
+        return None
+    cleaned = scheme_name.strip()
+    lowered = cleaned.lower()
+    if lowered in _INDEPENDENT_SCHEME_LABELS:
+        return None
+    if lowered.startswith("university ") or lowered.endswith(" university scholarship"):
+        return None
+    return lowered
+
+
+def _soft_fit_score(scores: EvaluationScores) -> Decimal:
+    fit_scores = [d.score for d in scores.dimensions if d.dimension != "AFFORDABILITY"]
+    if not fit_scores:
+        return Decimal("0")
+    return sum(fit_scores, Decimal("0")) / Decimal(len(fit_scores))
+
+
+def _effective_shortfall_for(
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    affordability: AffordabilityResult,
+    schemes: Mapping[str, tuple[str, ...]],
+) -> Decimal:
+    if schemes.get(candidate.program_id) or post_admission_gov_scheme_for_candidate(
+        profile, candidate
+    ):
+        return Decimal("0.00")
+    return max(
+        Decimal("0.00"),
+        affordability.shortfall - affordability.conditional_savings,
+    )
+
+
+def _candidate_effective_score(
+    profile: StudentProfileSnapshot,
+    candidate: CandidateFacts,
+    effective_cand: CandidateFacts,
+    scores: EvaluationScores,
+    affordability: AffordabilityResult,
+    *,
+    schemes: Mapping[str, tuple[str, ...]],
+    probabilities: Mapping[str, int] | None = None,
+    funded_probabilities: Mapping[str, int | None] | None = None,
+    coursework_warnings: Mapping[str, tuple[str, ...]] | None = None,
+    today: date | None = None,
+) -> Decimal:
+    top_only = _wants_top_universities_only(profile)
+    post_admit_gov = has_post_admission_gov_scholarship(profile)
+    avoids_bond = _avoids_return_bond(profile)
+    score = (
+        _soft_fit_score(scores)
+        if (
+            (top_only or post_admit_gov)
+            and _effective_shortfall_for(profile, candidate, affordability, schemes)
+            == Decimal("0.00")
+        )
+        else scores.overall
+    )
+    eff_chance = _effective_chance_for(
+        profile,
+        candidate.program_id,
+        affordability,
+        probabilities=probabilities,
+        funded_probabilities=funded_probabilities,
+        conditional=needs_selective_funding(profile, effective_cand, today=today),
+    )
+    if top_only:
+        raw_baseline = getattr(candidate, "admission_baseline_pct", None)
+        if raw_baseline is None:
+            raw_baseline = getattr(candidate, "admission_Baseline_pct", None)
+        if raw_baseline is not None:
+            score += (Decimal("50") - Decimal(str(raw_baseline))) * Decimal("0.15")
+        elif is_selective_candidate(candidate):
+            score += Decimal("4.5")
+        acad_prog_fit = (
+            candidate.dimension_scores.get("ACADEMIC_FIT", Decimal("50"))
+            + candidate.dimension_scores.get("PROGRAM_FIT", Decimal("50"))
+        ) / Decimal("2")
+        score += (acad_prog_fit - Decimal("50")) * Decimal("0.05")
+        if eff_chance is not None:
+            score += (Decimal(eff_chance) - Decimal("50")) * Decimal("0.05")
+    elif eff_chance is not None:
+        score += (Decimal(eff_chance) - Decimal("50")) * Decimal("0.15")
+    if avoids_bond and return_service_disclosures(
+        profile, effective_cand, today=today
+    ):
+        score -= Decimal("5")
+    warnings_for_prog = (coursework_warnings or {}).get(candidate.program_id, ())
+    if warnings_for_prog:
+        is_mild_only = all(
+            "conditional bridge" in w.lower() or "portfolio required:" in w.lower()
+            for w in warnings_for_prog
+        )
+        score -= Decimal("1") if is_mild_only else Decimal("3")
+    return score
+
+
+def _decompose_portfolio_funder_risk(
+    profile: StudentProfileSnapshot,
+    candidates: Sequence[CandidateFacts],
+    rates: RateTable,
+    *,
+    schemes: Mapping[str, tuple[str, ...]] | None = None,
+    probabilities: Mapping[str, int] | None = None,
+    funded_probabilities: Mapping[str, int | None] | None = None,
+    award_probabilities: Mapping[str, int] | None = None,
+    awards: Sequence[AwardCandidateFacts] = (),
+    today: date | None = None,
+) -> dict[str, FunderRiskTerms]:
+    """Decompose each candidate's standalone probability into `(funder_key, q_funder, a_i, p_i)`.
+
+    Uses `schemes` (`HOLDER`/`COUNTRY` external scholarships and post-admission government
+    scholarships) with exact identity `q_funder * cond_admission_prob == effective_prob`
+    on singletons and across shared funder groups.
+    """
+    schemes_map = dict(schemes or {})
+    award_prob_by_key: dict[str, float] = {}
+    if award_probabilities:
+        for aw in awards:
+            aw_pct = award_probabilities.get(aw.award_id)
+            if aw_pct is not None:
+                award_prob_by_key[aw.name.strip().lower()] = max(
+                    0.01, min(0.99, float(aw_pct) / 100.0)
+                )
+        for k_raw, pct_val in award_probabilities.items():
+            key_norm = k_raw.strip().lower()
+            if key_norm not in award_prob_by_key:
+                award_prob_by_key[key_norm] = max(
+                    0.01, min(0.99, float(pct_val) / 100.0)
+                )
+
+    prelim: dict[str, tuple[str | None, float, float, bool]] = {}
+    raw_groups: dict[str, list[tuple[str, float, float]]] = {}
+    resolved_today = today if today is not None else date.today()
+
+    for candidate in candidates:
+        pid = candidate.program_id
+        cand_schemes = list(schemes_map.get(pid, ()))
+        for name in schemes_paying_for(
+            profile, candidate, awards, today=resolved_today
+        ):
+            if name not in cand_schemes:
+                cand_schemes.append(name)
+        gov_scheme = post_admission_gov_scheme_for_candidate(profile, candidate)
+        if gov_scheme is not None and gov_scheme not in cand_schemes:
+            cand_schemes.append(gov_scheme)
+        cand_schemes_tuple = tuple(cand_schemes)
+
+        try:
+            effective_cand = _strip_undecidable_secondary_routes(
+                profile,
+                candidate,
+                rates,
+                schemes=cand_schemes_tuple,
+                today=today,
+            )
+            aff = calculate_affordability(profile, effective_cand, rates, today=today)
+            prog_closes_gap = _programme_money_closes_the_gap(
+                profile, effective_cand, rates, today=today
+            )
+            conditional = needs_selective_funding(profile, effective_cand, today=today)
+        except UnconvertibleCurrency:
+            continue
+
+        eff_chance_pct = _effective_chance_for(
+            profile,
+            pid,
+            aff,
+            probabilities=probabilities,
+            funded_probabilities=funded_probabilities,
+            conditional=conditional,
+        )
+        if eff_chance_pct is None:
+            prelim[pid] = (None, 0.0, 0.0, False)
+            continue
+
+        p_i = max(0.0, min(0.9999, float(eff_chance_pct) / 100.0))
+        admit_pct = (
+            probabilities.get(pid) if probabilities is not None else None
+        )
+        a_raw = (
+            max(p_i, min(0.9999, float(admit_pct) / 100.0))
+            if admit_pct is not None
+            else p_i
+        )
+
+        has_distinct_funded = (
+            funded_probabilities is not None
+            and funded_probabilities.get(pid) is not None
+            and (admit_pct is None or funded_probabilities.get(pid) != admit_pct)
+        )
+        uses_external_scheme = bool(cand_schemes_tuple) and (
+            not prog_closes_gap or has_distinct_funded
+        ) and (
+            conditional
+            or profile.funding_dependency == "MANDATORY"
+            or aff.shortfall > 0
+            or has_distinct_funded
+            or has_post_admission_gov_scholarship(profile)
+        )
+
+        primary_scheme: str | None = None
+        if uses_external_scheme:
+            # Prefer a scheme with an explicit award probability if multiple exist
+            best_scheme = cand_schemes_tuple[0]
+            best_aw_prob = -1.0
+            for s_name in cand_schemes_tuple:
+                s_prob = award_prob_by_key.get(s_name.strip().lower(), -1.0)
+                if s_prob > best_aw_prob:
+                    best_aw_prob = s_prob
+                    best_scheme = s_name
+            primary_scheme = best_scheme
+
+        funder_key = _normalize_shared_funder_key(
+            primary_scheme,
+            uses_external_scheme=uses_external_scheme,
+        )
+        prelim[pid] = (funder_key, p_i, a_raw, True)
+        if funder_key is not None:
+            raw_groups.setdefault(funder_key, []).append((pid, p_i, a_raw))
+
+    result: dict[str, FunderRiskTerms] = {}
+    group_q: dict[str, float] = {}
+    for funder_key, group in raw_groups.items():
+        max_p = max((g_p for _g_pid, g_p, _g_a in group), default=0.0)
+        if max_p <= 0.0:
+            group_q[funder_key] = 1.0
+            continue
+        if funder_key in award_prob_by_key:
+            q_val = award_prob_by_key[funder_key]
+        else:
+            implied: list[float] = []
+            for _g_pid, g_p, g_a_raw in group:
+                if g_p <= 0.0:
+                    continue
+                if g_a_raw > g_p + 1e-6:
+                    implied.append(g_p / g_a_raw)
+                else:
+                    implied.append(min(0.95, math.sqrt(g_p)))
+            q_val = max(implied) if implied else 1.0
+        # Ensure q_val >= max_p / 0.99 so every conditional admission a_i = p_i / q_val <= 0.99,
+        # unless group is a singleton with explicit a_raw > p_i where q_val = p_i / a_raw is exact.
+        if (
+            len(group) == 1
+            and group[0][2] > group[0][1] + 1e-6
+            and funder_key not in award_prob_by_key
+        ):
+            q_val = group[0][1] / group[0][2]
+        else:
+            q_val = max(q_val, min(0.9999, max_p / 0.99))
+        group_q[funder_key] = max(0.0001, min(1.0, q_val))
+
+    for pid, (funder_key, p_i, a_raw, has_prob) in prelim.items():
+        if not has_prob or p_i <= 0.0:
+            result[pid] = FunderRiskTerms(
+                funder_key=None,
+                q_funder=1.0,
+                cond_admission_prob=0.0,
+                effective_prob=0.0,
+                has_known_prob=has_prob,
+            )
+            continue
+        if funder_key is None:
+            result[pid] = FunderRiskTerms(
+                funder_key=None,
+                q_funder=1.0,
+                cond_admission_prob=p_i,
+                effective_prob=p_i,
+                has_known_prob=True,
+            )
+            continue
+        q_k = group_q.get(funder_key, 1.0)
+        if q_k >= 0.9999:
+            result[pid] = FunderRiskTerms(
+                funder_key=None,
+                q_funder=1.0,
+                cond_admission_prob=p_i,
+                effective_prob=p_i,
+                has_known_prob=True,
+            )
+        else:
+            a_i = p_i / q_k
+            result[pid] = FunderRiskTerms(
+                funder_key=funder_key,
+                q_funder=q_k,
+                cond_admission_prob=a_i,
+                effective_prob=p_i,
+                has_known_prob=True,
+            )
+
+    return result
+
+
+def compute_portfolio_failure_probability(
+    active_pids: Sequence[str],
+    risk_map: Mapping[str, FunderRiskTerms],
+) -> float:
+    """Compute exact multi-funder common-shock failure probability `P_fail(S)`.
+
+    `P_fail(S) = (prod_{i in S_0}(1 - p_i)) * prod_k ((1 - q_k) + q_k * prod_{i in S_k}(1 - a_i))`
+    """
+    indep_fail = 1.0
+    funder_groups: dict[str, tuple[float, float]] = {}
+
+    for pid in active_pids:
+        terms = risk_map.get(pid)
+        if terms is None or not terms.has_known_prob:
+            continue
+        if terms.funder_key is None:
+            indep_fail *= 1.0 - terms.effective_prob
+        else:
+            q_k, prod_fail = funder_groups.get(terms.funder_key, (terms.q_funder, 1.0))
+            funder_groups[terms.funder_key] = (
+                q_k,
+                prod_fail * (1.0 - terms.cond_admission_prob),
+            )
+
+    total_fail = indep_fail
+    for _k, (q_k, prod_fail) in funder_groups.items():
+        total_fail *= (1.0 - q_k) + q_k * prod_fail
+
+    return max(0.0, min(1.0, total_fail))
+
+
+def compute_pack_success_probability_pct(
+    active_items: Sequence[PackedApplication | str | Mapping[str, Any]],
+    risk_map: Mapping[str, FunderRiskTerms],
+) -> int | None:
+    """Return rounded integer percentage `100 * (1 - P_fail(S))`, or `None` when unknown/empty."""
+    known_pids: list[str] = []
+    for item in active_items:
+        if isinstance(item, str):
+            pid = item
+        elif isinstance(item, PackedApplication):
+            pid = item.program_id
+        elif isinstance(item, Mapping):
+            prog = item.get("program")
+            if isinstance(prog, Mapping):
+                pid = str(prog.get("id", ""))
+            else:
+                pid = str(item.get("program_id", ""))
+        else:
+            pid = getattr(item, "program_id", "")
+        if not pid:
+            continue
+        terms = risk_map.get(pid)
+        if terms is not None and terms.has_known_prob:
+            known_pids.append(pid)
+
+    if not known_pids:
+        return None
+    p_fail = compute_portfolio_failure_probability(known_pids, risk_map)
+    p_succ_pct = int(round((1.0 - p_fail) * 100.0))
+    if p_fail < 1.0:
+        return max(1, min(99, p_succ_pct))
+    return 0
+
+
+def _marginal_survival_factor(
+    candidate_pid: str,
+    active_pids: Sequence[str],
+    risk_map: Mapping[str, FunderRiskTerms],
+) -> float:
+    """Exact Proposition 3(2) survival factor `Phi(i | S)` for adding `candidate_pid`.
+
+    `Phi(i | S) = P_fail(S \\ S_{k(i)}) * prod_{j in S_{k(i)} cap S}(1 - a_j)`.
+    """
+    cand_terms = risk_map.get(candidate_pid)
+    cand_key = cand_terms.funder_key if cand_terms is not None else None
+
+    indep_fail = 1.0
+    funder_groups: dict[str, tuple[float, float]] = {}
+
+    for pid in active_pids:
+        terms = risk_map.get(pid)
+        if terms is None or not terms.has_known_prob:
+            continue
+        if terms.funder_key is None:
+            indep_fail *= 1.0 - terms.effective_prob
+        else:
+            q_k, prod_fail = funder_groups.get(terms.funder_key, (terms.q_funder, 1.0))
+            funder_groups[terms.funder_key] = (
+                q_k,
+                prod_fail * (1.0 - terms.cond_admission_prob),
+            )
+
+    phi = indep_fail
+    for k, (q_k, prod_fail) in funder_groups.items():
+        if cand_key is not None and k == cand_key:
+            phi *= prod_fail
+        else:
+            phi *= (1.0 - q_k) + q_k * prod_fail
+
+    return max(0.0, min(1.0, phi))
+
+
+def _marginal_portfolio_utility(
+    candidate_or_pid: str | RankedCandidate | PackedApplication | Mapping[str, Any],
+    active_pids_or_score: Sequence[str] | float | Decimal,
+    risk_map: Mapping[str, FunderRiskTerms] | Sequence[str],
+    maybe_risk_map: Mapping[str, FunderRiskTerms] | None = None,
+    *,
+    effective_score: float | Decimal | None = None,
+) -> float:
+    """Evaluate Chade-Smith / Ali-Shorrer marginal utility `Phi(i | S) * max(0, score_i)`."""
+    if maybe_risk_map is not None:
+        # 4-positional-argument form: (pid, effective_score, active_pids, risk_map)
+        pid = str(candidate_or_pid)
+        raw_score = float(active_pids_or_score)  # type: ignore[arg-type]
+        act_pids = list(risk_map)
+        r_map = maybe_risk_map
+    else:
+        # 3-positional-argument form: (item_or_pid, active_pids, risk_map, *, effective_score=...)
+        act_pids = list(active_pids_or_score)  # type: ignore[arg-type]
+        r_map = risk_map  # type: ignore[assignment]
+        if isinstance(candidate_or_pid, str):
+            pid = candidate_or_pid
+            raw_score = float(effective_score) if effective_score is not None else 0.0
+        elif isinstance(candidate_or_pid, Mapping):
+            prog = candidate_or_pid.get("program")
+            if isinstance(prog, Mapping):
+                pid = str(prog.get("id", ""))
+            else:
+                pid = str(candidate_or_pid.get("program_id", ""))
+            score_val = (
+                effective_score
+                if effective_score is not None
+                else candidate_or_pid.get("effective_score", 0.0)
+            )
+            raw_score = float(score_val)
+        elif isinstance(candidate_or_pid, RankedCandidate):
+            pid = candidate_or_pid.program_id
+            if effective_score is not None:
+                raw_score = float(effective_score)
+            elif candidate_or_pid.scores is not None:
+                raw_score = float(candidate_or_pid.scores.overall)
+            else:
+                raw_score = 0.0
+        else:
+            pid = getattr(candidate_or_pid, "program_id", "")
+            raw_score = float(effective_score) if effective_score is not None else 0.0
+
+    base_score = max(0.0, raw_score)
+    if not pid or base_score <= 0.0:
+        return 0.0
+    phi = _marginal_survival_factor(pid, act_pids, r_map)
+    return phi * base_score
 
 
 def rank_candidates(
@@ -264,29 +759,15 @@ def rank_candidates(
     # funding-first pick can legitimately have the higher blended overall score
     # purely because it is more affordable, which is the tradeoff being disclosed,
     # not evidence that its underlying program fit is actually stronger.
-    def soft_fit(scores: EvaluationScores) -> Decimal:
-        fit_scores = [d.score for d in scores.dimensions if d.dimension != "AFFORDABILITY"]
-        if not fit_scores:
-            return Decimal("0")
-        return sum(fit_scores, Decimal("0")) / Decimal(len(fit_scores))
+    best_soft_fit = max(_soft_fit_score(scores) for _, _, scores, _ in evaluated)
 
-    best_soft_fit = max(soft_fit(scores) for _, _, scores, _ in evaluated)
+    top_only = _wants_top_universities_only(profile)
+    avoids_bond = _avoids_return_bond(profile)
 
     def effective_shortfall(
         candidate: CandidateFacts, affordability: AffordabilityResult
     ) -> Decimal:
-        if schemes.get(candidate.program_id) or post_admission_gov_scheme_for_candidate(
-            profile, candidate
-        ):
-            return Decimal("0.00")
-        return max(
-            Decimal("0.00"),
-            affordability.shortfall - affordability.conditional_savings,
-        )
-
-    top_only = _wants_top_universities_only(profile)
-    post_admit_gov = has_post_admission_gov_scholarship(profile)
-    avoids_bond = _avoids_return_bond(profile)
+        return _effective_shortfall_for(profile, candidate, affordability, schemes)
 
     def effective_score(
         candidate: CandidateFacts,
@@ -294,41 +775,18 @@ def rank_candidates(
         scores: EvaluationScores,
         affordability: AffordabilityResult,
     ) -> Decimal:
-        score = (
-            soft_fit(scores)
-            if (
-                (top_only or post_admit_gov)
-                and effective_shortfall(candidate, affordability) == Decimal("0.00")
-            )
-            else scores.overall
-        )
-        eff_chance = _effective_chance_for(
+        return _candidate_effective_score(
             profile,
-            candidate.program_id,
+            candidate,
+            effective_cand,
+            scores,
             affordability,
+            schemes=schemes,
             probabilities=probabilities,
             funded_probabilities=funded_probabilities,
-            conditional=needs_selective_funding(profile, effective_cand, today=today),
+            coursework_warnings=coursework_warnings,
+            today=today,
         )
-        if eff_chance is not None:
-            if top_only:
-                score += (Decimal("50") - Decimal(eff_chance)) * Decimal("0.15")
-            else:
-                score += (Decimal(eff_chance) - Decimal("50")) * Decimal("0.15")
-        elif top_only and is_selective_candidate(candidate):
-            score += Decimal("4.5")
-        if avoids_bond and return_service_disclosures(
-            profile, effective_cand, today=today
-        ):
-            score -= Decimal("5")
-        warnings_for_prog = (coursework_warnings or {}).get(candidate.program_id, ())
-        if warnings_for_prog:
-            is_mild_only = all(
-                "conditional bridge" in w.lower() or "portfolio required:" in w.lower()
-                for w in warnings_for_prog
-            )
-            score -= Decimal("1") if is_mild_only else Decimal("3")
-        return score
 
     if profile.strategy == "FUNDING_FIRST":
         # What is left after winnable funding, then guaranteed shortfall (unless top_only,
@@ -383,7 +841,7 @@ def rank_candidates(
                 )
             )
         )
-        if soft_fit(scores) < best_soft_fit:
+        if _soft_fit_score(scores) < best_soft_fit:
             tradeoffs = tuple(
                 dict.fromkeys(("weaker fit than another recommended candidate", *tradeoffs))
             )
@@ -550,6 +1008,319 @@ def _should_reserve_budget_for_anchor(
     return False
 
 
+@dataclass(frozen=True)
+class _SelectionEntry:
+    orig_idx: int
+    ranked_item: RankedCandidate
+    candidate: CandidateFacts
+    effective_cand: CandidateFacts
+    packed: PackedApplication
+    fee: Decimal
+    currency: str
+    fee_in_base: Decimal
+    effective_score: Decimal
+    funding_bucket: tuple[Decimal, int]
+
+
+@dataclass(frozen=True)
+class _SelectionPassResult:
+    fee_free: list[PackedApplication]
+    paid: list[PackedApplication]
+    fee_not_known: list[PackedApplication]
+    over_budget: list[PackedApplication]
+    excluded: list[ExcludedCandidate]
+    total_utility: float
+
+
+def _run_portfolio_selection_pass(
+    entries: Sequence[_SelectionEntry],
+    *,
+    by_id: Mapping[str, CandidateFacts],
+    profile: StudentProfileSnapshot,
+    rates: RateTable,
+    schemes: Mapping[str, tuple[str, ...]],
+    probabilities: Mapping[str, int] | None,
+    funded_probabilities: Mapping[str, int | None] | None,
+    risk_map: Mapping[str, FunderRiskTerms],
+    budget_total: Decimal,
+    enforce_institution_cap: bool,
+    top_only: bool,
+    cost_scaled: bool,
+    today: date,
+) -> _SelectionPassResult:
+    """Run one submodular selection pass (`cost_scaled=False` MIA or `cost_scaled=True` density)."""
+    fee_free: list[PackedApplication] = []
+    paid: list[PackedApplication] = []
+    fee_not_known: list[PackedApplication] = []
+    over_budget: list[PackedApplication] = []
+    excluded: list[ExcludedCandidate] = []
+    budget_remaining = budget_total
+    spent_plain_in_base = Decimal("0")
+    packed_per_institution: dict[str, int] = {}
+    active_pids: list[str] = []
+    selected_entries: list[_SelectionEntry] = []
+
+    def _active_count() -> int:
+        return len(fee_free) + len(paid) + len(fee_not_known)
+
+    def _has_anchor_in_active() -> bool:
+        return any(
+            app.risk_tier in ("SAFETY", "TARGET")
+            for app in (*fee_free, *paid, *fee_not_known)
+        )
+
+    def _can_afford_paid(entry: _SelectionEntry) -> bool:
+        if entry.fee_in_base * BANK_MARGIN > budget_remaining:
+            return False
+        if not paid or all(
+            p.application_fee_currency == entry.currency for p in paid
+        ):
+            return (spent_plain_in_base + entry.fee_in_base) * BANK_MARGIN <= budget_total
+        return True
+
+    def _fee_deduction_for(entry: _SelectionEntry) -> Decimal:
+        if (
+            entry.currency == profile.application_budget.currency
+            and rates.base != profile.application_budget.currency
+            and not paid
+        ):
+            return entry.fee_in_base
+        return entry.fee_in_base * BANK_MARGIN
+
+    def _record_overflow(
+        app: PackedApplication,
+        *,
+        over_budget_reason: str,
+        excluded_code: str,
+        excluded_reason: str,
+        tradeoff_note: str | None = None,
+    ) -> None:
+        updated_tradeoffs = (
+            (*app.tradeoffs, tradeoff_note) if tradeoff_note is not None else app.tradeoffs
+        )
+        over_budget.append(
+            replace(
+                app,
+                tradeoffs=updated_tradeoffs,
+                over_budget_reason=over_budget_reason,
+            )
+        )
+        excluded.append(
+            ExcludedCandidate(
+                program_id=app.program_id,
+                reason_code=excluded_code,
+                reasons=(excluded_reason,),
+            )
+        )
+
+    remaining_pool: list[_SelectionEntry] = list(entries)
+
+    while remaining_pool:
+        # Evaluate unscaled marginal utility Delta U(i | S) for all remaining candidates
+        marg_by_pos: list[float] = [
+            _marginal_portfolio_utility(
+                entry.packed.program_id,
+                entry.effective_score,
+                active_pids,
+                risk_map,
+            )
+            for entry in remaining_pool
+        ]
+
+        # Best unscaled candidate overall (Pass 1 order)
+        best_unscaled_pos = max(
+            range(len(remaining_pool)),
+            key=lambda pos: (
+                -remaining_pool[pos].funding_bucket[0],
+                -remaining_pool[pos].funding_bucket[1],
+                round(marg_by_pos[pos], 9),
+                -remaining_pool[pos].orig_idx,
+            ),
+        )
+
+        chosen_pos = best_unscaled_pos
+        if cost_scaled and _active_count() < MAX_ACTIVE_PROGRAMS:
+            best_entry = remaining_pool[best_unscaled_pos]
+            # When the next slot's unscaled leader is a paid candidate that is currently
+            # budget-feasible, compare all currently feasible paid candidates in the same
+            # funding bucket by marginal utility per unit fee: Delta U(i | S) / max(c_i, 1.0).
+            if best_entry.packed.fee_known and best_entry.fee > 0 and _can_afford_paid(best_entry):
+                best_density_pos: int | None = None
+                best_density_key: tuple[Decimal, int, float, float, int] | None = None
+                for pos, cand_entry in enumerate(remaining_pool):
+                    if not (cand_entry.packed.fee_known and cand_entry.fee > 0):
+                        continue
+                    if not _can_afford_paid(cand_entry):
+                        continue
+                    inst_id_c = cand_entry.candidate.institution_id
+                    if (
+                        enforce_institution_cap
+                        and inst_id_c
+                        and packed_per_institution.get(inst_id_c, 0) >= MAX_PER_INSTITUTION
+                    ):
+                        continue
+                    fee_denom = max(float(cand_entry.fee_in_base), 1.0)
+                    density = marg_by_pos[pos] / fee_denom
+                    d_key = (
+                        -cand_entry.funding_bucket[0],
+                        -cand_entry.funding_bucket[1],
+                        round(density, 9),
+                        round(marg_by_pos[pos], 9),
+                        -cand_entry.orig_idx,
+                    )
+                    if best_density_key is None or d_key > best_density_key:
+                        best_density_key = d_key
+                        best_density_pos = pos
+                if best_density_pos is not None:
+                    chosen_pos = best_density_pos
+
+        entry = remaining_pool.pop(chosen_pos)
+        packed = entry.packed
+        tier = packed.risk_tier
+        inst_id = entry.candidate.institution_id
+        fee = entry.fee
+        fee_in_base = entry.fee_in_base
+
+        if _active_count() >= MAX_ACTIVE_PROGRAMS:
+            note = (
+                f"the pack already holds {MAX_ACTIVE_PROGRAMS} active programmes; "
+                "kept in Other options"
+            )
+            _record_overflow(
+                packed,
+                over_budget_reason="PACK_DIVERSITY_LIMIT",
+                excluded_code="PACK_DIVERSITY_LIMIT",
+                excluded_reason=note,
+                tradeoff_note=note,
+            )
+            continue
+        if (
+            enforce_institution_cap
+            and inst_id
+            and packed_per_institution.get(inst_id, 0) >= MAX_PER_INSTITUTION
+        ):
+            _record_overflow(
+                packed,
+                over_budget_reason="PACK_DIVERSITY_LIMIT",
+                excluded_code="PACK_DIVERSITY_LIMIT",
+                excluded_reason=(
+                    f"the pack already holds {MAX_PER_INSTITUTION} programmes at this "
+                    "institution; kept in Other options for portfolio diversity"
+                ),
+                tradeoff_note=(
+                    f"the pack already holds {MAX_PER_INSTITUTION} programmes at the "
+                    "same institution; kept in Other options for portfolio diversity"
+                ),
+            )
+            continue
+
+        if not packed.fee_known:
+            if len(fee_not_known) < MAX_FEE_NOT_KNOWN:
+                fee_not_known.append(packed)
+                active_pids.append(packed.program_id)
+                selected_entries.append(entry)
+                if inst_id:
+                    packed_per_institution[inst_id] = (
+                        packed_per_institution.get(inst_id, 0) + 1
+                    )
+            else:
+                _record_overflow(
+                    packed,
+                    over_budget_reason="FEE_NOT_KNOWN_LIMIT",
+                    excluded_code="FEE_NOT_KNOWN_LIMIT",
+                    excluded_reason=(
+                        f"the pack already holds {MAX_FEE_NOT_KNOWN} programmes "
+                        "whose application fee is not known"
+                    ),
+                    tradeoff_note=(
+                        f"the pack already holds {MAX_FEE_NOT_KNOWN} programmes "
+                        "whose application fee is not known; kept in Other options"
+                    ),
+                )
+        elif fee == 0:
+            fee_free.append(packed)
+            active_pids.append(packed.program_id)
+            selected_entries.append(entry)
+            if inst_id:
+                packed_per_institution[inst_id] = (
+                    packed_per_institution.get(inst_id, 0) + 1
+                )
+        elif _can_afford_paid(entry):
+            fee_deduction = _fee_deduction_for(entry)
+            later_ranked = [rem.ranked_item for rem in remaining_pool]
+            reserve_for_anchor = (
+                tier == "REACH"
+                and not top_only
+                and not _has_anchor_in_active()
+                and _should_reserve_budget_for_anchor(
+                    later_ranked,
+                    by_id=by_id,
+                    profile=profile,
+                    rates=rates,
+                    schemes=schemes,
+                    probabilities=probabilities,
+                    funded_probabilities=funded_probabilities,
+                    budget_remaining=budget_remaining,
+                    remaining_after=budget_remaining - fee_deduction,
+                    active_count=_active_count(),
+                    fee_not_known_count=len(fee_not_known),
+                    packed_per_institution=packed_per_institution,
+                    enforce_institution_cap=enforce_institution_cap,
+                    today=today,
+                )
+            )
+            if reserve_for_anchor:
+                anchor_note = (
+                    "application budget reserved for a higher-probability "
+                    "target or safety programme"
+                )
+                _record_overflow(
+                    packed,
+                    over_budget_reason="ANCHOR_BUDGET_RESERVED",
+                    excluded_code="APPLICATION_BUDGET_EXCEEDED",
+                    excluded_reason=anchor_note,
+                    tradeoff_note=anchor_note,
+                )
+            else:
+                paid.append(packed)
+                active_pids.append(packed.program_id)
+                selected_entries.append(entry)
+                spent_plain_in_base += fee_in_base
+                budget_remaining -= fee_deduction
+                if inst_id:
+                    packed_per_institution[inst_id] = (
+                        packed_per_institution.get(inst_id, 0) + 1
+                    )
+        else:
+            _record_overflow(
+                packed,
+                over_budget_reason="APPLICATION_BUDGET_EXCEEDED",
+                excluded_code="APPLICATION_BUDGET_EXCEEDED",
+                excluded_reason="the application fee would exceed the remaining application budget",
+            )
+
+    # Evaluate canonical set-function portfolio utility U(S) over the selected active set S
+    canonical_pids: list[str] = []
+    total_utility = 0.0
+    for sel in sorted(selected_entries, key=lambda e: e.orig_idx):
+        total_utility += _marginal_portfolio_utility(
+            sel.packed.program_id,
+            sel.effective_score,
+            canonical_pids,
+            risk_map,
+        )
+        canonical_pids.append(sel.packed.program_id)
+
+    return _SelectionPassResult(
+        fee_free=fee_free,
+        paid=paid,
+        fee_not_known=fee_not_known,
+        over_budget=over_budget,
+        excluded=excluded,
+        total_utility=total_utility,
+    )
+
+
 def build_pack(
     profile: StudentProfileSnapshot,
     candidates: Sequence[CandidateFacts],
@@ -619,6 +1390,7 @@ def build_pack(
                     admit_pct,
                     [cond_pct],
                     correlation=POST_ADMISSION_GOV_CORRELATION,
+                    funding_is_conditional=True,
                 )
         funded_probabilities = resolved_funded
     ranked = rank_candidates(
@@ -665,11 +1437,7 @@ def build_pack(
         if outcome.outcome == "ELIGIBLE_BELOW_FIT_BAR":
             below_fit_candidates.append((candidate, outcome.reasons))
 
-    fee_free: list[PackedApplication] = []
-    paid: list[PackedApplication] = []
-    over_budget: list[PackedApplication] = []
-    fee_not_known: list[PackedApplication] = []
-    budget_remaining = convert(
+    budget_total = convert(
         profile.application_budget.amount,
         profile.application_budget.currency,
         rates.base,
@@ -679,16 +1447,6 @@ def build_pack(
         c.institution_id for c in candidates if c.institution_id
     }
     enforce_institution_cap = len(distinct_institutions) > 1
-    packed_per_institution: dict[str, int] = {}
-
-    def _active_count() -> int:
-        return len(fee_free) + len(paid) + len(fee_not_known)
-
-    def _has_anchor_in_active() -> bool:
-        return any(
-            app.risk_tier in ("SAFETY", "TARGET")
-            for app in (*fee_free, *paid, *fee_not_known)
-        )
 
     top_only = _wants_top_universities_only(profile)
     avoids_bond = _avoids_return_bond(profile)
@@ -768,6 +1526,25 @@ def build_pack(
             over_budget_reason=over_budget_reason,
         )
 
+    risk_schemes = dict(schemes)
+    if attached_schemes:
+        for pid, s_names in attached_schemes.items():
+            if pid not in risk_schemes and s_names:
+                risk_schemes[pid] = tuple(s_names)
+
+    risk_map = _decompose_portfolio_funder_risk(
+        profile,
+        [by_id[item.program_id] for item in ranked],
+        rates,
+        schemes=risk_schemes,
+        probabilities=probabilities,
+        funded_probabilities=funded_probabilities,
+        award_probabilities=award_probabilities,
+        awards=awards,
+        today=today,
+    )
+
+    selection_entries: list[_SelectionEntry] = []
     for idx, item in enumerate(ranked):
         position = idx + 1
         candidate = by_id[item.program_id]
@@ -780,9 +1557,6 @@ def build_pack(
         )
         fee = item.affordability.application_fee
         currency = item.affordability.application_fee_currency
-        # The fee is quoted in the destination's currency and the budget in the student's,
-        # so budgeting compares them in the base currency while the packed figure stays
-        # the amount actually payable.
         fee_in_base = convert(fee, currency, rates.base, rates)
         packed = _make_packed_application(
             candidate,
@@ -791,140 +1565,81 @@ def build_pack(
             rank=position,
             tradeoffs=item.tradeoffs,
         )
-        tier = packed.risk_tier
-        inst_id = candidate.institution_id
-        def _record_overflow(
-            app: PackedApplication,
-            *,
-            over_budget_reason: str,
-            excluded_code: str,
-            excluded_reason: str,
-            tradeoff_note: str | None = None,
-        ) -> None:
-            updated_tradeoffs = (
-                (*app.tradeoffs, tradeoff_note) if tradeoff_note is not None else app.tradeoffs
-            )
-            over_budget.append(
-                replace(
-                    app,
-                    tradeoffs=updated_tradeoffs,
-                    over_budget_reason=over_budget_reason,
-                )
-            )
-            excluded.append(
-                ExcludedCandidate(
-                    program_id=app.program_id,
-                    reason_code=excluded_code,
-                    reasons=(excluded_reason,),
-                )
-            )
-
-        if _active_count() >= MAX_ACTIVE_PROGRAMS:
-            note = (
-                f"the pack already holds {MAX_ACTIVE_PROGRAMS} active programmes; "
-                "kept in Other options"
-            )
-            _record_overflow(
-                packed,
-                over_budget_reason="PACK_DIVERSITY_LIMIT",
-                excluded_code="PACK_DIVERSITY_LIMIT",
-                excluded_reason=note,
-                tradeoff_note=note,
-            )
-            continue
-        if (
-            enforce_institution_cap
-            and inst_id
-            and packed_per_institution.get(inst_id, 0) >= MAX_PER_INSTITUTION
-        ):
-            _record_overflow(
-                packed,
-                over_budget_reason="PACK_DIVERSITY_LIMIT",
-                excluded_code="PACK_DIVERSITY_LIMIT",
-                excluded_reason=(
-                    f"the pack already holds {MAX_PER_INSTITUTION} programmes at this "
-                    "institution; kept in Other options for portfolio diversity"
-                ),
-                tradeoff_note=(
-                    f"the pack already holds {MAX_PER_INSTITUTION} programmes at the "
-                    "same institution; kept in Other options for portfolio diversity"
-                ),
-            )
-            continue
-
-        if not packed.fee_known:
-            if len(fee_not_known) < MAX_FEE_NOT_KNOWN:
-                fee_not_known.append(packed)
-                if inst_id:
-                    packed_per_institution[inst_id] = packed_per_institution.get(inst_id, 0) + 1
-            else:
-                _record_overflow(
-                    packed,
-                    over_budget_reason="FEE_NOT_KNOWN_LIMIT",
-                    excluded_code="FEE_NOT_KNOWN_LIMIT",
-                    excluded_reason=(
-                        f"the pack already holds {MAX_FEE_NOT_KNOWN} programmes "
-                        "whose application fee is not known"
-                    ),
-                    tradeoff_note=(
-                        f"the pack already holds {MAX_FEE_NOT_KNOWN} programmes "
-                        "whose application fee is not known; kept in Other options"
-                    ),
-                )
-        elif fee == 0:
-            fee_free.append(packed)
-            if inst_id:
-                packed_per_institution[inst_id] = packed_per_institution.get(inst_id, 0) + 1
-        elif fee_in_base * BANK_MARGIN <= budget_remaining:
-            # Portfolio anti-lottery guard: do not let a REACH (<20%) programme spend the
-            # last application-fee budget needed by a later TARGET/SAFETY (>=25%) programme
-            # when the active pack has no TARGET/SAFETY anchor yet.
-            reserve_for_anchor = (
-                tier == "REACH"
-                and not top_only
-                and not _has_anchor_in_active()
-                and _should_reserve_budget_for_anchor(
-                    ranked[idx + 1 :],
-                    by_id=by_id,
-                    profile=profile,
-                    rates=rates,
-                    schemes=schemes,
-                    probabilities=probabilities,
-                    funded_probabilities=funded_probabilities,
-                    budget_remaining=budget_remaining,
-                    remaining_after=budget_remaining - fee_in_base,
-                    active_count=_active_count(),
-                    fee_not_known_count=len(fee_not_known),
-                    packed_per_institution=packed_per_institution,
-                    enforce_institution_cap=enforce_institution_cap,
-                    today=today,
-                )
-            )
-            if reserve_for_anchor:
-                anchor_note = (
-                    "application budget reserved for a higher-probability "
-                    "target or safety programme"
-                )
-                _record_overflow(
-                    packed,
-                    over_budget_reason="ANCHOR_BUDGET_RESERVED",
-                    excluded_code="APPLICATION_BUDGET_EXCEEDED",
-                    excluded_reason=anchor_note,
-                    tradeoff_note=anchor_note,
-                )
-            else:
-                paid.append(packed)
-                # The margin is a check, not a charge: the budget is spent at the fee.
-                budget_remaining -= fee_in_base
-                if inst_id:
-                    packed_per_institution[inst_id] = packed_per_institution.get(inst_id, 0) + 1
+        assert item.scores is not None
+        eff_score = _candidate_effective_score(
+            profile,
+            candidate,
+            effective_cand,
+            item.scores,
+            item.affordability,
+            schemes=schemes,
+            probabilities=probabilities,
+            funded_probabilities=funded_probabilities,
+            coursework_warnings=coursework_warnings,
+            today=today,
+        )
+        if profile.strategy == "FUNDING_FIRST":
+            eff_sf = _effective_shortfall_for(profile, candidate, item.affordability, schemes)
+            sf_tier = 0 if (top_only or item.affordability.shortfall == Decimal("0.00")) else 1
+            f_bucket = (eff_sf, sf_tier)
         else:
-            _record_overflow(
-                packed,
-                over_budget_reason="APPLICATION_BUDGET_EXCEEDED",
-                excluded_code="APPLICATION_BUDGET_EXCEEDED",
-                excluded_reason="the application fee would exceed the remaining application budget",
+            f_bucket = (Decimal("0.00"), 0)
+
+        selection_entries.append(
+            _SelectionEntry(
+                orig_idx=idx,
+                ranked_item=item,
+                candidate=candidate,
+                effective_cand=effective_cand,
+                packed=packed,
+                fee=fee,
+                currency=currency,
+                fee_in_base=fee_in_base,
+                effective_score=eff_score,
+                funding_bucket=f_bucket,
             )
+        )
+
+    unit_res = _run_portfolio_selection_pass(
+        selection_entries,
+        by_id=by_id,
+        profile=profile,
+        rates=rates,
+        schemes=schemes,
+        probabilities=probabilities,
+        funded_probabilities=funded_probabilities,
+        risk_map=risk_map,
+        budget_total=budget_total,
+        enforce_institution_cap=enforce_institution_cap,
+        top_only=top_only,
+        cost_scaled=False,
+        today=today,
+    )
+    density_res = _run_portfolio_selection_pass(
+        selection_entries,
+        by_id=by_id,
+        profile=profile,
+        rates=rates,
+        schemes=schemes,
+        probabilities=probabilities,
+        funded_probabilities=funded_probabilities,
+        risk_map=risk_map,
+        budget_total=budget_total,
+        enforce_institution_cap=enforce_institution_cap,
+        top_only=top_only,
+        cost_scaled=True,
+        today=today,
+    )
+    if density_res.total_utility > unit_res.total_utility + 1e-6:
+        chosen_res = density_res
+    else:
+        chosen_res = unit_res
+
+    fee_free = chosen_res.fee_free
+    paid = chosen_res.paid
+    fee_not_known = chosen_res.fee_not_known
+    over_budget = chosen_res.over_budget
+    excluded.extend(chosen_res.excluded)
 
     # Awards are evaluated and packed AFTER the programme budget arithmetic
     # above, and touch none of it: `budget_remaining` is an application-fee
@@ -1022,6 +1737,9 @@ def build_pack(
             )
             next_rank += 1
 
+    active_apps: tuple[PackedApplication, ...] = (*fee_free, *paid, *fee_not_known)
+    pack_success_pct = compute_pack_success_probability_pct(active_apps, risk_map)
+
     return Pack(
         fee_free=tuple(fee_free),
         paid=tuple(paid),
@@ -1029,4 +1747,5 @@ def build_pack(
         excluded=tuple(excluded),
         over_budget=tuple(over_budget),
         fee_not_known=tuple(fee_not_known),
+        pack_success_probability_pct=pack_success_pct,
     )

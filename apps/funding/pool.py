@@ -232,16 +232,37 @@ def candidate_pool(
         if profile.allowed_countries
         else Value(0, output_field=IntegerField())
     )
+    _lang_aliases: dict[str, tuple[str, ...]] = {
+        "english": ("english", "englisch", "anglais", "inglese", "inglés", "ingles", "en"),
+        "german": ("german", "deutsch", "allemand", "tedesco", "alemán", "aleman", "de"),
+        "french": (
+            "french",
+            "français",
+            "francais",
+            "französisch",
+            "franzosisch",
+            "francese",
+            "francés",
+            "fr",
+        ),
+        "italian": ("italian", "italiano", "italienisch", "italien", "it"),
+        "spanish": ("spanish", "español", "espanol", "spanisch", "espagnol", "es"),
+        "dutch": ("dutch", "nederlands", "niederländisch", "niederlandisch", "nl"),
+    }
     lang_variants = sorted(
         {
             variant
             for lang in profile.acceptable_teaching_languages
             if lang and lang.strip()
-            for variant in (
+            for base_tok in (
                 lang.strip(),
-                lang.strip().title(),
-                lang.strip().lower(),
-                lang.strip().upper(),
+                *_lang_aliases.get(lang.strip().casefold(), ()),
+            )
+            for variant in (
+                base_tok,
+                base_tok.title(),
+                base_tok.lower(),
+                base_tok.upper(),
             )
         }
     )
@@ -257,16 +278,20 @@ def candidate_pool(
     duration_priority = (
         Case(
             When(
-                Q(duration_months__lte=12)
+                Q(duration_months__lte=14)
                 if profile.duration_preference == "ONE_YEAR"
-                else Q(duration_months__gt=12),
+                else (
+                    Q(duration_months__gte=15, duration_months__lte=18)
+                    if profile.duration_preference == "ONE_AND_HALF_YEAR"
+                    else Q(duration_months__gte=19)
+                ),
                 then=Value(0),
             ),
             default=Value(1),
             output_field=IntegerField(),
         )
         if profile.duration_flexibility == "NON_NEGOTIABLE"
-        and profile.duration_preference in ("ONE_YEAR", "TWO_YEAR")
+        and profile.duration_preference in ("ONE_YEAR", "ONE_AND_HALF_YEAR", "TWO_YEAR")
         else Value(0, output_field=IntegerField())
     )
     wants_top_tier = _wants_top_universities_only(profile)

@@ -468,6 +468,293 @@ def check_named_url(
     return organisation.id, check_body(organisation, domain, now=now, deps=deps).reason_code
 
 
+def _normalize_program_title(name: str, degree_level: str) -> str:
+    import re
+
+    folded = name.strip().casefold()
+    folded = re.sub(
+        r"\b(?:master(?:'s)?(?:\s+of\s+(?:science|arts|engineering|laws|business\s+administration))?|"
+        r"m\.?\s*sc\.?|m\.?\s*a\.?|m\.?\s*eng\.?|ll\.?\s*m\.?|m\.?\s*b\.?\s*a\.?|"
+        r"m\.?\s*phil\.?|m\.?\s*res\.?|degree\s+program(?:me)?)\b",
+        " ",
+        folded,
+    )
+    folded = re.sub(r"\b(?:in|of|and|the|for|on)\b", " ", folded)
+    tokens = [tok for tok in re.split(r"[^a-z0-9]+", folded) if tok]
+    return f"{degree_level.casefold()}:{' '.join(tokens)}"
+
+
+def _match_catalogue_program(raw_name: str) -> Program | None:
+    """Match a student-named programme string against the shared ``Program`` catalogue."""
+    import re
+
+    from apps.funding.eligibility import _institution_matches
+
+    cleaned = " ".join(raw_name.strip().split())
+    if not cleaned:
+        return None
+    programs = list(Program.objects.select_related("institution").all())
+    if not programs:
+        return None
+
+    def _inst_name(prog: Program) -> str:
+        if prog.institution is not None and prog.institution.name:
+            return prog.institution.name
+        return prog.provider_text or ""
+
+    # 1. Split candidate "(programme, institution)" pairs on common separators
+    split_candidates: list[tuple[str, str]] = [(cleaned, "")]
+    for sep in (" at ", " @ ", " - ", " – ", " — ", ", "):
+        if sep in cleaned.casefold():
+            idx = cleaned.casefold().find(sep)
+            left = cleaned[:idx].strip()
+            right = cleaned[idx + len(sep) :].strip()
+            if left and right:
+                split_candidates.append((left, right))
+                split_candidates.append((right, left))
+    m_paren = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", cleaned)
+    if m_paren:
+        split_candidates.append((m_paren.group(1).strip(), m_paren.group(2).strip()))
+        split_candidates.append((m_paren.group(2).strip(), m_paren.group(1).strip()))
+
+    matched_with_inst: list[Program] = []
+    matched_name_only: list[Program] = []
+    for prog in programs:
+        prog_k = _normalize_program_title(prog.name, prog.degree_level)
+        inst = _inst_name(prog)
+        for prog_part, inst_part in split_candidates:
+            cand_k = _normalize_program_title(prog_part, prog.degree_level)
+            name_ok = (
+                cand_k == prog_k and cand_k != f"{prog.degree_level.casefold()}:"
+            ) or prog_part.casefold() == prog.name.strip().casefold()
+            if not name_ok:
+                continue
+            if inst_part:
+                if inst and _institution_matches(inst_part, inst):
+                    if prog not in matched_with_inst:
+                        matched_with_inst.append(prog)
+            else:
+                if prog not in matched_name_only:
+                    matched_name_only.append(prog)
+
+    candidates = matched_with_inst if matched_with_inst else matched_name_only
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    from apps.funding.models import OfficialEvidenceClaim
+
+    with_claims = set(
+        OfficialEvidenceClaim.objects.filter(program__in=candidates).values_list(
+            "program", flat=True
+        )
+    )
+    claim_backed = [p for p in candidates if p.id in with_claims]
+    if len(claim_backed) == 1:
+        return claim_backed[0]
+    inst_ids = {p.institution_id for p in candidates}
+    if len(inst_ids) == 1:
+        return (claim_backed or candidates)[0]
+    return None
+
+
+def auto_resolve_named_candidate(
+    candidate_id: UUID,
+    *,
+    tenant_id: UUID,
+    run_id: UUID,
+    deps: Deps | None = None,
+    check: Callable[[str, str], tuple[UUID | None, str]] | None = None,
+) -> bool:
+    """Resolve a CHECKING student-named candidate from the shared catalogue when matched."""
+    from pydantic import ValidationError
+
+    from apps.accounts.schemas import StudentProfileSnapshot
+    from apps.funding.evaluation import _MANDATORY_FUNDING_GATE, HARD_GATES
+    from apps.funding.facts import program_facts
+    from apps.funding.models import (
+        CostComponent,
+        EvidenceClaim,
+        OfficialEvidenceClaim,
+        OutcomeCalibrationRecord,
+        ProgramStatement,
+    )
+    from apps.funding.probability import (
+        estimate_named_program_chance,
+        estimate_program_admission_chance,
+        infer_country_from_url,
+    )
+    from apps.research.candidate_details import program_details
+    from apps.research.models import ConsultantResearchTask
+    from apps.research.provenance import provenance_of_program
+    from apps.research.services import _page_copy, _program_portal_url
+
+    with tenant_scope(tenant_id), tenant_transaction(tenant_id):
+        cand = (
+            RecommendationCandidate.objects.filter(
+                id=candidate_id,
+                run_id=run_id,
+                state=RecommendationCandidate.State.CHECKING,
+                program__isnull=True,
+                opportunity__isnull=True,
+            )
+            .select_related("evidence", "run__profile_version")
+            .first()
+        )
+        if cand is None:
+            return False
+        raw_name = cand.program_name
+        evidence_id = cand.evidence_id
+        placeholder_url = cand.evidence.source_url if cand.evidence_id else ""
+        existing_cal_features = dict(cand.calibration_features or {})
+        profile: StudentProfileSnapshot | None = None
+        pv = cand.run.profile_version if cand.run_id is not None else None
+        if pv is not None and pv.schema_version == 3:
+            try:
+                profile = StudentProfileSnapshot.model_validate(pv.snapshot)
+            except ValidationError:
+                profile = None
+
+    program = _match_catalogue_program(raw_name)
+    if program is None:
+        return False
+
+    origin_url = (
+        OfficialEvidenceClaim.objects.filter(program=program)
+        .values_list("source__canonical_url", flat=True)
+        .first()
+        or (program.institution.official_website if program.institution is not None else "")
+        or ""
+    )
+    if not origin_url:
+        return False
+
+    body_id, code = provenance_of_program(program)
+    if code == Reason.NOT_EVALUATED:
+        body_id, code = (
+            check(origin_url, program.name)
+            if check is not None
+            else check_named_url(
+                origin_url, program.name, now=timezone.now(), deps=deps or Deps()
+            )
+        )
+
+    today = timezone.now().date()
+    costs = tuple(CostComponent.objects.filter(program=program))
+    stmts = tuple(
+        ProgramStatement.objects.filter(
+            program=program,
+            requirement=ProgramStatement.Requirement.REQUIRED,
+            kind__in=(
+                ProgramStatement.Kind.COMPETENCY,
+                ProgramStatement.Kind.LANGUAGE,
+                ProgramStatement.Kind.OTHER,
+            ),
+        )
+    )
+    facts = program_facts(
+        program,
+        costs=costs,
+        benefits=(),
+        rules=(),
+        routes={},
+        durations={},
+        tuition_levels={},
+        profile=profile,
+        statements=stmts,
+        today=today,
+    )
+    eligible = True
+    if profile is not None:
+        eligible = all(
+            gate.passes(profile, facts)
+            for gate in HARD_GATES
+            if gate is not _MANDATORY_FUNDING_GATE
+        )
+
+    eff_country = (
+        program.country_code
+        or (program.institution.country_code if program.institution is not None else "")
+        or infer_country_from_url(origin_url)
+    )
+    cal_rows = (
+        tuple(
+            OutcomeCalibrationRecord.objects.filter(
+                program_id__isnull=False,
+                country_code=eff_country,
+            )[:40]
+        )
+        if eff_country
+        else ()
+    )
+    if profile is not None:
+        est = estimate_program_admission_chance(
+            program,
+            facts,
+            profile,
+            statements=stmts,
+            calibration_rows=cal_rows,
+            today=today,
+        )
+    else:
+        est = estimate_named_program_chance(
+            program.name,
+            eff_country,
+            profile,
+            source_url=origin_url,
+            calibration_rows=cal_rows,
+        )
+
+    portal_url = _program_portal_url(program)
+    page_fields = _page_copy(program_details, facts, profile, portal_url=portal_url)
+    institution = program.institution
+    inst_name = (
+        institution.name
+        if institution is not None
+        else (program.provider_text[:300] if program.provider_text else "")
+    )
+    now_ts = timezone.now()
+
+    with tenant_scope(tenant_id), tenant_transaction(tenant_id):
+        if evidence_id is not None:
+            EvidenceClaim.objects.filter(id=evidence_id).update(
+                source_url=origin_url[:2048],
+                claim=f"Auto-verified from catalogue entry for {program.name}"[:500],
+                last_checked_at=now_ts,
+            )
+        from apps.funding.pack import risk_tier_for
+
+        cal_features: dict[str, object] = {}
+        if eligible:
+            cal_features = {**existing_cal_features, **dict(est.features)}
+            if est.chance_pct is not None:
+                tier = risk_tier_for(est.chance_pct)
+                if tier:
+                    cal_features["risk_tier"] = tier
+        updates: dict[str, object] = {
+            "state": RecommendationCandidate.State.VISIBLE,
+            "eligible": eligible,
+            "institution_id": program.institution_id,
+            "institution_name": inst_name,
+            "country_code": eff_country,
+            "degree_level": program.degree_level,
+            "referee_requirements": list(program.referee_requirements or []),
+            "provenance_reason_code": code,
+            "provenance_body_id": body_id,
+            "estimated_chance_pct": est.chance_pct if eligible else None,
+            "calibration_features": cal_features,
+            **page_fields,
+        }
+        RecommendationCandidate.objects.filter(id=candidate_id, run_id=run_id).update(
+            **updates
+        )
+        if placeholder_url:
+            ConsultantResearchTask.objects.filter(
+                url=placeholder_url, state=ConsultantResearchTask.State.OPEN
+            ).update(state=ConsultantResearchTask.State.CLOSED)
+    return True
+
+
 def check_named_program(
     message: ResearchMessage,
     *,
@@ -478,6 +765,22 @@ def check_named_program(
     §7.1), then write the tenant copy the web reads (§7.4)."""
     if message.candidate_id is None:
         raise ValueError("a named-programme check needs a candidate")
+    with tenant_scope(message.tenant_id), tenant_transaction(message.tenant_id):
+        is_checking = RecommendationCandidate.objects.filter(
+            id=message.candidate_id,
+            run_id=message.run_id,
+            state=RecommendationCandidate.State.CHECKING,
+            program__isnull=True,
+            opportunity__isnull=True,
+        ).exists()
+    if is_checking:
+        auto_resolve_named_candidate(
+            message.candidate_id,
+            tenant_id=message.tenant_id,
+            run_id=message.run_id,
+            check=check,
+        )
+        return
     with tenant_scope(message.tenant_id), tenant_transaction(message.tenant_id):
         # A named candidate only: never overwrite a catalogue candidate's code,
         # and never check the pending placeholder before a counsellor has
@@ -566,8 +869,18 @@ def check_named_program(
                 source_url=source_url,
                 calibration_rows=cal_rows,
             )
+            from apps.funding.pack import risk_tier_for
+
+            cal_features: dict[str, object] = {
+                **dict(cand.calibration_features or {}),
+                **dict(est.features),
+            }
+            if est.chance_pct is not None:
+                tier = risk_tier_for(est.chance_pct)
+                if tier:
+                    cal_features["risk_tier"] = tier
             if eff_country and not cand.country_code:
                 updates["country_code"] = eff_country
             updates["estimated_chance_pct"] = est.chance_pct
-            updates["calibration_features"] = dict(est.features)
+            updates["calibration_features"] = cal_features
         RecommendationCandidate.objects.filter(id=message.candidate_id).update(**updates)

@@ -13,6 +13,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 from openai import OpenAI
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -195,11 +196,31 @@ def _page_origin(snapshot: FormSnapshot) -> FormSnapshot:
 def _method_for(control: SnapshotControl) -> str:
     """The fill method this control takes. Derived, never received.
 
-    Only two are reachable: a <select> is chosen from, everything else is typed
-    into. `type` and `selectOptionFromDropdown` stay in FILL_METHODS for the
-    maps the Stagehand pass already stored.
+    Only two are reachable: a <select>, radio group or combobox is chosen from,
+    everything else is typed into. `type` and `selectOptionFromDropdown` stay in
+    FILL_METHODS for the maps the Stagehand pass already stored.
     """
-    return "selectOption" if control.tag.lower() == "select" else "fill"
+    if control.tag.lower() == "select" or control.type.lower() in {"radio", "combobox"}:
+        return "selectOption"
+    return "fill"
+
+
+_BASELINE_ENGLISH_LABELS = frozenset(
+    {
+        "full name",
+        "country of residence",
+        "email address",
+        "motivation letter",
+    }
+)
+
+
+def _expected_label_for(control: SnapshotControl) -> str:
+    """Return a clean expected label when the control's label is non-baseline."""
+    label = " ".join((control.label or "").split()).strip()
+    if len(label) < 2 or "■" in label or label.casefold() in _BASELINE_ENGLISH_LABELS:
+        return ""
+    return label
 
 
 def learn_from_snapshot(
@@ -314,12 +335,14 @@ def learn_from_snapshot(
         # therefore fall back to the profile field name, which is correct --
         # the page's own label text is exactly what must not enter a table
         # every tenant reads.
+        expected_label = _expected_label_for(control)
         entries.append(
             {
                 "profile_field": profile_field,
                 "sure": sure,
                 "action": action.model_dump(exclude={"description"}),
                 **({"max_length": control.max_length} if control.max_length > 0 else {}),
+                **({"expected_label": expected_label} if expected_label else {}),
             }
         )
     # One entry per control: "education.institution_original" and its indexed
@@ -423,3 +446,123 @@ def _merge_previous_map(
         and str(prev_slot.get("selector")) not in slot_selectors
     ]
     return [*carried_entries, *entries], [*carried_slots, *kept_slots]
+
+
+def promote_consensus_field_map(
+    portal_form: PortalForm, *, min_tenants: int = 2
+) -> FieldMap | None:
+    """Promote a verified shared FieldMap when >= min_tenants distinct tenants agree."""
+    if min_tenants < 2:
+        min_tenants = 2
+    shared_verified = (
+        FieldMap.objects.filter(
+            portal_form=portal_form,
+            learned_by_tenant__isnull=True,
+            verified_at__isnull=False,
+            superseded_at__isnull=True,
+        )
+        .order_by("-version")
+        .first()
+    )
+    if shared_verified is not None and not portal_form.needs_bench:
+        return None
+    qs = FieldMap.objects.filter(
+        portal_form=portal_form,
+        learned_by_tenant__isnull=False,
+        superseded_at__isnull=True,
+    )
+    if shared_verified is not None:
+        qs = qs.filter(version__gt=shared_verified.version)
+    by_tenant: dict[UUID, FieldMap] = {}
+    for fmap in qs.order_by("-version"):
+        if fmap.learned_by_tenant_id is not None and fmap.learned_by_tenant_id not in by_tenant:
+            by_tenant[fmap.learned_by_tenant_id] = fmap
+    if len(by_tenant) < min_tenants:
+        return None
+
+    entry_tenants: dict[tuple[str, str, str], set[UUID]] = {}
+    entry_samples: dict[tuple[str, str, str], list[dict[str, object]]] = {}
+    slot_tenants: dict[tuple[str, str, str, object], set[UUID]] = {}
+    slot_samples: dict[tuple[str, str, str, object], dict[str, object]] = {}
+
+    for t_id, fmap in by_tenant.items():
+        for entry in fmap.entries:
+            if not isinstance(entry, dict) or entry.get("sure", True) is not True:
+                continue
+            action = entry.get("action")
+            if not isinstance(action, dict):
+                continue
+            profile_field = str(entry.get("profile_field") or "")
+            selector = str(action.get("selector") or "")
+            method = str(action.get("method") or "")
+            if not profile_field or not selector or not method:
+                continue
+            key = (profile_field, selector, method)
+            entry_tenants.setdefault(key, set()).add(t_id)
+            entry_samples.setdefault(key, []).append(entry)
+        for slot in fmap.slots or []:
+            if not isinstance(slot, dict) or slot.get("sure", True) is not True:
+                continue
+            selector = str(slot.get("selector") or "")
+            kind = str(slot.get("kind") or "")
+            variant = str(slot.get("variant") or "ANY")
+            degree = slot.get("degree")
+            if not selector or not kind:
+                continue
+            skey = (selector, kind, variant, degree)
+            slot_tenants.setdefault(skey, set()).add(t_id)
+            slot_samples.setdefault(skey, dict(slot, sure=True))
+
+    agreed_entries: list[dict[str, object]] = []
+    used_fields: set[str] = set()
+    used_selectors: set[str] = set()
+    for (profile_field, selector, method), tenants in entry_tenants.items():
+        if len(tenants) < min_tenants:
+            continue
+        if profile_field in used_fields or selector in used_selectors:
+            continue
+        used_fields.add(profile_field)
+        used_selectors.add(selector)
+        samples = entry_samples[(profile_field, selector, method)]
+        built: dict[str, object] = {
+            "profile_field": profile_field,
+            "sure": True,
+            "action": {
+                "selector": selector,
+                "method": method,
+                "arguments": [VALUE_PLACEHOLDER],
+            },
+        }
+        max_lengths = {s.get("max_length") for s in samples if s.get("max_length")}
+        if len(max_lengths) == 1:
+            built["max_length"] = next(iter(max_lengths))
+        labels = {s.get("expected_label") for s in samples if s.get("expected_label")}
+        if len(labels) == 1:
+            built["expected_label"] = next(iter(labels))
+        agreed_entries.append(built)
+
+    agreed_slots: list[dict[str, object]] = []
+    used_slot_selectors: set[str] = set()
+    for skey, tenants in slot_tenants.items():
+        if len(tenants) < min_tenants or skey[0] in used_slot_selectors:
+            continue
+        used_slot_selectors.add(skey[0])
+        agreed_slots.append(slot_samples[skey])
+
+    if not agreed_entries:
+        return None
+
+    shared_map = _store_map(
+        portal_form,
+        agreed_entries,
+        learned_by_tenant_id=None,
+        slots=agreed_slots,
+    )
+    shared_map.verified_at = timezone.now()
+    shared_map.save(update_fields=["verified_at"])
+    PortalForm.objects.filter(pk=portal_form.pk).update(
+        needs_bench=False, review_required=False
+    )
+    portal_form.needs_bench = False
+    portal_form.review_required = False
+    return shared_map

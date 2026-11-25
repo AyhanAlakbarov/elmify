@@ -9,11 +9,13 @@ from django.utils import timezone
 from apps.documents.evidence.readings import UsableBullet, UsableReading
 from apps.documents.models import Referee, VerifiedFact
 from apps.documents.referee_evidence import (
+    classify_referee_role,
     extract_supervisor_name_and_title,
     group_matches,
     institution_matches,
     person_matches,
     referee_angle,
+    scope_evidence_for_referee,
     shared_work_for_referee,
 )
 
@@ -390,3 +392,145 @@ def test_international_names_scripts_patronymics_and_institutions() -> None:
         "METU, Department of Computer Engineering",
     )
     assert institution_matches("Stanford University", "Stanford")
+
+
+@pytest.mark.django_db
+def test_strict_epistemic_scoping_and_orthogonal_multi_referee_partitioning(
+    agency_a, membership_a
+) -> None:
+    """Rules 1 & 2: Each referee only receives facts within their firsthand epistemic horizon,
+    and co-referees on the same application receive disjoint episodes and course partitions."""
+    from apps.tenancy.context import tenant_scope
+
+    now = timezone.now()
+    with tenant_scope(agency_a.id):
+        thesis_ref = Referee.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            title="Prof.",
+            name="Rauf Aliyev",
+            institution="ADA University",
+            kind=Referee.Kind.ACADEMIC,
+            relationship="Supervised my BSc thesis on Heuristic Graph Search.",
+        )
+        course_ref = Referee.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            title="Dr.",
+            name="Leyla Mammadova",
+            institution="ADA University",
+            kind=Referee.Kind.ACADEMIC,
+            relationship="Taught me Distributed Systems and Algorithms.",
+        )
+        prof_ref = Referee.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            title="Mr.",
+            name="Farid Hasanov",
+            institution="PASHA Bank",
+            kind=Referee.Kind.PROFESSIONAL,
+            relationship="Managed my Credit Risk Analytics team.",
+        )
+
+        edu_fact = VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={
+                "degree_english": "BSc Computer Science",
+                "institution_english": "ADA University",
+                "grade_native": "93/100",
+                "courses": [
+                    {"title": "Distributed Systems", "grade": "A+"},
+                    {"title": "Algorithms", "grade": "A"},
+                    {"title": "Compilers", "grade": "A"},
+                ],
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="transcript",
+            confirmed_by=membership_a,
+            confirmed_at=now,
+            created_by=membership_a,
+        )
+        aliyev_thesis = VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.RESEARCH,
+            payload={
+                "thesis_title": "Heuristic Graph Search on Road Networks",
+                "supervisor": "Prof. Rauf Aliyev",
+                "institution": "ADA University",
+                "outcomes": "Reduced query expansions by 38%",
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="cv",
+            confirmed_by=membership_a,
+            confirmed_at=now,
+            created_by=membership_a,
+        )
+        other_prof_research = VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.RESEARCH,
+            payload={
+                "project_title": "Quantum Lattice Cryptography",
+                "supervisor": "Prof. Nino Beridze",
+                "institution": "ETH Zurich",
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="cv",
+            confirmed_by=membership_a,
+            confirmed_at=now,
+            created_by=membership_a,
+        )
+        bank_exp = VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.EXPERIENCE,
+            payload={
+                "employer": "PASHA Bank",
+                "title": "Risk Data Engineer",
+                "bullets": ["Built real-time PD scoring service in Python."],
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="cv",
+            confirmed_by=membership_a,
+            confirmed_at=now,
+            created_by=membership_a,
+        )
+
+    all_facts = [edu_fact, aliyev_thesis, other_prof_research, bank_exp]
+
+    # 1. Thesis supervisor (Prof. Aliyev) with co-referees (Dr. Mammadova, Mr. Hasanov)
+    scoped_thesis = scope_evidence_for_referee(
+        thesis_ref, facts=all_facts, co_referees=[course_ref, prof_ref]
+    )
+    assert scoped_thesis.role_archetype == "research_supervisor"
+    assert aliyev_thesis in scoped_thesis.scoped_facts
+    # Never claims another professor's research or unrelated bank job
+    assert other_prof_research not in scoped_thesis.scoped_facts
+    assert bank_exp not in scoped_thesis.scoped_facts
+    # Course co-referee (Dr. Mammadova) owns the classroom courses
+    assert scoped_thesis.scoped_courses == ()
+    assert len(scoped_thesis.co_referee_coverage) == 2
+
+    # 2. Course instructor (Dr. Mammadova) with co-referees (Prof. Aliyev, Mr. Hasanov)
+    scoped_course = scope_evidence_for_referee(
+        course_ref, facts=all_facts, co_referees=[thesis_ref, prof_ref]
+    )
+    assert scoped_course.role_archetype == "course_instructor"
+    # Course instructor never claims Prof. Aliyev's supervised thesis or the bank job
+    assert aliyev_thesis not in scoped_course.scoped_facts
+    assert other_prof_research not in scoped_course.scoped_facts
+    assert bank_exp not in scoped_course.scoped_facts
+    assert "Distributed Systems (A+)" in scoped_course.scoped_courses
+    assert "Algorithms (A)" in scoped_course.scoped_courses
+
+    # 3. Professional supervisor (Mr. Hasanov) with academic co-referees
+    scoped_prof = scope_evidence_for_referee(
+        prof_ref, facts=all_facts, co_referees=[thesis_ref, course_ref]
+    )
+    assert classify_referee_role(prof_ref, scoped_prof.direct_work) == "professional_supervisor"
+    assert scoped_prof.role_archetype == "professional_supervisor"
+    assert bank_exp in scoped_prof.scoped_facts
+    # Professional referee never receives university transcript courses or academic theses
+    assert edu_fact not in scoped_prof.scoped_facts
+    assert aliyev_thesis not in scoped_prof.scoped_facts
+    assert scoped_prof.scoped_courses == ()
+

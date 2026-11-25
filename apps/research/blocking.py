@@ -107,7 +107,7 @@ def read_accreditors(path: Path = ACCREDITATION_MILLS) -> tuple[str, ...]:
     return tuple(row["name"] for _where, row in _csv(path, _ACCREDITOR_COLUMNS) if row["name"])
 
 
-_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|\n+")
+_SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+|(?<=[。！？])\s*|\n+")
 _ACCREDIT = re.compile(r"accredit|akkredit|akredit|accrédit", re.IGNORECASE)
 _MONEY = re.compile(
     r"\bfees?\b|\bpay(?:ment|able)?\b|\bcharge\b|€|\$|£|\b(?:usd|eur|gbp)\b", re.IGNORECASE

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
 
-from apps.funding.models import FundingBenefit, FundingOpportunity
+from apps.funding.models import BenefitRule, FundingBenefit, FundingOpportunity
 
 FieldState = Literal["FILLED", "UNCONFIRMED", "UNSTATED", "NOT_READ", "NOT_APPLICABLE"]
 #: The one route on which nobody is written to: the money comes with the place.
@@ -38,6 +38,8 @@ class AmountLine:
     period: str
     bound: str
     quote: str
+    country_code: str = ""
+    location_key: str = ""
 
 
 @dataclass(frozen=True)
@@ -65,29 +67,75 @@ def _split(value: str) -> tuple[str, ...]:
     return tuple(part for part in value.split(";") if part)
 
 
-def amount_lines(benefits: Sequence[FundingBenefit]) -> tuple[AmountLine, ...]:
+def _scope_for_benefit(
+    benefit_id: object,
+    rules_by_benefit: dict[object, list[BenefitRule]],
+) -> tuple[str, str]:
+    b_rules = rules_by_benefit.get(benefit_id, ())
+    if not b_rules:
+        return ("", "")
+    country_codes = tuple(
+        dict.fromkeys(
+            r.country_code.strip().upper()
+            for r in b_rules
+            if r.scope_type == "COUNTRY" and r.country_code and r.country_code.strip()
+        )
+    )
+    location_keys = tuple(
+        dict.fromkeys(
+            r.location_key.strip()
+            for r in b_rules
+            if r.scope_type == "CITY" and r.location_key and r.location_key.strip()
+        )
+    )
+    return (",".join(country_codes), ",".join(location_keys))
+
+
+def amount_lines(
+    benefits: Sequence[FundingBenefit],
+    rules: Sequence[BenefitRule] = (),
+) -> tuple[AmountLine, ...]:
     """The benefits a reader wrote a figure for, in a stable order."""
-    return tuple(sorted(
-        (
+    rules_by_benefit: dict[object, list[BenefitRule]] = {}
+    for rule in rules:
+        rules_by_benefit.setdefault(rule.benefit_id, []).append(rule)
+    lines: list[AmountLine] = []
+    for benefit in benefits:
+        if not benefit.amount_text:
+            continue
+        country_code, location_key = _scope_for_benefit(benefit.id, rules_by_benefit)
+        lines.append(
             AmountLine(
-                kind=benefit.kind, amount_text=benefit.amount_text, amount=benefit.amount,
-                currency=benefit.currency, period=benefit.period,
-                bound=benefit.amount_bound, quote=benefit.amount_quote,
+                kind=benefit.kind,
+                amount_text=benefit.amount_text,
+                amount=benefit.amount,
+                currency=benefit.currency,
+                period=benefit.period,
+                bound=benefit.amount_bound,
+                quote=benefit.amount_quote,
+                country_code=country_code,
+                location_key=location_key,
             )
-            for benefit in benefits
-            if benefit.amount_text
-        ),
-        key=lambda line: (line.kind, line.amount_text),
-    ))
+        )
+    return tuple(
+        sorted(
+            lines,
+            key=lambda line: (line.kind, line.country_code, line.location_key, line.amount_text),
+        )
+    )
 
 
-def award_card(award: FundingOpportunity, benefits: Sequence[FundingBenefit]) -> AwardCard:
+def award_card(
+    award: FundingOpportunity,
+    benefits: Sequence[FundingBenefit],
+    rules: Sequence[BenefitRule] = (),
+) -> AwardCard:
     """The card a catalogue row carries. `benefits` are the row's own, fetched by the caller."""
     return AwardCard(
         route=award.route,
         tuition=award.tuition or "UNSTATED",
         living=award.living or "UNSTATED",
-        amounts=amount_lines(benefits),
+        amounts=amount_lines(benefits, rules=rules),
         duration_text=award.duration_text,
         duration_months=award.duration_months,
         timing=award.timing or "UNSTATED",

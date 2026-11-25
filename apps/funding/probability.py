@@ -11,6 +11,7 @@ for `AUTOMATIC_ON_ADMISSION` benefits) from four layers:
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from collections.abc import Mapping, Sequence
@@ -28,6 +29,7 @@ from apps.funding.evaluation import ApplicantConditionFact, AwardCandidateFacts,
 from apps.funding.grouping import funds
 from apps.funding.models import (
     FundingOpportunity,
+    OfficialEvidenceClaim,
     OutcomeCalibrationRecord,
     Program,
     ProgramStatement,
@@ -45,6 +47,8 @@ from apps.tenancy.context import current_tenant_id, tenant_scope
 from apps.tenancy.db import tenant_transaction
 from apps.tenancy.models import Agency
 
+logger = logging.getLogger(__name__)
+
 _RULE_BASED_COUNTRIES = frozenset({"DE", "AT", "CH", "IT", "BE", "NL"})
 _SELECTIVE_COHORT_COUNTRIES = frozenset(
     {"FR", "SE", "FI", "NO", "DK", "IE", "GB", "SG", "JP", "KR"}
@@ -58,13 +62,17 @@ _SELECTIVE_STATEMENT_RE = re.compile(
 )
 
 
-def _stmt_text(s: ProgramStatement | tuple[str, str]) -> str:
+def _stmt_text(s: ProgramStatement | tuple[str, str] | str) -> str:
+    if isinstance(s, str):
+        return s
     if isinstance(s, tuple):
         return str(s[1] if len(s) > 1 else "")
     return str(getattr(s, "text", "") or "")
 
 
-def _stmt_kind(s: ProgramStatement | tuple[str, str]) -> str:
+def _stmt_kind(s: ProgramStatement | tuple[str, str] | str) -> str:
+    if isinstance(s, str):
+        return ""
     if isinstance(s, tuple):
         return str(s[0] if len(s) > 0 else "")
     return str(getattr(s, "kind", "") or "")
@@ -142,33 +150,270 @@ def _is_high_tuition_amount(amount: Decimal, currency: str) -> bool:
     return (amount * eur_factor) >= Decimal("10000")
 
 
+def _cohort_archetype_meta(cohort: WinnerCohortProfile | None) -> dict[str, object]:
+    """Extract serialized `WinnerArchetype` metrics from `cohort.archetype` or
+    `cohort.prior_degree_levels['__archetype__']`, falling back to `{}`."""
+    if cohort is None:
+        return {}
+    arch = getattr(cohort, "archetype", None)
+    if arch is not None:
+        if isinstance(arch, Mapping):
+            return dict(arch)
+        return {
+            "sample_size": getattr(arch, "sample_size", cohort.sample_size),
+            "effective_sample_size": getattr(arch, "effective_sample_size", None),
+            "shrinkage_factor": getattr(arch, "shrinkage_factor", None),
+            "avg_gpa": getattr(arch, "avg_gpa", None),
+            "eb_avg_gpa": getattr(arch, "eb_avg_gpa", None),
+            "avg_work_months": getattr(arch, "avg_work_months", None),
+            "eb_avg_work_months": getattr(arch, "eb_avg_work_months", None),
+            "research_share": getattr(arch, "research_share", None),
+            "eb_research_share": getattr(arch, "eb_research_share", None),
+            "top_prior_universities": list(getattr(arch, "top_prior_universities", ()) or ()),
+            "prior_university_shares": dict(getattr(arch, "prior_university_shares", {}) or {}),
+            "origin_country_shares": dict(getattr(arch, "origin_country_shares", {}) or {}),
+            "prior_degree_level_shares": dict(
+                getattr(arch, "prior_degree_level_shares", {}) or {}
+            ),
+            "prior_degree_field_shares": dict(
+                getattr(arch, "prior_degree_field_shares", {}) or {}
+            ),
+        }
+    levels = getattr(cohort, "prior_degree_levels", None)
+    if isinstance(levels, Mapping):
+        raw_meta = levels.get("__archetype__")
+        if isinstance(raw_meta, Mapping):
+            return dict(raw_meta)
+    return {}
+
+
+def _cohort_raw_degree_levels(cohort: WinnerCohortProfile | None) -> dict[str, int]:
+    """Return top-level integer degree-level counts from `cohort.prior_degree_levels`,
+    ignoring the reserved `'__archetype__'` metadata key."""
+    if cohort is None or not isinstance(cohort.prior_degree_levels, Mapping):
+        return {}
+    out: dict[str, int] = {}
+    for k, v in cohort.prior_degree_levels.items():
+        if k == "__archetype__" or isinstance(v, (Mapping, bool)):
+            continue
+        if isinstance(v, (int, float)):
+            out[str(k)] = int(v)
+    return out
+
+
+def _cohort_effective_sample_size(cohort: WinnerCohortProfile | None) -> float:
+    """Return Kish's effective sample size `n_eff` from `WinnerArchetype` metadata when
+    available, falling back to `float(cohort.sample_size)`."""
+    if cohort is None or cohort.sample_size <= 0:
+        return 0.0
+    meta = _cohort_archetype_meta(cohort)
+    raw_neff = meta.get("effective_sample_size")
+    if isinstance(raw_neff, (int, float, Decimal)) and float(raw_neff) > 0.0:
+        return min(float(cohort.sample_size), float(raw_neff))
+    return float(cohort.sample_size)
+
+
+_PUBLISHED_SELECTION_RATE_RE = re.compile(
+    r"Published\s+selection\s+rate\s*(?:\([^)]*\))?\s*\[([0-9]+(?:[.,][0-9]+)?)\s*%?\]",
+    re.IGNORECASE,
+)
+_AWARDS_PER_CYCLE_RE = re.compile(
+    r"Awards\s+per\s+cycle\s*(?:\([^)]*\))?\s*\[(\d+)\]",
+    re.IGNORECASE,
+)
+_APPLICANTS_PER_CYCLE_RE = re.compile(
+    r"Applicants\s+per\s+cycle\s*(?:\([^)]*\))?\s*\[(\d+)\]",
+    re.IGNORECASE,
+)
+_SELECTIVITY_SIGNAL_RE = re.compile(
+    r"Selectivity\s+signal:\s*(.+)",
+    re.IGNORECASE,
+)
+_BRACKET_MIN_GRADE_RE = re.compile(
+    r"Minimum\s+grade\s+[^\[]*\[\s*(\d+(?:[.,]\d+)?)\s*/\s*([^\]]+?)\s*\]",
+    re.IGNORECASE,
+)
+
+
+def _load_official_claim_texts(
+    program_id: UUID | None = None,
+    opportunity_id: UUID | None = None,
+) -> tuple[str, ...]:
+    texts: list[str] = []
+    try:
+        if program_id is not None:
+            texts.extend(
+                OfficialEvidenceClaim.objects.filter(
+                    programevidenceclaim__program_id=program_id
+                ).values_list("claim", flat=True)
+            )
+        if opportunity_id is not None:
+            texts.extend(
+                OfficialEvidenceClaim.objects.filter(
+                    fundingopportunityevidenceclaim__opportunity_id=opportunity_id
+                ).values_list("claim", flat=True)
+            )
+    except Exception as exc:
+        logger.debug("_load_official_claim_texts degraded: %s", exc)
+    return tuple(texts)
+
+
+def _extract_official_selectivity_from_claims(
+    program_id: UUID | None = None,
+    opportunity_id: UUID | None = None,
+    *,
+    conditions: Sequence[object] = (),
+    statements: Sequence[ProgramStatement | tuple[str, str] | str] = (),
+    extra_claims: Sequence[str] = (),
+) -> tuple[float | None, int | None, int | None, tuple[str, ...]]:
+    """Extract `(published_selection_rate, awards_per_cycle, applicants_per_cycle, signals)`
+    from persisted `OfficialEvidenceClaim` rows and inline conditions/statements."""
+    texts: list[str] = list(extra_claims)
+    if program_id is not None or opportunity_id is not None:
+        texts.extend(
+            _load_official_claim_texts(
+                program_id=program_id,
+                opportunity_id=opportunity_id,
+            )
+        )
+
+    for c in conditions:
+        for attr in ("value", "rule_text", "description", "quote"):
+            val = getattr(c, attr, "")
+            if val:
+                texts.append(str(val))
+    for s in statements:
+        if isinstance(s, str):
+            texts.append(s)
+        else:
+            texts.append(_stmt_text(s))
+
+    pub_rate: float | None = None
+    awards_k: int | None = None
+    applicants_n: int | None = None
+    signals: list[str] = []
+
+    for txt in texts:
+        if not txt:
+            continue
+        if pub_rate is None and (m_sr := _PUBLISHED_SELECTION_RATE_RE.search(txt)):
+            raw_r = float(m_sr.group(1).replace(",", "."))
+            if "%" in m_sr.group(0) or raw_r > 1.0:
+                raw_r = raw_r / 100.0
+            if 0.0 < raw_r <= 1.0:
+                pub_rate = raw_r
+        if awards_k is None and (m_ac := _AWARDS_PER_CYCLE_RE.search(txt)):
+            val_k = int(m_ac.group(1))
+            if val_k > 0:
+                awards_k = val_k
+        if applicants_n is None and (m_apc := _APPLICANTS_PER_CYCLE_RE.search(txt)):
+            val_n = int(m_apc.group(1))
+            if val_n > 0:
+                applicants_n = val_n
+        if m_sig := _SELECTIVITY_SIGNAL_RE.search(txt):
+            sig_str = m_sig.group(1).strip()
+            if sig_str and sig_str not in signals:
+                signals.append(sig_str)
+
+    return pub_rate, awards_k, applicants_n, tuple(signals)
+
+
+def _pool_official_selectivity_prior(
+    p_reg: float,
+    *,
+    published_selection_rate: float | None = None,
+    awards_per_cycle: int | None = None,
+    applicants_per_cycle: int | None = None,
+    kappa_reg: float = 15.0,
+) -> tuple[float, float]:
+    """Pool scraped official `(K, N)` counts or `r_pub` selection rate with regime baseline
+    `p_reg` via Beta-Binomial and log-odds Empirical Bayes shrinkage, returning
+    `(pooled_p0, delta_kappa_pub)`."""
+    base = max(0.01, min(0.95, float(p_reg)))
+    if (
+        awards_per_cycle is not None
+        and applicants_per_cycle is not None
+        and 0 < awards_per_cycle <= applicants_per_cycle
+    ):
+        n_eff_pub = min(float(applicants_per_cycle), 85.0)
+        k_eff_pub = n_eff_pub * (float(awards_per_cycle) / float(applicants_per_cycle))
+        alpha_reg = kappa_reg * base
+        beta_reg = kappa_reg * (1.0 - base)
+        p_0 = (alpha_reg + k_eff_pub) / (alpha_reg + beta_reg + n_eff_pub)
+        return max(0.01, min(0.95, p_0)), 25.0
+
+    if published_selection_rate is not None and 0.0 < float(published_selection_rate) <= 1.0:
+        n_eff_rate = 45.0
+        lam_rate = n_eff_rate / (n_eff_rate + kappa_reg)
+        r_clipped = max(0.005, min(0.95, float(published_selection_rate)))
+        logit_p0 = lam_rate * _logit(r_clipped) + (1.0 - lam_rate) * _logit(base)
+        p_0 = _sigmoid(logit_p0)
+        return max(0.01, min(0.95, p_0)), 15.0
+
+    if awards_per_cycle is not None and awards_per_cycle > 0:
+        n_ref = 250.0
+        n_eff_quota = 10.0
+        lam_quota = n_eff_quota / (n_eff_quota + kappa_reg)
+        p_quota = max(0.01, min(0.90, float(awards_per_cycle) / n_ref))
+        p_0 = lam_quota * p_quota + (1.0 - lam_quota) * base
+        return max(0.01, min(0.95, p_0)), 5.0
+
+    return base, 0.0
+
+
 def is_selective_candidate(
     candidate: CandidateFacts,
     *,
-    statements: Sequence[ProgramStatement | tuple[str, str]] = (),
+    statements: Sequence[ProgramStatement | tuple[str, str] | str] = (),
+    evidence_claims: Sequence[str] = (),
     winner_cohort: WinnerCohortProfile | None = None,
 ) -> bool:
     """Determine dynamically whether a programme candidate is selective based on its
     funding competition, admission bars, competency statements, and cohort profile."""
+    if (
+        candidate.admission_baseline_pct is not None
+        and candidate.admission_baseline_pct <= Decimal("25")
+    ):
+        return True
     if any(
         b.accessibility in ("COMPETITIVE", "CAPACITY_LIMITED")
         for b in candidate.benefits
     ):
         return True
-    req_gpa = _extract_required_gpa_bar(candidate.applicant_conditions, statements)
+    req_gpa = _extract_required_gpa_bar(
+        candidate.applicant_conditions,
+        statements,
+        evidence_claims,
+    )
     if _is_high_gpa_bar(req_gpa):
         return True
     req_cefr = _extract_required_cefr(candidate.applicant_conditions, statements)
     if req_cefr in ("C1", "C2"):
         return True
-    if any(_SELECTIVE_STATEMENT_RE.search(_stmt_text(s)) for s in statements):
-        return True
-    if (
-        winner_cohort is not None
-        and winner_cohort.research_signal_rate is not None
-        and float(winner_cohort.research_signal_rate) >= 0.40
+    if any(
+        _SELECTIVE_STATEMENT_RE.search(txt) or _SELECTIVITY_SIGNAL_RE.search(txt)
+        for txt in (*(_stmt_text(s) for s in statements), *(str(c) for c in evidence_claims if c))
     ):
         return True
+    if winner_cohort is not None:
+        arch_meta = _cohort_archetype_meta(winner_cohort)
+        eb_res = arch_meta.get("eb_research_share")
+        raw_res = arch_meta.get("research_share")
+        eff_res_rate = (
+            float(eb_res)
+            if isinstance(eb_res, (int, float, Decimal))
+            else (
+                float(raw_res)
+                if isinstance(raw_res, (int, float, Decimal))
+                else (
+                    float(winner_cohort.research_signal_rate)
+                    if winner_cohort.research_signal_rate is not None
+                    else None
+                )
+            )
+        )
+        if eff_res_rate is not None and eff_res_rate >= 0.40:
+            return True
     acad = candidate.dimension_scores.get("ACADEMIC_FIT", Decimal("0"))
     res = candidate.dimension_scores.get("RESEARCH_FIT", Decimal("0"))
     has_high_tuition = any(
@@ -198,6 +443,18 @@ _POST_ADMISSION_GOV_SCHOLARSHIP_RE = re.compile(
 #: post-admission scholarship where an unconditional admission offer from an eligible
 #: foreign university is the primary hurdle.
 POST_ADMISSION_GOV_CORRELATION: float = 0.75
+
+#: Positive quadrant dependence (PQD) correlation between university admission and
+#: winning a marginal merit scholarship (bundled or external) that evaluates the same
+#: underlying applicant quality vector (GPA, coursework, language, research/experience).
+MARGINAL_MERIT_PQD_CORRELATION: float = 0.35
+
+#: Empirical Bayes sample-size reliability constant for `WinnerCohortProfile` shrinkage
+#: $\tau(n) = n / (n + \kappa_{\text{cohort}})$.
+_COHORT_SHRINKAGE_KAPPA: float = 10.0
+
+#: 90% two-sided normal quantile ($z_{0.95}$) for epistemic logit prediction intervals.
+_Z_90: float = 1.6448536269514722
 
 
 def is_post_admission_gov_scholarship(
@@ -289,6 +546,30 @@ _FEATURE_KEYS = (
     "winner_similarity",
 )
 
+_MARGIN_KEYS = (
+    "gpa_margin",
+    "coursework_alignment",
+    "language_margin",
+    "experience_alignment",
+    "winner_similarity",
+)
+
+_DEFAULT_ADMIT_WEIGHTS: Mapping[str, float] = {
+    "gpa_margin": 0.70,
+    "coursework_alignment": 0.65,
+    "language_margin": 0.35,
+    "experience_alignment": 0.25,
+    "winner_similarity": 0.55,
+}
+
+_DEFAULT_AWARD_WEIGHTS: Mapping[str, float] = {
+    "gpa_margin": 0.80,
+    "coursework_alignment": 0.25,
+    "language_margin": 0.35,
+    "experience_alignment": 0.50,
+    "winner_similarity": 0.65,
+}
+
 _CEFR_RANK: Mapping[str, int] = {
     "A1": 0,
     "A2": 0,
@@ -301,10 +582,26 @@ _CEFR_RANK: Mapping[str, int] = {
 
 @dataclass(frozen=True)
 class ProbabilityEstimate:
-    """Estimated admission or scholarship probability (`1..100`) and its calibration vector."""
+    """Estimated admission or scholarship probability (`1..100`), its calibration vector,
+    and its calibrated 90% epistemic credible interval (`ci_low_pct..ci_high_pct`)."""
 
     chance_pct: int
     features: dict[str, float]
+    ci_low_pct: int | None = None
+    ci_high_pct: int | None = None
+    epistemic_se_logit: float | None = None
+
+    def __post_init__(self) -> None:
+        merged = dict(self.features)
+        if self.ci_low_pct is not None:
+            merged.setdefault("ci_low_pct", float(self.ci_low_pct))
+        if self.ci_high_pct is not None:
+            merged.setdefault("ci_high_pct", float(self.ci_high_pct))
+        if self.epistemic_se_logit is not None:
+            merged.setdefault(
+                "epistemic_se_logit", round(float(self.epistemic_se_logit), 4)
+            )
+        object.__setattr__(self, "features", merged)
 
 
 def _logit(p: float) -> float:
@@ -324,6 +621,19 @@ def _clamp_competitive_pct(prob: float) -> int:
     return max(1, min(95, int(round(prob * 100.0))))
 
 
+def _compute_epistemic_interval(
+    final_prob: float,
+    se_logit: float,
+) -> tuple[int, int, int]:
+    """Return `(chance_pct, ci_low_pct, ci_high_pct)` bounded in `[1, 95]` from logit SE."""
+    pct = _clamp_competitive_pct(final_prob)
+    eta = _logit(final_prob)
+    se = max(0.0, float(se_logit))
+    low = _clamp_competitive_pct(_sigmoid(eta - _Z_90 * se))
+    high = _clamp_competitive_pct(_sigmoid(eta + _Z_90 * se))
+    return pct, min(pct, low), max(pct, high)
+
+
 def _parse_float(raw: str) -> float | None:
     m = re.search(r"\d+(?:[.,]\d+)?", raw)
     if not m:
@@ -336,11 +646,12 @@ def _parse_float(raw: str) -> float | None:
 
 def _extract_required_gpa_bar(
     conditions: Sequence[ApplicantConditionFact],
-    statements: Sequence[ProgramStatement | tuple[str, str]],
+    statements: Sequence[ProgramStatement | tuple[str, str] | str] = (),
+    evidence_claims: Sequence[str] = (),
 ) -> tuple[float, str] | None:
     """Extract a stated minimum grade value and normalized scale from conditions or statements."""
     for cond in conditions:
-        if cond.key == "PRIOR_DEGREE_GRADE" and cond.value:
+        if cond.key in ("GRADE", "PRIOR_DEGREE_GRADE") and cond.value:
             val_str, inline_scale = _split_scale(cond.value)
             val = _parse_float(val_str)
             scale = _normalize_scale(inline_scale)
@@ -353,10 +664,18 @@ def _extract_required_gpa_bar(
             for c in conditions
         ),
         *(_stmt_text(s) for s in statements),
+        *(str(c) for c in evidence_claims if c),
     ]
     for txt in texts:
+        m_bracket = _BRACKET_MIN_GRADE_RE.search(txt)
+        if m_bracket:
+            val_b = _parse_float(m_bracket.group(1))
+            scale_b = _normalize_scale(m_bracket.group(2))
+            if val_b is not None and scale_b:
+                return val_b, scale_b
         m = re.search(
-            r"(?:minimum|at least|gpa(?:\s+of)?)\s+(\d+(?:[.,]\d+)?)\s*"
+            r"(?:minimum(?:\s+grade(?:\s*/\s*gpa)?)?|at least|gpa(?:\s+of)?)"
+            r"(?:\s*\([^)]*\))?\s*:?\s*(\d+(?:[.,]\d+)?)\s*"
             r"(?:/\s*(4\.0|5\.0|10(?:\.0)?|20(?:\.0)?|30(?:\.0)?|100|110)|%)",
             txt,
             re.IGNORECASE,
@@ -412,7 +731,7 @@ def _normalized_gpa_margin(
 
 def _extract_required_cefr(
     conditions: Sequence[ApplicantConditionFact],
-    statements: Sequence[ProgramStatement | tuple[str, str]],
+    statements: Sequence[ProgramStatement | tuple[str, str] | str] = (),
 ) -> str:
     """Return the highest CEFR level (`B1..C2`) stated in conditions or statements, or `'B2'`."""
     best_rank = _CEFR_RANK["B2"]
@@ -602,73 +921,179 @@ def _winner_archetype_similarity(
     profile: StudentProfileSnapshot,
     cohort: WinnerCohortProfile | None,
 ) -> float:
-    """Compute similarity in `[-1.0, 1.0]` between a student and a `WinnerCohortProfile`."""
+    """Compute similarity in `[-1.0, 1.0]` between a student and a `WinnerCohortProfile`,
+    consuming Hájek IPW shares, Empirical Bayes archetype means, and Kish's effective sample
+    size `n_eff` when `__archetype__` metadata is present."""
     if cohort is None or cohort.sample_size < 2:
         return 0.0
+
+    meta = _cohort_archetype_meta(cohort)
+    _ = _cohort_raw_degree_levels(cohort)
+
+    field_shares_raw = meta.get("prior_degree_field_shares")
+    field_shares_meta = (
+        {str(k).casefold(): float(v) for k, v in field_shares_raw.items()}
+        if isinstance(field_shares_raw, Mapping)
+        else {}
+    )
+    country_shares_raw = meta.get("origin_country_shares")
+    country_shares_meta = (
+        {str(k).upper(): float(v) for k, v in country_shares_raw.items()}
+        if isinstance(country_shares_raw, Mapping)
+        else {}
+    )
+    uni_shares_raw = meta.get("prior_university_shares")
+    uni_shares_meta = (
+        {str(k).casefold(): float(v) for k, v in uni_shares_raw.items()}
+        if isinstance(uni_shares_raw, Mapping)
+        else {}
+    )
+    eb_gpa_raw = (
+        meta.get("eb_avg_gpa") if meta.get("eb_avg_gpa") is not None else meta.get("avg_gpa")
+    )
+    eb_gpa = float(eb_gpa_raw) if isinstance(eb_gpa_raw, (int, float, Decimal)) else None
+    has_uni_or_gpa = bool(uni_shares_meta or eb_gpa is not None)
 
     score = 0.0
     total_weight = 0.0
 
-    # 1. Prior degree field overlap (weight 0.45)
-    if cohort.prior_degree_fields:
-        total_weight += 0.45
+    # 1. Prior degree field overlap (weight 0.40 with archetype uni/GPA, else 0.45)
+    if field_shares_meta or cohort.prior_degree_fields:
+        w_field = 0.40 if has_uni_or_gpa else 0.45
+        total_weight += w_field
         student_fields = {
             rec.field.strip().casefold() for rec in profile.academic_history if rec.field.strip()
         }
         if profile.target_field.strip():
             student_fields.add(profile.target_field.strip().casefold())
-        cohort_fields = {str(k).casefold(): int(v) for k, v in cohort.prior_degree_fields.items()}
-        matched_count = 0
-        for sf in student_fields:
-            for cf, cnt in cohort_fields.items():
-                if sf in cf or cf in sf:
-                    matched_count = max(matched_count, cnt)
-        if matched_count > 0:
-            share = matched_count / max(1, cohort.sample_size)
-            score += 0.45 * min(1.0, 0.4 + share * 1.2)
+        best_share = 0.0
+        if field_shares_meta:
+            for sf in student_fields:
+                for cf, sh in field_shares_meta.items():
+                    if sf in cf or cf in sf:
+                        best_share = max(best_share, sh)
+        elif cohort.prior_degree_fields:
+            cohort_fields = {
+                str(k).casefold(): int(v) for k, v in cohort.prior_degree_fields.items()
+            }
+            matched_count = 0
+            for sf in student_fields:
+                for cf, cnt in cohort_fields.items():
+                    if sf in cf or cf in sf:
+                        matched_count = max(matched_count, cnt)
+            if matched_count > 0:
+                best_share = matched_count / max(1, cohort.sample_size)
+        if best_share > 0.0:
+            score += w_field * min(1.0, 0.4 + best_share * 1.2)
         else:
-            score -= 0.45 * 0.6
+            score -= w_field * 0.6
 
     # 2. Origin country representation (weight 0.20)
-    if cohort.origin_country_counts:
+    if country_shares_meta or cohort.origin_country_counts:
         total_weight += 0.20
-        nat_count = int(cohort.origin_country_counts.get(profile.nationality, 0))
-        if nat_count > 0:
-            score += 0.20 * min(1.0, 0.5 + (nat_count / max(1, cohort.sample_size)) * 2.0)
+        nat_key = (profile.nationality or "").strip().upper()
+        if country_shares_meta:
+            nat_share = float(country_shares_meta.get(nat_key, 0.0))
+        else:
+            nat_count = int((cohort.origin_country_counts or {}).get(profile.nationality, 0))
+            nat_share = nat_count / max(1, cohort.sample_size)
+        if nat_share > 0.0:
+            score += 0.20 * min(1.0, 0.5 + nat_share * 2.0)
         else:
             score -= 0.20 * 0.25
 
-    # 3. Work experience quartile alignment (weight 0.20)
-    if cohort.work_experience_months_median is not None:
-        total_weight += 0.20
+    # 2b. Prior university & Empirical Bayes GPA alignment (weight 0.10 when archetype present)
+    if has_uni_or_gpa:
+        total_weight += 0.10
+        uni_gpa_align = 0.0
+        if uni_shares_meta:
+            student_unis = {
+                rec.institution.strip().casefold()
+                for rec in profile.academic_history
+                if rec.institution.strip()
+            }
+            matched_uni_share = 0.0
+            for su in student_unis:
+                for cu, u_sh in uni_shares_meta.items():
+                    if su and cu and (su in cu or cu in su):
+                        matched_uni_share = max(matched_uni_share, u_sh)
+            if matched_uni_share > 0.0:
+                uni_gpa_align = max(uni_gpa_align, min(1.0, 0.5 + matched_uni_share))
+        if eb_gpa is not None:
+            gpa_m = _normalized_gpa_margin(
+                profile.academic_history, required_bar=(eb_gpa, "gpa 4.0")
+            )
+            if gpa_m >= 0.0:
+                uni_gpa_align = max(uni_gpa_align, min(1.0, 0.5 + 0.5 * gpa_m))
+            elif uni_gpa_align == 0.0:
+                uni_gpa_align = max(-0.5, 0.5 * gpa_m)
+        score += 0.10 * uni_gpa_align
+
+    # 3. Work experience alignment (weight 0.15 with archetype uni/GPA, else 0.20)
+    eb_work_raw = (
+        meta.get("eb_avg_work_months")
+        if meta.get("eb_avg_work_months") is not None
+        else meta.get("avg_work_months")
+    )
+    med_work = (
+        float(eb_work_raw)
+        if isinstance(eb_work_raw, (int, float, Decimal))
+        else (
+            float(cohort.work_experience_months_median)
+            if cohort.work_experience_months_median is not None
+            else None
+        )
+    )
+    if med_work is not None:
+        w_work = 0.15 if has_uni_or_gpa else 0.20
+        total_weight += w_work
         student_months = sum(exp.months for exp in (profile.experience or ()))
-        p25 = cohort.work_experience_months_p25 or 0
-        med = cohort.work_experience_months_median
-        if student_months >= med:
-            score += 0.20 * 0.9
+        p25 = (
+            float(cohort.work_experience_months_p25)
+            if cohort.work_experience_months_p25 is not None
+            else (0.5 * med_work)
+        )
+        if student_months >= med_work:
+            score += w_work * 0.9
         elif student_months >= p25:
-            score += 0.20 * 0.4
-        elif med >= 12 and student_months == 0:
-            score -= 0.20 * 0.6
+            score += w_work * 0.4
+        elif med_work >= 12.0 and student_months == 0:
+            score -= w_work * 0.6
 
     # 4. Research signal alignment (weight 0.15)
-    if cohort.research_signal_rate is not None:
+    eb_res_raw = (
+        meta.get("eb_research_share")
+        if meta.get("eb_research_share") is not None
+        else meta.get("research_share")
+    )
+    res_rate = (
+        float(eb_res_raw)
+        if isinstance(eb_res_raw, (int, float, Decimal))
+        else (
+            float(cohort.research_signal_rate)
+            if cohort.research_signal_rate is not None
+            else None
+        )
+    )
+    if res_rate is not None:
         total_weight += 0.15
-        rate = float(cohort.research_signal_rate)
         has_research = any(
             exp.kind == "RESEARCH"
             or "publish" in exp.summary.casefold()
             or "journal" in exp.summary.casefold()
             for exp in (profile.experience or ())
         )
-        if has_research and rate >= 0.25:
+        if has_research and res_rate >= 0.25:
             score += 0.15 * 1.0
-        elif not has_research and rate >= 0.60:
+        elif not has_research and res_rate >= 0.60:
             score -= 0.15 * 0.7
 
     if total_weight <= 0.0:
         return 0.0
-    return round(max(-1.0, min(1.0, score / total_weight)), 4)
+    n_eff = _cohort_effective_sample_size(cohort)
+    reliability = n_eff / (n_eff + _COHORT_SHRINKAGE_KAPPA)
+    raw_sim = max(-1.0, min(1.0, score / total_weight))
+    return round(raw_sim * reliability, 4)
 
 
 def _row_weight(
@@ -700,7 +1125,28 @@ def _row_weight(
     return w
 
 
-def _calibrate_with_outcomes(
+def _structural_logit_variance(
+    w_cal: float,
+    n_eff: float,
+    beta_sim: float,
+    x_sim: float,
+) -> float:
+    """Compute structural epistemic logit variance sigma_struct^2(W_cal, n_eff) incorporating
+    calibration sample weight W_cal and Kish's effective sample size n_eff."""
+    base_struct = 0.08 / (1.0 + 0.10 * max(0.0, w_cal) + 0.04 * max(0.0, n_eff))
+    if n_eff <= 0.0:
+        return base_struct
+    tau_neff = n_eff / (n_eff + _COHORT_SHRINKAGE_KAPPA)
+    sim_var = (
+        (beta_sim * beta_sim)
+        * (tau_neff * tau_neff)
+        * max(0.0, 1.0 - (x_sim * x_sim))
+        / max(1.0, n_eff + 1.0)
+    )
+    return base_struct + sim_var
+
+
+def _calibrate_with_outcomes_and_se(
     cold_prob: float,
     features: Mapping[str, float],
     calibration_rows: Sequence[OutcomeCalibrationRecord],
@@ -709,11 +1155,38 @@ def _calibrate_with_outcomes(
     target_opportunity_id: UUID | None = None,
     student_origin_country: str = "",
     current_year: int | None = None,
-) -> float:
-    """Apply Phase 2 Empirical Bayes (`< 50` exact rows) or Phase 3 logistic (`50+` exact rows)."""
+    prior_weights: Mapping[str, float] | None = None,
+    cohort_n_eff: float = 0.0,
+    prior_kappa_boost: float = 0.0,
+) -> tuple[float, float]:
+    """Return `(final_prob, epistemic_se_logit)` from two-level EB or MAP logistic."""
+    base_prior = max(0.01, min(0.95, float(features.get("base_prior", cold_prob))))
+    eff_kappa_boost = max(
+        0.0,
+        float(prior_kappa_boost)
+        if prior_kappa_boost != 0.0
+        else float(features.get("prior_kappa_boost", 0.0)),
+    )
+    n_eff = max(
+        0.0,
+        float(cohort_n_eff)
+        if cohort_n_eff != 0.0
+        else float(features.get("cohort_n_eff", 0.0)),
+    )
+    kappa = 10.0 + eff_kappa_boost
+    p_prior_Weights = prior_weights if prior_weights is not None else _DEFAULT_ADMIT_WEIGHTS
+    beta_sim = float(p_prior_Weights.get("winner_similarity", 0.55))
+    x_sim = max(-1.0, min(1.0, float(features.get("winner_similarity", 0.0))))
     n = len(calibration_rows)
     if n == 0:
-        return cold_prob
+        alpha_0 = base_prior * kappa
+        beta_0 = (1.0 - base_prior) * kappa
+        var_eta = (
+            (1.0 / (alpha_0 + 0.5))
+            + (1.0 / (beta_0 + 0.5))
+            + _structural_logit_variance(0.0, n_eff, beta_sim, x_sim)
+        )
+        return cold_prob, round(math.sqrt(var_eta), 4)
 
     row_weights = [
         _row_weight(
@@ -725,50 +1198,155 @@ def _calibrate_with_outcomes(
         )
         for r in calibration_rows
     ]
+    exact_pairs: list[tuple[OutcomeCalibrationRecord, float]] = []
+    pool_pairs: list[tuple[OutcomeCalibrationRecord, float]] = []
+    for r, w in zip(calibration_rows, row_weights, strict=False):
+        is_exact = (
+            (target_program_id is not None and r.program_id == target_program_id)
+            or (target_opportunity_id is not None and r.opportunity_id == target_opportunity_id)
+            or (target_program_id is None and target_opportunity_id is None)
+        )
+        if is_exact:
+            exact_pairs.append((r, w))
+        else:
+            pool_pairs.append((r, w))
+
+    exact_count = len(exact_pairs)
+    delta_logit = _logit(cold_prob) - _logit(base_prior)
+
+    # Phase 2: Two-level hierarchical Empirical Bayes with covariate-adjusted outcomes
+    if exact_count < 50:
+        # Level 2: Smooth country/family pool shrinkage into base_prior (no cliff at exact=10)
+        if pool_pairs:
+            raw_pool_w = sum(w for _, w in pool_pairs)
+            raw_pool_wins = sum(w for r, w in pool_pairs if r.won)
+            pool_win_rate = raw_pool_wins / max(1e-6, raw_pool_w)
+            eff_pool_w = min(6.0, raw_pool_w) * (10.0 / (10.0 + float(exact_count)))
+            kappa_pool = 20.0
+            pool_prior = (base_prior * kappa_pool + pool_win_rate * eff_pool_w) / (
+                kappa_pool + eff_pool_w
+            )
+            pool_prior = max(0.01, min(0.95, pool_prior))
+        else:
+            eff_pool_w = 0.0
+            pool_prior = base_prior
+
+        # Level 1: Exact rows with covariate adjustment to baseline (\Delta\ell = 0)
+        alpha_0 = pool_prior * kappa
+        beta_0 = (1.0 - pool_prior) * kappa
+        adj_wins = 0.0
+        exact_w_sum = 0.0
+        for r, w in exact_pairs:
+            fv = r.feature_vector or {}
+            y_obs = 1.0 if r.won else 0.0
+            if any(k in fv for k in _MARGIN_KEYS):
+                row_delta = sum(
+                    float(p_prior_Weights.get(k, 0.0)) * float(fv.get(k, 0.0))
+                    for k in _MARGIN_KEYS
+                )
+                p_expected = _sigmoid(_logit(pool_prior) + row_delta)
+                y_adj = min(1.0, max(0.0, pool_prior + (y_obs - p_expected)))
+            else:
+                y_adj = y_obs
+            adj_wins += w * y_adj
+            exact_w_sum += w
+
+        alpha_n = alpha_0 + adj_wins
+        beta_n = beta_0 + max(0.0, exact_w_sum - adj_wins)
+        eb_base = alpha_n / (alpha_n + beta_n)
+        final_prob = _sigmoid(_logit(eb_base) + delta_logit)
+        var_eta = (
+            (1.0 / (alpha_n + 0.5))
+            + (1.0 / (beta_n + 0.5))
+            + _structural_logit_variance(exact_w_sum + eff_pool_w, n_eff, beta_sim, x_sim)
+        )
+        return final_prob, round(math.sqrt(var_eta), 4)
+
+    # Phase 3: MAP-regularised logistic model on non-collinear margin covariates,
+    # shrunk toward cold-start prior weights and pooled in log-odds space
     weighted_n = sum(row_weights)
     weighted_wins = sum(w for r, w in zip(calibration_rows, row_weights, strict=False) if r.won)
-    exact_count = sum(
-        1
-        for r in calibration_rows
-        if (target_program_id is not None and r.program_id == target_program_id)
-        or (target_opportunity_id is not None and r.opportunity_id == target_opportunity_id)
-        or (target_program_id is None and target_opportunity_id is None)
-    )
-
-    # Phase 2: Beta-Binomial shrinkage centered on base_prior so delta_logit is applied once
-    if exact_count < 50:
-        base_prior = max(0.01, min(0.95, float(features.get("base_prior", cold_prob))))
-        kappa = 10.0
-        alpha_0 = base_prior * kappa
-        beta_0 = (1.0 - base_prior) * kappa
-        eb_base = (alpha_0 + weighted_wins) / (alpha_0 + beta_0 + weighted_n)
-        delta_logit = _logit(cold_prob) - _logit(base_prior)
-        return _sigmoid(_logit(eb_base) + delta_logit)
-
-    # Phase 3: Calibrated logistic model fitted via weighted gradient steps on outcome records
-    weights = {k: 0.0 for k in _FEATURE_KEYS}
-    bias = _logit(max(0.05, min(0.95, weighted_wins / max(1.0, weighted_n))))
+    weights = {k: float(p_prior_Weights.get(k, 0.0)) for k in _MARGIN_KEYS}
+    bias = _logit(max(0.02, min(0.95, weighted_wins / max(1.0, weighted_n))))
     lr = 0.25
     l2 = 0.05
     for _ in range(80):
         grad_b = 0.0
-        grad_w = {k: 0.0 for k in _FEATURE_KEYS}
+        grad_w = {k: 0.0 for k in _MARGIN_KEYS}
         for row, w in zip(calibration_rows, row_weights, strict=False):
             fv = row.feature_vector or {}
-            z = bias + sum(weights[k] * float(fv.get(k, 0.0)) for k in _FEATURE_KEYS)
+            z = bias + sum(weights[k] * float(fv.get(k, 0.0)) for k in _MARGIN_KEYS)
             pred = _sigmoid(z)
             err = w * (pred - (1.0 if row.won else 0.0))
             grad_b += err
-            for k in _FEATURE_KEYS:
+            for k in _MARGIN_KEYS:
                 grad_w[k] += err * float(fv.get(k, 0.0))
         bias -= lr * (grad_b / max(1.0, weighted_n))
-        for k in _FEATURE_KEYS:
-            weights[k] -= lr * ((grad_w[k] / max(1.0, weighted_n)) + l2 * weights[k])
+        for k in _MARGIN_KEYS:
+            prior_w = float(p_prior_Weights.get(k, 0.0))
+            weights[k] -= lr * (
+                (grad_w[k] / max(1.0, weighted_n)) + l2 * (weights[k] - prior_w)
+            )
 
-    z_student = bias + sum(weights[k] * float(features.get(k, 0.0)) for k in _FEATURE_KEYS)
-    ml_prob = _sigmoid(z_student)
-    # Blend 80% calibrated logistic + 20% cold-start prior for stability
-    return 0.80 * ml_prob + 0.20 * cold_prob
+    z_student = bias + sum(weights[k] * float(features.get(k, 0.0)) for k in _MARGIN_KEYS)
+    lambda_ml = min(0.90, float(exact_count) / (float(exact_count) + 12.5))
+    final_eta = lambda_ml * z_student + (1.0 - lambda_ml) * _logit(cold_prob)
+    final_prob = _sigmoid(final_eta)
+
+    # Diagonal Laplace / Fisher-information approximation for epistemic SE in logit space
+    alpha_0 = base_prior * kappa
+    beta_0 = (1.0 - base_prior) * kappa
+    var_intercept = (1.0 / (alpha_0 + weighted_wins + 0.5)) + (
+        1.0 / (beta_0 + max(0.0, weighted_n - weighted_wins) + 0.5)
+    )
+    info_w = {
+        k: 25.0
+        + (0.5 * n_eff if k == "winner_similarity" else 0.0)
+        + l2 * max(1.0, weighted_n)
+        for k in _MARGIN_KEYS
+    }
+    for row, w in zip(calibration_rows, row_weights, strict=False):
+        fv = row.feature_vector or {}
+        z = bias + sum(weights[k] * float(fv.get(k, 0.0)) for k in _MARGIN_KEYS)
+        p_i = _sigmoid(z)
+        v_i = w * max(0.01, p_i * (1.0 - p_i))
+        for k in _MARGIN_KEYS:
+            xk = float(fv.get(k, 0.0))
+            info_w[k] += v_i * (xk * xk)
+
+    var_eta = var_intercept + sum(
+        (float(features.get(k, 0.0)) ** 2) / info_w[k] for k in _MARGIN_KEYS
+    )
+    return final_prob, round(math.sqrt(var_eta), 4)
+
+
+def _calibrate_with_outcomes(
+    cold_prob: float,
+    features: Mapping[str, float],
+    calibration_rows: Sequence[OutcomeCalibrationRecord],
+    *,
+    target_program_id: UUID | None = None,
+    target_opportunity_id: UUID | None = None,
+    student_origin_country: str = "",
+    current_year: int | None = None,
+    prior_weights: Mapping[str, float] | None = None,
+    cohort_n_eff: float = 0.0,
+    prior_kappa_boost: float = 0.0,
+) -> float:
+    """Apply Phase 2 Empirical Bayes (`< 50` exact rows) or Phase 3 logistic (`50+` exact rows)."""
+    final_prob, _ = _calibrate_with_outcomes_and_se(
+        cold_prob,
+        features,
+        calibration_rows,
+        target_program_id=target_program_id,
+        target_opportunity_id=target_opportunity_id,
+        student_origin_country=student_origin_country,
+        current_year=current_year,
+        prior_weights=prior_weights,
+        cohort_n_eff=cohort_n_eff,
+        prior_kappa_boost=prior_kappa_boost,
+    )
+    return final_prob
 
 
 def estimate_program_admission_chance(
@@ -782,6 +1360,19 @@ def estimate_program_admission_chance(
     today: date | None = None,
 ) -> ProbabilityEstimate:
     """Estimate a student's admission probability (`1..95%`) for a recommended `Program`."""
+    prog_claim_texts = _load_official_claim_texts(program_id=program.id)
+    pub_rate, awards_k, applicants_n, sel_signals = _extract_official_selectivity_from_claims(
+        conditions=facts.applicant_conditions,
+        statements=statements,
+        extra_claims=prog_claim_texts,
+    )
+    if pub_rate is None and getattr(facts, "published_selection_rate", None) is not None:
+        pub_rate = float(getattr(facts, "published_selection_rate"))
+    if awards_k is None and getattr(facts, "awards_per_cycle", None) is not None:
+        awards_k = int(getattr(facts, "awards_per_cycle"))
+    if applicants_n is None and getattr(facts, "applicants_per_cycle", None) is not None:
+        applicants_n = int(getattr(facts, "applicants_per_cycle"))
+
     name_lower = program.name.casefold()
     if (
         program.provision_type == Program.ProvisionType.JOINT
@@ -789,8 +1380,11 @@ def estimate_program_admission_chance(
         or "emjm" in name_lower
     ):
         base_prior = 0.08
-    elif is_selective_candidate(
-        facts, statements=statements, winner_cohort=winner_cohort
+    elif sel_signals or is_selective_candidate(
+        facts,
+        statements=statements,
+        evidence_claims=prog_claim_texts,
+        winner_cohort=winner_cohort,
     ):
         base_prior = 0.18
     elif program.country_code in _RULE_BASED_COUNTRIES:
@@ -799,6 +1393,13 @@ def estimate_program_admission_chance(
         base_prior = 0.30
     else:
         base_prior = 0.40
+
+    base_prior, delta_kappa_pub = _pool_official_selectivity_prior(
+        base_prior,
+        published_selection_rate=pub_rate,
+        awards_per_cycle=awards_k,
+        applicants_per_cycle=applicants_n,
+    )
 
     stmt_evals = (
         tuple(
@@ -824,12 +1425,17 @@ def estimate_program_admission_chance(
         )
         coursework_alignment = 0.4 if has_matching_course else 0.0
 
-    req_gpa = _extract_required_gpa_bar(facts.applicant_conditions, statements)
+    req_gpa = _extract_required_gpa_bar(
+        facts.applicant_conditions,
+        statements,
+        prog_claim_texts,
+    )
     req_cefr = _extract_required_cefr(facts.applicant_conditions, statements)
     gpa_margin = _normalized_gpa_margin(profile.academic_history, required_bar=req_gpa)
     lang_margin = _language_margin(profile, required_cefr=req_cefr, today=today)
     exp_align = _experience_alignment(profile, facts.applicant_conditions)
     winner_sim = _winner_archetype_similarity(profile, winner_cohort)
+    cohort_neff = _cohort_effective_sample_size(winner_cohort)
 
     features: dict[str, float] = {
         "base_prior": round(base_prior, 4),
@@ -850,17 +1456,24 @@ def estimate_program_admission_chance(
     )
     cold_prob = _sigmoid(log_odds)
     ref_year = today.year if today is not None else date.today().year
-    final_prob = _calibrate_with_outcomes(
+    final_prob, se_logit = _calibrate_with_outcomes_and_se(
         cold_prob,
         features,
         calibration_rows,
         target_program_id=program.id,
         student_origin_country=profile.nationality,
         current_year=ref_year,
+        prior_weights=_DEFAULT_ADMIT_WEIGHTS,
+        cohort_n_eff=cohort_neff,
+        prior_kappa_boost=delta_kappa_pub,
     )
+    pct, ci_low, ci_high = _compute_epistemic_interval(final_prob, se_logit)
     return ProbabilityEstimate(
-        chance_pct=_clamp_competitive_pct(final_prob),
+        chance_pct=pct,
         features=features,
+        ci_low_pct=ci_low,
+        ci_high_pct=ci_high,
+        epistemic_se_logit=se_logit,
     )
 
 
@@ -887,7 +1500,25 @@ def estimate_scholarship_chance(
                 "experience_alignment": _experience_alignment(profile),
                 "winner_similarity": 0.0,
             },
+            ci_low_pct=100,
+            ci_high_pct=100,
+            epistemic_se_logit=0.0,
         )
+
+    award_claim_texts = _load_official_claim_texts(
+        opportunity_id=award.id,
+        program_id=award.program_id,
+    )
+    pub_rate, awards_k, applicants_n, _ = _extract_official_selectivity_from_claims(
+        conditions=facts.applicant_conditions,
+        extra_claims=award_claim_texts,
+    )
+    if pub_rate is None and getattr(facts, "published_selection_rate", None) is not None:
+        pub_rate = float(getattr(facts, "published_selection_rate"))
+    if awards_k is None and getattr(facts, "awards_per_cycle", None) is not None:
+        awards_k = int(getattr(facts, "awards_per_cycle"))
+    if applicants_n is None and getattr(facts, "applicants_per_cycle", None) is not None:
+        applicants_n = int(getattr(facts, "applicants_per_cycle"))
 
     base_prior = _AWARD_FAMILY_BASE_PRIORS.get(award.family, 0.15)
     if award.family == "GOVERNMENT_SCHOLARSHIP" and is_post_admission_gov_scholarship(
@@ -898,12 +1529,21 @@ def estimate_scholarship_chance(
         applicant_conditions=facts.applicant_conditions,
     ):
         base_prior = 0.65
-    req_gpa = _extract_required_gpa_bar(facts.applicant_conditions, ())
+
+    base_prior, delta_kappa_pub = _pool_official_selectivity_prior(
+        base_prior,
+        published_selection_rate=pub_rate,
+        awards_per_cycle=awards_k,
+        applicants_per_cycle=applicants_n,
+    )
+
+    req_gpa = _extract_required_gpa_bar(facts.applicant_conditions, (), award_claim_texts)
     req_cefr = _extract_required_cefr(facts.applicant_conditions, ())
     gpa_margin = _normalized_gpa_margin(profile.academic_history, required_bar=req_gpa)
     lang_margin = _language_margin(profile, required_cefr=req_cefr, today=today)
     exp_align = _experience_alignment(profile, facts.applicant_conditions)
     winner_sim = _winner_archetype_similarity(profile, winner_cohort)
+    cohort_neff = _cohort_effective_sample_size(winner_cohort)
 
     has_courses = any(
         course.title for rec in profile.academic_history for course in rec.courses
@@ -928,17 +1568,24 @@ def estimate_scholarship_chance(
         + 0.65 * winner_sim
     )
     cold_prob = _sigmoid(log_odds)
-    final_prob = _calibrate_with_outcomes(
+    final_prob, se_logit = _calibrate_with_outcomes_and_se(
         cold_prob,
         features,
         calibration_rows,
         target_opportunity_id=award.id,
         student_origin_country=profile.nationality,
         current_year=ref_year,
+        prior_weights=_DEFAULT_AWARD_WEIGHTS,
+        cohort_n_eff=cohort_neff,
+        prior_kappa_boost=delta_kappa_pub,
     )
+    pct, ci_low, ci_high = _compute_epistemic_interval(final_prob, se_logit)
     return ProbabilityEstimate(
-        chance_pct=_clamp_competitive_pct(final_prob),
+        chance_pct=pct,
         features=features,
+        ci_low_pct=ci_low,
+        ci_high_pct=ci_high,
+        epistemic_se_logit=se_logit,
     )
 
 
@@ -947,11 +1594,18 @@ def joint_admission_and_funding_chance_pct(
     award_chance_pcts: Sequence[int],
     *,
     correlation: float = 0.0,
+    funding_is_conditional: bool = False,
 ) -> int | None:
     """Joint probability P(admit and funded) when >=1 selective scholarship applies.
 
-    Combines selective scholarship win probabilities via
-    ``P(any award) = 1 - prod(1 - p_i)`` and interpolates between independent
+    When ``funding_is_conditional=True``, ``award_chance_pcts`` represent conditional
+    approval probabilities $P(F_i \\mid A)$ given an unconditional admission offer;
+    the joint probability is $P(A) \\cdot P(\\text{any } F \\mid A, \\rho)$ bounded by
+    ``admit_chance_pct``.
+
+    When ``funding_is_conditional=False`` (default), ``award_chance_pcts`` are marginal
+    selective scholarship win probabilities combined via
+    ``P(any award) = 1 - prod(1 - p_i)`` and interpolated between independent
     ``P(admit) * P(any award)`` and the Fréchet-Hoeffding upper bound
     ``min(P(admit), P(any award))`` by ``correlation in [0, 1]``, clamped to
     ``[1, min(admit_chance_pct, round(P(any award) * 100))]``. Returns ``None``
@@ -966,6 +1620,11 @@ def joint_admission_and_funding_chance_pct(
         p_no_award *= 1.0 - (pct / 100.0)
     p_any_award = 1.0 - p_no_award
     rho = max(0.0, min(1.0, correlation))
+    if funding_is_conditional:
+        cond_prob = (1.0 - rho) * p_any_award + rho * min(1.0, p_any_award / p_admit)
+        joint = p_admit * cond_prob
+        cap = max(1, min(95, admit_chance_pct))
+        return max(1, min(cap, round(joint * 100)))
     indep = p_admit * p_any_award
     upper = min(p_admit, p_any_award)
     joint = (1.0 - rho) * indep + rho * upper
@@ -1074,15 +1733,20 @@ def estimate_named_program_chance(
             "experience_alignment": 0.0,
             "winner_similarity": 0.0,
         }
-        final_prob = _calibrate_with_outcomes(
+        final_prob, se_logit = _calibrate_with_outcomes_and_se(
             base_prior,
             features,
             calibration_rows,
             current_year=ref_year,
+            prior_weights=_DEFAULT_ADMIT_WEIGHTS,
         )
+        pct, ci_low, ci_high = _compute_epistemic_interval(final_prob, se_logit)
         return ProbabilityEstimate(
-            chance_pct=_clamp_competitive_pct(final_prob),
+            chance_pct=pct,
             features=features,
+            ci_low_pct=ci_low,
+            ci_high_pct=ci_high,
+            epistemic_se_logit=se_logit,
         )
 
     gpa_margin = _normalized_gpa_margin(profile.academic_history)
@@ -1108,16 +1772,21 @@ def estimate_named_program_chance(
         + 0.25 * exp_align
     )
     cold_prob = _sigmoid(log_odds)
-    final_prob = _calibrate_with_outcomes(
+    final_prob, se_logit = _calibrate_with_outcomes_and_se(
         cold_prob,
         features,
         calibration_rows,
         student_origin_country=profile.nationality,
         current_year=ref_year,
+        prior_weights=_DEFAULT_ADMIT_WEIGHTS,
     )
+    pct, ci_low, ci_high = _compute_epistemic_interval(final_prob, se_logit)
     return ProbabilityEstimate(
-        chance_pct=_clamp_competitive_pct(final_prob),
+        chance_pct=pct,
         features=features,
+        ci_low_pct=ci_low,
+        ci_high_pct=ci_high,
+        epistemic_se_logit=se_logit,
     )
 
 

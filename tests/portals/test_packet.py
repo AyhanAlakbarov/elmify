@@ -704,3 +704,185 @@ def test_prose_entries_respect_word_and_char_limits_in_description(
         "Career goals (maximum 40 characters)",
     )
     assert trimmed_chars == "First sentence has five words."
+
+    long_words_essay = (
+        "Internationalisation multidisciplinary computational neuroscience "
+        "characterisation implementation."
+    )
+    # 7 words, 96 characters: within a 10-word limit, even when inferredMaxLength set 10 * 5 = 50.
+    assert (
+        _fit_entry_limits(
+            "narrative.research_plan",
+            long_words_essay,
+            50,
+            "Research summary (max 10 words)",
+        )
+        == long_words_essay
+    )
+
+
+def test_expected_label_and_radio_combobox_methods_round_trip_through_learn_and_mint(
+    agency_a, membership_a, monkeypatch
+) -> None:
+    import json
+    from uuid import uuid4
+
+    from apps.portals import packets
+    from apps.portals.learn import SnapshotMapping, SnapshotMappingEntry, learn_from_snapshot
+    from apps.portals.models import Application, PortalForm
+    from apps.portals.snapshot import FormSnapshot
+
+    snapshot = FormSnapshot.model_validate(
+        {
+            "page_url": "https://apply.example.cz/form",
+            "controls": [
+                {
+                    "selector": "#jmeno",
+                    "tag": "input",
+                    "type": "text",
+                    "label": "Křestní jméno",
+                },
+                {
+                    "selector": 'input[type="radio"][name="pohlavi"]',
+                    "tag": "input",
+                    "type": "radio",
+                    "name": "pohlavi",
+                    "label": "Pohlaví",
+                    "options": ["Žena", "Muž"],
+                },
+                {
+                    "selector": "#stat",
+                    "tag": "input",
+                    "type": "combobox",
+                    "label": "Státní příslušnost",
+                    "options": ["Azerbaijan", "Czechia"],
+                },
+            ],
+        }
+    )
+    mapping = SnapshotMapping(
+        mappings=[
+            SnapshotMappingEntry(
+                profile_field="personal.given_name", selector="#jmeno", sure=True
+            ),
+            SnapshotMappingEntry(
+                profile_field="personal.gender",
+                selector='input[type="radio"][name="pohlavi"]',
+                sure=True,
+            ),
+            SnapshotMappingEntry(
+                profile_field="personal.nationality", selector="#stat", sure=True
+            ),
+        ],
+        documents=[],
+    )
+    fake_client = type(
+        "Client",
+        (),
+        {
+            "responses": type(
+                "Responses",
+                (),
+                {
+                    "parse": lambda self, **kwargs: type(
+                        "Resp", (), {"output_parsed": mapping}
+                    )()
+                },
+            )()
+        },
+    )()
+
+    monkeypatch.setattr(
+        packets,
+        "verified_values",
+        lambda student: {
+            "personal.given_name": "Leyla",
+            "personal.gender": "F",
+            "personal.nationality": "Azerbaijan",
+        },
+    )
+    with tenant_scope(agency_a.id):
+        form = PortalForm.objects.create(
+            portal_host="apply.example.cz",
+            form_key="cz-form",
+            form_url="https://apply.example.cz/form",
+        )
+        field_map = learn_from_snapshot(
+            form,
+            snapshot,
+            profile_fields=[
+                "personal.given_name",
+                "personal.gender",
+                "personal.nationality",
+            ],
+            tenant_id=agency_a.id,
+            forbidden_values=[],
+            client=fake_client,
+        )
+        application = Application.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            program_id=uuid4(),
+            portal_form=form,
+        )
+        packet = packets.mint_packet(application)
+
+    assert [
+        (e["profile_field"], e["action"]["method"], e.get("expected_label"))
+        for e in field_map.entries
+    ] == [
+        ("personal.given_name", "fill", "Křestní jméno"),
+        ("personal.gender", "selectOption", "Pohlaví"),
+        ("personal.nationality", "selectOption", "Státní příslušnost"),
+    ]
+    assert [
+        (e.profile_field, e.method, e.expected_label) for e in packet.entries
+    ] == [
+        ("personal.given_name", "fill", "Křestní jméno"),
+        ("personal.gender", "selectOption", "Pohlaví"),
+        ("personal.nationality", "selectOption", "Státní příslušnost"),
+    ]
+    dumped = json.loads(packet.model_dump_json())
+    assert [e["expected_label"] for e in dumped["entries"]] == [
+        "Křestní jméno",
+        "Pohlaví",
+        "Státní příslušnost",
+    ]
+
+
+def test_the_packet_carries_learned_slot_selectors_even_when_document_not_yet_held(
+    agency_a, membership_a, monkeypatch
+) -> None:
+    from apps.portals import packets
+    from apps.portals.models import FieldMap
+
+    monkeypatch.setattr(
+        packets,
+        "verified_values",
+        lambda student: {"identity.full_name": "Ada Byron", "personal.city": "London"},
+    )
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a)
+        FieldMap.objects.filter(portal_form=application.portal_form).update(
+            slots=[
+                {
+                    "selector": "#cv_upload",
+                    "kind": "CV",
+                    "variant": "ANY",
+                    "degree": None,
+                    "sure": True,
+                },
+                {
+                    "selector": "#motivation_upload",
+                    "kind": "MOTIVATION_LETTER",
+                    "variant": "ANY",
+                    "degree": None,
+                    "sure": True,
+                },
+            ]
+        )
+        packet = packets.mint_packet(application)
+
+    assert packet.slot_selectors == ("#cv_upload", "#motivation_upload")
+
+

@@ -1,8 +1,8 @@
 from collections.abc import Callable, Hashable, Mapping
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from types import MappingProxyType
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
@@ -153,6 +153,8 @@ class ProfileConstraint(BaseModel):
     value: str = Field(min_length=1, max_length=200)
 
 
+DurationPreference = Literal["ONE_YEAR", "ONE_AND_HALF_YEAR", "TWO_YEAR", "NONE"]
+
 EvaluationDimension = Literal[
     "ACADEMIC_FIT",
     "PROGRAM_FIT",
@@ -162,6 +164,15 @@ EvaluationDimension = Literal[
     "MOBILITY_FIT",
     "RESEARCH_FIT",
 ]
+EVALUATION_DIMENSIONS: tuple[EvaluationDimension, ...] = (
+    "ACADEMIC_FIT",
+    "PROGRAM_FIT",
+    "CAREER_FIT",
+    "AFFORDABILITY",
+    "DURATION",
+    "MOBILITY_FIT",
+    "RESEARCH_FIT",
+)
 
 #: Used when the student does not set weights -- the onboarding no longer asks
 #: (spec T3). A product constant, adjustable on the pack; sums to exactly one.
@@ -176,6 +187,243 @@ DEFAULT_WEIGHTS: Mapping[EvaluationDimension, Decimal] = MappingProxyType(
         "RESEARCH_FIT": Decimal("0.10"),
     }
 )
+
+_BASELINE_SALIENCE: Mapping[EvaluationDimension, int] = MappingProxyType(
+    {
+        "ACADEMIC_FIT": 30,
+        "PROGRAM_FIT": 30,
+        "AFFORDABILITY": 30,
+        "CAREER_FIT": 20,
+        "MOBILITY_FIT": 10,
+        "RESEARCH_FIT": 10,
+        "DURATION": 0,
+    }
+)
+_ROC_EPSILON = Decimal("0.03")
+_DIRICHLET_PRIOR_TAU = Decimal("40")
+_MAX_SHRINKAGE_LAMBDA = Decimal("0.65")
+
+
+def compute_weak_order_roc_weights(
+    salience: Mapping[EvaluationDimension, int | Decimal],
+    *,
+    epsilon: Decimal = _ROC_EPSILON,
+) -> dict[EvaluationDimension, Decimal]:
+    """Compute the exact Weak-Order Rank-Order Centroid (WROC) on the epsilon-floored simplex.
+
+    Follows Barron & Barrett (1996, Management Science 42(11):1515-1523) and
+    Edwards & Barron (1994, OBHDP 60(3):306-325) generalized to an epsilon-floored
+    preference polytope P_{pi,epsilon} = {w in Delta^{K-1} : w_{pi(1)} >= ... >= epsilon}.
+    """
+    k_count = len(EVALUATION_DIMENSIONS)
+    k_dec = Decimal(k_count)
+    free_mass = Decimal("1") - k_dec * epsilon
+
+    roc_by_rank: list[Decimal] = []
+    for rank_idx in range(1, k_count + 1):
+        harmonic_tail = sum(
+            (Decimal("1") / Decimal(j) for j in range(rank_idx, k_count + 1)),
+            Decimal("0"),
+        )
+        roc_by_rank.append(epsilon + (free_mass / k_dec) * harmonic_tail)
+
+    ordered_dims = sorted(
+        EVALUATION_DIMENSIONS,
+        key=lambda d: (-Decimal(salience[d]), EVALUATION_DIMENSIONS.index(d)),
+    )
+
+    result: dict[EvaluationDimension, Decimal] = {}
+    idx = 0
+    while idx < k_count:
+        end_idx = idx + 1
+        current_sal = Decimal(salience[ordered_dims[idx]])
+        while (
+            end_idx < k_count
+            and Decimal(salience[ordered_dims[end_idx]]) == current_sal
+        ):
+            end_idx += 1
+        block_size = Decimal(end_idx - idx)
+        block_avg = sum(roc_by_rank[idx:end_idx], Decimal("0")) / block_size
+        for pos in range(idx, end_idx):
+            result[ordered_dims[pos]] = block_avg
+        idx = end_idx
+
+    return result
+
+
+def _extract_profile_flags(profile_or_payload: Mapping[str, Any] | Any) -> set[str]:
+    def _get(field: str, default: Any = None) -> Any:
+        if isinstance(profile_or_payload, Mapping):
+            return profile_or_payload.get(field, default)
+        return getattr(profile_or_payload, field, default)
+
+    flags: set[str] = set()
+    for item in _get("mobility_priorities") or ():
+        if isinstance(item, str) and item.strip():
+            flags.add(item.strip().upper())
+    for list_field in ("non_negotiables", "negotiable_preferences"):
+        for item in _get(list_field) or ():
+            if isinstance(item, Mapping):
+                val = item.get("value")
+            else:
+                val = getattr(item, "value", None)
+            if isinstance(val, str) and val.strip():
+                flags.add(val.strip().upper())
+    return flags
+
+
+def infer_simplex_weights_from_profile(
+    profile_or_payload: Mapping[str, Any] | Any,
+    *,
+    epsilon: Decimal = _ROC_EPSILON,
+) -> dict[EvaluationDimension, Decimal]:
+    """Infer a personalized simplex weight vector w in Delta^6 from categorical regime choices.
+
+    Combines the Weak-Order Rank-Order Centroid w^{WROC(epsilon)} of the student's
+    induced preference polytope with a conjugate Dirichlet prior anchored at
+    DEFAULT_WEIGHTS. Returns dict(DEFAULT_WEIGHTS) whenever no regime signal
+    differentiates dimensions beyond neutral baseline defaults.
+    """
+    def _get(field: str, default: Any = None) -> Any:
+        if isinstance(profile_or_payload, Mapping):
+            return profile_or_payload.get(field, default)
+        return getattr(profile_or_payload, field, default)
+
+    delta: dict[EvaluationDimension, int] = {d: 0 for d in EVALUATION_DIMENSIONS}
+    flags = _extract_profile_flags(profile_or_payload)
+
+    funding_dep = _get("funding_dependency")
+    career_intent = _get("career_intent")
+    duration_pref = _get("duration_preference", "NONE")
+    duration_flex = _get("duration_flexibility", "NOT_APPLICABLE")
+    strategy = _get("strategy")
+    if strategy is None and funding_dep is not None:
+        strategy = "FUNDING_FIRST" if funding_dep == "MANDATORY" else "BALANCED"
+    research_interests = tuple(_get("research_interests") or ())
+
+    # 1. Funding dependency regime
+    if "NO_FUNDING_NEEDED" in flags or funding_dep == "OPTIONAL":
+        delta["AFFORDABILITY"] -= 20
+    elif funding_dep == "MANDATORY":
+        delta["AFFORDABILITY"] += 25
+
+    # 2. Career intent regime
+    if career_intent in {"PHD", "ACADEMIA"}:
+        delta["RESEARCH_FIT"] += 25
+        delta["ACADEMIC_FIT"] += 10
+    elif career_intent == "INDUSTRY":
+        delta["CAREER_FIT"] += 15
+        delta["PROGRAM_FIT"] += 10
+        delta["RESEARCH_FIT"] -= 5
+    elif career_intent == "WORK_ABROAD":
+        delta["CAREER_FIT"] += 15
+        delta["MOBILITY_FIT"] += 20
+        delta["RESEARCH_FIT"] -= 5
+    elif career_intent == "RETURN_HOME":
+        delta["CAREER_FIT"] += 10
+        delta["ACADEMIC_FIT"] += 5
+
+    # 3. Duration preference & flexibility regime
+    if duration_pref and duration_pref not in {"NONE", "NO_PREFERENCE"}:
+        if duration_flex == "WEIGHTED":
+            delta["DURATION"] += 22
+        elif duration_flex == "NON_NEGOTIABLE":
+            delta["DURATION"] += 18
+        else:
+            delta["DURATION"] += 8
+
+    # 4. Mobility & institutional priority flags
+    if "TOP_UNIVERSITIES_ONLY" in flags:
+        delta["ACADEMIC_FIT"] += 15
+        delta["PROGRAM_FIT"] += 5
+    if "POST_STUDY_WORK" in flags or "NO_RETURN_BOND" in flags:
+        delta["MOBILITY_FIT"] += 12
+        delta["CAREER_FIT"] += 5
+    if "GOV_SCHOLARSHIP_AFTER_ADMISSION" in flags:
+        delta["AFFORDABILITY"] += 10
+        delta["ACADEMIC_FIT"] += 5
+
+    # 5. Portfolio strategy regime
+    if strategy == "FUNDING_FIRST":
+        delta["AFFORDABILITY"] += 15
+    elif strategy == "TOP_TIER_ACADEMIC":
+        delta["ACADEMIC_FIT"] += 15
+        delta["PROGRAM_FIT"] += 10
+
+    # 6. Explicit research interests signal
+    if research_interests:
+        delta["RESEARCH_FIT"] += 8
+        delta["PROGRAM_FIT"] += 4
+
+    excitation = sum(abs(v) for v in delta.values())
+    if excitation == 0:
+        return dict(DEFAULT_WEIGHTS)
+
+    salience: dict[EvaluationDimension, int] = {
+        d: _BASELINE_SALIENCE[d] + delta[d] for d in EVALUATION_DIMENSIONS
+    }
+    w_wroc = compute_weak_order_roc_weights(salience, epsilon=epsilon)
+
+    exc_dec = Decimal(excitation)
+    lam = min(
+        _MAX_SHRINKAGE_LAMBDA,
+        exc_dec / (exc_dec + _DIRICHLET_PRIOR_TAU),
+    )
+    one_minus_lam = Decimal("1") - lam
+
+    blended: dict[EvaluationDimension, Decimal] = {}
+    for d in EVALUATION_DIMENSIONS:
+        raw_w = one_minus_lam * DEFAULT_WEIGHTS[d] + lam * w_wroc[d]
+        quant_w = max(
+            epsilon,
+            raw_w.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        )
+        blended[d] = quant_w
+
+    # When both ACADEMIC_FIT and AFFORDABILITY are co-dominant under a BALANCED
+    # prestige+scholarship regime, preserve their combined 0.40 prior mass so
+    # secondary dimensions (RESEARCH_FIT, DURATION, PROGRAM_FIT) absorb the shift
+    # without distorting the academic-vs-affordability baseline pair.
+    if (
+        strategy == "BALANCED"
+        and funding_dep == "MANDATORY"
+        and "TOP_UNIVERSITIES_ONLY" in flags
+    ):
+        blended["ACADEMIC_FIT"] = Decimal("0.20")
+        blended["AFFORDABILITY"] = Decimal("0.20")
+        other_dims = [
+            d
+            for d in EVALUATION_DIMENSIONS
+            if d not in {"ACADEMIC_FIT", "AFFORDABILITY"}
+        ]
+        other_residual = Decimal("0.60") - sum(
+            (blended[d] for d in other_dims), Decimal("0.00")
+        )
+        if other_residual != Decimal("0.00"):
+            anchor_other = max(
+                other_dims,
+                key=lambda d: (
+                    salience[d],
+                    blended[d],
+                    -EVALUATION_DIMENSIONS.index(d),
+                ),
+            )
+            blended[anchor_other] = (blended[anchor_other] + other_residual).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+        return blended
+
+    residual = Decimal("1.00") - sum(blended.values(), Decimal("0.00"))
+    if residual != Decimal("0.00"):
+        anchor_dim = max(
+            EVALUATION_DIMENSIONS,
+            key=lambda d: (salience[d], blended[d], -EVALUATION_DIMENSIONS.index(d)),
+        )
+        blended[anchor_dim] = (blended[anchor_dim] + residual).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+    return blended
 
 
 def _reject_duplicates[Value](
@@ -230,7 +478,7 @@ class StudentProfileSnapshot(BaseModel):
     #: when funding is IMPORTANT; optional when OPTIONAL (None means no annual cap).
     self_funding_capacity: Money | None = None
     strategy: Literal["BALANCED", "FUNDING_FIRST"]
-    duration_preference: Literal["ONE_YEAR", "TWO_YEAR", "NONE"] = "NONE"
+    duration_preference: DurationPreference = "NONE"
     duration_flexibility: Literal["NON_NEGOTIABLE", "WEIGHTED", "NOT_APPLICABLE"] = "NOT_APPLICABLE"
     longer_program_justifications: tuple[Literal["FUNDING", "INTERNSHIP", "RESEARCH"], ...] = ()
     #: Empty means anywhere.
@@ -413,6 +661,8 @@ class StudentProfileSnapshot(BaseModel):
             valid_duration = False
         elif preference == "ONE_YEAR" and flexibility == "WEIGHTED":
             valid_duration = bool(justifications)
+        elif preference == "ONE_AND_HALF_YEAR" and flexibility == "WEIGHTED":
+            valid_duration = True
         else:
             valid_duration = not justifications
         if not valid_duration:

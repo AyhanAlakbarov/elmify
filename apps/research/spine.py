@@ -32,6 +32,7 @@ from apps.accounts.schemas import StudentProfileSnapshot
 from apps.documents.referee_needs import needs_for
 from apps.funding.conditions import unevaluable_condition_reasons
 from apps.funding.cycle_evidence import deadline_student, to_evidence
+from apps.funding.deadline_conditions import applies_to_student, normalise_condition
 from apps.funding.evaluation import (
     AwardCandidateFacts,
     CandidateFacts,
@@ -60,6 +61,7 @@ from apps.funding.models import (
 from apps.funding.pack import Pack, build_pack
 from apps.funding.pool import candidate_pool
 from apps.funding.probability import (
+    MARGINAL_MERIT_PQD_CORRELATION,
     POST_ADMISSION_GOV_CORRELATION,
     ProbabilityEstimate,
     estimate_program_admission_chance,
@@ -68,7 +70,6 @@ from apps.funding.probability import (
     joint_admission_and_funding_chance_pct,
     post_admission_gov_conditional_pct,
 )
-from apps.funding.regions import REGIONS
 from apps.funding.transcript_eligibility import (
     _parse_iso_or_human_date,
     evaluate_program_statement,
@@ -158,63 +159,74 @@ class _AttachedOpportunities:
         self.add_active(program_id, opp)
 
 
+_DEADLINE_PREFIX_RE = re.compile(r"^application[_ ]deadline\s*:\s*", re.IGNORECASE)
+_DEADLINE_SEP_RE = re.compile(r": | — | - ")
+_EMBEDDED_DATE_RE = re.compile(
+    r"\b(?:\d{4}-\d{2}-\d{2}|\d{1,2}\s+[A-Za-z]+\s+\d{4}|[A-Za-z]+\s+\d{1,2},?\s+\d{4})\b"
+)
+
+
+def _extract_deadline_date(raw: str) -> date | None:
+    cleaned = raw.strip()
+    if not cleaned:
+        return None
+    parsed = _parse_iso_or_human_date(cleaned)
+    if parsed is not None:
+        return parsed
+    for match in _EMBEDDED_DATE_RE.finditer(cleaned):
+        parsed = _parse_iso_or_human_date(match.group(0))
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def _program_deadline_candidates(
-    programs: tuple[Program, ...], nationality: str
+    programs: tuple[Program, ...],
+    nationality: str,
+    country_of_residence: str = "",
 ) -> dict[object, list[tuple[int, date]]]:
     program_ids = [program.id for program in programs]
     student_nat = nationality.upper()
-    is_eea_student = student_nat in REGIONS["EEA"].countries
+    student_res = (country_of_residence or nationality).upper()
+    student_profile = deadline_student(student_nat, student_res)
     prog_country_by_id = {p.id: (p.country_code or "").upper() for p in programs}
     deadlines_by_program: dict[object, list[tuple[int, date]]] = {}
     for prog_id, claim_text in ProgramEvidenceClaim.objects.filter(
         program_id__in=program_ids,
         evidence_claim__claim_class=OfficialEvidenceClaim.ClaimClass.DEADLINE,
     ).values_list("program_id", "evidence_claim__claim"):
-        stripped_claim = claim_text.removeprefix("Application deadline:").strip()
-        head, _, tail = stripped_claim.partition(": ")
-        parsed_d = _parse_iso_or_human_date(head.strip())
+        stripped_claim = _DEADLINE_PREFIX_RE.sub("", claim_text.strip()).strip()
+        parts = _DEADLINE_SEP_RE.split(stripped_claim, maxsplit=1)
+        head = parts[0].strip()
+        tail = parts[1].strip() if len(parts) > 1 else ""
+        head_direct = _parse_iso_or_human_date(head)
+        parsed_d = head_direct or _extract_deadline_date(head)
+        if parsed_d is None and tail:
+            parsed_d = _parse_iso_or_human_date(tail) or _extract_deadline_date(tail)
         if parsed_d is None:
             continue
-        prog_country = prog_country_by_id.get(prog_id, "")
-        is_domestic_or_eea = (
-            student_nat == prog_country
-            or (
-                (not prog_country or prog_country in REGIONS["EEA"].countries)
-                and is_eea_student
-            )
-        )
-        lower_tail = tail.casefold()
-        mentions_non_eu = any(
-            k in lower_tail
-            for k in (
-                "non-eu",
-                "non-eea",
-                "visa",
-                "third-country",
-                "international",
-                "overseas",
-            )
-        )
-        cleaned_for_eu = re.sub(
-            r"\bnon[-\s]*(?:eu\s*/\s*eea|eu|eea|domestic)\b", "", lower_tail
-        )
-        mentions_eu = any(
-            k in cleaned_for_eu
-            for k in (
-                "eu/eea",
-                "eu / eea",
-                "eu citizens",
-                "eea citizens",
-                "domestic",
-                "home student",
-            )
-        )
-        if mentions_non_eu and not mentions_eu:
-            priority = 0 if not is_domestic_or_eea else 2
-        elif mentions_eu and not mentions_non_eu:
-            priority = 0 if is_domestic_or_eea else 2
+        if head_direct is not None:
+            cond_text = tail
+        elif tail and _parse_iso_or_human_date(tail) is not None:
+            cond_text = head
         else:
+            cond_text = f"{head} {tail}".strip() if tail else head
+        prog_country = prog_country_by_id.get(prog_id, "")
+        if not cond_text:
             priority = 1
+        else:
+            canon = normalise_condition(cond_text)
+            matched = applies_to_student(
+                canon if not canon.startswith("OTHER:") else cond_text,
+                student_profile,
+                program_country=prog_country,
+            )
+            if matched is True:
+                priority = 0
+            elif matched is False:
+                priority = 2
+            else:
+                priority = 1
         deadlines_by_program.setdefault(prog_id, []).append((priority, parsed_d))
     return deadlines_by_program
 
@@ -475,7 +487,7 @@ def _estimate_pack_probabilities(
                     cal_by_award_family.setdefault(cal_row.family, []).append(cal_row)
 
     def _cal_rows(exact: list[Any], pool: list[Any], attr: str, item_id: Any) -> tuple[Any, ...]:
-        if len(exact) >= 10:
+        if len(exact) >= 50:
             return tuple(exact)
         return (*exact, *[r for r in pool if getattr(r, attr) != item_id][:40])
 
@@ -618,7 +630,12 @@ def _estimate_pack_probabilities(
         funded_probabilities[pid] = joint_admission_and_funding_chance_pct(
             admit_est.chance_pct,
             effective_award_pcts,
-            correlation=POST_ADMISSION_GOV_CORRELATION if has_post_admit_gov else 0.0,
+            correlation=(
+                POST_ADMISSION_GOV_CORRELATION
+                if has_post_admit_gov
+                else MARGINAL_MERIT_PQD_CORRELATION
+            ),
+            funding_is_conditional=has_post_admit_gov,
         )
     return probabilities, funded_probabilities
 
@@ -698,8 +715,29 @@ def build_student_pack(
         ),
     ):
         statements_by_program.setdefault(stmt.program_id, []).append(stmt)
+    evidence_claims_by_program: dict[object, list[str]] = {}
+    for prog_id, claim_text in ProgramEvidenceClaim.objects.filter(
+        program_id__in=program_ids,
+        evidence_claim__claim_class__in=(
+            OfficialEvidenceClaim.ClaimClass.ELIGIBILITY,
+            OfficialEvidenceClaim.ClaimClass.STRUCTURE,
+        ),
+    ).values_list("program_id", "evidence_claim__claim"):
+        if claim_text:
+            evidence_claims_by_program.setdefault(prog_id, []).append(claim_text)
+    winner_cohorts_by_program: dict[object, WinnerCohortProfile] = (
+        {
+            wc.program_id: wc
+            for wc in WinnerCohortProfile.objects.filter(program_id__in=program_ids)
+            if wc.program_id is not None
+        }
+        if program_ids
+        else {}
+    )
 
-    deadlines_by_program = _program_deadline_candidates(pool.programs, profile.nationality)
+    deadlines_by_program = _program_deadline_candidates(
+        pool.programs, profile.nationality, profile.country_of_residence
+    )
     attached = _collect_attached_opportunities(pool.programs)
     attached_by_program = attached.by_program
     suspended_opps_by_program = attached.suspended_by_program
@@ -719,6 +757,12 @@ def build_student_pack(
         benefit_id__in=[b.id for group in benefits_by_opportunity.values() for b in group]
     ):
         rules_by_benefit.setdefault(rule.benefit_id, []).append(rule)
+    rules_by_program: dict[object, list[BenefitRule]] = {}
+    for rule in BenefitRule.objects.filter(
+        program_id__in=program_ids,
+        benefit__isnull=True,
+    ):
+        rules_by_program.setdefault(rule.program_id, []).append(rule)
 
     verifications_by_opportunity = {
         row.opportunity_id: row
@@ -897,13 +941,22 @@ def build_student_pack(
                 costs=tuple(costs_by_program.get(program.id, ())),
                 benefits=benefits,
                 rules=tuple(
-                    rule for benefit in benefits for rule in rules_by_benefit.get(benefit.id, ())
+                    [
+                        *(
+                            rule
+                            for benefit in benefits
+                            for rule in rules_by_benefit.get(benefit.id, ())
+                        ),
+                        *rules_by_program.get(program.id, ()),
+                    ]
                 ),
                 routes=routes,
                 durations=durations,
                 tuition_levels=tuition_levels,
                 profile=profile,
                 statements=prog_stmts,
+                evidence_claims=tuple(evidence_claims_by_program.get(program.id, ())),
+                winner_cohort=winner_cohorts_by_program.get(program.id),
                 today=today,
                 application_deadline=app_deadline,
                 scholarship_decision_deadline=None,

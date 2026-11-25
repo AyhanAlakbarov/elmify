@@ -23,7 +23,16 @@ import type { AddressVerdict } from "./address.js";
 import { checkAddress, looksRejected, settle } from "./address.js";
 import type { Attachment } from "./fill.js";
 import type { CredentialPage } from "./credentials.js";
-import { covered, credentialPage, entry, sameAddress, taggedFormOf, typeCredentials, usable } from "./credentials.js";
+import {
+  covered,
+  credentialPage,
+  entry,
+  sameAddress,
+  taggedFormOf,
+  typeCredentials,
+  usable,
+  wantsApplicationNumber,
+} from "./credentials.js";
 import { codeField, typeCode } from "./code.js";
 import {
   alreadyCorrect,
@@ -239,7 +248,13 @@ async function signIn(
     await dock({ status: "login", message: "log_in" });
     return;
   }
-  const reply = await ask<{ ok: boolean; code?: string; username?: unknown; password?: unknown }>({
+  const reply = await ask<{
+    ok: boolean;
+    code?: string;
+    username?: unknown;
+    password?: unknown;
+    application_number?: unknown;
+  }>({
     type: "portal-login",
     applicationId,
     page: page.kind,
@@ -261,9 +276,16 @@ async function signIn(
     await dock({ status: "login", message: "login_not_accepted" });
     return;
   }
+  const appNumber =
+    page.kind === "login" &&
+    typeof reply?.application_number === "string" &&
+    reply.application_number.length > 0 &&
+    wantsApplicationNumber(page.identifier)
+      ? reply.application_number
+      : null;
   const login =
     reply?.ok && typeof reply.username === "string" && typeof reply.password === "string"
-      ? { username: reply.username, password: reply.password }
+      ? { username: appNumber ?? reply.username, password: reply.password }
       : null;
   const ours = cameBack
     ? login?.username === page.identifier.value
@@ -430,6 +452,32 @@ function resumeRun(): boolean {
  *  the server might send falls back to the generic "From your verified facts". */
 const DOCUMENT_KINDS: ReadonlySet<string> = new Set(["passport", "diploma", "certificate"]);
 
+export const MIN_UNKNOWN_FOR_LEARN = 3;
+
+export function shouldTriggerDomLearn(
+  unknown: readonly { required?: boolean }[],
+  filled: number,
+): boolean {
+  return (
+    unknown.length >= MIN_UNKNOWN_FOR_LEARN ||
+    unknown.some((c) => c.required === true) ||
+    (unknown.length >= 1 && filled === 0)
+  );
+}
+
+async function postLearn(
+  portalFormId: string,
+  applicationId: string,
+  snapshot = buildSnapshot(document),
+): Promise<{ ok: boolean; code?: string }> {
+  return ask<{ ok: boolean; code?: string }>({
+    type: "snapshot",
+    portalFormId,
+    applicationId,
+    snapshot,
+  });
+}
+
 async function run(
   applicationId: string,
   portalFormId: string,
@@ -489,6 +537,8 @@ async function run(
   }
   if (stale()) return;
 
+  const markers = packet.confirmation_markers ?? [];
+
   if (!onFormPage(packet.entries)) {
     const credentials = credentialPage();
     if (credentials) {
@@ -515,6 +565,21 @@ async function run(
       // A password page whose address box we cannot name: the student's. A
       // cookie notice over the boxes is worth saying: closing it lets us type.
       await dock({ status: "login", message: passwords.some(covered) ? "log_in_covered" : "log_in" });
+      return;
+    }
+    if (detectConfirmation(markers)) {
+      await ask({
+        type: "event",
+        applicationId,
+        kind: "SUBMITTED",
+        detail: { form_url: packet.form_url },
+      });
+      await ask({
+        type: "status",
+        applicationId,
+        status: readStatus(),
+      });
+      await dock({ status: "done", message: "confirmed" });
       return;
     }
   }
@@ -560,6 +625,7 @@ async function run(
   const cameBack = Boolean(
     email?.element && plain && skip.has("contact.email") && looksRejected(email.element),
   );
+  const preFillSnap = buildSnapshot(document);
   const { filled, theirs } = fillVerified(verified, skip);
   const address: AddressVerdict | null =
     email && plain ? await checkAddress(email, plain, cameBack) : null;
@@ -745,6 +811,28 @@ async function run(
   watchPortalErrors(records, report, thisRun.abort.signal);
   draw();
 
+  if (!relearned && !stale() && samePage(packet.form_url)) {
+    const snap = preFillSnap;
+    const mappedSelectors = new Set<string>([
+      ...packet.entries.map((e) => e.selector),
+      ...(packet.hints ?? []).map((h) => h.selector),
+      ...(packet.documents ?? []).map((d) => d.selector).filter((s): s is string => Boolean(s)),
+      ...(packet.choices ?? []).flatMap((c) => c.selectors),
+      ...(packet.slot_selectors ?? []),
+    ]);
+    const unknown = snap.controls.filter((c) => !mappedSelectors.has(c.selector));
+    const activeFilled = filled.length + skip.size + (hints.length - goneHints);
+    if (
+      !stale() &&
+      (unknown.length >= MIN_UNKNOWN_FOR_LEARN ||
+        unknown.some((c) => c.required === true) ||
+        (unknown.length >= 1 && activeFilled === 0)) &&
+      shouldTriggerDomLearn(unknown, activeFilled)
+    ) {
+      await postLearn(portalFormId, applicationId, snap);
+    }
+  }
+
   // Live, not a copy taken now: a resume redraw, or a pick in the panel, must
   // never re-send an answered choice or a stale documents line.
   const finalPatch = () => ({
@@ -767,23 +855,24 @@ async function run(
   // navigation or a re-render, so watch rather than check once. Disconnected
   // after the first hit: one SUBMITTED row per run, and the observer must not
   // outlive the thing it is observing.
-  const markers = packet.confirmation_markers ?? [];
-  if (markers.length > 0 && !stale()) {
+  if (!stale()) {
     const observer = new MutationObserver(() => {
       if (!detectConfirmation(markers)) return;
       observer.disconnect();
-      void ask({
-        type: "event",
-        applicationId,
-        kind: "SUBMITTED",
-        detail: { form_url: packet.form_url },
-      });
-      void ask({
-        type: "status",
-        applicationId,
-        status: readStatus(),
-      });
-      void dock({ status: "done", message: "confirmed" });
+      void (async () => {
+        await ask({
+          type: "event",
+          applicationId,
+          kind: "SUBMITTED",
+          detail: { form_url: packet.form_url },
+        });
+        await ask({
+          type: "status",
+          applicationId,
+          status: readStatus(),
+        });
+        await dock({ status: "done", message: "confirmed" });
+      })();
     });
     observer.observe(document.body, { childList: true, subtree: true });
     thisRun.confirmation = observer;

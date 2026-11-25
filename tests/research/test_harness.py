@@ -589,3 +589,39 @@ def test_an_unkeyable_url_is_counted_and_skipped() -> None:
     seen = SweepQuery.objects.filter(run=run).values_list("seen", flat=True)
     assert sum(seen) == 1
     assert Organisation.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_chao1_good_turing_saturation_stops_after_two_batches_when_all_hosts_corroborated() -> None:
+    """When >= 2 verified hosts are sighted across multiple queries (f1 == 0) and
+    Batch 2 finds 0 novel/verified hosts, Chao1 & Good-Turing coverage is 1.0 and
+    run_pass stops at Batch 2 (< STOP_WINDOW == 3)."""
+    from apps.research.harness import run_richness_estimate
+
+    _angles(languages=("tr",), samples=4)  # 4 batches of 2 angles each
+    exa = _Fake(
+        "exa",
+        [
+            ["https://a-vakfi.org.tr/", "https://b-vakfi.org.tr/"],  # Batch 1, Q1: 2 novel
+            [],  # Batch 1, Q2
+            ["https://a-vakfi.org.tr/", "https://b-vakfi.org.tr/"],  # Batch 2, Q1: re-sighted
+            [],  # Batch 2, Q2
+            ["https://c-vakfi.org.tr/"],  # Batch 3: never reached
+        ],
+    )
+    run = _run(
+        [exa],
+        {
+            "a-vakfi.org.tr": ("PRIVATE_FOUNDATION", True),
+            "b-vakfi.org.tr": ("PRIVATE_FOUNDATION", True),
+            "c-vakfi.org.tr": ("PRIVATE_FOUNDATION", True),
+        },
+        languages=("tr",),
+    )
+    assert run.stop_reason == SweepRun.StopReason.PLATEAU
+    assert run.batches == 2
+    est = run_richness_estimate(run)
+    assert est.s_obs == 2
+    assert est.s_hat >= 2.0
+    assert est.effective_coverage > 0.0
+

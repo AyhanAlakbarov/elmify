@@ -72,6 +72,7 @@ from .hybrid_strategy import (
     plan_hybrid_retrieval,
 )
 from .languages import CldrLanguages
+from .mark_recapture import RichnessEstimate, estimate_from_sightings
 from .models import (
     SWEEP_FAMILIES,
     AreaSweep,
@@ -519,6 +520,14 @@ def _run(
     tap.state = SearchTap.State.STAGE2
     with tenant_transaction(tap.tenant_id):
         SearchTap.objects.filter(id=tap.id).update(state=tap.state)
+        run = (
+            RecommendationRun.objects.filter(
+                profile_version__student_id=run.profile_version.student_id,
+                state=RecommendationRun.State.PUBLISHED,
+            )
+            .order_by("-created_at")
+            .first()
+        ) or run
     republished, read = _stage_two(tap, run, stage.new, reader, rates, seed_urls=stage.seed_urls)
     pack = republished or pack
     tap.pack_version_id = pack.id
@@ -648,6 +657,8 @@ def _first_stages(
             return
         stage.step += 1
         stage.window.clear()  # the plateau window is per stage
+        stage.windows_by_country.clear()
+        stage.plateaued_countries.clear()
     if stage.plateaued:
         stage.tap.ending = _Ending.PLATEAU
 
@@ -740,6 +751,12 @@ class _Stage1:
     ranking: dict[SearchRequest, int] = field(default_factory=dict)
     continuations: int = 0
     out_of_time: bool = False
+    #: Per-country sliding windows and host sighting counts so one destination's
+    #: plateau never cuts off another destination's queries.
+    windows_by_country: dict[str, deque[int]] = field(default_factory=dict)
+    country_host_sightings: dict[str, dict[str, int]] = field(default_factory=dict)
+    plateaued_countries: set[str] = field(default_factory=set)
+    request_countries: dict[str, str] = field(default_factory=dict)
 
     def resume(self) -> dict[str, Any]:
         """Where a FIRST search stopped, as JSON, for the job that continues it."""
@@ -747,6 +764,10 @@ class _Stage1:
             "continuations": self.continuations + 1,
             "step": self.step,
             "window": list(self.window),
+            "windows_by_country": {k: list(v) for k, v in self.windows_by_country.items()},
+            "country_host_sightings": {k: dict(v) for k, v in self.country_host_sightings.items()},
+            "plateaued_countries": sorted(self.plateaued_countries),
+            "request_countries": dict(self.request_countries),
             "plateaued": self.plateaued,
             "ranking": [[_request_json(r), n] for r, n in self.ranking.items()],
             "asked": sorted([query, n] for query, n in self.asked),
@@ -760,12 +781,40 @@ class _Stage1:
         """The inverse of `resume`; JSON's lists become tuples and sets again."""
         self.continuations, self.step = saved["continuations"], saved["step"]
         self.window.extend(saved["window"])
+        self.windows_by_country = {
+            k: deque(v, maxlen=settings.FIRST_SEARCH_PLATEAU_BATCH)
+            for k, v in saved.get("windows_by_country", {}).items()
+        }
+        self.country_host_sightings = {
+            k: dict(v) for k, v in saved.get("country_host_sightings", {}).items()
+        }
+        self.plateaued_countries = set(saved.get("plateaued_countries", ()))
+        self.request_countries = dict(saved.get("request_countries", {}))
         self.plateaued = saved["plateaued"]
         self.ranking = {SearchRequest(**r): n for r, n in saved["ranking"]}
         self.asked = {(query, n) for query, n in saved["asked"]}
         self.seen, self.new = set(saved["seen"]), list(saved["new"])
         self.seed_urls = {k: list(v) for k, v in saved.get("seed_urls", {}).items()}
         self.calls = [(p, SearchRequest(**r), set(hit)) for p, r, hit in saved["calls"]]
+
+    def _country_for(self, request: SearchRequest) -> str:
+        req_countries = getattr(self, "request_countries", {})
+        cc = (request.country_code or req_countries.get(request.query, "")).strip().upper()
+        return cc or "_GLOBAL_"
+
+    def _window_for(self, country_code: str) -> deque[int]:
+        win = self.windows_by_country.get(country_code)
+        if win is None:
+            win = deque(maxlen=settings.FIRST_SEARCH_PLATEAU_BATCH)
+            self.windows_by_country[country_code] = win
+        return win
+
+    def country_richness(self, country_code: str) -> RichnessEstimate:
+        cc = (country_code or "_GLOBAL_").strip().upper()
+        sightings = self.country_host_sightings.get(cc, {})
+        win = self.windows_by_country.get(cc)
+        n_units = len(win) if win is not None else len(self.window)
+        return estimate_from_sightings(sightings.values(), n_units=max(n_units, 1))
 
     def render(self, inputs: TapQueryInputs, angles: tuple[AngleRow, ...]) -> list[SearchRequest]:
         kind_of = {a.id: a.kind for a in angles}
@@ -774,6 +823,21 @@ class _Stage1:
             # Same text from two kinds: the shorter window (non-PROGRAMME) wins.
             if self.kinds.get(request.query, "PROGRAMME") == "PROGRAMME":
                 self.kinds[request.query] = kind_of[angle_id]
+        req_countries = getattr(self, "request_countries", None)
+        if req_countries is not None and inputs.destinations:
+            if len(inputs.destinations) == 1:
+                cc = inputs.destinations[0].strip().upper()
+                for _, request in rendered:
+                    req_countries.setdefault(request.query, cc)
+            else:
+                dest_angles = tuple(a for a in angles if "{destination}" in a.template)
+                if dest_angles:
+                    for code in inputs.destinations:
+                        cc = code.strip().upper()
+                        for _, req in render_tap_queries(
+                            replace(inputs, destinations=(code,)), dest_angles
+                        ):
+                            req_countries.setdefault(req.query, cc)
         return [request for _, request in rendered]
 
     @property
@@ -795,6 +859,19 @@ class _Stage1:
         they are drained and recorded, in submission order."""
         found = {} if found is None else found
         width = settings.TAP_PARALLEL_CALLS
+        country_counts: dict[str, int] = {}
+        for r in requests:
+            cc_key = self._country_for(r)
+            country_counts[cc_key] = country_counts.get(cc_key, 0) + 1
+        active_countries = set(country_counts) or {"_GLOBAL_"}
+        multi_country = (
+            len(active_countries - {"_GLOBAL_"}) > 1
+            and max(
+                (n for cc_key, n in country_counts.items() if cc_key != "_GLOBAL_"),
+                default=0,
+            )
+            >= settings.FIRST_SEARCH_PLATEAU_BATCH
+        )
         todo = iter(requests)
         pending: deque[tuple[SearchRequest, Decimal, Future[list[_Answer]]]] = deque()
         in_flight = Decimal("0")
@@ -808,6 +885,8 @@ class _Stage1:
                         request = next(todo, None)
                         if request is None:
                             break
+                        if self.first and self._country_for(request) in self.plateaued_countries:
+                            continue
                         key = (request.query, request.max_results)
                         if key in self.asked:
                             continue
@@ -828,12 +907,32 @@ class _Stage1:
                         continue
                     found[request] = new
                     if self.first:
-                        self.window.append(new)
+                        cc = self._country_for(request)
+                        win = self._window_for(cc)
+                        if not multi_country and len(win) < len(self.window):
+                            win.extend(self.window)
+                        win.append(new)
+                        if not multi_country or cc == "_GLOBAL_":
+                            self.window.append(new)
+                        country_done = (
+                            len(win) == win.maxlen
+                            and sum(win) < settings.FIRST_SEARCH_PLATEAU_MIN_NEW
+                        )
                         if (
-                            len(self.window) == self.window.maxlen
-                            and sum(self.window) < settings.FIRST_SEARCH_PLATEAU_MIN_NEW
+                            not country_done
+                            and cc != "_GLOBAL_"
+                            and settings.FIRST_SEARCH_PLATEAU_MIN_NEW > 0
+                            and len(win) >= max(4, (win.maxlen or 10) // 2)
+                            and len(win) >= 3
+                            and all(x == 0 for x in list(win)[-3:])
                         ):
-                            self.plateaued = full = True
+                            est = self.country_richness(cc)
+                            if est.s_obs >= 2 and est.f1 == 0 and est.effective_coverage >= 0.90:
+                                country_done = True
+                        if country_done:
+                            self.plateaued_countries.add(cc)
+                            if not multi_country or active_countries <= self.plateaued_countries:
+                                self.plateaued = full = True
             finally:
                 # An error stopped the stage with calls in flight: still charge them.
                 for _, _, future in pending:
@@ -895,6 +994,7 @@ class _Stage1:
             for provider, usd in answer.meter.charges:
                 self.meter.charge(provider, usd)
         found, answered = 0, False
+        query_hits: set[str] = set()
         for answer in answers:
             if answer.error is not None:
                 if not isinstance(answer.error, _PROVIDER_ERRORS):
@@ -912,6 +1012,12 @@ class _Stage1:
             found += self._record(
                 answer.urls, answer.provider, hit, for_scholarship=for_scholarship
             )
+            query_hits |= hit
+        if query_hits:
+            cc = self._country_for(request)
+            cc_sightings = self.country_host_sightings.setdefault(cc, {})
+            for dom in query_hits:
+                cc_sightings[dom] = cc_sightings.get(dom, 0) + 1
         if self.meter.exhausted and not self.tap.ending:  # recorded what it paid for; now stop
             self.tap.ending = _money_ending(self.meter.exhausted, first=self.first)
         if not self._live() and not self.tap.ending:

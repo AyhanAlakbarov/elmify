@@ -255,7 +255,11 @@ def _bare_days(line: str, taken: list[Date]) -> list[Date]:
             continue
         day = int(m["n"])
         end = m.start("gap")
-        if 1 <= day <= 31 and not any(m.start() < t.end and t.start < end for t in taken):
+        if (
+            1 <= day <= 31
+            and (date.month is None or _real_day(date.year, date.month, day))
+            and not any(m.start() < t.end and t.start < end for t in taken)
+        ):
             out.append(Date(m["n"], m.start(), end, date.year, date.month, day))
     return out
 
@@ -298,10 +302,24 @@ def find_dates(line: str) -> list[Date]:
     for date in _spans(line):
         previous = out[-1] if out else None
         if previous is not None and previous.end_month is None and _joined(line, previous, date):
+            s_year = previous.year or date.year
+            s_month = previous.month or date.month
+            s_day = (
+                min(previous.day, calendar.monthrange(s_year, s_month)[1])
+                if (s_year and s_month and previous.day)
+                else previous.day
+            )
+            e_year = date.year or previous.year
+            e_month = date.month
+            e_day = (
+                min(date.day, calendar.monthrange(e_year, e_month)[1])
+                if (e_year and e_month and date.day)
+                else date.day
+            )
             out[-1] = Date(
                 line[previous.start:date.end], previous.start, date.end,
-                previous.year or date.year, previous.month or date.month, previous.day,
-                date.year or previous.year, date.month, date.day,
+                s_year, s_month, s_day,
+                e_year, e_month, e_day,
                 previous.order_ambiguous or date.order_ambiguous,
                 previous.first, previous.second, date.first, date.second,
             )

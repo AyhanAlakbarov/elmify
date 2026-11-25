@@ -1,5 +1,5 @@
 {% load cv_countries dashboard %}
-<article id="candidate-{{ candidate.id }}" class="match-card candidate{% if as_banner %} is-banner{% endif %}" data-pack-picked="{% if candidate.id in applied %}true{% else %}false{% endif %}" data-pack-kind="{% if candidate.opportunity_id %}award{% else %}programme{% endif %}" data-pack-country="{{ candidate.country_code|default:'' }}" data-pack-tier="{{ candidate.risk_tier_label|default:'' }}">
+<article {% if not is_elsewhere %}id="candidate-{{ candidate.id }}" {% endif %}class="match-card candidate{% if as_banner %} is-banner{% endif %}" data-candidate-id="{{ candidate.id }}" data-pack-picked="{% if candidate.id in applied %}true{% else %}false{% endif %}" data-pack-kind="{% if candidate.opportunity_id %}award{% else %}programme{% endif %}" data-pack-country="{{ candidate.country_code|default:'' }}" data-pack-tier="{{ candidate.risk_tier_label|default:'' }}">
   {% if not as_banner %}
     <div class="match-top">
       {% if candidate.state == "CHECKING" %}
@@ -22,6 +22,7 @@
     <dl class="match-facts">
       {% if candidate.opportunity_id is None %}
         <div><dt>Funding gap</dt><dd{% if not candidate.funding_gap_is_placeholder and candidate.funding_gap == 0 %} class="gap-zero"{% endif %}>{% if candidate.funding_gap_is_placeholder %}not yet costed{% else %}{{ candidate.funding_gap }} {{ candidate.currency }}{% endif %}</dd></div>
+        {% if award_amount %}<div><dt>Scholarship amount ({{ candidate.country_code|country_name }})</dt><dd>{{ award_amount }}</dd></div>{% endif %}
         {% if candidate.calibration_features.application_deadline %}<div><dt>Deadline</dt><dd>{{ candidate.calibration_features.application_deadline }}</dd></div>{% endif %}
       {% endif %}
       {% if candidate.application_fee %}

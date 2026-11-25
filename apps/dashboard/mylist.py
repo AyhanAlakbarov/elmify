@@ -145,6 +145,7 @@ class Entry:
     is_award: bool
     missing: tuple[Missing, ...]
     detail_url: str
+    programmes: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -177,11 +178,16 @@ def _kind_url(kind: str, card: Card, *, counselor_view: bool) -> tuple[str, str]
     if counselor_view or not kind:
         return card.documents_url, "Documents"
     if kind == "MOTIVATION_LETTER":
-        return f"/student/writing/letters/{card.application_id}/", "CV & letters"
+        if card.is_award:
+            return (
+                f"/student/writing/letters/{card.application_id}/?doc=essay",
+                "CV & Motivation Letters",
+            )
+        return f"/student/writing/letters/{card.application_id}/", "CV & Motivation Letters"
     if kind in ("REFERENCE_LETTER", "RECOMMENDATION"):
         return f"/student/writing/letters/{card.application_id}/?doc=references", "Referees"
     if kind == "CV":
-        return "/student/writing/#drafts", "CV & letters"
+        return "/student/writing/#drafts", "CV & Motivation Letters"
     return card.documents_url, "Documents"
 
 
@@ -196,7 +202,11 @@ def checklist_for(card: Card, *, counselor_view: bool = False) -> tuple[Checklis
             items.append(ChecklistItem(sentence, "", "", "neutral", "", ""))
             continue
         primary_kind = matched[0]
-        label = _KIND_LABELS.get(primary_kind, "")
+        label = (
+            "Scholarship essay"
+            if card.is_award and primary_kind == "MOTIVATION_LETTER"
+            else _KIND_LABELS.get(primary_kind, "")
+        )
         url, workspace = _kind_url(primary_kind, card, counselor_view=counselor_view)
         if any(_KIND_LABELS.get(k, "") in missing_set for k in matched):
             items.append(
@@ -291,18 +301,33 @@ def country_groups(student_id: UUID, board: Board) -> tuple[CountryGroup, ...]:
             student_id=student_id, candidate__opportunity_id__isnull=False
         ).values_list("id", flat=True)
     )
+    award_programmes: dict[UUID, tuple[str, ...]] = {}
+    for lane in (*board.lanes, *board.done):
+        lead = lane.lead
+        for card in lane.cards:
+            if card.application_id == lane.key:
+                if lane.programmes:
+                    award_programmes[card.application_id] = lane.programmes
+            elif card.is_award and not lead.is_award:
+                award_programmes[card.application_id] = (lead.title,)
     grouped: dict[str, list[Entry]] = {}
     for card in board.cards:
+        is_award = card.application_id in awards or card.is_award
         grouped.setdefault(card.country, []).append(
             Entry(
                 card=card,
-                is_award=card.application_id in awards,
+                is_award=is_award,
                 missing=missing_links(card),
                 detail_url=f"/student/applications/{card.application_id}/",
+                programmes=award_programmes.get(card.application_id, ()),
             )
         )
     groups = [
-        CountryGroup(code, country_name(code) if code else "Other", tuple(entries))
+        CountryGroup(
+            code,
+            country_name(code) if code else "Other",
+            tuple(sorted(entries, key=lambda entry: entry.is_award)),
+        )
         for code, entries in grouped.items()
     ]
     # Countries by name; options with no country last.
@@ -364,18 +389,26 @@ _PLAIN = (
     # are apps.funding.eligibility.decide's; an unmatched one is shown as is.
     ("GRADE", re.compile(r"^GRADE: (?P<held>\S+) on (?P<scale>.+) against (?P<bar>\S+)$"),
      "Your grade of {held} on a {scale} scale meets the {bar_int} required"),
-    ("LANGUAGE", re.compile(r"^LANGUAGE: (?P<lang>\S+) at (?P<held>\S+) against (?P<bar>\S+)$"),
+    ("LANGUAGE", re.compile(r"^LANGUAGE: (?P<lang>\S+) at (?P<held>.+?) against (?P<bar>.+)$"),
      "Your {lang} at {held} meets the {bar} level required"),
-    ("CITIZENSHIP", re.compile(r"^nationality (?P<held>[A-Z]{2}) against "),
-     "Your citizenship ({country}) is on the list of countries it accepts"),
-    ("RESIDENCE", re.compile(r"^country of residence (?P<held>[A-Z]{2}) against "),
-     "You live in a country it accepts ({country})"),
-    ("AGE", re.compile(r"^AGE: (?P<held>\d+) against (?P<op>\w+) (?P<bar>[\d.]+)$"),
+    (
+        "CITIZENSHIP",
+        re.compile(r"^(?:CITIZENSHIP: )?(?:nationality )?(?P<held>[A-Z]{2}) against (?P<bar>.+)$"),
+        "Your citizenship ({country}) is on the list of countries it accepts",
+    ),
+    (
+        "RESIDENCE",
+        re.compile(
+            r"^(?:RESIDENCE: )?country of residence (?P<held>[A-Z]{2}) against (?P<bar>.+)$"
+        ),
+        "You live in a country it accepts ({country})",
+    ),
+    ("AGE", re.compile(r"^AGE: (?P<held>\d+) against (?:(?P<op>\w+) )?(?P<bar>[\d.]+)$"),
      "Your age ({held}) is within its limit of {bar_int}"),
     ("PRIOR_DEGREE", re.compile(r"^PRIOR_DEGREE: holds (?P<held>\w+)$"),
      "You hold the {held_lower}'s degree it asks for"),
     ("WORK_EXPERIENCE", re.compile(r"^WORK_EXPERIENCE: (?P<held>\d+) months against (?P<bar>\S+)$"),
-     "Your {held} months of experience meet the {bar} required"),
+     "Your {held} months of experience meet the {bar_int} required"),
     ("OTHER", re.compile(r"^OTHER: the page states a condition no key fits; read the sentence$"),
      "Check the official rule above — your counsellor will help confirm if this applies to you"),
     (
@@ -405,10 +438,56 @@ _PLAIN = (
     ),
 )
 
+_PLAIN_FAILED = (
+    ("GRADE", re.compile(r"^GRADE: (?P<held>\S+) on (?P<scale>.+) against (?P<bar>\S+)$"),
+     "Your grade of {held} on a {scale} scale is below the {bar_int} required"),
+    ("LANGUAGE", re.compile(r"^LANGUAGE: (?P<lang>\S+) at (?P<held>.+?) against (?P<bar>.+)$"),
+     "Your {lang} at {held} is below the {bar} level required"),
+    ("LANGUAGE", re.compile(r"^LANGUAGE: no evidence for (?P<lang>.+)$"),
+     "You have no evidence for {lang}"),
+    (
+        "CITIZENSHIP",
+        re.compile(r"^(?:CITIZENSHIP: )?(?:nationality )?(?P<held>\S+) against (?P<bar>.+)$"),
+        "Open to {bar} citizens (your citizenship is {country})",
+    ),
+    (
+        "RESIDENCE",
+        re.compile(
+            r"^(?:RESIDENCE: )?country of residence (?P<held>[A-Z]{2}) against (?P<bar>.+)$"
+        ),
+        "You do not live in a country it accepts ({country})",
+    ),
+    ("AGE", re.compile(r"^AGE: (?P<held>\d+) against GTE (?P<bar>[\d.]+)$"),
+     "Your age ({held}) is below the minimum age of {bar_int}"),
+    ("AGE", re.compile(r"^AGE: (?P<held>\d+) against (?:(?P<op>\w+) )?(?P<bar>[\d.]+)$"),
+     "Your age ({held}) exceeds the maximum age of {bar_int}"),
+    ("FIELD", re.compile(r"^(?:FIELD: )?(?P<held>.+?) (?:against|matches) (?P<bar>.+)$"),
+     "A degree in {bar} is required (yours is in {held})"),
+    (
+        "PRIOR_DEGREE",
+        re.compile(r"^(?:PRIOR_DEGREE: )?(?:holds )?(?P<held>.+?) against (?P<bar>.+)$"),
+        "A degree in {bar} is required (yours is in {held})",
+    ),
+    ("PRIOR_DEGREE", re.compile(r"^PRIOR_DEGREE: holds (?P<held>\w+)$"),
+     "Your {held_lower}'s degree does not meet the degree level required"),
+    ("WORK_EXPERIENCE", re.compile(r"^WORK_EXPERIENCE: (?P<held>\d+) months against (?P<bar>\S+)$"),
+     "Your {held} months of work experience is below the {bar_int} months required"),
+)
 
-def plain_reason(key: str, reason: str) -> str:
+
+def plain_reason(
+    key: str,
+    reason: str = "",
+    outcome: str = "SATISFIED",
+) -> str:
     """The engine's reason as a sentence a student reads, or the reason unchanged."""
-    for rule_key, pattern, sentence in _PLAIN:
+    if reason in ("", "SATISFIED", "FAILED", "UNDECIDABLE") and ":" in key:
+        if reason in ("SATISFIED", "FAILED", "UNDECIDABLE"):
+            outcome = reason
+        reason = key
+        key = reason.partition(":")[0].strip()
+    rules = _PLAIN_FAILED if outcome == "FAILED" else _PLAIN
+    for rule_key, pattern, sentence in rules:
         match = pattern.match(reason) if key == rule_key else None
         if match is None:
             continue
@@ -417,7 +496,7 @@ def plain_reason(key: str, reason: str) -> str:
         bar = found.get("bar", "")
         return sentence.format(
             **found,
-            country=country_name(held) if len(held) == 2 else held,
+            country=country_name(held) if len(held) == 2 and held.isalpha() else held,
             bar_int=bar.removesuffix(".0"),
             held_lower=held.lower(),
         )
@@ -516,9 +595,19 @@ def option_page(candidate: RecommendationCandidate) -> OptionPage:
             )
     for c in details.get("covers", []):
         if isinstance(c, dict) and c.get("amount"):
+            base_label = _COVER_LABELS.get(str(c.get("kind")), "Support")
+            raw_cc = str(c.get("country_code") or "").strip()
+            if raw_cc:
+                cc_names = ", ".join(
+                    country_name(code.strip().upper()) or code.strip().upper()
+                    for code in raw_cc.split(",")
+                    if code.strip()
+                )
+                label = f"{base_label} ({cc_names})" if cc_names else base_label
+            else:
+                label = base_label
             covers.append(
-                Line(_COVER_LABELS.get(str(c.get("kind")), "Support"),
-                     f"{c['amount']} {_period(c.get('period'))}")
+                Line(label, f"{c['amount']} {_period(c.get('period'))}")
             )
     if not covers:
         covers = [Line("Amount", str(line)) for line in card.get("amounts", [])]
@@ -530,7 +619,11 @@ def option_page(candidate: RecommendationCandidate) -> OptionPage:
             tone=VERDICTS.get(str(row.get("outcome")), ("unsure", ""))[0],
             verdict=VERDICTS.get(str(row.get("outcome")), ("unsure", "We can’t tell yet"))[1],
             quote=str(row.get("quote", "")),
-            reason=plain_reason(str(row.get("key")), str(row.get("reason", ""))),
+            reason=plain_reason(
+                str(row.get("key")),
+                str(row.get("reason", "")),
+                outcome=str(row.get("outcome", "SATISFIED")),
+            ),
         )
         for row in fit.get("conditions", [])
         if isinstance(row, dict)

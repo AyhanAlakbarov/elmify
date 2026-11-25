@@ -100,15 +100,27 @@ class HostClassifier(Protocol):
     def classify(self, *, domain: str, page_text: str) -> HostClass | None: ...
 
 
+_MULTI_CHAR_TLD_COUNTRIES = {
+    "edu": "US",
+    "gov": "US",
+    "mil": "US",
+    "scot": "GB",
+    "wales": "GB",
+}
+
+
 def suffix_class(domain: str) -> HostClass | None:
     """The registrar already checked (spec 6.6): kind and country for free, no page."""
     kind = verified_kind(domain)
     if not kind:
         return None
-    tld = domain.rsplit(".", 1)[-1]
+    tld = domain.rsplit(".", 1)[-1].casefold()
     # ISO 3166-1 alpha-2 is GB, not the ccTLD's own "uk" -- the one country
     # whose TLD and ISO code disagree among the suffixes this module verifies.
-    country = ("GB" if tld == "uk" else tld.upper()) if len(tld) == 2 else ""
+    if len(tld) == 2:
+        country = "GB" if tld == "uk" else tld.upper()
+    else:
+        country = _MULTI_CHAR_TLD_COUNTRIES.get(tld, "")
     return HostClass(
         kind=kind, country_code=country, funds_students=None, confidence=1.0, by="SUFFIX"
     )
@@ -241,6 +253,11 @@ def classify_organisation(
     if not protected:
         org.kind = verdict.kind
         if verdict.country_code:
+            org.country_code = verdict.country_code
+    elif not org.country_code:
+        if free is not None and free.country_code:
+            org.country_code = free.country_code
+        elif verdict.country_code:
             org.country_code = verdict.country_code
     if verdict.funds_students is False and org.status == Organisation.Status.CANDIDATE:
         org.status = Organisation.Status.REJECTED
