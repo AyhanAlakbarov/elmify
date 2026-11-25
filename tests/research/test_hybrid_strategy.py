@@ -642,5 +642,36 @@ def test_unfunded_joint_programme_domain_is_queued_in_unfunded_university_domain
     assert "kuleuven.be" not in plan.assessments[0].unfunded_university_domains
 
 
+def test_small_country_with_single_programme_reaches_tier1_when_past_stop_or_corroborated() -> None:
+    """A small country (e.g., Luxembourg `LU` with 1 university and 1 M.Sc. programme)
+    reaches `TIER_1_DB_COMPLETE` when its sweep has finished (`past_stop`) or when its
+    organisation is corroborated across >= 2 discovery routes (`estimated_coverage == 1.0`)."""
+    from apps.research.models import Organisation
+
+    _create_verified_program(
+        country_code="LU",
+        name="M.Sc. in Computer Science",
+        domain="uni.lu",
+        funded=True,
+    )
+    # Corroborate uni.lu across two independent routes so Good-Turing coverage is 1.0
+    Organisation.objects.filter(primary_domain="uni.lu").update(
+        found_via=["R1_REG:lu-ministry", "R4_SEARCH:exa"]
+    )
+    profile = make_profile(
+        nationality="AZ",
+        country_of_residence="AZ",
+        allowed_countries=("LU",),
+        target_field="Computer Science",
+        research_interests=(),
+    )
+    plan = plan_hybrid_retrieval(profile)
+    assert plan.overall_tier == DiscoveryTier.TIER_1_DB_COMPLETE
+    assert plan.hot_countries == ("LU",)
+    assert plan.assessments[0].estimated_coverage == 1.0
+    assert plan.assessments[0].estimated_total == 1.0
+
+
+
 
 

@@ -621,3 +621,38 @@ def test_accepting_mid_semester_transcript_with_higher_gpa_enqueues_rebuild_pack
         accept(reading, student=membership_a)
     assert len(enqueued) == 1
     assert (enqueued[0].kind, enqueued[0].run_id) == ("rebuild_pack", run.id)
+
+
+def test_accepting_transcript_backfills_missing_grade_and_field_on_matched_cv_degree(
+    agency_a, membership_a
+):
+    from django.utils import timezone
+
+    from apps.documents.models import VerifiedFact
+
+    now = timezone.now()
+    with tenant_scope(agency_a.id):
+        cv_fact = VerifiedFact.objects.create(
+            student=membership_a,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={
+                "institution_original": "Baku State University",
+                "degree_as_awarded": "BSc Physics",
+                "city": "Baku",
+            },
+            source_tier=VerifiedFact.SourceTier.STUDENT_STATEMENT,
+            source_ref="cv:1",
+            confirmed_by=membership_a,
+            confirmed_at=now,
+            created_by=membership_a,
+        )
+        reading = _clean(agency_a, membership_a)
+        accept(reading, student=membership_a)
+    (degree,) = _degrees(agency_a, membership_a)
+    assert degree.supersedes_id == cv_fact.id
+    assert degree.payload["grade_native"] == "88"
+    assert degree.payload["grade_scale"] == "100"
+    assert degree.payload["country"] == "AZ"
+    assert degree.payload["end_date"] == "2027-06-30"
+    assert degree.payload["field_of_study"] == "Physics"
+

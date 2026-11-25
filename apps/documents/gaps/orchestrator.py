@@ -26,7 +26,7 @@ from apps.documents.gaps.detectors.requirements import (
     upper_secondary_required,
 )
 from apps.documents.gaps.detectors.timeline import timeline_gaps
-from apps.documents.gaps.models import GapQuestion
+from apps.documents.gaps.models import GapQuestion, preload_gap_facts
 from apps.funding.models import Program
 from apps.tenancy.models import Membership
 
@@ -51,25 +51,26 @@ def gap_questions(
     With a programme, its own `include` requirements are asked last -- they
     are the most specific and the least likely to be answerable from memory.
     """
-    questions = (
-        missing_contact(student)
-        + name_parts(student)
-        + missing_language_detail(student)
-        + timeline_gaps(student)
-        + missing_medium_of_instruction(student)
-        + missing_grade(student)
-        + missing_degree_detail(student)
-        + abbreviated_names(student)
-        + incomplete_entry(student)
-        + missing_publication_detail(student)
-        + missing_award(student)
-        + absent_sections(student)
-        + education_completeness(student)
-    )
-    if programme is not None:
-        questions += upper_secondary_required(student, programme) + programme_required(
-            student, programme
+    with preload_gap_facts(student):
+        questions = (
+            missing_contact(student)
+            + name_parts(student)
+            + missing_language_detail(student)
+            + timeline_gaps(student)
+            + missing_medium_of_instruction(student)
+            + missing_grade(student)
+            + missing_degree_detail(student)
+            + abbreviated_names(student)
+            + incomplete_entry(student)
+            + missing_publication_detail(student)
+            + missing_award(student)
+            + absent_sections(student)
+            + education_completeness(student)
         )
-    else:
-        questions += _active_draft_programme_questions(student)
-    return questions
+        if programme is not None:
+            questions += upper_secondary_required(student, programme) + programme_required(
+                student, programme
+            )
+        else:
+            questions += _active_draft_programme_questions(student)
+        return questions

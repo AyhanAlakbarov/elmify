@@ -66,7 +66,7 @@ _PAGES = (
     ("My applications", "Every programme and scholarship you chose", "/student/applications/"),
     ("Documents", "Uploads, CV and what each application needs", "/student/documents/"),
     (
-        "CV & letters",
+        "CV & Motivation Letters",
         "Tailored CVs, motivation letters and scholarship essays",
         "/student/writing/",
     ),

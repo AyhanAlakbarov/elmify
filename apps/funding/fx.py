@@ -37,8 +37,16 @@ def convert(
     if source_currency == target_currency:
         return round_money(amount)
     try:
-        source_rate = table.rates[source_currency]
-        target_rate = table.rates[target_currency]
+        source_rate = (
+            table.rates[source_currency]
+            if source_currency in table.rates
+            else (Decimal("1") if source_currency == table.base else table.rates[source_currency])
+        )
+        target_rate = (
+            table.rates[target_currency]
+            if target_currency in table.rates
+            else (Decimal("1") if target_currency == table.base else table.rates[target_currency])
+        )
     except KeyError as exc:
         raise UnconvertibleCurrency(f"{table.source} has no rate for {exc.args[0]}") from exc
     in_base = amount / source_rate

@@ -7,14 +7,14 @@ import {
   buildLocaleMetadata,
 } from "../_components/landing-page";
 
-const SUPPORTED_SUBPATH_LOCALES: readonly Locale[] = ["az", "ru"] as const;
+const SUPPORTED_SUBPATH_LOCALES: readonly Locale[] = ["en", "az", "ru"] as const;
 
 export function generateStaticParams() {
   return SUPPORTED_SUBPATH_LOCALES.map((locale) => ({ locale }));
 }
 
 function resolveLocale(raw: string): Locale {
-  if (raw === "az" || raw === "ru") {
+  if (raw === "en" || raw === "az" || raw === "ru") {
     return raw;
   }
   notFound();

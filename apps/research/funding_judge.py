@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal, get_args
@@ -144,9 +144,10 @@ _HOLDERS: tuple[str, ...] = get_args(_Holder)
 _Covers = Literal[
     "TUITION", "LIVING", "TRAVEL", "HOUSING", "INSURANCE", "RELOCATION", "TOTAL", "OTHER"
 ]
-#: OTHER is any period the Period enum cannot carry -- a semester, a term. The
-#: figure is then kept as printed and never counted (card_fields, facts).
-_AmountPeriod = Literal["MONTHLY", "ANNUAL", "ONE_OFF", "FULL_PROGRAM", "OTHER"]
+#: OTHER is any period the Period enum cannot carry. SEMESTER and TERM are
+#: converted to ANNUAL (figure * 2 or * 3) when countable, keeping the stated
+#: amount_text verbatim.
+_AmountPeriod = Literal["MONTHLY", "ANNUAL", "SEMESTER", "TERM", "ONE_OFF", "FULL_PROGRAM", "OTHER"]
 #: "up to €10,000" is a ceiling, not an amount: shown, never counted as coverage.
 _Bound = Literal["EXACT", "UP_TO", "AT_LEAST"]
 _DurationUnit = Literal["MONTHS", "YEARS", "OTHER", "UNSTATED"]
@@ -329,8 +330,8 @@ _QUESTION = (
     "for one sum the line does not split by purpose; OTHER), amount copied exactly as the line "
     "writes it together with its currency sign, code or word and nothing else (\"€1,200\", "
     "\"992 Euro\", \"1 500 AZN\"), currency as its ISO 4217 code or UNSTATED, period (MONTHLY, "
-    "ANNUAL, ONE_OFF, FULL_PROGRAM for the whole programme, OTHER for any other period such as "
-    "a semester), and bound (EXACT; UP_TO for \"up to\" or \"a maximum of\"; AT_LEAST). Give no "
+    "ANNUAL, SEMESTER, TERM, ONE_OFF, FULL_PROGRAM for the whole programme, OTHER for any other "
+    "period), and bound (EXACT; UP_TO for \"up to\" or \"a maximum of\"; AT_LEAST). Give no "
     "amount for a line that states none, and never compute or convert one.\n"
     "duration: how long the award is paid, copied exactly as the line writes it (\"24 months\", "
     "\"for two years\"), or UNSTATED. duration_unit: MONTHS or YEARS when that copy counts "
@@ -630,6 +631,29 @@ def _differing(verdicts: Iterable[LineVerdict]) -> set[str]:
     return {name for name in _DECIDED if len({getattr(v, name) for v in verdicts}) > 1}
 
 
+def has_cross_family_support(per_reading: Sequence[Sequence[LineVerdict]]) -> bool:
+    """Verify cross-family positive support on a 4-reading tie-break (Proposition 2).
+
+    Readings arrive in order `(openai_1, openai_2, claude[, openai_tiebreak])`.
+    When a 4th OpenAI tie-break reading is present (`len(per_reading) > FUNDING_READS`),
+    three OpenAI `"YES"` votes come from a single correlated model family and cannot
+    override an explicit `"NO"` verdict from the Claude reading (`per_reading[2]`).
+    """
+    if len(per_reading) <= FUNDING_READS:
+        return True
+    claude_verdicts = per_reading[2]
+    claude_voted_no = bool(claude_verdicts) and not any(
+        v.offered == "YES" for v in claude_verdicts
+    )
+    openai_voted_yes = any(
+        v.offered == "YES"
+        for idx, verdicts in enumerate(per_reading)
+        if idx != 2
+        for v in verdicts
+    )
+    return openai_voted_yes and not claude_voted_no
+
+
 def line_outcomes(chunk: tuple[Line, ...], readings: list[FundingVerdicts]) -> list[LineOutcome]:
     """Agreement per line (spec 2.3). A line no reading judged has no outcome."""
     outcomes: list[LineOutcome] = []
@@ -643,7 +667,8 @@ def line_outcomes(chunk: tuple[Line, ...], readings: list[FundingVerdicts]) -> l
                 outcomes.append(LineOutcome(line, "abstained", everything, ("readings",)))
             continue
         # Three readings decide by unanimity; a fourth is only asked to break a
-        # 2-1 tie, so it decides at three of four (spec 3.3).
+        # 2-1 tie, so it decides at three of four (spec 3.3) provided cross-family
+        # support holds (Proposition 2).
         needed = FUNDING_READS if len(readings) <= FUNDING_READS else len(readings) - 1
         disputed: set[str] = set()
         votes: list[str] = []
@@ -662,8 +687,13 @@ def line_outcomes(chunk: tuple[Line, ...], readings: list[FundingVerdicts]) -> l
         if yes == 0:
             outcomes.append(LineOutcome(line, "negation", everything))
             continue
-        disputed |= _differing(everything)
-        if yes < needed:
+        cross_family_ok = has_cross_family_support(per_reading)
+        if len(readings) > FUNDING_READS and yes >= needed and cross_family_ok:
+            yes_verdicts = tuple(v for v in everything if v.offered == "YES")
+            disputed |= _differing(yes_verdicts)
+        else:
+            disputed |= _differing(everything)
+        if yes < needed or not cross_family_ok:
             disputed.add("offered")
         status: _Status = "disputed" if disputed else "agreed"
         outcomes.append(LineOutcome(line, status, everything, tuple(sorted(disputed))))
@@ -891,12 +921,23 @@ def _decided_amount(stated: AmountStated, line: str) -> DecidedAmount:
     figure = parse_amount(stated.amount)
     currency = confirmed_currency(stated.currency, stated.amount)
     countable = figure is not None and currency is not None and stated.period != "OTHER"
+    if countable and figure is not None:
+        if stated.period == "SEMESTER":
+            figure = figure * Decimal(2)
+            period: _AmountPeriod = "ANNUAL"
+        elif stated.period == "TERM":
+            figure = figure * Decimal(3)
+            period = "ANNUAL"
+        else:
+            period = stated.period
+    else:
+        period = "OTHER" if stated.period in ("SEMESTER", "TERM") else stated.period
     return DecidedAmount(
         covers=stated.covers,
         amount_text=stated.amount,
         amount=figure if countable else None,
         currency=currency if countable else None,
-        period=stated.period,
+        period=period,
         bound=stated.bound,
         quote=line,
     )
@@ -1139,6 +1180,46 @@ def _propagate_programme_negations(
         groups.pop(key, None)
 
 
+_GENERIC_AWARD_NAMES = frozenset(
+    {
+        "scholarship",
+        "scholarships",
+        "tuition waiver",
+        "fee waiver",
+        "waiver",
+        "grant",
+        "grants",
+        "stipend",
+        "bursary",
+        "housing bursary",
+        "fellowship",
+        "assistantship",
+        "financial aid",
+        "award",
+        "funding",
+    }
+)
+
+
+def _proper_award_name(outcome: LineOutcome) -> str:
+    if outcome.status != "agreed":
+        return ""
+    label = _representative(outcome.verdicts)
+    if label.offered != "YES":
+        return ""
+    name = label.name.strip()
+    if not name or name == "UNSTATED" or name.casefold() in _GENERIC_AWARD_NAMES:
+        return ""
+    return name
+
+
+def _decision_sort_key(decision: FundingDecision) -> tuple[int, int]:
+    from apps.funding.validity import intake_start_years
+
+    years = intake_start_years(decision.applies_to)
+    return (max(years) if years else 0, 0 if decision.offered == "NO" else 1)
+
+
 def awards(outcomes: Iterable[LineOutcome]) -> FundingReadResult:
     """Award lines grouped by (heading, kind, scope), then by intake.
 
@@ -1177,12 +1258,36 @@ def awards(outcomes: Iterable[LineOutcome]) -> FundingReadResult:
     _propagate_programme_negations(groups)
     decisions: list[FundingDecision] = []
     for (heading, kind, scope), award_members in groups.items():
-        group_decisions = [
-            _decide(heading, kind, scope, intake, members)
-            for intake, members in _intake_buckets(award_members).items()
-        ]
-        group_decisions.sort(key=lambda d: 0 if d.offered == "NO" else 1)
-        decisions.extend(group_decisions)
+        named_buckets: dict[str, tuple[str, list[LineOutcome]]] = {}
+        shared_members: list[LineOutcome] = []
+        for member in award_members:
+            proper_name = _proper_award_name(member)
+            if proper_name:
+                canon = proper_name.casefold()
+                if canon not in named_buckets:
+                    named_buckets[canon] = (proper_name, [])
+                named_buckets[canon][1].append(member)
+            else:
+                shared_members.append(member)
+        if len(named_buckets) > 1:
+            sub_groups = [
+                (
+                    f"{heading}: {disp_name}"
+                    if heading and heading.casefold() != canon
+                    else disp_name,
+                    sub_members + shared_members,
+                )
+                for canon, (disp_name, sub_members) in named_buckets.items()
+            ]
+        else:
+            sub_groups = [(heading, award_members)]
+        for sub_heading, sub_members in sub_groups:
+            group_decisions = [
+                _decide(sub_heading, kind, scope, intake, members)
+                for intake, members in _intake_buckets(sub_members).items()
+            ]
+            group_decisions.sort(key=_decision_sort_key)
+            decisions.extend(group_decisions)
     return FundingReadResult(tuple(decisions), pointers, negations, noise, tuple(leads))
 
 

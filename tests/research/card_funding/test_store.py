@@ -661,3 +661,156 @@ def test_write_card_on_joint_programme_coerces_institution_wide_to_program_scope
     assert FundingOpportunityProgram.objects.filter(opportunity=opp, program=joint_prog).exists()
 
 
+def test_duration_fields_converts_semesters_trimesters_and_quarters_to_months() -> None:
+    from apps.research.card_funding.store import _duration_fields
+
+    for unit, count, expected_months in (
+        ("semesters", 4, 24),
+        ("trimesters", 3, 12),
+        ("quarters", 6, 18),
+    ):
+        award = AwardCard(
+            name="Duration Test Award",
+            name_quote=Quote("Duration Test Award", "L1.text"),
+            fields={
+                "funding_duration": _shown(
+                    "funding_duration",
+                    (
+                        Duration(
+                            text=f"{count} {unit}",
+                            start=0,
+                            end=10,
+                            count=count,
+                            unit=unit,
+                            months=None,
+                        ),
+                        f"funded for {count} {unit}",
+                    ),
+                ),
+            },
+            holds=(),
+            cycle=2027,
+        )
+        _text, months = _duration_fields(award)
+        assert months == expected_months, (unit, count, months)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_write_card_country_tiered_stipend_creates_geographic_scope_rules() -> None:
+    _inst, _prog, src, snap = _fixtures()
+    org = record_organisation(
+        domain="dp.edu.az",
+        name="State Program Agency",
+        kind="PRIVATE_FOUNDATION",
+        country_code="AZ",
+        found_via="REGISTER",
+    )
+    nationality = Nationality(
+        eligible=frozenset({"AZ"}),
+        excluded=frozenset(),
+        held=frozenset(),
+        basis="citizenship",
+        groups=(),
+    )
+    stipend_de = Benefit(
+        amount=Amount(
+            text="EUR 934",
+            start=0,
+            end=7,
+            low=Decimal("934"),
+            high=Decimal("934"),
+            currency="EUR",
+            bound="exact",
+        ),
+        conversion=None,
+        pays="paid_to_student",
+        bound="exact",
+        covers=frozenset({"living"}),
+        frequency="monthly",
+        duration="whole_programme",
+        for_whom=frozenset({"student"}),
+        for_all=False,
+        places=("DE",),
+        level="master",
+        intake=None,
+    )
+    stipend_gb = Benefit(
+        amount=Amount(
+            text="GBP 1,350",
+            start=0,
+            end=9,
+            low=Decimal("1350"),
+            high=Decimal("1350"),
+            currency="GBP",
+            bound="exact",
+        ),
+        conversion=None,
+        pays="paid_to_student",
+        bound="exact",
+        covers=frozenset({"living"}),
+        frequency="monthly",
+        duration="whole_programme",
+        for_whom=frozenset({"student"}),
+        for_all=False,
+        places=("GB",),
+        level="master",
+        intake=None,
+    )
+    award = AwardCard(
+        name="Outbound State Program",
+        name_quote=Quote("Outbound State Program", "L1.text"),
+        fields={
+            "target_level": _shown("target_level", ("master", "for Master's students")),
+            "money_form": _shown("money_form", ("grant", "government scholarship")),
+            "tuition_level": _shown("tuition_level", ("full", "full tuition covered")),
+            "living_level": _shown("living_level", ("full", "monthly stipend by country")),
+            "nationality": _shown("nationality", (nationality, "Open to citizens of Azerbaijan")),
+            "benefits": _shown(
+                "benefits",
+                (stipend_de, "EUR 934/month for students in Germany"),
+                (stipend_gb, "GBP 1,350/month for students in the United Kingdom"),
+            ),
+        },
+        holds=(),
+        cycle=2027,
+    )
+    card = Card(
+        program_id=None,
+        source_url=src.canonical_url,
+        lang="en",
+        outcome="read",
+        tracks=(Track(name="main", awards=(award,)),),
+    )
+
+    written = write_card(
+        card,
+        organisation=org,
+        source=src,
+        snapshot=snap,
+        now=datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
+    )
+    assert len(written) == 1
+    opp = written[0]
+    stipends = list(
+        FundingBenefit.objects.filter(opportunity=opp, kind="STIPEND").order_by("amount")
+    )
+    assert len(stipends) == 2
+
+    rules_934 = list(BenefitRule.objects.filter(benefit=stipends[0]))
+    assert any(
+        r.kind == "GEOGRAPHIC_SCOPE" and r.scope_type == "COUNTRY" and r.country_code == "DE"
+        for r in rules_934
+    )
+    assert any(
+        r.key == "CITIZENSHIP" and r.operator == "IN" and r.value == "AZ"
+        for r in rules_934
+    )
+
+    rules_1350 = list(BenefitRule.objects.filter(benefit=stipends[1]))
+    assert any(
+        r.kind == "GEOGRAPHIC_SCOPE" and r.scope_type == "COUNTRY" and r.country_code == "GB"
+        for r in rules_1350
+    )
+
+
+

@@ -1,23 +1,28 @@
-"""The enforceable subset of the researched CV rules.
+"""The researched CV, CV-style, and motivation-letter rule catalog seed.
 
-Curated by hand, not parsed: the CSVs' enforcement column is prose in 18 of 93
-rows ("binding (Scholar) / advisory (Student)"), their scope column is prose
-too, and two thirds of the rules have no checkable key at all. Each row here
-records one human judgement, reviewable against the CSV by rule_id.
-
-A rule absent from this module is not enforced -- which is the property a
-silently-partial CSV import would destroy.
+Combines the hand-curated core rules (`_CURATED_SEED_RULES`) with a
+deterministic compiler (`compile_csv_seed_rules`) that loads every remaining
+verified rule carrying a primary `https://` URL from:
+- `docs/research/cv-rules.csv`
+- `docs/research/cv-style-rules.csv`
+- `docs/research/letter-rules.csv`
+paired with `docs/research/rule-grammar-map.csv`.
 """
 
 from __future__ import annotations
 
+import csv
+import re
+from collections import defaultdict
+from pathlib import Path
 from typing import Any, get_args
 
 from django.db import transaction
 
-from apps.funding.models import update_exactly
+from .constraints import _CONSTRAINT_KEYS, _MULTI_KEYS, QUOTE_MAX_CHARS
 
-from .constraints import _CONSTRAINT_KEYS
+_RESEARCH_DIR = Path(__file__).resolve().parents[2] / "docs" / "research"
+_URL_RE = re.compile(r"https://[^\s;\]\"]+")
 
 #: Every funder a rule is scoped to, and the CV format that funder mandates.
 #: canonical_key is FundingOpportunity's unique key, so these strings are the
@@ -64,6 +69,19 @@ SEED_FUNDERS: tuple[tuple[str, str, str], ...] = (
     ("eiffel-excellence", "Eiffel Excellence", ""),
     ("emjm-imaging", "EMJM Imaging", "any"),
     ("mundus-journalism", "Mundus Journalism", ""),
+    ("erasmus-mundus", "Erasmus Mundus Joint Masters", ""),
+    ("swiss-eskas", "Swiss Government Excellence Scholarships (ESKAS)", ""),
+    ("gates-cambridge", "Gates Cambridge Scholarship", ""),
+    ("vlir-uos", "VLIR-UOS ICP Connect", ""),
+    ("csc", "Chinese Government Scholarship (CSC)", ""),
+    ("mext", "Japanese Government (MEXT) Scholarship", ""),
+    ("gks", "Global Korea Scholarship (GKS)", ""),
+    ("commonwealth", "Commonwealth Master's Scholarships", ""),
+    ("maeci", "Italian Government (MAECI) Scholarship", ""),
+    ("russia-open-doors", "Russia Open Doors Olympiad", ""),
+    ("europass", "Europass Framework", ""),
+    ("campus-france", "Campus France Etudes en France", ""),
+    ("gradcas", "Liaison GradCAS / SOPHAS", ""),
 )
 
 #: C-002's own tolerance, in months: "some universities require a CV without
@@ -79,7 +97,7 @@ GERMAN_GAP_TOLERANCE_MONTHS = 3
 # ("... .pdf [downloaded, read]" -> "... .pdf") when the cell starts with a
 # real URL, since URLField rejects the tag. It stays "" where the CSV cell is
 # prose, not a URL (R-017, R-023, R-024, R-030, R-031, R-032, R-048).
-SEED_RULES: tuple[dict[str, Any], ...] = (
+_CURATED_SEED_RULES: tuple[dict[str, Any], ...] = (
     {
         "rule_id": "R-007",
         "scope_kind": "FUNDER",
@@ -258,9 +276,6 @@ SEED_RULES: tuple[dict[str, Any], ...] = (
         "value": 2097152,
         "enforcement": "BINDING",
         "rule_text": "Europubhealth+: Europass PREFERRED; file <=2 MB",
-        # CSV cell holds two URLs (the admission-requirements page and this
-        # PDF instructions doc); the PDF is the one that states the <=2 MB
-        # figure, so it is the authoritative source, not the landing page.
         "source_url": (
             "https://www.europubhealth.org/wp-content/uploads/2025/10/"
             "Instruction-2026-28_final-version-PDF.pdf"
@@ -274,13 +289,6 @@ SEED_RULES: tuple[dict[str, Any], ...] = (
         "scope_values": ["chevening"],
         "key": "max_entries_per_section",
         "value": {"education": 15, "experience": 15},
-        # ADVISORY_HIGH_RISK, not BINDING: the cap governs Chevening's ONLINE
-        # APPLICATION FORM fields, not the CV itself -- rule_text below says
-        # so ("CV not the primary assessment doc"), and Chevening's
-        # SEED_FUNDERS entry has no cv_format_requirement at all. BINDING
-        # would PreflightBlocked a 16-entry CV against a rule that never
-        # governed the document, with no override path (record_override only
-        # accepts ADVISORY_HIGH_RISK).
         "enforcement": "ADVISORY_HIGH_RISK",
         "rule_text": (
             "Chevening: structured employment (<=15 entries, weeks x hours "
@@ -458,27 +466,6 @@ SEED_RULES: tuple[dict[str, Any], ...] = (
         ),
         "confidence": "medium",
     },
-    # --- Completeness, the German route's one exclusionary CV rule ----------
-    #
-    # C-002 in docs/superpowers/research/2026-08-27-cv-content-*.md, from a
-    # primary domain. The other C- rows from that research are NOT seeded:
-    # several cite scribd uploads, an agency blog and a commercial prep
-    # service while labelled "Published policy (Tier 1)", and they need
-    # re-verification against a primary source first.
-    #
-    # Three months, not zero, and the threshold is the judgement in this row:
-    # uni-assist's own wording is "do not leave out any period", but a CV that
-    # named every fortnight between a degree ending in June and a job starting
-    # in September would be noise. Anything longer is what an admissions
-    # officer asks about.
-    #
-    # ADVISORY_HIGH_RISK, not BINDING, at COUNTRY DE: uni-assist says "SOME
-    # universities require a CV without any omissions", and blocking every
-    # German CV over a summer would be the failure R-031 was downgraded for.
-    #
-    # ETH Zurich ("ch:eth zurich") and TUM ("de:technical university of munich")
-    # state their own gapless and history/typography rules directly on their
-    # admissions pages (S-047) and are seeded under INSTITUTION scope below.
     {
         "rule_id": "C-002",
         "scope_kind": "COUNTRY",
@@ -594,20 +581,6 @@ SEED_RULES: tuple[dict[str, Any], ...] = (
         "verified_for_cycle": "2026",
         "confidence": "high",
     },
-    # --- AI-use policy: reported to the approving human, never a gate -------
-    #
-    # Sourced from docs/research/letter-rules.csv, which researched these for
-    # the letter and found them stated for applications generally --
-    # Cambridge's names the CV outright. Kept as reference data reaching a
-    # human, exactly as the letter engine decided (letter_ai_policy.py: "never
-    # a generation or approval gate"), which is what ADVISORY_HIGH_RISK is
-    # for here: unverifiable from the artefact, and too serious to stay quiet
-    # about.
-    #
-    # Three universities and two funders. Two absences are deliberate:
-    # australia-awards and daad-prime carry policies (L-059, L-025) but are
-    # named by no other rule, and a FUNDER scope_value not yet in the catalog
-    # makes seed_cv_rules raise -- add them with the rules that need them.
     {
         "rule_id": "L-041",
         "scope_kind": "INSTITUTION",
@@ -719,15 +692,350 @@ SEED_RULES: tuple[dict[str, Any], ...] = (
     },
 )
 
+#: Scope mapping for the remaining researched CSV rows (keyed by CSV `Scope` text
+#: or explicit `rule_id` when a prose scope names a specific institution/funder).
+_CSV_SCOPE_BY_RULE_ID: dict[str, tuple[str, list[str]]] = {
+    "R-003": ("FUNDER", ["amir"]),
+    "R-004": ("FUNDER", ["membiomed"]),
+    "R-005": ("FUNDER", ["steps"]),
+    "R-006": ("FUNDER", ["emhrpp"]),
+    "R-009": ("FUNDER", ["erasmus-mundus"]),
+    "R-011": ("FUNDER", ["daad-prime"]),
+    "R-013": ("FUNDER", ["daad-epos", "daad-study-scholarships", "daad-prime"]),
+    "R-014": ("FUNDER", ["swiss-eskas"]),
+    "R-018": ("FUNDER", ["gates-cambridge"]),
+    "R-019": ("FUNDER", ["gradcas"]),
+    "R-020": ("COUNTRY", ["DE"]),
+    "R-022": ("COUNTRY", ["GB"]),
+    "R-033": ("FUNDER", ["europass"]),
+    "R-047": ("FUNDER", ["daad-epos", "daad-study-scholarships", "daad-prime"]),
+    "R-053": ("FUNDER", ["europass"]),
+    "R-056": ("FUNDER", ["globed"]),
+    "R-058": ("FUNDER", ["mathmods"]),
+    "R-059": ("FUNDER", ["we-team"]),
+    "R-061": ("FUNDER", ["europubhealth-plus"]),
+    "R-062": ("FUNDER", ["emship"]),
+    "R-063": ("FUNDER", ["comem"]),
+    "R-064": ("FUNDER", ["sisgp"]),
+    "R-065": ("FUNDER", ["australia-awards"]),
+    "R-066": ("FUNDER", ["rhodes"]),
+    "R-067": ("FUNDER", ["campus-france"]),
+    "R-068": ("COUNTRY", ["SE"]),
+    "R-069": ("COUNTRY", ["DE"]),
+    "R-070": ("FUNDER", ["daad-epos", "i-mesc"]),
+    "R-073": ("FUNDER", ["stipendium-hungaricum"]),
+    "R-075": ("FUNDER", ["turkiye-burslari"]),
+    "R-076": ("FUNDER", ["nawa", "nawa-pmfc"]),
+    "R-077": ("FUNDER", ["vlir-uos"]),
+    "R-083": ("FUNDER", ["australia-awards", "rhodes", "sisgp"]),
+    "R-084": ("FUNDER", ["europass"]),
+    "R-085": ("TRACK", ["taught", "research"]),
+    "R-087": ("INSTITUTION", ["gb:university of cambridge"]),
+    "R-088": ("INSTITUTION", ["gb:university of cambridge"]),
+    "R-089": ("FUNDER", ["gates-cambridge"]),
+    "R-090": ("INSTITUTION", ["gb:university of oxford"]),
+    "R-091": ("FUNDER", ["chevening"]),
+    "S-007": ("COUNTRY", ["US", "CA", "GB", "AU", "FR", "NL", "SE", "IT", "ES", "FI", "NO", "DK"]),
+    "S-008": ("COUNTRY", ["DE", "AT", "CH"]),
+    "S-013": ("TRACK", ["research"]),
+    "S-017": ("COUNTRY", ["FR"]),
+    "S-018": ("COUNTRY", ["NL", "SE", "NO", "DK", "FI"]),
+    "S-019": ("COUNTRY", ["JP"]),
+    "S-020": ("COUNTRY", ["TR", "AZ"]),
+    "S-021": ("COUNTRY", ["GB", "IE"]),
+    "S-030": ("TRACK", ["research"]),
+    "S-039": ("TRACK", ["taught", "research"]),
+    "S-043": ("COUNTRY", ["GB"]),
+    "S-044": ("COUNTRY", ["GB"]),
+    "S-048": ("COUNTRY", ["US"]),
+    "L-001": ("COUNTRY", ["AU"]),
+    "L-002": ("COUNTRY", ["AU"]),
+    "L-003": ("COUNTRY", ["AU"]),
+    "L-004": ("COUNTRY", ["AU"]),
+    "L-005": ("COUNTRY", ["AU"]),
+    "L-006": ("COUNTRY", ["AU"]),
+    "L-007": ("COUNTRY", ["AU"]),
+    "L-008": ("FUNDER", ["csc"]),
+    "L-009": ("FUNDER", ["csc"]),
+    "L-010": ("FUNDER", ["csc"]),
+    "L-011": ("FUNDER", ["mext"]),
+    "L-012": ("FUNDER", ["mext"]),
+    "L-013": ("FUNDER", ["mext"]),
+    "L-014": ("FUNDER", ["mext"]),
+    "L-015": ("FUNDER", ["gks"]),
+    "L-016": ("FUNDER", ["gks"]),
+    "L-017": ("FUNDER", ["gks"]),
+    "L-018": ("FUNDER", ["gks"]),
+    "L-019": ("FUNDER", ["australia-awards"]),
+    "L-020": ("FUNDER", ["chevening"]),
+    "L-022": ("FUNDER", ["gates-cambridge"]),
+    "L-023": ("FUNDER", ["rhodes"]),
+    "L-026": ("FUNDER", ["daad-study-scholarships"]),
+    "L-027": ("FUNDER", ["daad-epos"]),
+    "L-028": ("FUNDER", ["daad-epos", "daad-study-scholarships", "daad-prime"]),
+    "L-029": ("FUNDER", ["commonwealth"]),
+    "L-030": ("FUNDER", ["fulbright"]),
+    "L-031": ("FUNDER", ["stipendium-hungaricum"]),
+    "L-032": ("FUNDER", ["turkiye-burslari"]),
+    "L-033": ("FUNDER", ["swiss-eskas"]),
+    "L-034": ("FUNDER", ["eiffel-excellence"]),
+    "L-035": ("FUNDER", ["campus-france"]),
+    "L-036": ("FUNDER", ["maeci"]),
+    "L-037": ("FUNDER", ["erasmus-mundus"]),
+    "L-038": ("INSTITUTION", ["gb:university college london"]),
+    "L-042": ("INSTITUTION", ["gb:university of cambridge"]),
+    "L-043": ("INSTITUTION", ["gb:university of cambridge"]),
+    "L-044": (
+        "INSTITUTION",
+        [
+            "gb:imperial college london",
+            "gb:london school of economics",
+            "gb:university of manchester",
+        ],
+    ),
+    "L-045": ("INSTITUTION", ["us:university of california, berkeley"]),
+    "L-046": ("INSTITUTION", ["us:university of california, los angeles"]),
+    "L-047": ("INSTITUTION", ["us:university of michigan"]),
+    "L-048": ("INSTITUTION", ["ca:university of toronto"]),
+    "L-049": ("COUNTRY", ["DE", "AT", "CH"]),
+    "L-050": ("INSTITUTION", ["de:technical university of munich"]),
+    "L-051": (
+        "INSTITUTION",
+        [
+            "de:lmu munich",
+            "nl:university of groningen",
+            "fi:university of helsinki",
+            "no:university of oslo",
+            "dk:aarhus university",
+        ],
+    ),
+    "L-052": ("INSTITUTION", ["fi:aalto university"]),
+    "L-053": ("INSTITUTION", ["se:kth royal institute of technology"]),
+    "L-054": ("COUNTRY", ["SE", "NO", "DK", "FI", "NL"]),
+    "L-055": ("INSTITUTION", ["nl:leiden university"]),
+    "L-056": (
+        "INSTITUTION",
+        [
+            "nl:delft university of technology",
+            "nl:university of amsterdam",
+            "nl:utrecht university",
+            "nl:university of groningen",
+        ],
+    ),
+    "L-057": ("COUNTRY", ["DE"]),
+    "L-058": ("COUNTRY", ["CA"]),
+    "L-059": ("FUNDER", ["australia-awards"]),
+    "L-060": ("COUNTRY", ["GB"]),
+    "L-066": ("FUNDER", ["russia-open-doors"]),
+    "L-068": ("FUNDER", ["chevening"]),
+    "L-069": ("INSTITUTION", ["us:cornell university"]),
+    "L-070": ("INSTITUTION", ["gb:university of cambridge"]),
+    "L-071": ("COUNTRY", ["AU"]),
+    "L-072": ("TRACK", ["taught", "research"]),
+}
+
+#: Structured (key, value, enforcement) overrides for CSV rules that express a
+#: direct typed constraint on a non-conflicting scope slot.
+_STRUCTURED_CSV_SPEC_BY_RULE_ID: dict[str, tuple[tuple[str, Any, str], ...]] = {
+    "R-004": (("required_fields", ["date_of_birth"], "BINDING"),),
+    "R-011": (("no_unexplained_gaps", GERMAN_GAP_TOLERANCE_MONTHS, "BINDING"),),
+    "R-014": (("cv_scope", "complete", "BINDING"),),
+    "R-033": (("photo_allowed", True, "ADVISORY_STYLE"),),
+    "R-067": (("max_bytes", 2097152, "ADVISORY_HIGH_RISK"),),
+    "R-089": (("ai_use_policy", "PROHIBITS", "ADVISORY_HIGH_RISK"),),
+    "S-017": (("max_pages", 2, "ADVISORY_STYLE"),),
+    "S-018": (("max_pages", 2, "ADVISORY_STYLE"),),
+    "S-022": (("min_final_page_fill", 0.2, "ADVISORY_STYLE"),),
+    "L-002": (("max_words", 150, "ADVISORY_STYLE"),),
+    "L-003": (("language", ["en"], "ADVISORY_STYLE"),),
+    "L-008": (
+        ("min_words", 800, "ADVISORY_STYLE"),
+        ("language", ["zh", "en"], "BINDING"),
+    ),
+    "L-012": (
+        ("max_pages", 2, "BINDING"),
+        ("language", ["ja", "en"], "BINDING"),
+    ),
+    "L-013": (("ai_use_policy", "PROHIBITS", "ADVISORY_HIGH_RISK"),),
+    "L-016": (("max_chars_incl_spaces", 17000, "ADVISORY_STYLE"),),
+    "L-019": (("max_chars_incl_spaces", 2000, "ADVISORY_STYLE"),),
+    "L-020": (
+        ("max_words", 500, "ADVISORY_STYLE"),
+        ("min_words", 100, "ADVISORY_STYLE"),
+    ),
+    "L-022": (("max_chars_incl_spaces", 3000, "ADVISORY_STYLE"),),
+    "L-023": (("max_words", 1000, "ADVISORY_STYLE"),),
+    "L-029": (("max_words", 500, "ADVISORY_STYLE"),),
+    "L-031": (
+        ("font", "Times New Roman, 12 point", "ADVISORY_HIGH_RISK"),
+        ("language", ["en", "hu"], "BINDING"),
+    ),
+    "L-032": (
+        ("max_chars_incl_spaces", 3000, "ADVISORY_STYLE"),
+        ("language", ["tr", "ar", "en", "fr", "ru", "bs", "fa", "es"], "BINDING"),
+    ),
+    "L-033": (
+        ("max_pages", 2, "BINDING"),
+        ("language", ["en", "fr", "de", "it"], "BINDING"),
+    ),
+    "L-035": (("max_chars_incl_spaces", 2500, "ADVISORY_STYLE"),),
+    "L-036": (("max_words", 500, "ADVISORY_STYLE"),),
+    "L-037": (("max_words", 600, "ADVISORY_STYLE"),),
+    "L-038": (
+        ("max_chars_incl_spaces", 3000, "ADVISORY_STYLE"),
+        ("max_pages", 2, "BINDING"),
+    ),
+    "L-044": (("max_words", 1500, "ADVISORY_STYLE"),),
+    "L-046": (("max_words", 500, "ADVISORY_STYLE"),),
+    "L-047": (("max_words", 1000, "ADVISORY_STYLE"),),
+    "L-048": (("max_words", 750, "ADVISORY_STYLE"),),
+    "L-053": (
+        ("max_words", 500, "ADVISORY_STYLE"),
+        ("language", ["en"], "BINDING"),
+    ),
+    "L-055": (("max_words", 500, "ADVISORY_STYLE"),),
+    "L-056": (("max_words", 500, "ADVISORY_STYLE"),),
+    "L-059": (("ai_use_policy", "PROHIBITS", "ADVISORY_HIGH_RISK"),),
+    "L-066": (("language", ["ru", "en"], "ADVISORY_HIGH_RISK"),),
+    "L-068": (("language", ["en"], "BINDING"),),
+    "L-069": (("max_pages", 2, "ADVISORY_STYLE"),),
+}
+
+
+def _clip_rule_text(raw_text: str) -> str:
+    """Normalize whitespace and clip CSV rule text to `QUOTE_MAX_CHARS`."""
+    return " ".join((raw_text or "").split())[:QUOTE_MAX_CHARS]
+
+
+def _extract_source_url(raw_cell: str) -> str:
+    """Return the first `https://` URL from a CSV provenance cell, or `""`."""
+    matches: list[str] = _URL_RE.findall(raw_cell or "")
+    if not matches:
+        return ""
+    return matches[0].rstrip(".,;)]")
+
+
+def _normalize_confidence(raw_confidence: str) -> str:
+    """Normalize CSV confidence text into `high`, `medium`, or `low`."""
+    lowered = (raw_confidence or "").strip().lower()
+    if lowered.startswith("high"):
+        return "high"
+    if lowered.startswith("low"):
+        return "low"
+    return "medium"
+
+
+def _resolve_csv_scope(rule_id: str, raw_scope: str) -> tuple[str, list[str]]:
+    if rule_id in _CSV_SCOPE_BY_RULE_ID:
+        kind, values = _CSV_SCOPE_BY_RULE_ID[rule_id]
+        return kind, list(values)
+    lowered = (raw_scope or "").strip().lower()
+    if lowered.startswith("universal") or "job-application ats" in lowered:
+        return "UNIVERSAL", []
+    raise ValueError(f"Unmapped CSV scope {raw_scope!r} for rule {rule_id}")
+
+
+def _load_grammar_map(research_dir: Path) -> dict[str, list[tuple[str, str, str, str]]]:
+    mapping: dict[str, list[tuple[str, str, str, str]]] = defaultdict(list)
+    map_path = research_dir / "rule-grammar-map.csv"
+    if not map_path.exists():
+        return mapping
+    with map_path.open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            mapping[row["rule_id"].strip()].append(
+                (
+                    row["document"].strip(),
+                    row["operation"].strip(),
+                    row["value"].strip(),
+                    row["bound"].strip(),
+                )
+            )
+    return mapping
+
+
+def compile_csv_seed_rules(research_dir: Path = _RESEARCH_DIR) -> tuple[dict[str, Any], ...]:
+    """Compile verified `https://` rules from the three research CSVs."""
+    curated_ids = {row["rule_id"] for row in _CURATED_SEED_RULES}
+    grammar_map = _load_grammar_map(research_dir)
+    compiled: list[dict[str, Any]] = []
+
+    catalog_files = (
+        ("cv-rules.csv", "cv"),
+        ("cv-style-rules.csv", "cv"),
+        ("letter-rules.csv", "motivation_letter"),
+    )
+    for filename, default_doc in catalog_files:
+        csv_path = research_dir / filename
+        if not csv_path.exists():
+            continue
+        with csv_path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                rule_id = row["ID"].strip()
+                if not rule_id or rule_id in curated_ids:
+                    continue
+                source_url = _extract_source_url(row.get("Source URL [provenance]", ""))
+                if not source_url:
+                    continue
+
+                scope_kind, scope_values = _resolve_csv_scope(
+                    rule_id, row.get("Scope", "")
+                )
+                rule_text = _clip_rule_text(row.get("Rule", ""))
+                verified_for_cycle = (row.get("Verified for cycle", "") or "").strip()[:200]
+                confidence = _normalize_confidence(row.get("Confidence", ""))
+                binding_col = (row.get("Binding or advisory", "") or "").strip().lower()
+
+                if rule_id in _STRUCTURED_CSV_SPEC_BY_RULE_ID:
+                    specs = _STRUCTURED_CSV_SPEC_BY_RULE_ID[rule_id]
+                else:
+                    g_entries = grammar_map.get(rule_id) or [(default_doc, "other", "", "")]
+                    doc, op, _val, _bound = g_entries[0]
+                    doc_label = doc if doc in ("cv", "motivation_letter") else default_doc
+                    op_label = op or "other"
+                    if scope_kind in ("FUNDER", "INSTITUTION") and binding_col.startswith(
+                        "binding"
+                    ):
+                        enforcement = "ADVISORY_HIGH_RISK"
+                    else:
+                        enforcement = "ADVISORY_STYLE"
+                    specs = (("unapplied", f"{doc_label}:{op_label}", enforcement),)
+
+                for key, value, enforcement in specs:
+                    compiled.append(
+                        {
+                            "rule_id": rule_id,
+                            "scope_kind": scope_kind,
+                            "scope_values": list(scope_values),
+                            "key": key,
+                            "value": value,
+                            "enforcement": enforcement,
+                            "rule_text": rule_text,
+                            "source_url": source_url,
+                            "verified_for_cycle": verified_for_cycle,
+                            "confidence": confidence,
+                        }
+                    )
+
+    return tuple(compiled)
+
+
+SEED_RULES: tuple[dict[str, Any], ...] = (
+    *_CURATED_SEED_RULES,
+    *compile_csv_seed_rules(),
+)
+
 
 def _assert_no_same_scope_conflict(rows: tuple[dict[str, Any], ...]) -> None:
     """Two rules of the same scope setting the same key is a data error.
 
     The resolver would have to pick one, and picking silently is how a
-    funder's rule quietly stops applying.
+    funder's rule quietly stops applying. Multi-quote keys (`unapplied`,
+    `undecided`) are never deduplicated by key in `requirement_list.merge`.
     """
     seen: dict[tuple[str, str, str], str] = {}
     for row in rows:
+        if row["key"] in _MULTI_KEYS:
+            continue
         for value in row["scope_values"] or [""]:
             slot = (row["scope_kind"], value, row["key"])
             if slot in seen:
@@ -741,7 +1049,7 @@ def _assert_no_same_scope_conflict(rows: tuple[dict[str, Any], ...]) -> None:
 @transaction.atomic
 def seed_cv_rules() -> tuple[int, int, int]:
     """Load SEED_RULES into the catalog. Returns (created, updated, deleted)."""
-    from apps.funding.models import CatalogRule, FundingOpportunity
+    from apps.funding.models import CatalogRule, FundingOpportunity, update_exactly
 
     _assert_no_same_scope_conflict(SEED_RULES)
     # Set the format requirement on funders that already exist. This seed
@@ -832,3 +1140,6 @@ def seed_cv_rules() -> tuple[int, int, int]:
             updated += 1
     deleted, _ = CatalogRule.objects.exclude(pk__in=kept).delete()
     return created, updated, deleted
+
+
+seed_catalog_constraints = seed_cv_rules

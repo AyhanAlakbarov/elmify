@@ -1,14 +1,31 @@
+import random
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 
-from apps.documents.referee_plan import ApplicationNeed, Assignment, RefereeFacts, propose
+from apps.documents.referee_plan import (
+    ApplicationNeed,
+    Assignment,
+    Proposal,
+    RefereeFacts,
+    propose,
+)
 
 ALIYEV, KARIMOVA, HASANOV = (uuid4() for _ in range(3))
 
 
-def _app(title, letters, mode="PORTAL_INVITE", *, kind="", day=1, funding=False, email=False):
+def _app(
+    title: str,
+    letters: int | None,
+    mode: str = "PORTAL_INVITE",
+    *,
+    kind: str = "",
+    day: int = 1,
+    funding: bool = False,
+    email: bool = False,
+) -> ApplicationNeed:
     return ApplicationNeed(
         application_id=uuid4(), title=title, letters=letters, kind=kind, mode=mode,
         institutional_email=email, deadline=datetime(2027, 1, day, tzinfo=UTC),
@@ -16,11 +33,18 @@ def _app(title, letters, mode="PORTAL_INVITE", *, kind="", day=1, funding=False,
     )
 
 
-def _ref(id_, name, kind="ACADEMIC", agreed=3, generic=False, institutional=True):
+def _ref(
+    id_: UUID,
+    name: str,
+    kind: str = "ACADEMIC",
+    agreed: int = 3,
+    generic: bool = False,
+    institutional: bool = True,
+) -> RefereeFacts:
     return RefereeFacts(id_, name, kind, agreed, generic, institutional)
 
 
-def _who(proposal, need) -> set[UUID]:
+def _who(proposal: Proposal, need: ApplicationNeed) -> set[UUID]:
     return {a.referee_id for a in proposal.assignments if a.application_id == need.application_id}
 
 
@@ -135,7 +159,7 @@ def test_kept_requests_fill_their_slot_and_use_up_the_referee() -> None:
 
 
 @pytest.mark.parametrize("mode", ["", "NOT_STATED"])
-def test_an_unstated_mode_counts_against_the_agreement(mode) -> None:
+def test_an_unstated_mode_counts_against_the_agreement(mode: str) -> None:
     proposal = propose([_app("TUM", 1, mode)], [_ref(ALIYEV, "Prof. Aliyev", agreed=0)])
     assert proposal.assignments == ()
 
@@ -248,14 +272,16 @@ def test_a_shortfall_of_one_kind_says_which_kind_to_add() -> None:
     )
 
 
-def _optimum(needs, referees) -> int:
+def _optimum(needs: Sequence[ApplicationNeed], referees: Sequence[RefereeFacts]) -> int:
     """Brute force: the most slots fillable, each referee within agreed requests."""
     from itertools import product
 
-    slots = [(n, k) for n in needs for k in range(n.letters)]
+    slots = [(n, k) for n in needs for k in range(n.letters or 0)]
     best = 0
     for pick in product([None, *referees], repeat=len(slots)):
-        used, on, filled = {}, set(), 0
+        used: dict[UUID, int] = {}
+        on: set[tuple[UUID, UUID]] = set()
+        filled = 0
         for (n, _k), r in zip(slots, pick, strict=True):
             if r is None:
                 continue
@@ -275,7 +301,13 @@ def _optimum(needs, referees) -> int:
     return best
 
 
-def _check_invariants(needs, referees, proposal, kept=(), declined=()) -> None:
+def _check_invariants(
+    needs: Sequence[ApplicationNeed],
+    referees: Sequence[RefereeFacts],
+    proposal: Proposal,
+    kept: Sequence[Assignment] = (),
+    declined: Sequence[tuple[UUID, UUID]] = (),
+) -> None:
     by_ref = {r.referee_id: r for r in referees}
     by_app = {n.application_id: n for n in needs}
     pairs = [(x.application_id, x.referee_id) for x in (*kept, *proposal.assignments)]
@@ -293,12 +325,12 @@ def _check_invariants(needs, referees, proposal, kept=(), declined=()) -> None:
     assert all(x.referee_id in by_ref for x in proposal.assignments)
 
 
-def _cost_of(need, ref) -> int:
+def _cost_of(need: ApplicationNeed, ref: RefereeFacts) -> int:
     generic_free = need.mode == "UPLOAD_GENERIC" and ref.gives_generic_letter
     return int(not generic_free)
 
 
-def _random_case(rng):
+def _random_case(rng: random.Random) -> tuple[list[ApplicationNeed], list[RefereeFacts]]:
     needs = [
         _app(f"P{i}", rng.randint(1, 2), rng.choice(["PORTAL_INVITE", "UPLOAD_GENERIC"]),
              kind=rng.choice(["", "ACADEMIC", "PROFESSIONAL", "EITHER"]))
@@ -313,8 +345,6 @@ def _random_case(rng):
 
 
 def test_the_proposer_fills_as_many_slots_as_a_brute_force_optimum() -> None:
-    import random
-
     rng = random.Random(20261013)
     for _ in range(300):
         needs, referees = _random_case(rng)
@@ -324,8 +354,6 @@ def test_the_proposer_fills_as_many_slots_as_a_brute_force_optimum() -> None:
 
 
 def test_declined_and_kept_requests_are_respected_on_random_cases() -> None:
-    import random
-
     rng = random.Random(7)
     for _ in range(1500):
         needs, referees = _random_case(rng)
@@ -333,7 +361,8 @@ def test_declined_and_kept_requests_are_respected_on_random_cases() -> None:
             (n.application_id, r.referee_id)
             for n in needs for r in referees if rng.random() < 0.25
         ]
-        kept, spent = [], {}
+        kept: list[Assignment] = []
+        spent: dict[UUID, int] = {}
         for n in needs:
             for r in referees:
                 if (n.application_id, r.referee_id) in declined or rng.random() > 0.2:
@@ -349,7 +378,7 @@ def test_declined_and_kept_requests_are_respected_on_random_cases() -> None:
 _MODES = ("PORTAL_INVITE", "REFEREE_SENDS", "UPLOAD_GENERIC", "UPLOAD_ADDRESSED", "")
 
 
-def _cost(need, ref) -> int:
+def _cost(need: ApplicationNeed, ref: RefereeFacts) -> int:
     from apps.documents.referee_plan import costs_a_request
 
     if costs_a_request(need.mode):
@@ -357,7 +386,9 @@ def _cost(need, ref) -> int:
     return int(need.mode == "UPLOAD_GENERIC" and not ref.gives_generic_letter)
 
 
-def _large_case(rng):
+def _large_case(
+    rng: random.Random,
+) -> tuple[list[ApplicationNeed], list[RefereeFacts], list[Assignment], list[tuple[UUID, UUID]]]:
     """Up to 8 applications x 6 referees, with kept and declined rows (final review D1)."""
     needs = [
         ApplicationNeed(
@@ -374,7 +405,9 @@ def _large_case(rng):
              rng.random() < 0.4, rng.random() < 0.5)
         for i in range(rng.randint(1, 6))
     ]
-    kept, declined, spent = [], [], {}
+    kept: list[Assignment] = []
+    declined: list[tuple[UUID, UUID]] = []
+    spent: dict[UUID, int] = {}
     for n in needs:
         for r in referees:
             roll = rng.random()
@@ -389,7 +422,12 @@ def _large_case(rng):
     return needs, referees, kept, declined
 
 
-def _max_new_letters(needs, referees, kept, declined) -> int:
+def _max_new_letters(
+    needs: Sequence[ApplicationNeed],
+    referees: Sequence[RefereeFacts],
+    kept: Sequence[Assignment],
+    declined: Sequence[tuple[UUID, UUID]],
+) -> int:
     """The most new letters any plan could add: a max flow from each application's
     open slots to its capable referees, a paid edge per referee for what is left of their
     agreement and a free one (a generic letter from a giver, an addressed upload) while
@@ -398,14 +436,14 @@ def _max_new_letters(needs, referees, kept, declined) -> int:
 
     by_ref = {r.referee_id: r for r in referees}
     used = {r.referee_id: 0 for r in referees}
-    on = {n.application_id: set() for n in needs}
+    on: dict[UUID, set[UUID]] = {n.application_id: set() for n in needs}
     for k in kept:
         need = next(n for n in needs if n.application_id == k.application_id)
         used[k.referee_id] += _cost(need, by_ref[k.referee_id])
         on[k.application_id].add(k.referee_id)
-    cap: dict = {}
+    cap: dict[tuple[object, object], int] = {}
 
-    def edge(u, v, c) -> None:
+    def edge(u: object, v: object, c: int) -> None:
         cap[u, v] = cap.get((u, v), 0) + c
         cap.setdefault((v, u), 0)
 
@@ -424,13 +462,13 @@ def _max_new_letters(needs, referees, kept, declined) -> int:
             ):
                 sink = "paid" if _cost(need, r) else "free"
                 edge(need.application_id, (sink, r.referee_id), 1)
-    nexts: dict = {}
+    nexts: dict[object, list[object]] = {}
     for u, v in cap:
         nexts.setdefault(u, []).append(v)
     flow = 0
     while True:
-        back = {"S": None}
-        queue = deque(["S"])
+        back: dict[object, object | None] = {"S": None}
+        queue: deque[object] = deque(["S"])
         while queue and "T" not in back:
             u = queue.popleft()
             for v in nexts.get(u, ()):
@@ -441,9 +479,11 @@ def _max_new_letters(needs, referees, kept, declined) -> int:
             return flow
         v = "T"
         while back[v] is not None:
-            cap[back[v], v] -= 1
-            cap[v, back[v]] += 1
-            v = back[v]
+            prev = back[v]
+            assert prev is not None
+            cap[prev, v] -= 1
+            cap[v, prev] += 1
+            v = prev
         flow += 1
 
 
@@ -452,8 +492,6 @@ def test_large_random_plans_keep_every_invariant() -> None:
     nothing left that one more pick could fill, "short" said exactly when short, and as
     many new letters as any plan could add (final review D1: this is what catches a
     repair step that leaves a slot empty without breaking any other rule)."""
-    import random
-
     rng = random.Random(20261014)
     for _ in range(3000):
         needs, referees, kept, declined = _large_case(rng)
@@ -466,7 +504,7 @@ def test_large_random_plans_keep_every_invariant() -> None:
         assert not set(new) & set(old), case
         assert not set(new) & set(declined), case
         used = {r.referee_id: 0 for r in referees}
-        on = {n.application_id: set() for n in needs}
+        on: dict[UUID, set[UUID]] = {n.application_id: set() for n in needs}
         for need in needs:
             for app_id, ref_id in (*old, *new):
                 if app_id == need.application_id:
@@ -492,3 +530,102 @@ def test_large_random_plans_keep_every_invariant() -> None:
                 ), ("a free slot left unfilled", case)
         assert short == bool(proposal.short), case
         assert len(new) == _max_new_letters(needs, referees, kept, declined), case
+
+
+def test_role_complementarity_pairs_research_supervisor_with_course_instructor() -> None:
+    eth = _app("ETH", 2, kind="ACADEMIC")
+    r_course1 = RefereeFacts(
+        ALIYEV, "Prof. Course1", "ACADEMIC", 5, role_archetype="course_instructor"
+    )
+    r_course2 = RefereeFacts(
+        KARIMOVA, "Prof. Course2", "ACADEMIC", 4, role_archetype="course_instructor"
+    )
+    r_thesis = RefereeFacts(
+        HASANOV, "Prof. Thesis", "ACADEMIC", 3, role_archetype="research_supervisor"
+    )
+    proposal = propose([eth], [r_course1, r_course2, r_thesis])
+    assert _who(proposal, eth) == {ALIYEV, HASANOV}
+
+
+def test_evidence_backed_research_supervisor_beats_high_quota_course_instructor() -> None:
+    oxford = _app("Oxford", 1, kind="ACADEMIC")
+    r_course = RefereeFacts(
+        ALIYEV, "Prof. Course", "ACADEMIC", 6,
+        role_archetype="course_instructor", shared_work_score=0,
+    )
+    r_thesis = RefereeFacts(
+        HASANOV, "Prof. Thesis", "ACADEMIC", 3,
+        role_archetype="research_supervisor", shared_work_score=2,
+    )
+    proposal = propose([oxford], [r_course, r_thesis])
+    assert _who(proposal, oxford) == {HASANOV}
+
+
+def test_non_strict_programme_does_not_waste_scarce_institutional_email_referee() -> None:
+    p0_no_email = _app("P0", 1, kind="EITHER", day=1, funding=True, email=False)
+    p1_strict_email = _app("P1", 1, kind="EITHER", day=2, funding=True, email=True)
+    r_inst = _ref(ALIYEV, "Dr. A_Inst", "ACADEMIC", agreed=1, institutional=True)
+    r_gmail = _ref(KARIMOVA, "Dr. B_Gmail", "ACADEMIC", agreed=1, institutional=False)
+    proposal = propose([p0_no_email, p1_strict_email], [r_inst, r_gmail])
+    assert _who(proposal, p1_strict_email) == {ALIYEV}
+    assert _who(proposal, p0_no_email) == {KARIMOVA}
+    assert not any(a.email_flag for a in proposal.assignments)
+
+
+def test_convex_load_balancing_spreads_requests_across_equal_referees() -> None:
+    app1, app2 = _app("App1", 1), _app("App2", 1)
+    r_alpha = _ref(ALIYEV, "Prof. Alpha", "ACADEMIC", agreed=3)
+    r_beta = _ref(KARIMOVA, "Prof. Beta", "ACADEMIC", agreed=3)
+    proposal = propose([app1, app2], [r_alpha, r_beta])
+    assert {a.referee_id for a in proposal.assignments} == {ALIYEV, KARIMOVA}
+
+
+def test_composite_min_academic_quota_enforced_on_mixed_programme() -> None:
+    imperial = ApplicationNeed(
+        application_id=uuid4(), title="Imperial", letters=2, kind="EITHER",
+        mode="PORTAL_INVITE", min_academic=1,
+    )
+    r_mgr1 = RefereeFacts(ALIYEV, "Mgr. One", "PROFESSIONAL", 5, shared_work_score=5)
+    r_mgr2 = RefereeFacts(KARIMOVA, "Mgr. Two", "PROFESSIONAL", 5, shared_work_score=5)
+    r_acad = RefereeFacts(HASANOV, "Prof. Acad", "ACADEMIC", 1, shared_work_score=0)
+    proposal = propose([imperial], [r_mgr1, r_mgr2, r_acad])
+    assert HASANOV in _who(proposal, imperial) and len(_who(proposal, imperial)) == 2
+
+
+def test_upload_addressed_costs_a_request_and_webmail_blocked_defaults_false() -> None:
+    from types import SimpleNamespace
+
+    from apps.documents.referee_plan import costs_a_request
+    from apps.documents.referee_views import _webmail_blocked_for
+
+    assert costs_a_request("UPLOAD_GENERIC") is False
+    assert costs_a_request("UPLOAD_ADDRESSED") is True
+
+    # UPLOAD_ADDRESSED requires an agreed request even when gives_generic_letter=True
+    addressed = _app("ETH", 1, "UPLOAD_ADDRESSED")
+    zero_agreed = _ref(ALIYEV, "Prof. Aliyev", agreed=0, generic=True)
+    assert propose([addressed], [zero_agreed]).assignments == ()
+    one_agreed = _ref(ALIYEV, "Prof. Aliyev", agreed=1, generic=True)
+    assert _who(propose([addressed], [one_agreed]), addressed) == {ALIYEV}
+
+    # Negative agreed_requests and shared_work_score clamp safely to 0
+    neg_ref = RefereeFacts(
+        ALIYEV, "Prof. Neg", "ACADEMIC", agreed_requests=-2, shared_work_score=-5
+    )
+    assert propose([_app("TUM", 1)], [neg_ref]).assignments == ()
+
+    # _webmail_blocked_for defaults to False when only institutional_email=True
+    soft_need = SimpleNamespace(institutional_email=True)
+    assert _webmail_blocked_for(soft_need) is False
+    hard_need = SimpleNamespace(institutional_email=True, webmail_blocked=True)
+    assert _webmail_blocked_for(hard_need) is True
+
+    # UPLOAD_GENERIC with only gives_generic_letter=False referees reports quota shortfall
+    upload_gen = _app("Aalto", 2, "UPLOAD_GENERIC")
+    non_gen_1 = _ref(ALIYEV, "Prof. Aliyev", agreed=1, generic=False)
+    non_gen_2 = _ref(KARIMOVA, "Prof. Karimova", agreed=0, generic=False)
+    prop_short = propose([upload_gen], [non_gen_1, non_gen_2])
+    assert any("agreed to 1" in line for line in prop_short.short)
+
+
+

@@ -35,7 +35,7 @@ from ..schemas import PublicationEntry, PublicationStatus, SkillEntry
 from ..verification import fact_payload, unsuperseded_facts
 from .extraction import Technique
 from .github import login_from_identity
-from .publication import PublicationRecord
+from .publication import PublicationRecord, author_in_byline, title_matches
 
 #: Crossref and OpenAlex types recorded as published; anything else needs the student.
 _PUBLISHED_TYPES = frozenset(
@@ -63,10 +63,37 @@ class UnusablePublication(ValueError):
     """The record cannot be recorded as a publication without a human."""
 
 
-def publication_entry(record: PublicationRecord) -> PublicationEntry:
+def publication_entry(
+    record: PublicationRecord,
+    *,
+    claimed_title: str | None = None,
+    claimed_author: str | None = None,
+    claimed_year: int | None = None,
+) -> PublicationEntry:
     """A registry record as a schema entry. self_author_index stays None: the student picks."""
-    if record.work_type not in _PUBLISHED_TYPES:
+    if record.is_retracted:
+        raise UnusablePublication(f"retracted publication: {record.doi!r}")
+    effective_doi = record.published_doi or record.doi
+    effective_type = "journal-article" if record.published_doi else record.work_type
+    if effective_type not in _PUBLISHED_TYPES:
         raise UnusablePublication(f"unrecognised work type: {record.work_type!r}")
+    if claimed_title is not None and not title_matches(claimed_title, record.title):
+        raise UnusablePublication(
+            f"chimeric publication: title mismatch for {effective_doi!r}"
+        )
+    if claimed_author is not None and not author_in_byline(claimed_author, record.authors):
+        raise UnusablePublication(
+            f"chimeric publication: author {claimed_author!r} not in byline of {effective_doi!r}"
+        )
+    if (
+        claimed_year is not None
+        and record.year is not None
+        and abs(claimed_year - record.year) > 1
+    ):
+        raise UnusablePublication(
+            f"chimeric publication: year mismatch ({claimed_year} vs {record.year})"
+            f" for {effective_doi!r}"
+        )
     return PublicationEntry(
         authors=record.authors,
         self_author_index=None,
@@ -76,9 +103,12 @@ def publication_entry(record: PublicationRecord) -> PublicationEntry:
         volume=record.volume,
         issue=record.issue,
         pages=record.pages,
-        doi=record.doi,
+        doi=effective_doi,
         status=PublicationStatus.PUBLISHED,
     )
+
+
+publication_fact = publication_entry
 
 
 def refreshable_student(tenant_id: UUID, student_id: UUID) -> Membership | None:
@@ -105,9 +135,21 @@ def _previous(student: Membership, source_ref: str, category: str) -> VerifiedFa
     )
 
 
-def write_publication_fact(*, student: Membership, record: PublicationRecord) -> VerifiedFact:
-    entry = publication_entry(record)
-    source_ref = f"doi:{record.doi}"
+def write_publication_fact(
+    *,
+    student: Membership,
+    record: PublicationRecord,
+    claimed_title: str | None = None,
+    claimed_author: str | None = None,
+    claimed_year: int | None = None,
+) -> VerifiedFact:
+    entry = publication_entry(
+        record,
+        claimed_title=claimed_title,
+        claimed_author=claimed_author,
+        claimed_year=claimed_year,
+    )
+    source_ref = f"doi:{entry.doi}"
     with tenant_transaction(student.tenant_id):
         return VerifiedFact.objects.create(
             student=student,

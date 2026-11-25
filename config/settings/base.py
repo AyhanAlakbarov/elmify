@@ -22,6 +22,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Why: Django 6.1 check postgres.E005 requires django.contrib.postgres for ArrayField.
+    "django.contrib.postgres",
     "django_otp",
     "django_otp.plugins.otp_totp",
     "apps.tenancy",

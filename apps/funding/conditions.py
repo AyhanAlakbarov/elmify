@@ -207,7 +207,10 @@ def benefit_applies(
     if benefit.scope_type == "NATIONALITY":
         return benefit.nationality_code == profile.nationality
     if benefit.scope_type == "COUNTRY":
-        return benefit.country_code == candidate.program_country_code
+        if not benefit.country_code or not candidate.program_country_code:
+            return False
+        allowed = {c.strip().upper() for c in benefit.country_code.split(",") if c.strip()}
+        return candidate.program_country_code.strip().upper() in allowed
     if benefit.scope_type == "CITY":
         return benefit.location_key == candidate.location_key
     return benefit.program_id == candidate.program_id

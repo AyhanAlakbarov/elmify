@@ -43,7 +43,7 @@ PLANS = (
         "key": "apply",
         "name": "Apply Cycle Pass",
         "price": "299 AZN",
-        "period": "€159 / $175 for the full academic year (or 3 × 109 AZN)",
+        "period": "€159 / $175 for the full academic year · or 3 monthly instalments of 109 AZN",
         "features": (
             (
                 "All matched hidden & niche scholarships unlocked across 53 countries "
@@ -68,7 +68,7 @@ PLANS = (
         "key": "concierge",
         "name": "Cycle Pass + Counsellor Review",
         "price": "499 AZN",
-        "period": "€269 / $295 for the full academic year (or 3 × 179 AZN)",
+        "period": "€269 / $295 for the full academic year · or 3 monthly instalments of 179 AZN",
         "features": (
             "Everything in Apply Cycle Pass with unlimited programme kits for the academic year",
             "Human counsellor line-by-line review & sign-off on up to 5 priority applications",

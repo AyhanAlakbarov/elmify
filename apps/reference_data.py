@@ -1,5 +1,7 @@
 """Pinned active ISO code sets used at validation and database boundaries."""
 
+from babel.numbers import get_territory_currencies
+
 ISO_3166_SOURCE_URL = "https://www.iso.org/standard/72482.html"
 ISO_3166_OBP_URL = "https://www.iso.org/obp/ui/#iso:std:iso:3166:-1:ed-4:v1:en"
 ISO_3166_REVISION = "ISO 3166-1:2020; OBP edition 4"
@@ -35,16 +37,6 @@ ISO_3166_ALPHA2_CODES = frozenset(
     """.split()
 )
 
-COUNTRY_TO_CURRENCY: dict[str, str] = {
-    "AZ": "AZN",
-    "KZ": "KZT",
-    "UZ": "UZS",
-    "KG": "KGS",
-    "TJ": "TJS",
-    "GE": "GEL",
-    "TR": "TRY",
-}
-
 ISO_4217_CODES = frozenset(
     """
     AED AFN ALL AMD AOA ARS AUD AWG AZN BAM BBD BDT BHD BIF BMD BND BOB BOV BRL
@@ -58,3 +50,31 @@ ISO_4217_CODES = frozenset(
     XAD XAU XBA XBB XBC XBD XCD XCG XDR XOF XPD XPF XPT XSU XTS XUA XXX YER ZAR ZMW ZWG
     """.split()
 )
+
+
+def _build_country_to_currency() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for code in sorted(ISO_3166_ALPHA2_CODES):
+        active = [
+            curr
+            for curr in get_territory_currencies(code, tender=True)
+            if curr in ISO_4217_CODES
+        ]
+        if active:
+            mapping[code] = next((curr for curr in active if curr.startswith(code)), active[0])
+    mapping.update(
+        {
+            "AZ": "AZN",
+            "KZ": "KZT",
+            "UZ": "UZS",
+            "KG": "KGS",
+            "TJ": "TJS",
+            "GE": "GEL",
+            "TR": "TRY",
+            "BG": "EUR",
+        }
+    )
+    return mapping
+
+
+COUNTRY_TO_CURRENCY: dict[str, str] = _build_country_to_currency()

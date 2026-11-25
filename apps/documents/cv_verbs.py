@@ -84,6 +84,10 @@ OPENERS: tuple[Opener, ...] = (
     Opener("wrote", "Wrote", "Write", 2),
     Opener("tested", "Tested", "Test", 2),
     Opener("designed", "Designed", "Design", 2),
+    Opener("conducted", "Conducted", "Conduct", 2),
+    Opener("performed", "Performed", "Perform", 2),
+    Opener("analyzed", "Analyzed", "Analyze", 2),
+    Opener("prepared", "Prepared", "Prepare", 2),
     Opener("led", "Led", "Lead", 3),
     Opener("managed", "Managed", "Manage", 3),
     Opener("coordinated", "Coordinated", "Coordinate", 3),
@@ -100,11 +104,42 @@ _STRENGTH_FORMS: dict[int, frozenset[str]] = {
         "writing", "test", "tested", "testing", "design", "designed", "designing", "designs",
         "created", "engineered", "programmed", "coded", "constructed", "authored",
         "benchmarked", "trained", "deployed",
+        # Cross-discipline execution verbs (STEM_QUANT, LIFE_BIOMED, SOCIAL_POLICY_ECON,
+        # HUMANITIES_LAW_ARTS, PROFESSIONAL_DESIGN)
+        "conduct", "conducted", "conducting", "perform", "performed", "performing",
+        "analyze", "analyzed", "analyzing", "analyse", "analysed", "analysing",
+        "prepare", "prepared", "preparing",
+        "compute", "computed", "simulate", "simulated", "calibrate", "calibrated",
+        "derive", "derived", "optimize", "optimized", "optimised", "automate", "automated",
+        "modeled", "modelled", "validate", "validated",
+        "synthesize", "synthesized", "synthesised", "assay", "assayed",
+        "culture", "cultured", "purify", "purified", "titrate", "titrated",
+        "sequence", "sequenced", "genotype", "genotyped", "isolate", "isolated",
+        "characterize", "characterized", "characterised", "screen", "screened",
+        "triage", "triaged", "diagnose", "diagnosed", "administer", "administered",
+        "formulate", "formulated",
+        "evaluate", "evaluated", "assess", "assessed", "survey", "surveyed",
+        "interview", "interviewed", "estimate", "estimated", "regress", "regressed",
+        "forecast", "forecasted", "draft", "drafted", "brief", "briefed",
+        "negotiate", "negotiated", "mediate", "mediated", "compile", "compiled",
+        "translate", "translated", "transcribe", "transcribed",
+        "catalog", "cataloged", "catalogue", "catalogued", "collate", "collated",
+        "annotate", "annotated", "archive", "archived", "edit", "edited",
+        "litigate", "litigated", "adjudicate", "adjudicated", "arbitrate", "arbitrated",
+        "researched", "examine", "examined", "interpret", "interpreted",
+        "curate", "curated", "curating", "fabricate", "fabricated",
+        "exhibit", "exhibited", "render", "rendered", "prototype", "prototyped",
+        "produce", "produced", "audit", "audited", "procure", "procured",
+        "compose", "composed", "stage", "staged", "illustrate", "illustrated",
     }),
     3: frozenset({
         "lead", "led", "leading", "leads", "manage", "managed", "managing", "manages",
         "manager", "coordinate", "coordinated", "coordinating", "coordinator", "supervise",
         "supervised", "supervising", "supervisor", "headed", "directed", "chaired",
+        "chair", "chairing", "direct", "directing", "director",
+        "oversee", "oversaw", "overseeing", "architected",
+        "MODERATED".casefold(), "convened", "convener", "curator",
+        "founded", "founder", "co-founded", "co-founder", "principal",
     }),
 }
 
@@ -112,21 +147,37 @@ _STRENGTH_FORMS: dict[int, frozenset[str]] = {
 #: of these, its -s/-es form, an irregular past below, or any -ed word is
 #: already a verb line.
 _VERB_BASES = frozenset({
-    "achieve", "add", "administer", "advise", "analyse", "analyze", "apply", "assess",
-    "assist", "attend", "automate", "build", "calculate", "chair", "choose", "coach", "code",
-    "collaborate", "collect", "compile", "complete", "compute", "conduct", "configure",
-    "construct", "contribute", "convert", "coordinate", "create", "curate", "debug",
-    "define", "deliver", "demonstrate", "deploy", "design", "develop", "direct", "draft",
-    "edit", "engineer", "establish", "evaluate", "examine", "execute", "expand", "explore",
-    "extract", "facilitate", "find", "fix", "gather", "generate", "give", "guide", "handle",
-    "help", "identify", "implement", "improve", "increase", "integrate", "interview",
-    "investigate", "lead", "learn", "maintain", "manage", "measure", "mentor", "migrate",
-    "model", "monitor", "optimise", "optimize", "organise", "organize", "perform", "plan",
-    "prepare", "present", "process", "produce", "program", "propose", "prototype",
-    "publish", "reduce", "refactor", "report", "represent", "research", "review", "run",
-    "scale", "set", "simulate", "solve", "speak", "streamline", "study", "supervise",
-    "support", "synthesise", "synthesize", "teach", "test", "train", "translate", "tutor",
-    "use", "validate", "visualise", "visualize", "volunteer", "win", "work", "write",
+    "achieve", "add", "adjudicate", "administer", "advise", "amplify", "analyse", "analyze",
+    "animate", "annotate", "appraise", "apply", "arbitrate", "archive", "arrange", "assay",
+    "assemble", "assess", "assist", "attend", "audit", "authenticate", "automate",
+    "benchmark", "brief", "build", "calculate", "calibrate", "canvas", "cast", "catalog",
+    "catalogue", "chair", "characterise", "characterize", "choose", "choreograph",
+    "classify", "clone", "coach", "code", "codify", "collaborate", "collate", "collect",
+    "comment", "commission", "compile", "complete", "compose", "compute", "conceptualize",
+    "conduct", "configure", "construct", "contextualize", "contribute", "convert",
+    "coordinate", "copyedit", "create", "critique", "cryopreserve", "culture", "curate",
+    "debug", "decipher", "define", "deliver", "demonstrate", "deploy", "derive", "design",
+    "develop", "diagnose", "digitize", "direct", "discretize", "dissect", "document",
+    "draft", "edit", "elute", "engineer", "enumerate", "establish", "estimate", "evaluate",
+    "examine", "execute", "exhibit", "expand", "explore", "extract", "fabricate",
+    "facilitate", "field", "film", "find", "fix", "forecast", "formulate", "gather",
+    "generate", "genotype", "give", "guide", "handle", "harvest", "help", "identify",
+    "illustrate", "image", "immunostain", "implement", "improve", "increase", "incubate",
+    "index", "inoculate", "install", "integrate", "interpolate", "interpret", "interview",
+    "investigate", "isolate", "layout", "lead", "learn", "litigate", "lyse", "maintain",
+    "manage", "master", "measure", "mediate", "mentor", "migrate", "mix", "model",
+    "moderate", "monitor", "mount", "negotiate", "optimise", "optimize", "orchestrate",
+    "organise", "organize", "paint", "parameterize", "perform", "perfuse", "petition",
+    "pitch", "plan", "plead", "poll", "prepare", "present", "process", "procure",
+    "produce", "program", "project", "proofread", "propose", "prototype", "publish",
+    "purify", "quantify", "reconstruct", "redact", "reduce", "refactor", "regress",
+    "render", "report", "represent", "research", "restore", "review", "run", "sample",
+    "scale", "screen", "sculpt", "sequence", "set", "simulate", "sketch", "solve", "speak",
+    "stage", "stain", "sterilize", "storyboard", "stratify", "streamline", "study",
+    "supervise", "support", "survey", "synthesise", "synthesize", "tabulate", "teach",
+    "test", "titrate", "train", "transcribe", "transfect", "translate", "transliterate",
+    "triage", "tutor", "typeset", "underwrite", "use", "validate", "verify", "visualise",
+    "visualize", "volunteer", "win", "work", "write",
 })
 _IRREGULAR_PAST = frozenset({
     "built", "chose", "drew", "found", "gave", "held", "kept", "led", "made", "met", "ran",
@@ -145,7 +196,10 @@ _LOWERCASE_FIRST = frozenset({
     "a", "an", "the", "this", "these", "those", "one", "two", "three", "four", "five",
     "several", "multiple", "various", "some", "each", "all", "both", "new", "over", "more",
 })
-_NOMINAL_ENDINGS = ("ment", "tion", "sion", "ance", "ence", "ing", "ysis")
+_NOMINAL_ENDINGS = (
+    "ment", "tion", "sion", "ance", "ence", "ing", "sis",
+    "graphy", "metry", "scopy", "ology", "ture", "ship",
+)
 
 _WORD = re.compile(r"[A-Za-z][A-Za-z'-]*")
 _LABEL = re.compile(r"^[^:]{1,30}:\s")
@@ -182,7 +236,10 @@ def without_first_person(bullet: str) -> str | None:
     return verb[0].upper() + verb[1:] + match.group(2)
 
 
-def allowed_openers(entry_text: str) -> tuple[str, ...]:
+def allowed_openers(
+    entry_text: str, *, discipline: object | None = None
+) -> tuple[str, ...]:
+    _ = discipline
     words = {word.casefold() for word in _WORD.findall(entry_text)}
     strength = max(
         (level for level, forms in _STRENGTH_FORMS.items() if words & forms), default=1
@@ -315,6 +372,7 @@ def verb_fixes(
     student_id: UUID,
     undone: frozenset[str],
     client: Client | None = None,
+    discipline: object | None = None,
 ) -> tuple[CVContent, tuple[AppliedFix, ...]]:
     """Apply §5.1 to every experience bullet. 'I <verb>' is fixed by code; a
     flagged line gets Jev's opening when Jev chose one; every other line is
@@ -326,11 +384,21 @@ def verb_fixes(
     by_text = {item.text: item for item in items}
     experience, fixes = [], []
     for i, entry in enumerate(content.experience):
+        entry_allowed = set(
+            allowed_openers(
+                " ".join((entry.title, *entry.bullets)), discipline=discipline
+            )
+        )
         bullets: list[str] = []
         for j, bullet in enumerate(entry.bullets):
             new = without_first_person(bullet)
             item = by_text.get(bullet)
-            if new is None and item is not None and item.subject in chosen:
+            if (
+                new is None
+                and item is not None
+                and item.subject in chosen
+                and chosen[item.subject] in entry_allowed
+            ):
                 new = compose(bullet, chosen[item.subject], present=entry.end_date is None)
             if new is None or new == bullet:
                 bullets.append(bullet)

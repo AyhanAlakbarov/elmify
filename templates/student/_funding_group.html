@@ -1,4 +1,4 @@
-{% load dashboard cv_countries %}<section class="funding-group pack-section tone-{% if group.award %}{{ group.award.program_name|tone }}{% else %}plain{% endif %}">
+{% load dashboard cv_countries %}<section class="funding-group pack-section tone-{% if group.award %}{{ group.award.program_name|tone }}{% else %}plain{% endif %}" data-pack-list="{% if in_pack %}pack{% else %}other{% endif %}" data-funding-group="{% if group.award %}{{ group.award.id }}{% else %}unfunded{% endif %}">
   {% if group.award %}
     {% with award=group.award card=group.award.funding_card %}
       <header class="funding-head">
@@ -10,11 +10,11 @@
         <dl class="funding-facts">
           {% if card.holder %}<div><dt>Offered by</dt><dd>{{ card.holder }}</dd></div>{% endif %}
           {% with t=card.tuition l=card.living %}{% if t and t != "UNSTATED" or l and l != "UNSTATED" %}<div><dt>Covers</dt><dd>{% if t and t != "UNSTATED" %}Tuition: {{ t|lower }}{% endif %}{% if t and t != "UNSTATED" and l and l != "UNSTATED" %}; {% endif %}{% if l and l != "UNSTATED" %}living: {{ l|lower }}{% endif %}</dd></div>{% endif %}{% endwith %}
-          {% if card.amounts %}<div><dt>Amount</dt><dd>{{ card.amounts|join:"; " }}</dd></div>{% endif %}
+          {% if card.amounts %}<div{% if card.amounts_by_country %} class="funding-amounts-multi"{% endif %}><dt>Amount{% if card.amounts_by_country %} (by country){% endif %}</dt><dd>{{ card.amounts|join:"; " }}</dd></div>{% endif %}
           {% if card.deadline %}<div><dt>Deadline</dt><dd>{{ card.deadline }}</dd></div>{% endif %}
           {% if award.evidence.claim %}<div class="funding-claim"><dt>Who can apply</dt><dd>{{ award.evidence.claim }}</dd></div>{% endif %}
         </dl>
-        {% include "student/_candidate.html" with candidate=award also_under=None as_banner=True %}
+        {% include "student/_candidate.html" with candidate=award also_under=None as_banner=True is_elsewhere=False %}
       </header>
     {% endwith %}
     {% if group.programmes %}<p class="group-label">{% if group.award.country_code %}{{ group.award.country_code|flag }}{% endif %}{{ group.label }}: <span class="group-label-sub">degree programmes from your matches that this scholarship can fund</span></p>{% endif %}
@@ -27,9 +27,9 @@
         <li>
           {% if placed.elsewhere %}
             <p class="match-note match-elsewhere-badge"><span class="badge badge-muted">Listed {{ placed.elsewhere }}</span><span class="sr-only"> ({{ placed.elsewhere }})</span></p>
-            {% include "student/_candidate.html" with candidate=placed.candidate also_under=placed.also_under in_pack=False %}
+            {% include "student/_candidate.html" with candidate=placed.candidate also_under=placed.also_under award_amount=placed.award_amount in_pack=False is_elsewhere=True %}
           {% else %}
-            {% include "student/_candidate.html" with candidate=placed.candidate also_under=placed.also_under %}
+            {% include "student/_candidate.html" with candidate=placed.candidate also_under=placed.also_under award_amount=placed.award_amount is_elsewhere=False %}
           {% endif %}
         </li>
       {% endfor %}

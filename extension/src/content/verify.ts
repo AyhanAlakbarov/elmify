@@ -12,8 +12,25 @@
  * will read.
  */
 import type { PacketField } from "../types.js";
-import { REFUSED_TYPES, accessibleName } from "./snapshot.js";
+import {
+  REFUSED_TYPES,
+  accessibleName,
+  isCombobox,
+  isRadioControl,
+  notConsentRadio,
+  radioButtonsFor,
+  radioGroupName,
+} from "./snapshot.js";
 import { TOKENS, fieldKey, normalise, tokenGroupKey } from "./vocabulary.js";
+
+declare module "../types.js" {
+  interface PacketField {
+    expected_label?: string;
+    label_fingerprint?: string;
+  }
+}
+
+export type PacketEntry = PacketField;
 
 export interface VerifiedEntry {
   entry: PacketField;
@@ -24,6 +41,9 @@ export interface VerifiedEntry {
 }
 
 const FILL_METHODS = new Set(["fill", "type", "selectOption", "selectOptionFromDropdown"]);
+const ALL_TOKEN_GROUPS = Array.from(
+  new Set(Object.keys(TOKENS).map((key) => tokenGroupKey(key))),
+);
 
 export function visible(element: HTMLElement): boolean {
   if (element.hidden) return false;
@@ -125,27 +145,53 @@ export function verifyEntries(entries: PacketField[]): VerifiedEntry[] {
       return refuse("bad_selector");
     }
     if (matches.length === 0) return refuse("no_such_control");
-    // Two matches means the selector does not identify anything: typing into
+    const isRadioGroupSelector =
+      matches.length > 1 &&
+      Array.from(matches).every(
+        (el) =>
+          el instanceof HTMLInputElement &&
+          el.type.toLowerCase() === "radio" &&
+          Boolean(el.name) &&
+          el.name === (matches[0] as HTMLInputElement).name,
+      );
+    // Two matches means the selector does not identify anything (unless all
+    // matches are the radio inputs of a single named radio group): typing into
     // the first is a coin flip the student would be right to resent.
-    if (matches.length > 1) return refuse("not_unique");
+    if (matches.length > 1 && !isRadioGroupSelector) return refuse("not_unique");
 
     const element = matches[0];
     if (!(element instanceof HTMLElement)) return refuse("no_such_control");
 
     const tag = element.tagName.toLowerCase();
-    if (!["input", "select", "textarea"].includes(tag)) return refuse("not_a_control");
-
     const type = (element.getAttribute("type") ?? "").toLowerCase();
-    if (REFUSED_TYPES.has(type)) return refuse("refused_type");
-    if (entry.method.startsWith("selectOption") && tag !== "select") return refuse("not_a_select");
+    const combobox = isCombobox(element);
+    const radio = isRadioControl(element);
+    if (!["input", "select", "textarea"].includes(tag) && !combobox && !radio) {
+      return refuse("not_a_control");
+    }
 
-    if (!visible(element)) return refuse("hidden");
-    if (
-      (element as HTMLInputElement).disabled ||
-      (element as HTMLInputElement).readOnly ||
-      element.getAttribute("aria-disabled") === "true"
-    ) {
-      return refuse("disabled");
+    if (REFUSED_TYPES.has(type)) return refuse("refused_type");
+    if (radio && !notConsentRadio(element)) return refuse("refused_type");
+    if (entry.method.startsWith("selectOption") && tag !== "select" && !radio && !combobox) {
+      return refuse("not_a_select");
+    }
+
+    if (radio) {
+      const radios = radioButtonsFor(element);
+      if (radios.length === 0 || !radios.some((r) => visible(r))) return refuse("hidden");
+      if (radios.every((r) => r.disabled || r.getAttribute("aria-disabled") === "true")) {
+        return refuse("disabled");
+      }
+    } else {
+      if (!visible(element)) return refuse("hidden");
+      if (
+        Boolean((element as HTMLInputElement).disabled) ||
+        Boolean((element as HTMLInputElement).readOnly) ||
+        element.getAttribute("aria-disabled") === "true" ||
+        element.getAttribute("aria-readonly") === "true"
+      ) {
+        return refuse("disabled");
+      }
     }
 
     // The student typed this answer into this very box before (owner,
@@ -153,10 +199,30 @@ export function verifyEntries(entries: PacketField[]): VerifiedEntry[] {
     // to judge. Every check above (unique, visible, enabled, typeable) still applies.
     if (entry.from_answer === true) return { entry, element, ok: true, reason: "" };
 
-    const matched = matchingFields(accessibleName(element), packetGroups);
-    if (matched.length === 0) return refuse("name_mismatch");
+    const liveName = radio ? radioGroupName(element) : accessibleName(element);
+    const ownGroup = tokenGroupKey(entry.profile_field);
+    let matched = matchingFields(liveName, packetGroups);
+    if (radio && matched.length === 0) {
+      const fallbackName = element.getAttribute("name") ?? "";
+      if (fallbackName) matched = matchingFields(fallbackName, packetGroups);
+    }
+    if (matched.length === 0) {
+      const expectedLabel = (entry.expected_label ?? entry.label_fingerprint ?? "").trim();
+      const normExpected = normalise(expectedLabel);
+      const normLive = normalise(liveName);
+      const otherGroups = ALL_TOKEN_GROUPS.filter((group) => group !== ownGroup);
+      const matchesOtherKnownField = matchingFields(liveName, otherGroups).length > 0;
+      if (
+        normExpected.length >= 2 &&
+        normLive === normExpected &&
+        !matchesOtherKnownField
+      ) {
+        return { entry, element, ok: true, reason: "" };
+      }
+      return refuse("name_mismatch");
+    }
     if (matched.length > 1) return refuse("ambiguous_name");
-    if (matched[0] !== tokenGroupKey(entry.profile_field)) return refuse("name_mismatch");
+    if (matched[0] !== ownGroup) return refuse("name_mismatch");
 
     return { entry, element, ok: true, reason: "" };
   });

@@ -16,12 +16,13 @@ from datetime import date
 from decimal import Decimal
 from functools import cache
 
+from anyascii import anyascii
 from django.conf import settings
 from pydantic import BaseModel
 
 from apps.research.locale_names import fold, month_forms
 
-from . import ocr
+from . import mrz, ocr
 from .azure_layout import AzureLayout, AzureWord, analyze_layout
 from .fact_readers import read_quotes
 from .id_reading import NotRead, ReadValue, owner_matches_document_text
@@ -43,9 +44,23 @@ _TEST_ALIASES: tuple[tuple[str, str, str], ...] = (
     (r"ielts", "IELTS", "English"),
     (r"toefl", "TOEFL", "English"),
     (r"pte", "PTE", "English"),
+    (r"languagecert", "LanguageCert", "English"),
+    (r"trinity\s+ise", "Trinity ISE", "English"),
     (r"testdaf", "TestDaF", "German"),
+    (r"goethe[-\s]+zertifikat", "Goethe-Zertifikat", "German"),
+    (r"telc", "telc", "German"),
+    (r"dsh", "DSH", "German"),
+    (r"[oö]sd", "ÖSD", "German"),
     (r"delf", "DELF", "French"),
     (r"dalf", "DALF", "French"),
+    (r"tcf", "TCF", "French"),
+    (r"tef", "TEF", "French"),
+    (r"dele", "DELE", "Spanish"),
+    (r"siele", "SIELE", "Spanish"),
+    (r"cils", "CILS", "Italian"),
+    (r"celi", "CELI", "Italian"),
+    (r"t[oö]mer", "TÖMER", "Turkish"),
+    (r"torfl|трки", "TORFL", "Russian"),
     (r"topik", "TOPIK", "Korean"),
     (r"jlpt|japanese-language\s+proficiency", "JLPT", "Japanese"),
     (r"hsk", "HSK", "Chinese"),
@@ -61,6 +76,9 @@ _RANGES: dict[str, tuple[tuple[int, int, str | None], tuple[int, int, str | None
     "TOEFL": ((0, 120, None), (0, 30, None)),
     "Duolingo English Test": ((10, 160, None), (10, 160, None)),
     "PTE": ((10, 90, None), (10, 90, None)),
+    "SIELE": ((0, 1000, None), (0, 250, None)),
+    "TCF": ((100, 699, None), (100, 699, None)),
+    "TEF": ((0, 900, None), (0, 300, None)),
 }
 _SCORES = frozenset({"overall", "listening", "reading", "writing", "speaking"})
 _CEFR = re.compile(r"\b([ABC][12])\b")
@@ -149,9 +167,26 @@ def strip_identifiers(text: str, identifiers: list[str]) -> str:
             text = re.sub(rf"(?<![^\W_]){body}(?![^\W_])", _PLACEHOLDER, text,
                           flags=re.IGNORECASE)
         else:
-            names.update(_fold(w) for w in re.findall(r"\w+", identifier) if len(w) >= 2)
-    return re.sub(r"\w+", lambda m: _PLACEHOLDER if _fold(m.group()) in names else m.group(),
-                  text)
+            for w in re.findall(r"\w+", identifier):
+                if len(w) >= 2:
+                    names.add(_fold(w))
+                    ascii_w = _fold(anyascii(w))
+                    if len(ascii_w) >= 2:
+                        names.add(ascii_w)
+                    names.update(k.casefold() for k in mrz.name_keys(w) if len(k) >= 2)
+
+    def _replace_word(match: re.Match[str]) -> str:
+        word = match.group()
+        if _fold(word) in names:
+            return _PLACEHOLDER
+        if len(word) >= 2:
+            if _fold(anyascii(word)) in names:
+                return _PLACEHOLDER
+            if any(k.casefold() in names for k in mrz.name_keys(word)):
+                return _PLACEHOLDER
+        return word
+
+    return re.sub(r"\w+", _replace_word, text)
 
 
 def _pattern(quote: str) -> re.Pattern[str]:
@@ -186,6 +221,7 @@ def _occurrences(quote: str, layout: AzureLayout) -> list[tuple[int, list[AzureW
 
 
 _YEAR_FIRST = re.compile(r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})")
+_CJK_DATE = re.compile(r"(\d{4})\s*[年년]\s*(\d{1,2})\s*[月월]\s*(\d{1,2})\s*[日일]?")
 _NUMERIC = re.compile(r"(\d{1,2})[./-](\d{1,2})[./-](\d{4})")
 
 
@@ -196,7 +232,7 @@ def _iso_date(quote: str) -> str | None:
     is always year-month-day. A month name needs a four-digit year; any of space / - . ,
     separates its parts ("18/JAN/2025", "18-Jan-2025")."""
     text = quote.strip()
-    if match := _YEAR_FIRST.fullmatch(text):
+    if match := (_YEAR_FIRST.fullmatch(text) or _CJK_DATE.fullmatch(text)):
         year, month, day = (int(g) for g in match.groups())
     elif match := _NUMERIC.fullmatch(text):
         day, month, year = (int(g) for g in match.groups())

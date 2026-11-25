@@ -82,7 +82,12 @@ _SEMESTER_CONTRIB_RE = re.compile(
 _CONDITIONAL_GUARD_RE = re.compile(
     r"\b(?:except|unless|partner\s+universit|exchange\s+students?|bilateral|"
     r"selected\s+applicants|up\s+to|top\s+\d+|quota|if\s+you\s+hold|"
-    r"waived\s+for\s+citizens\s+of|only\s+for\s+eu|eu/eea\s+only)\b",
+    r"waived\s+for\s+citizens\s+of|only\s+for\s+eu|eu/eea\s+only|"
+    r"ausgenommen|nur\s+für\s+eu|partneruniversit|befreiung|"
+    r"sauf|ressortissants\s+de\s+l'ue|partenaire|exonér|"
+    r"uitzondering|alleen\s+voor\s+eu|"
+    r"excepto|exenci[óo]n|"
+    r"eccetto|esonero)",
     re.IGNORECASE,
 )
 _CATEGORY_REF_RE = re.compile(
@@ -159,7 +164,11 @@ _REFEREE_LINE_RE = re.compile(
     re.IGNORECASE,
 )
 _REFEREE_COUNT_RE = re.compile(
-    r"\b(?:(1|one|2|two|3|three)\s+(?:academic\s+|professional\s+)?(?:reference|recommendation|referee))",
+    r"\b(1|one|a|an|ein|eine|un|une|2|two|zwei|deux|3|three|drei|trois)\s+"
+    r"(?:academic\s+|professional\s+)?"
+    r"(?:references?\b|recommendations?\b|referees?\b|letters?\s+of\s+recommendation\b|"
+    r"recommendation\s+letters?\b|reference\s+letters?\b|empfehlungsschreiben\b|"
+    r"lettres?\s+de\s+recommandation\b)",
     re.IGNORECASE,
 )
 _TRANSCRIPT_LINE_RE = re.compile(
@@ -236,12 +245,22 @@ _REFEREE_INST_EMAIL_RE = re.compile(
 )
 
 _WORD_NUM = {
+    "a": "ONE",
+    "an": "ONE",
     "one": "ONE",
     "1": "ONE",
+    "ein": "ONE",
+    "eine": "ONE",
+    "un": "ONE",
+    "une": "ONE",
     "two": "TWO",
     "2": "TWO",
+    "zwei": "TWO",
+    "deux": "TWO",
     "three": "THREE_OR_MORE",
     "3": "THREE_OR_MORE",
+    "drei": "THREE_OR_MORE",
+    "trois": "THREE_OR_MORE",
 }
 
 _CLAUSE_SPLIT_RE = re.compile(

@@ -21,6 +21,7 @@ from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone as dj_timezone
 
 from apps.concierge.models import Notification, RoadmapItem
+from apps.dashboard.dates import counting_deadline, funding_mandatory
 from apps.privacy.requests import stopping_requests
 from apps.tenancy.context import tenant_scope
 from apps.tenancy.db import tenant_transaction
@@ -94,7 +95,20 @@ def remaining_phrase(remaining: timedelta) -> str:
     return f"{hours} hours"
 
 
-def reminder_item(application: Application) -> RoadmapItem:
+def _effective_deadline(application: Application) -> datetime | None:
+    if application.deadline is not None:
+        return application.deadline
+    mandatory = funding_mandatory(application.student)
+    try:
+        counted = counting_deadline(application, mandatory=mandatory)
+    except TypeError:
+        counted = counting_deadline(application)  # type: ignore[call-arg]
+    return counted.at if counted is not None else None
+
+
+def reminder_item(
+    application: Application, *, deadline: datetime | None = None
+) -> RoadmapItem:
     """The roadmap item every rung's notification hangs on, created on demand.
 
     One per application rather than one per rung: Notification.roadmap_item is
@@ -105,17 +119,20 @@ def reminder_item(application: Application) -> RoadmapItem:
     """
     if application.reminder_item is not None:
         return application.reminder_item
+    effective_deadline = (
+        deadline if deadline is not None else _effective_deadline(application)
+    )
     # The ladder never calls this for a deadline-less application -- due_rungs
     # returns empty without one -- so this narrows the nullable FK for mypy
     # rather than guarding a real runtime case.
-    assert application.deadline is not None
+    assert effective_deadline is not None
     item = RoadmapItem.objects.create(
         tenant=application.tenant,
         student=application.student,
         stage=RoadmapItem.Stage.SUBMISSION,
         owner=application.student,
         owner_kind=RoadmapItem.OwnerKind.HUMAN,
-        deadline=application.deadline,
+        deadline=effective_deadline,
     )
     application.reminder_item = item
     application.save(update_fields=["reminder_item"])
@@ -242,8 +259,8 @@ def send_due_reminders_for_tenant(tenant_id: UUID, *, now: datetime | None = Non
         with tenant_transaction(tenant_id):
             due_ids = list(
                 Application.objects.filter(
-                    deadline__isnull=False,
                     state__in=_ACTIVE_STATES,
+                    outcome="",
                     student__active=True,
                 )
                 # Exists, not a join through privacy_requests: a join repeats an
@@ -272,9 +289,12 @@ def _remind_one(application_id: UUID, moment: datetime) -> bool:
         .filter(id=application_id)
         .first()
     )
-    if application is None or application.deadline is None:
+    if application is None or application.outcome:
         return False
-    due = due_rungs(application.deadline, moment)
+    deadline = _effective_deadline(application)
+    if deadline is None:
+        return False
+    due = due_rungs(deadline, moment)
     if not due:
         return False
     already = {
@@ -296,7 +316,7 @@ def _remind_one(application_id: UUID, moment: datetime) -> bool:
         # exception, not "unless it's urgent".
         return False
 
-    remaining = application.deadline - moment
+    remaining = deadline - moment
     # Written before any notification is sent, and without ignore_conflicts:
     # two overlapping sweeps (EventBridge is at-least-once) can both read
     # "unsent" before either write lands, so the write itself is the race's
@@ -319,7 +339,7 @@ def _remind_one(application_id: UUID, moment: datetime) -> bool:
             if value not in already
         ]
     )
-    item = reminder_item(application)
+    item = reminder_item(application, deadline=deadline)
     notify_student(application, item, remaining)
     email_student(application, remaining)
     if rung in COUNSELOR_RUNGS:
@@ -375,17 +395,12 @@ def send_due_outcome_checkins_for_tenant(
     """
     moment = now or dj_timezone.now()
     cutoff = moment - POST_DEADLINE_OUTCOME_CHECKIN_DELAY
-    no_deadline_cutoff = moment - POST_DEADLINE_FOLLOWUP_CHECKIN_DELAY
     with tenant_scope(tenant_id):
         with tenant_transaction(tenant_id):
             due_ids = list(
                 Application.objects.filter(
                     Q(deadline__isnull=False, deadline__lte=cutoff)
-                    | Q(
-                        deadline__isnull=True,
-                        started_at__isnull=False,
-                        started_at__lte=no_deadline_cutoff,
-                    ),
+                    | Q(deadline__isnull=True),
                     Q(outcome="", decision_available_at__isnull=True)
                     | Q(
                         outcome__in=(
@@ -459,13 +474,14 @@ def _checkin_one(application_id: UUID, moment: datetime) -> bool:
     if any(n.acknowledged_at is None for n in existing_checkins) or len(existing_checkins) >= 2:
         return False
     is_followup = len(existing_checkins) == 1 or needs_bundled_funding_checkin
-    if application.deadline is not None:
+    effective_deadline = _effective_deadline(application)
+    if effective_deadline is not None:
         required_delay = (
             POST_DEADLINE_FOLLOWUP_CHECKIN_DELAY
             if is_followup
             else POST_DEADLINE_OUTCOME_CHECKIN_DELAY
         )
-        if application.deadline > moment - required_delay:
+        if effective_deadline > moment - required_delay:
             return False
     else:
         if application.started_at is None:

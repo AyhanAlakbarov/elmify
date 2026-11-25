@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from anyascii import anyascii
 
@@ -312,7 +312,12 @@ _PAREN_RE = re.compile(r"\([^)]*\)|\[[^\]]*\]")
 _ROLE_PREFIX_RE = re.compile(
     r"^\s*(?:(?:co-?)?supervis(?:ed\s+by|or)\s*:?|advis(?:ed\s+by|or)\s*:?|"
     r"mentor\s*:?|pi\s*:?|instructor\s*:?|lecturer\s*:?|taught\s+by\s*:?|"
-    r"under\s+the\s+supervision\s+of\s*:?|chair\s*:?)\s*",
+    r"under\s+the\s+supervision\s+of\s*:?|chair\s*:?|"
+    r"(?:tez\s+)?dan[ıi][şs]man[ıi]?\s*:?|elmi\s+r[əe]hb[əe]r[i]?\s*:?|"
+    r"r[əe]hb[əe]r\s*:?|научный\s+руководитель\s*:?|руководитель\s*:?|"
+    r"преподаватель\s*:?|лектор\s*:?|betreuer(?:in)?\s*:?|"
+    r"direct(?:eur|rice)(?:\s+de\s+(?:th[èe]se|m[ée]moire|recherche))?\s*:?|"
+    r"encadrant(?:e)?\s*:?|relatore\s*:?|tutor(?:a)?\s*:?)\s*",
     re.IGNORECASE,
 )
 _PEOPLE_SPLIT_RE = re.compile(
@@ -355,6 +360,32 @@ _COURSE_STOPWORDS = frozenset(
         "applied",
         "fundamentals",
         "principles",
+        "einfuhrung",
+        "einführung",
+        "vorlesung",
+        "praktikum",
+        "ubung",
+        "übung",
+        "seminaire",
+        "séminaire",
+        "cours",
+        "введение",
+        "vvedenie",
+        "лекция",
+        "lektsiya",
+        "практикум",
+        "семинар",
+        "seminar",
+        "giris",
+        "giriş",
+        "girish",
+        "ders",
+        "dersi",
+        "temel",
+        "fənn",
+        "fann",
+        "mühazirə",
+        "muhazira",
     }
 )
 _AZ_CHAR_MAP = str.maketrans(
@@ -913,7 +944,9 @@ def _course_matches_relationship(course_title: str, relationship: str) -> bool:
     course_words = [
         _fold_ascii(w)
         for w in _WORD_RE.findall(course_title)
-        if len(_fold_ascii(w)) >= 4 and _fold_ascii(w) not in _COURSE_STOPWORDS
+        if len(_fold_ascii(w)) >= 4
+        and _fold_ascii(w) not in _COURSE_STOPWORDS
+        and w.casefold() not in _COURSE_STOPWORDS
     ]
     if not course_words:
         return False
@@ -933,6 +966,81 @@ def _supported_reading_bullets(reading: UsableReading) -> tuple[str, ...]:
     )[:3]
 
 
+_RESEARCH_ROLE_MARKERS = (
+    "thesis",
+    "dissertation",
+    "research",
+    "supervis",
+    "paper",
+    "co-author",
+    "tez",
+    "bitirme",
+    "danışman",
+    "danisman",
+    "araştırma",
+    "arastirma",
+    "laboratuvar",
+    "diplom işi",
+    "diplom isi",
+    "buraxılış işi",
+    "buraxilis isi",
+    "elmi rəhbər",
+    "elmi rehber",
+    "tədqiqat",
+    "tedqiqat",
+    "научный руководитель",
+    "диплом",
+    "диссертац",
+    "исследован",
+    "лаборатор",
+    "bachelorarbeit",
+    "masterarbeit",
+    "abschlussarbeit",
+    "betreuer",
+    "forschung",
+    "mémoire",
+    "memoire",
+    "thèse",
+    "these",
+    "directeur",
+    "encadrant",
+    "recherche",
+    "tesis",
+    "tesi",
+    "relatore",
+)
+_TEACHING_ROLE_MARKERS = (
+    "taught",
+    "course",
+    "lecture",
+    "class",
+    "seminar",
+    "instructor",
+    "module",
+    "practicum",
+    "ders",
+    "hoca",
+    "müəllim",
+    "muellim",
+    "преподаватель",
+    "лектор",
+    "курс",
+    "vorlesung",
+    "cours",
+    "tutor",
+)
+_PROFESSIONAL_ROLE_MARKERS = (
+    "staj",
+    "müdür",
+    "mudur",
+    "təcrübə",
+    "tecrube",
+    "стажировк",
+    "praktikum",
+    "stage",
+)
+
+
 def referee_angle(referee: Referee, shared_work: Sequence[SharedWorkItem]) -> str:
     """Return a concise recommendation focus for `referee` based on verified shared work."""
     kinds = {item.kind for item in shared_work}
@@ -950,6 +1058,13 @@ def referee_angle(referee: Referee, shared_work: Sequence[SharedWorkItem]) -> st
         return "Practical project execution and research-group contribution"
     if referee.kind == Referee.Kind.PROFESSIONAL:
         return "Professional capability, leadership, and workplace contribution"
+    rel_low = referee.relationship.casefold().replace("i̇", "i")
+    if any(m in rel_low for m in _RESEARCH_ROLE_MARKERS):
+        return "Research supervision, technical methods, and project execution"
+    if any(m in rel_low for m in _TEACHING_ROLE_MARKERS):
+        return "Classroom performance, analytical rigour, and subject mastery"
+    if any(m in rel_low for m in _PROFESSIONAL_ROLE_MARKERS):
+        return "Workplace performance, delivery under responsibility, and professional impact"
     return "Academic preparation and readiness for graduate study"
 
 
@@ -1243,6 +1358,7 @@ def shared_work_for_referee(
     # 7. Institution-matched degree context when an academic referee shares the student's
     # university and no specific thesis or course on that degree was matched yet.
     if referee.institution and referee.kind == Referee.Kind.ACADEMIC:
+        best_edu_line_by_inst: dict[str, tuple[int, str]] = {}
         for fact in fact_list:
             if (
                 fact.category != VerifiedFact.Category.EDUCATION
@@ -1264,6 +1380,414 @@ def shared_work_for_referee(
                 _date_span(p),
                 f"grade {p['grade_native']}" if p.get("grade_native") else "",
             ]
-            _add("education", ", ".join(part for part in parts if part))
+            line = ", ".join(part for part in parts if part)
+            inst_key = institution.strip().casefold()
+            prev = best_edu_line_by_inst.get(inst_key)
+            if prev is None or len(degree) > prev[0]:
+                best_edu_line_by_inst[inst_key] = (len(degree), line)
+        for _deg_len, line in best_edu_line_by_inst.values():
+            _add("education", line)
 
     return tuple(items)
+
+
+RefereeRoleArchetype = Literal[
+    "research_supervisor", "course_instructor", "professional_supervisor"
+]
+
+
+@dataclass(frozen=True)
+class ScopedRefereeEvidence:
+    """Epistemically scoped and orthogonally partitioned evidence for a single referee."""
+
+    role_archetype: RefereeRoleArchetype
+    angle: str
+    direct_work: tuple[SharedWorkItem, ...]
+    scoped_facts: tuple[VerifiedFact, ...]
+    scoped_courses: tuple[str, ...]
+    co_referee_coverage: tuple[str, ...] = ()
+
+
+def classify_referee_role(
+    referee: Referee, shared_work: Sequence[SharedWorkItem]
+) -> RefereeRoleArchetype:
+    """Classify the referee into one of three primary-source narrative archetypes."""
+    if referee.kind == Referee.Kind.PROFESSIONAL:
+        return "professional_supervisor"
+    kinds = {item.kind for item in shared_work}
+    rel = referee.relationship.casefold().replace("i̇", "i")
+    if kinds & {"research", "publication", "github", "pdf"} or any(
+        marker in rel for marker in _RESEARCH_ROLE_MARKERS
+    ):
+        return "research_supervisor"
+    if "coursework" in kinds or any(
+        marker in rel for marker in _TEACHING_ROLE_MARKERS
+    ):
+        return "course_instructor"
+    if any(marker in rel for marker in _PROFESSIONAL_ROLE_MARKERS):
+        return "professional_supervisor"
+    if "experience" in kinds:
+        return "research_supervisor"
+    if any(m in rel for m in ("advis", "mentor", "lab", "rəhbər", "rehber")):
+        return "research_supervisor"
+    return "course_instructor"
+
+
+def _item_directly_anchored_to(
+    item: SharedWorkItem,
+    referee: Referee,
+    facts: Sequence[VerifiedFact],
+) -> bool:
+    """True when `item` is anchored to `referee` by name, supervisor, author, or relationship note
+    (as opposed to a fallback institution-only match)."""
+    if item.kind in {"research", "publication", "coursework", "github", "pdf"}:
+        return True
+    if item.kind == "education":
+        return False
+    if _relationship_mentions(referee.relationship, item.summary):
+        return True
+    for fact in facts:
+        if not isinstance(fact.payload, dict):
+            continue
+        p = fact.payload
+        sup = str(p.get("supervisor") or "")
+        grp = str(p.get("group") or "")
+        proj = str(p.get("project") or "")
+        title = str(p.get("title") or p.get("name") or "")
+        if (sup and (person_matches(referee.name, sup) or group_matches(referee.name, sup))) or (
+            grp and group_matches(referee.name, grp)
+        ):
+            if (proj and _whole_word_match(proj, item.summary)) or (
+                title and _whole_word_match(title, item.summary)
+            ):
+                return True
+    return False
+
+
+def _research_matches_referee(p: dict[str, Any], referee: Referee) -> bool:
+    supervisor = str(p.get("supervisor") or "")
+    thesis = str(p.get("thesis_title") or p.get("project_title") or "")
+    sup_match = bool(
+        supervisor
+        and (person_matches(referee.name, supervisor) or group_matches(referee.name, supervisor))
+    )
+    return sup_match or bool(thesis and _relationship_mentions(referee.relationship, thesis))
+
+
+def _experience_matches_referee(
+    p: dict[str, Any], referee: Referee, *, allow_institution: bool = True
+) -> bool:
+    supervisor = str(p.get("supervisor") or "")
+    group = str(p.get("group") or "")
+    project = str(p.get("project") or "")
+    title = str(p.get("title") or "")
+    employer = str(p.get("employer") or "")
+    sup_match = bool(
+        supervisor
+        and (person_matches(referee.name, supervisor) or group_matches(referee.name, supervisor))
+    )
+    direct = bool(
+        sup_match
+        or (group and group_matches(referee.name, group))
+        or (project and _relationship_mentions(referee.relationship, project))
+        or (title and _relationship_mentions(referee.relationship, title))
+    )
+    if direct:
+        return True
+    if allow_institution and referee.institution and employer:
+        return institution_matches(referee.institution, employer)
+    return False
+
+
+def _publication_matches_referee(p: dict[str, Any], referee: Referee) -> bool:
+    raw_authors = p.get("authors")
+    authors = (
+        [str(a) for a in raw_authors if isinstance(a, str)]
+        if isinstance(raw_authors, list | tuple)
+        else []
+    )
+    pub_title = str(p.get("title") or "")
+    return bool(
+        any(person_matches(referee.name, author) for author in authors)
+        or (pub_title and _relationship_mentions(referee.relationship, pub_title))
+    )
+
+
+def _award_matches_referee(p: dict[str, Any], referee: Referee) -> bool:
+    award_name = str(p.get("name") or p.get("title") or "").strip()
+    issuer = str(
+        p.get("issuer")
+        or p.get("awarding_body")
+        or p.get("organization")
+        or p.get("institution")
+        or ""
+    ).strip()
+    desc = str(p.get("description") or "").strip()
+    blob = " ".join(part for part in (award_name, issuer, desc) if part)
+    if not award_name:
+        return False
+    return bool(
+        person_matches(referee.name, blob)
+        or group_matches(referee.name, blob)
+        or _relationship_mentions(referee.relationship, award_name)
+    )
+
+
+def scope_evidence_for_referee(
+    referee: Referee,
+    *,
+    facts: Iterable[VerifiedFact],
+    readings: Sequence[UsableReading] = (),
+    co_referees: Sequence[Referee] = (),
+) -> ScopedRefereeEvidence:
+    """Apply Rule 1 (Strict Per-Referee Epistemic Scoping) and Rule 2 (Orthogonal
+    Multi-Referee Fact Partitioning) across `referee` and `co_referees`.
+
+    1. Epistemic Scoping:
+       - A referee never claims firsthand observation of research supervised by a
+         different named person, or employment at an unrelated organization.
+       - A professional/employer referee (`Referee.Kind.PROFESSIONAL`) receives only
+         workplace experience, applied skills, and directly linked outcomes — never
+         university transcript course lists or academic theses supervised by faculty.
+    2. Orthogonal Multi-Referee Partitioning:
+       - When co-referees share an application, any episode (`SharedWorkItem`),
+         course, research project, or workplace role directly anchored to a co-referee
+         is partitioned exclusively to that co-referee so two letters never repeat the
+         same concrete body-paragraph episode.
+    """
+    fact_list = list(facts)
+    other_refs = [co for co in co_referees if co.id != referee.id]
+    raw_direct = shared_work_for_referee(referee, facts=fact_list, readings=readings)
+
+    co_work_map: dict[Any, tuple[SharedWorkItem, ...]] = {
+        co.id: shared_work_for_referee(co, facts=fact_list, readings=readings)
+        for co in other_refs
+    }
+    co_roles: dict[Any, RefereeRoleArchetype] = {
+        co.id: classify_referee_role(co, co_work_map[co.id]) for co in other_refs
+    }
+
+    # Partition SharedWorkItem episodes so co-referees never duplicate body episodes.
+    co_directly_claimed_keys: set[str] = set()
+    co_all_keys: set[str] = set()
+    for co in other_refs:
+        for item in co_work_map[co.id]:
+            key = f"{item.kind}:{_norm(item.summary)}"
+            co_all_keys.add(key)
+            if _item_directly_anchored_to(item, co, fact_list):
+                co_directly_claimed_keys.add(key)
+
+    partitioned_work: list[SharedWorkItem] = []
+    for item in raw_direct:
+        key = f"{item.kind}:{_norm(item.summary)}"
+        is_direct_mine = _item_directly_anchored_to(item, referee, fact_list)
+        if key in co_directly_claimed_keys and not is_direct_mine:
+            continue
+        if key in co_all_keys and not is_direct_mine:
+            # Deterministic tie-break for institution-only fallback items
+            owner_ids = sorted(
+                str(r.id)
+                for r in [referee, *other_refs]
+                if any(
+                    f"{w.kind}:{_norm(w.summary)}" == key
+                    for w in (raw_direct if r.id == referee.id else co_work_map[r.id])
+                )
+            )
+            if owner_ids and owner_ids[0] != str(referee.id):
+                continue
+        partitioned_work.append(item)
+
+    direct_work = tuple(partitioned_work)
+    role_archetype = classify_referee_role(referee, direct_work or raw_direct)
+    angle = referee_angle(referee, direct_work or raw_direct)
+
+    has_research_co_ref = any(r == "research_supervisor" for r in co_roles.values())
+    has_course_co_ref = any(r == "course_instructor" for r in co_roles.values())
+
+    # Partition transcript courses across academic referees
+    co_claimed_courses: set[str] = set()
+    for co in other_refs:
+        if co.kind != Referee.Kind.ACADEMIC:
+            continue
+        for fact in fact_list:
+            if (
+                fact.category != VerifiedFact.Category.EDUCATION
+                or not isinstance(fact.payload, dict)
+            ):
+                continue
+            raw_courses = fact.payload.get("courses")
+            if not isinstance(raw_courses, list | tuple):
+                continue
+            for c in raw_courses:
+                if isinstance(c, dict) and c.get("title"):
+                    c_title = str(c["title"]).strip()
+                    if _course_matches_relationship(c_title, co.relationship):
+                        co_claimed_courses.add(c_title.casefold())
+
+    scoped_courses: list[str] = []
+    seen_courses: set[str] = set()
+    if referee.kind == Referee.Kind.ACADEMIC:
+        # First pass: courses explicitly mentioned in this referee's relationship
+        for fact in fact_list:
+            if (
+                fact.category != VerifiedFact.Category.EDUCATION
+                or not isinstance(fact.payload, dict)
+            ):
+                continue
+            raw_courses = fact.payload.get("courses")
+            if not isinstance(raw_courses, list | tuple):
+                continue
+            for c in raw_courses:
+                if not isinstance(c, dict) or not c.get("title"):
+                    continue
+                c_title = str(c["title"]).strip()
+                key_c = c_title.casefold()
+                if key_c in seen_courses:
+                    continue
+                if _course_matches_relationship(c_title, referee.relationship):
+                    seen_courses.add(key_c)
+                    c_grade = str(c.get("grade") or "").strip()
+                    scoped_courses.append(f"{c_title} ({c_grade})" if c_grade else c_title)
+        # Second pass: if this referee is a course instructor (or no course co-referee claims them),
+        # include unclaimed verified courses up to 5.
+        if not (role_archetype == "research_supervisor" and has_course_co_ref):
+            for fact in fact_list:
+                if (
+                    fact.category != VerifiedFact.Category.EDUCATION
+                    or not isinstance(fact.payload, dict)
+                ):
+                    continue
+                raw_courses = fact.payload.get("courses")
+                if not isinstance(raw_courses, list | tuple):
+                    continue
+                for c in raw_courses:
+                    if not isinstance(c, dict) or not c.get("title") or len(scoped_courses) >= 5:
+                        continue
+                    c_title = str(c["title"]).strip()
+                    key_c = c_title.casefold()
+                    if key_c in seen_courses or key_c in co_claimed_courses:
+                        continue
+                    seen_courses.add(key_c)
+                    c_grade = str(c.get("grade") or "").strip()
+                    scoped_courses.append(f"{c_title} ({c_grade})" if c_grade else c_title)
+
+    # Pre-select the richest EDUCATION fact per institution so profile-bridge duplicates
+    # ("BSc" vs "BSc Chemistry" at the same university) never repeat on the facts sheet.
+    best_edu_fact_ids: set[Any] = set()
+    best_edu_by_inst: dict[str, tuple[int, Any]] = {}
+    for fact in fact_list:
+        if fact.category != VerifiedFact.Category.EDUCATION or not isinstance(fact.payload, dict):
+            continue
+        p = fact.payload
+        inst = str(p.get("institution_english") or p.get("institution_original") or "").strip()
+        deg = str(p.get("degree_english") or p.get("degree_as_awarded") or "").strip()
+        inst_key = inst.casefold() or str(fact.id)
+        score = len(deg) + (10 if p.get("start_date") else 0) + (20 if p.get("courses") else 0)
+        prev = best_edu_by_inst.get(inst_key)
+        if prev is None or score > prev[0]:
+            best_edu_by_inst[inst_key] = (score, fact.id)
+    best_edu_fact_ids = {fid for _s, fid in best_edu_by_inst.values()}
+
+    # Filter VerifiedFact rows strictly to this referee's epistemic horizon
+    scoped_facts: list[VerifiedFact] = []
+    for fact in fact_list:
+        if not isinstance(fact.payload, dict):
+            continue
+        p = fact.payload
+        cat = fact.category
+
+        if cat == VerifiedFact.Category.EDUCATION:
+            if fact.id not in best_edu_fact_ids:
+                continue
+            if referee.kind == Referee.Kind.PROFESSIONAL:
+                # Professional referees only get degree facts if from the same institution
+                inst = str(p.get("institution_english") or p.get("institution_original") or "")
+                if referee.institution and inst and institution_matches(referee.institution, inst):
+                    scoped_facts.append(fact)
+            else:
+                scoped_facts.append(fact)
+
+        elif cat == VerifiedFact.Category.RESEARCH:
+            if referee.kind == Referee.Kind.PROFESSIONAL and not _research_matches_referee(
+                p, referee
+            ):
+                continue
+            sup = str(p.get("supervisor") or "").strip()
+            mine = _research_matches_referee(p, referee)
+            claimed_by_co = any(_research_matches_referee(p, co) for co in other_refs)
+            if mine:
+                scoped_facts.append(fact)
+            elif sup:
+                # Named a different supervisor -> outside this referee's firsthand supervision
+                continue
+            elif claimed_by_co:
+                continue
+            elif role_archetype == "course_instructor" and has_research_co_ref:
+                continue
+            else:
+                scoped_facts.append(fact)
+
+        elif cat == VerifiedFact.Category.PUBLICATION:
+            mine = _publication_matches_referee(p, referee)
+            claimed_by_co = any(_publication_matches_referee(p, co) for co in other_refs)
+            if mine or (
+                role_archetype == "research_supervisor"
+                and not claimed_by_co
+                and referee.kind == Referee.Kind.ACADEMIC
+            ):
+                scoped_facts.append(fact)
+
+        elif cat == VerifiedFact.Category.EXPERIENCE:
+            mine_direct = _experience_matches_referee(p, referee, allow_institution=False)
+            mine_inst = _experience_matches_referee(p, referee, allow_institution=True)
+            claimed_by_co_direct = any(
+                _experience_matches_referee(p, co, allow_institution=False) for co in other_refs
+            )
+            claimed_by_co_inst = any(
+                _experience_matches_referee(p, co, allow_institution=True) for co in other_refs
+            )
+            if mine_direct:
+                scoped_facts.append(fact)
+            elif claimed_by_co_direct:
+                continue
+            elif mine_inst:
+                if claimed_by_co_inst and referee.kind == Referee.Kind.ACADEMIC and any(
+                    co.kind == Referee.Kind.PROFESSIONAL
+                    and _experience_matches_referee(p, co, allow_institution=True)
+                    for co in other_refs
+                ):
+                    continue
+                scoped_facts.append(fact)
+
+        elif cat == VerifiedFact.Category.AWARD:
+            mine = _award_matches_referee(p, referee)
+            claimed_by_co = any(_award_matches_referee(p, co) for co in other_refs)
+            if mine:
+                scoped_facts.append(fact)
+            elif claimed_by_co:
+                continue
+            elif referee.kind == Referee.Kind.ACADEMIC:
+                if role_archetype == "course_instructor" and has_research_co_ref:
+                    continue
+                scoped_facts.append(fact)
+
+        elif cat in (VerifiedFact.Category.SKILL, VerifiedFact.Category.LANGUAGE):
+            scoped_facts.append(fact)
+
+    co_coverage: list[str] = []
+    for co in other_refs:
+        co_w = co_work_map[co.id]
+        co_ang = referee_angle(co, co_w)
+        kind_label = co.get_kind_display().lower()
+        detail = f"{kind_label}, {co.institution}" if co.institution else kind_label
+        co_coverage.append(f"{co.label} ({detail}) — {co_ang.lower()}")
+
+    return ScopedRefereeEvidence(
+        role_archetype=role_archetype,
+        angle=angle,
+        direct_work=direct_work,
+        scoped_facts=tuple(scoped_facts),
+        scoped_courses=tuple(scoped_courses),
+        co_referee_coverage=tuple(co_coverage),
+    )
+

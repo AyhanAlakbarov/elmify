@@ -28,6 +28,7 @@ from apps.funding.models import (
     Period,
     Program,
 )
+from apps.funding.validity import intake_start_years
 
 from .catalog import is_non_masters_program_title
 from .cycle_verification import record_read_evidence
@@ -166,6 +167,32 @@ def _suspension(decision: FundingDecision) -> dict[str, str]:
     }
 
 
+def _existing_max_intake_year(existing: FundingOpportunity) -> int | None:
+    years: list[int] = list(intake_start_years(existing.suspended_for))
+    for ev_list in existing.cycle_verifications.values_list("evidence", flat=True):
+        if not isinstance(ev_list, list):
+            continue
+        for entry in ev_list:
+            if not isinstance(entry, dict):
+                continue
+            intake_yr = entry.get("intake_year")
+            if isinstance(intake_yr, int) and not isinstance(intake_yr, bool):
+                years.append(intake_yr)
+            elif isinstance(entry.get("applies_to"), str):
+                years.extend(intake_start_years(entry["applies_to"]))
+    return max(years) if years else None
+
+
+def _is_older_intake_than_existing(
+    decision: FundingDecision, existing: FundingOpportunity
+) -> bool:
+    dec_years = intake_start_years(decision.applies_to)
+    if not dec_years:
+        return False
+    existing_max = _existing_max_intake_year(existing)
+    return existing_max is not None and max(dec_years) < existing_max
+
+
 def _served(decision: FundingDecision, lead: ResearchLead) -> bool:
     """The serve gate, identical for a programme award and a holder's own.
 
@@ -238,16 +265,18 @@ def write_funding_decision(
             # Many pages reach one key; a vaguer read of ANOTHER page must not
             # unserve an award a page stated clearly. Its own page may.
             return existing
-        if (
-            existing.agreement == "AGREED"
-            and existing.suspension_quote
-            and decision.offered == "YES"
-            and decision.applies_to == "UNSTATED"
-            and decision.stated_on == "UNSTATED"
-            and not same_page
+        if existing.agreement == "AGREED" and (
+            _is_older_intake_than_existing(decision, existing)
+            or (
+                existing.suspension_quote
+                and decision.offered == "YES"
+                and decision.applies_to == "UNSTATED"
+                and decision.stated_on == "UNSTATED"
+                and (not same_page or bool(existing.suspended_for))
+            )
         ):
-            # An undated general YES on another page (e.g. /overview) must not
-            # overwrite an explicit suspension recorded off /scholarships.
+            # An older intake decision or an undated general YES must not
+            # overwrite a newer intake's decision or explicit suspension.
             record_read_evidence(
                 existing,
                 decision,
@@ -465,13 +494,15 @@ def write_holder_decision(
             return existing  # a human decided on this page version
         if not agreed and existing.agreement == "AGREED" and not same_page:
             return existing
-        if (
-            existing.agreement == "AGREED"
-            and existing.suspension_quote
-            and decision.offered == "YES"
-            and decision.applies_to == "UNSTATED"
-            and decision.stated_on == "UNSTATED"
-            and (not same_page or bool(existing.suspended_for))
+        if existing.agreement == "AGREED" and (
+            _is_older_intake_than_existing(decision, existing)
+            or (
+                existing.suspension_quote
+                and decision.offered == "YES"
+                and decision.applies_to == "UNSTATED"
+                and decision.stated_on == "UNSTATED"
+                and (not same_page or bool(existing.suspended_for))
+            )
         ):
             record_read_evidence(
                 existing,

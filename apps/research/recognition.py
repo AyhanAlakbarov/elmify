@@ -296,14 +296,48 @@ def government_zone(domain: str) -> Recognition | None:
     return None
 
 
+_CJK_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]")
+_LEGAL_ENTITY_PREFIXES = (
+    "国立大学法人",
+    "公立大学法人",
+    "学校法人",
+    "국립대학법인",
+    "학교법인",
+    "Stiftung ",
+)
+
+
+def _keep_name_variant(raw_part: str) -> bool:
+    cleaned = " ".join(raw_part.split())
+    if len(cleaned) >= 4:
+        return True
+    if len(cleaned) >= 3 and cleaned.isalpha() and cleaned.isupper():
+        return True
+    return len(cleaned) >= 2 and bool(_CJK_RE.search(cleaned))
+
+
 def name_variants(name: str) -> tuple[str, ...]:
     """The row's name and its bracketed or slashed alternative, casefolded.
     Used only to confirm a website a person already mapped (spec §13.8), never
     to find one."""
-    base, _, bracket = name.partition(" (")
-    parts = [base, bracket.rstrip(")"), *base.split(" / ")[1:]]
+    normalized = name.replace("（", " (").replace("）", ")")
+    base, _, bracket = normalized.partition(" (")
+    raw_parts = [base, bracket.rstrip(")"), *base.split(" / ")[1:], *base.split("／")[1:]]
+    expanded: list[str] = []
+    for part in raw_parts:
+        stripped = " ".join(part.split())
+        if not stripped:
+            continue
+        expanded.append(stripped)
+        for prefix in _LEGAL_ENTITY_PREFIXES:
+            if stripped.casefold().startswith(prefix.casefold()):
+                core = stripped[len(prefix) :].strip()
+                if core:
+                    expanded.append(core)
     return tuple(
-        dict.fromkeys(" ".join(part.split()).casefold() for part in parts if len(part.strip()) >= 4)
+        dict.fromkeys(
+            part.casefold() for part in expanded if _keep_name_variant(part)
+        )
     )
 
 

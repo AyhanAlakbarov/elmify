@@ -522,3 +522,315 @@ def test_one_asked_beside_a_declined_one_is_still_marked(signal_on_application) 
             authenticated=True,
         )
         assert _referee_states(signal) == ["DECLINED", "SUBMITTED"]
+
+
+@pytest.mark.django_db
+def test_spaced_single_digit_otp_code_is_stripped_and_queued(signal_on_application) -> None:
+    signal = signal_on_application("portal.uni-bonn.de")
+    verdict = MailVerdict(
+        label="VERIFICATION",
+        action_kind="TYPE_CODE",
+        action_value="1 2 3 4 5 6",
+    )
+    with tenant_transaction(signal.tenant_id):
+        action = apply_verdict(signal, verdict, link_hosts=ALLOWED, authenticated=True)
+    assert action is not None
+    assert action.payload == {"code": "123456", "from": "portal.uni-bonn.de"}
+
+
+@pytest.mark.django_db
+def test_referee_submitted_disambiguates_multiple_professors_by_email_or_surname(
+    signal_on_application,
+) -> None:
+    from apps.concierge.models import Notification
+    from apps.documents.models import Referee, RefereeRequest
+
+    signal = signal_on_application("portal.uni-bonn.de")
+    with tenant_transaction(signal.tenant_id):
+        ref_a = Referee.objects.create(
+            tenant_id=signal.tenant_id,
+            student=signal.application.student,
+            name="Prof. Rauf Əliyev",
+            email="aliyev@bsu.edu.az",
+        )
+        ref_b = Referee.objects.create(
+            tenant_id=signal.tenant_id,
+            student=signal.application.student,
+            name="Dr. Leyla Məmmədova",
+            email="mammadova@ada.edu.az",
+        )
+        req_a = RefereeRequest.objects.create(
+            tenant_id=signal.tenant_id,
+            application=signal.application,
+            referee=ref_a,
+            state="ASKED",
+        )
+        req_b = RefereeRequest.objects.create(
+            tenant_id=signal.tenant_id,
+            application=signal.application,
+            referee=ref_b,
+            state="AGREED",
+        )
+
+        # Receipt mentions Prof. Aliyev by transliterated surname & email
+        apply_verdict(
+            signal,
+            MailVerdict(label="REFEREE_SUBMITTED"),
+            link_hosts=ALLOWED,
+            authenticated=True,
+            body=(
+                "Dear Applicant, Prof. Aliyev (aliyev@bsu.edu.az) has submitted "
+                "a recommendation letter for your application."
+            ),
+        )
+        req_a.refresh_from_db()
+        req_b.refresh_from_db()
+        assert req_a.state == "SUBMITTED"
+        assert req_b.state == "AGREED"
+        assert Notification.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_referee_submitted_asks_student_when_body_mentions_both_professors(
+    signal_on_application,
+) -> None:
+    from apps.concierge.models import Notification
+
+    signal = signal_on_application("portal.uni-bonn.de")
+    with tenant_transaction(signal.tenant_id):
+        _asked(signal, "Rauf Aliyev", "Leyla Karimova")
+        apply_verdict(
+            signal,
+            MailVerdict(label="REFEREE_SUBMITTED"),
+            link_hosts=ALLOWED,
+            authenticated=True,
+            body="Your referees Prof. Aliyev and Prof. Karimova are listed on your application.",
+        )
+        assert _referee_states(signal) == ["ASKED", "ASKED"]
+        notes = list(Notification.objects.values_list("message", flat=True))
+    assert len(notes) == 1
+    assert "Mark which professor it was" in notes[0]
+
+
+@pytest.mark.django_db
+def test_sync_connection_passes_body_to_disambiguate_referee_submission(
+    connection_with_pack, monkeypatch
+) -> None:
+    from datetime import UTC, datetime
+
+    from apps.concierge.models import Notification
+    from apps.documents.models import Referee, RefereeRequest
+    from apps.mailbox import sync as sync_module
+    from apps.mailbox.providers import MailBody, MessageHeader
+    from apps.mailbox.sync import sync_connection
+    from apps.tenancy.context import tenant_scope
+    from tests.mailbox.conftest import FakeProvider, _grant
+
+    connection = connection_with_pack
+    with tenant_scope(connection.tenant_id), tenant_transaction(connection.tenant_id):
+        app = Application.objects.get(student=connection.membership)
+        ref_a = Referee.objects.create(
+            tenant_id=connection.tenant_id,
+            student=connection.membership,
+            name="Prof. Rauf Aliyev",
+            email="aliyev@bsu.edu.az",
+        )
+        ref_b = Referee.objects.create(
+            tenant_id=connection.tenant_id,
+            student=connection.membership,
+            name="Dr. Leyla Karimova",
+            email="karimova@ada.edu.az",
+        )
+        req_a = RefereeRequest.objects.create(
+            tenant_id=connection.tenant_id, application=app, referee=ref_a, state="ASKED"
+        )
+        req_b = RefereeRequest.objects.create(
+            tenant_id=connection.tenant_id, application=app, referee=ref_b, state="ASKED"
+        )
+
+    class BodyProvider(FakeProvider):
+        def fetch_body(self, *, access_token: str, message_id: str) -> MailBody:
+            self.bodies_fetched.append(message_id)
+            return MailBody(
+                "Dr. Leyla Karimova (karimova@ada.edu.az) has submitted a reference letter."
+            )
+
+    monkeypatch.setattr(
+        sync_module,
+        "classify_message",
+        lambda **_: MailVerdict(label="REFEREE_SUBMITTED"),
+    )
+    header = MessageHeader(
+        message_id="m-ref-sync",
+        sender="noreply@uni-bonn.de",
+        received_at=datetime(2026, 9, 20, tzinfo=UTC),
+        authenticated=True,
+    )
+
+    with tenant_scope(connection.tenant_id):
+        sync_connection(
+            connection, provider=BodyProvider((header,)), secrets_client=_grant()
+        )
+        with tenant_transaction(connection.tenant_id):
+            req_a.refresh_from_db()
+            req_b.refresh_from_db()
+            whiches = Notification.objects.filter(
+                recipient=connection.membership,
+                message__contains="Mark which professor it was",
+            ).count()
+
+    assert req_a.state == "ASKED"
+    assert req_b.state == "SUBMITTED"
+    assert whiches == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "label",
+    [
+        "RECEIVED",
+        "FEE",
+        "FEE_PAID",
+        "REFEREE_SUBMITTED",
+        "INTERVIEW",
+        "DOCUMENT_REQUEST",
+    ],
+)
+def test_apply_verdict_disambiguates_non_decision_labels_across_shared_portal_applications(
+    signal_on_application, label: str
+) -> None:
+    from uuid import uuid4
+
+    from apps.portals.models import PortalForm
+
+    signal = signal_on_application("portal.uni-bonn.de")
+    with tenant_transaction(signal.tenant_id):
+        app1 = signal.application
+        app1.name = "M.Sc. Informatics"
+        app1.state = Application.State.SUBMITTED
+        app1.fee_state = "OPEN"
+        app1.save(update_fields=["name", "state", "fee_state"])
+        form = PortalForm.objects.get(id=app1.portal_form_id)
+        app2 = Application.objects.create(
+            tenant_id=signal.tenant_id,
+            student=app1.student,
+            program_id=uuid4(),
+            portal_form=form,
+            name="M.Sc. Robotics",
+            state=Application.State.SUBMITTED,
+            fee_state="OPEN",
+        )
+        ApplicationStep.objects.create(
+            tenant_id=signal.tenant_id,
+            application=app2,
+            sequence=1,
+            kind=ApplicationStep.Kind.STATUS,
+            detail={"application_number": "BONN-777"},
+        )
+        signal.application = None
+        signal.save(update_fields=["application"])
+
+        apply_verdict(
+            signal,
+            MailVerdict(
+                label=label,
+                application_number="BONN-777",
+                document_name="Transcript" if label == "DOCUMENT_REQUEST" else "",
+            ),
+            link_hosts=ALLOWED,
+            authenticated=True,
+            shared_portal=("portal.uni-bonn.de", 2),
+        )
+        signal.refresh_from_db()
+        app1.refresh_from_db()
+        app2.refresh_from_db()
+
+    assert signal.application_id == app2.id
+    if label == "RECEIVED":
+        assert app2.state == Application.State.CONFIRMED
+        assert app1.state == Application.State.SUBMITTED
+    if label == "FEE_PAID":
+        assert app2.fee_state == "PAID"
+        assert app1.fee_state == "OPEN"
+
+
+def test_resolve_ambiguous_application_handles_candidate_evidence_fk_and_uni_assist_shared_portal(
+    signal_on_application,
+) -> None:
+    from uuid import uuid4
+
+    from apps.funding.models import EvidenceClaim
+    from apps.mailbox.actions import resolve_ambiguous_application
+    from apps.mailbox.decision_reader import DecisionReading
+    from apps.mailbox.filter import _SHARED_PLATFORMS
+    from apps.portals.models import PortalForm
+
+    assert "uni-assist.de" in _SHARED_PLATFORMS
+
+    signal = signal_on_application("uni-assist.de")
+    with tenant_transaction(signal.tenant_id):
+        app1 = signal.application
+        student = app1.student
+        ua_form = PortalForm.objects.create(
+            portal_host="my.uni-assist.de",
+            form_key="/apply",
+            form_url="https://my.uni-assist.de/apply",
+        )
+        app1.name = "M.Sc. Data Science"
+        app1.portal_form = ua_form
+        app1.save(update_fields=["name", "portal_form"])
+
+        # Second application without a matching portal_form host, linked via candidate.evidence FK
+        from tests.funding.conftest import make_db_candidate, make_run
+
+        run = make_run(signal.tenant, student)
+        cand = make_db_candidate(signal.tenant, run, program_name="M.Sc. Robotics")
+        EvidenceClaim.objects.filter(id=cand.evidence_id).update(
+            source_url="https://my.uni-assist.de/programmes/robotics"
+        )
+        other_form = PortalForm.objects.create(
+            portal_host="other.example.edu",
+            form_key="/other",
+            form_url="https://other.example.edu/other",
+        )
+        app2 = Application.objects.create(
+            tenant_id=signal.tenant_id,
+            student=student,
+            program_id=uuid4(),
+            candidate=cand,
+            portal_form=other_form,
+            name="M.Sc. Robotics",
+        )
+        signal.application = None
+        signal.save(update_fields=["application"])
+
+        # Admission naming M.Sc. Robotics matches app2 (using candidate.evidence ForeignKey)
+        matched, _ = resolve_ambiguous_application(
+            signal,
+            MailVerdict(label="DECISION", offered_programme="M.Sc. Robotics"),
+            reading=DecisionReading(
+                is_decision=True,
+                outcome="ADMITTED",
+                funding_outcome="",
+                other_programme_offered=False,
+                measured=True,
+            ),
+        )
+        assert matched == app2
+
+        # Rejection offering M.Sc. Robotics as an alternative programme must NOT match app2
+        rejected_match, context_app = resolve_ambiguous_application(
+            signal,
+            MailVerdict(label="DECISION", offered_programme="M.Sc. Robotics"),
+            reading=DecisionReading(
+                is_decision=True,
+                outcome="REJECTED",
+                funding_outcome="",
+                other_programme_offered=True,
+                measured=True,
+            ),
+        )
+        assert rejected_match is None
+        assert context_app in (app1, app2)
+
+

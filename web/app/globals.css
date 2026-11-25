@@ -100,7 +100,7 @@ p {
 .elm-dot {
   transform-box: fill-box;
   transform-origin: 50% 100%;
-  animation: dot-drop 600ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both;
+  animation: dot-drop 620ms cubic-bezier(0.22, 1, 0.36, 1) 80ms both;
 }
 .elm-logo:focus-visible .elm-dot {
   animation: dot-hop 420ms cubic-bezier(0.22, 1, 0.36, 1);
@@ -123,51 +123,57 @@ p {
   100% { transform: translateY(0); }
 }
 
-/* Hero: lines rise once, then the square lands as the headline's full stop. */
-.hero-line {
-  animation: hero-in 350ms cubic-bezier(0.23, 1, 0.32, 1) 40ms both;
-}
+/* Hero: headline's full stop in brand indigo, kept completely static. */
 .hero-stop {
   display: inline-block;
   width: 0.16em;
   height: 0.16em;
   margin-left: 0.06em;
   background: var(--brand);
-  transform-origin: 50% 100%;
-  animation: stop-land 550ms cubic-bezier(0.22, 1, 0.36, 1) 300ms both;
-}
-@keyframes hero-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
 }
 @keyframes stop-land {
   0% { transform: translateY(-420%); opacity: 0; }
-  10% { opacity: 1; }
-  60% { transform: translateY(0) scale(1.25, 0.7); }
+  12% { opacity: 1; }
+  62% { transform: translateY(0) scale(1.22, 0.74); }
   100% { transform: translateY(0) scale(1, 1); }
 }
 
-/* Product shot rises once on load. */
-.shot-in {
-  animation: shot-in 450ms cubic-bezier(0.23, 1, 0.32, 1) 120ms both;
-}
-@keyframes shot-in {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: none; }
-}
-
-/* The AI pipeline: the connecting line draws itself when the section scrolls in. */
+/* The AI pipeline: the connecting line draws itself across 1 → 2 → 3 → 4 while in the reading zone. */
 @supports (animation-timeline: view()) {
   .pipeline-line {
     transform-origin: 0 50%;
     animation: line-draw linear both;
     animation-timeline: view();
-    animation-range: entry 10% cover 45%;
+    animation-range: cover 20% cover 76%;
+  }
+  .pipeline-step-1 .pipeline-node {
+    animation: node-pop cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-timeline: view();
+    animation-range: cover 16% cover 30%;
+  }
+  .pipeline-step-2 .pipeline-node {
+    animation: node-pop cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-timeline: view();
+    animation-range: cover 32% cover 46%;
+  }
+  .pipeline-step-3 .pipeline-node {
+    animation: node-pop cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-timeline: view();
+    animation-range: cover 48% cover 62%;
+  }
+  .pipeline-step-4 .pipeline-node {
+    animation: node-pop cubic-bezier(0.23, 1, 0.32, 1) both;
+    animation-timeline: view();
+    animation-range: cover 62% cover 75%;
   }
 }
 @keyframes line-draw {
   from { transform: scaleX(0); }
   to { transform: scaleX(1); }
+}
+@keyframes node-pop {
+  from { opacity: 0.35; transform: scale(0.88); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 /* Hero example: a soft brand glow behind the match card. */
@@ -221,16 +227,23 @@ p {
 /* FAQ: the open answer fades in. */
 details.faq[open] > div { animation: hero-in 240ms ease-out both; }
 details.faq summary::-webkit-details-marker { display: none; }
-details.faq summary .plus { transition: transform 200ms ease; }
+details.faq summary .plus { transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1); }
 details.faq[open] summary .plus { transform: rotate(45deg); }
+@keyframes faq-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   .elm-dot,
   .elm-logo:hover .elm-dot,
-  .hero-line,
+  .hero-heading:hover .hero-stop,
   .hero-stop,
-  .shot-in,
   .pipeline-line,
   .match-in,
   .ring-fill,
@@ -238,5 +251,8 @@ details.faq[open] summary .plus { transform: rotate(45deg); }
   .step-in,
   details.faq[open] > div {
     animation: none !important;
+  }
+  details.faq[open] > div {
+    animation: fade-in 180ms ease both;
   }
 }

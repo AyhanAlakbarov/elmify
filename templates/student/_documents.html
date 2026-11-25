@@ -1,6 +1,9 @@
 {% csrf_token %}
 {% if not counselor_view and not staff_view %}
-<a class="write-callout" href="{% url 'student-writing' %}"><span class="ico ico-pen" aria-hidden="true"></span><span><strong>Your CV and motivation letters</strong><small>Confirm the details the AI read from your files, then let it write your CV and a letter for each application.</small></span><span class="write-callout-go">Open CV &amp; letters</span></a>
+<a class="write-callout" href="{% url 'student-writing' %}"><span class="ico ico-pen" aria-hidden="true"></span><span><strong>Your CV and motivation letters</strong><small>Confirm the details the AI read from your files, then let it write your CV and a letter for each application.</small></span><span class="write-callout-go">Open CV &amp; Motivation Letters</span></a>
+{% if open_gap_questions %}
+<a class="write-callout" href="{% url 'student-gap-interview' %}"><span class="ico ico-question" aria-hidden="true"></span><span><strong>Questions for you ({{ open_gap_questions }} open)</strong><small>Answer optional questions about missing details and sections (contact links, grades, certificates, awards, volunteering, or timeline gaps) to strengthen your CV and applications.</small></span><span class="write-callout-go">Answer questions</span></a>
+{% endif %}
 {% endif %}
 {% if transcript_review %}<p role="status">Transcript: the student asked for a review{% if transcript_review.review_reason %} — {{ transcript_review.review_reason }}{% endif %}</p>{% endif %}
 {% if not staff_view %}
@@ -252,7 +255,7 @@
     </ul>
   {% elif not to_check_total %}
     {% if has_passport_upload %}
-      <p class="quiet-line">Your passport is on file. Confirmed personal details appear here{% if not counselor_view %} and on <a href="{% url 'student-writing' %}#facts">CV &amp; letters</a>{% endif %} once read.</p>
+      <p class="quiet-line">Your passport is on file. Confirmed personal details appear here{% if not counselor_view %} and on <a href="{% url 'student-writing' %}#facts">CV &amp; Motivation Letters</a>{% endif %} once read.</p>
     {% else %}
       <p class="quiet-line">Upload your passport and we'll fill in your details on every application.</p>
     {% endif %}
@@ -308,7 +311,7 @@
 <section class="panel" aria-labelledby="facts-heading" id="facts">
   <div class="panel-head">
     <h2 id="facts-heading">Facts read from your CV</h2>
-    {% if not counselor_view %}<a class="text-link" href="{% url 'student-writing' %}">Open CV &amp; letters studio</a>{% endif %}
+    {% if not counselor_view %}<a class="text-link" href="{% url 'student-writing' %}">Open CV &amp; Motivation Letters</a>{% endif %}
   </div>
   {% if facts %}
     <ul class="item-list">{% for fact, shown, courses in facts_shown %}<li><span><strong>{{ fact.category|lower|capfirst }}:</strong> {% for key, value in shown %}{{ key }} {{ value }}{% if not forloop.last %}; {% endif %}{% endfor %}{% if courses %}; {{ courses }} course{{ courses|pluralize }} from your transcript{% endif %}</span></li>{% endfor %}</ul>

@@ -1,19 +1,32 @@
 from apps.documents.research_fit.papers import (
     PaperMatch,
+    TopicCount,
     discover_literature_person_on_page,
     extract_work_phrase,
     lookup_group_paper,
     lookup_person_paper,
     person_matches_author,
+    rank_candidates,
+    recency_shift,
     reconstruct_abstract,
+    resolve_openalex_author_id,
+    rrf_order,
     strip_academic_titles,
 )
 
 
 def test_strip_academic_titles_and_person_matching():
     assert strip_academic_titles("Prof. Dr.-Ing. M. Kaya") == "M. Kaya"
+    assert strip_academic_titles("Проф. д-р И. Петров") == "И. Петров"
     assert person_matches_author("Prof. Dr. M. Kaya", ("Mehmet Kaya",))
     assert person_matches_author("Prof. Jane Smith", ("J. Smith", "A. N. Other"))
+    assert person_matches_author("Prof. Dr. Orxan Əliyev", ("Orkhan Aliyev",))
+    assert person_matches_author("Prof. Dr. Orxan Quliyev", ("Orkhan Guliyev",))
+    assert person_matches_author("Prof. Dr. Fərid Cəfərov", ("Farid Jafarov",))
+    assert person_matches_author("Prof. Dr. Mehmet Işıklı", ("Mehmet Isikli",))
+    assert person_matches_author("Prof. Dr. Jürgen Müller", ("Juergen Mueller",))
+    assert person_matches_author("Проф. д-р И. Петров", ("Ivan Petrov",))
+    assert person_matches_author("Проф. Иван Петров", ("I. Petrov",))
     assert not person_matches_author("Prof. Jane Smith", ("John Smith",))
     assert not person_matches_author("Prof. Jane Smith", ("Jane Doe",))
 
@@ -537,5 +550,493 @@ def test_default_paper_lookup_caches_openalex_responses_across_calls(monkeypatch
     )
     assert first is not None and second == first
     assert len(calls) == 1
+
+
+def test_discover_literature_person_skips_single_paper_first_author_student_and_selects_pi():
+    sentences = (
+        "Lab Members: Alex Student, PhD Candidate in Robotics.",
+        "Lab Members: Lukas Weber, Doktorand am Lehrstuhl.",
+        "Lab Members: Иван Сидоров, аспирант кафедры.",
+        "Lab Members: Tim Trainee, Research Group.",
+        "Faculty: Prof. Dr. Mehmet Kaya, Head of Autonomous Systems.",
+    )
+
+    def fake_get_json(url, *, params, headers):
+        return {
+            "results": [
+                {
+                    "id": "https://openalex.org/W_STUDENT_FIRST",
+                    "doi": "https://doi.org/10.1000/student.2025",
+                    "title": "Legged Locomotion Control under Slip",
+                    "publication_year": 2025,
+                    "is_retracted": False,
+                    "authorships": [
+                        {
+                            "author": {"display_name": "Lukas Weber"},
+                            "author_position": "last",
+                            "is_corresponding": True,
+                            "institutions": [{"display_name": "Technical University of Munich"}],
+                        },
+                        {
+                            "author": {"display_name": "Tim Trainee"},
+                            "author_position": "first",
+                            "is_corresponding": False,
+                            "institutions": [{"display_name": "Technical University of Munich"}],
+                        },
+                        {
+                            "author": {"display_name": "Mehmet Kaya"},
+                            "author_position": "last",
+                            "is_corresponding": True,
+                            "institutions": [{"display_name": "Technical University of Munich"}],
+                        },
+                    ],
+                    "abstract_inverted_index": {
+                        "We": [0],
+                        "propose": [1],
+                        "legged": [2],
+                        "locomotion": [3],
+                        "control": [4],
+                        "under": [5],
+                        "slip.": [6],
+                    },
+                }
+            ]
+        }
+
+    found = discover_literature_person_on_page(
+        sentences,
+        topic="legged locomotion control",
+        institution_name="Technical University of Munich",
+        domains=("tum.de",),
+        current_year=2026,
+        api_key="oa-key",
+        get_json=fake_get_json,
+    )
+    assert found is not None
+    classified_sent, paper = found
+    assert classified_sent.entity == "Mehmet Kaya"
+    assert classified_sent.index == 4
+    assert paper.author_role == "lead"
+
+
+def test_recency_shift_and_rrf_order_prioritize_emerging_research_agenda():
+    career = [
+        TopicCount(topic_id="T_LEGACY", display_name="Classical PID Control", count=18),
+        TopicCount(topic_id="T_EMERGING", display_name="Legged Robot Locomotion", count=3),
+    ]
+    recent = [
+        TopicCount(topic_id="T_LEGACY", display_name="Classical PID Control", count=1),
+        TopicCount(topic_id="T_EMERGING", display_name="Legged Robot Locomotion", count=3),
+    ]
+    shifts = recency_shift(career, recent)
+    assert shifts["T_EMERGING"][2] > 0.5
+    assert shifts["T_LEGACY"][2] < -0.5
+
+    suggestions = rank_candidates(career, recent)
+    assert any(s.topic_id == "T_EMERGING" and s.shift > 0 for s in suggestions)
+
+    def fake_get_json(url, *, params, headers):
+        # 4 legacy works (3 older + 1 recent) vs 2 recent works in emerging topic T_EMERGING
+        return {
+            "results": [
+                {
+                    "id": f"https://openalex.org/W_OLD_{idx}",
+                    "doi": f"https://doi.org/10.1000/old.{idx}",
+                    "title": f"Nonlinear Control Systems Study {idx}",
+                    "publication_year": 2020 + (idx % 2),
+                    "is_retracted": False,
+                    "primary_topic": {"id": "T_LEGACY", "display_name": "Classical PID"},
+                    "authorships": [
+                        {
+                            "author": {"display_name": "Jane Smith"},
+                            "author_position": "last",
+                            "is_corresponding": True,
+                            "institutions": [{"display_name": "Stub University"}],
+                        }
+                    ],
+                    "abstract_inverted_index": {
+                        "We": [0],
+                        "prove": [1],
+                        "nonlinear": [2],
+                        "control": [3],
+                        "stability": [4],
+                        "bounds.": [5],
+                    },
+                }
+                for idx in range(4)
+            ]
+            + [
+                {
+                    "id": "https://openalex.org/W_LEGACY_2025",
+                    "doi": "https://doi.org/10.1000/legacy.2025",
+                    "title": "Nonlinear Control Systems Benchmark",
+                    "publication_year": 2025,
+                    "is_retracted": False,
+                    "primary_topic": {"id": "T_LEGACY", "display_name": "Classical PID"},
+                    "authorships": [
+                        {
+                            "author": {"display_name": "Jane Smith"},
+                            "author_position": "last",
+                            "is_corresponding": True,
+                            "institutions": [{"display_name": "Stub University"}],
+                        }
+                    ],
+                    "abstract_inverted_index": {
+                        "We": [0],
+                        "prove": [1],
+                        "nonlinear": [2],
+                        "control": [3],
+                        "stability": [4],
+                        "bounds.": [5],
+                    },
+                },
+                {
+                    "id": "https://openalex.org/W_EMERGING_2025",
+                    "doi": "https://doi.org/10.1000/emerging.2025",
+                    "title": "Nonlinear Control Systems for Actuators",
+                    "publication_year": 2025,
+                    "is_retracted": False,
+                    "primary_topic": {"id": "T_EMERGING", "display_name": "Legged Locomotion"},
+                    "authorships": [
+                        {
+                            "author": {"display_name": "Jane Smith"},
+                            "author_position": "last",
+                            "is_corresponding": True,
+                            "institutions": [{"display_name": "Stub University"}],
+                        }
+                    ],
+                    "abstract_inverted_index": {
+                        "We": [0],
+                        "prove": [1],
+                        "nonlinear": [2],
+                        "control": [3],
+                        "stability": [4],
+                        "bounds.": [5],
+                    },
+                },
+            ]
+        }
+
+    match = lookup_person_paper(
+        entity="Prof. Jane Smith",
+        topic="nonlinear control stability",
+        institution_name="Stub University",
+        current_year=2026,
+        api_key="oa-key",
+        get_json=fake_get_json,
+    )
+    assert match is not None
+    assert match.url == "https://doi.org/10.1000/emerging.2025"
+
+    p_stub = PaperMatch(
+        title="Nonlinear Control Stability",
+        year=2025,
+        url="https://doi.org/10.1000/stub",
+        finding="Nonlinear Control Stability",
+    )
+    p_full = PaperMatch(
+        title="Nonlinear Control Stability",
+        year=2025,
+        url="https://doi.org/10.1000/full",
+        finding="We prove nonlinear control stability bounds under delay.",
+    )
+    ranked = rrf_order("nonlinear control stability", [p_stub, p_full])
+    assert ranked[0] == p_full
+
+
+def test_two_step_author_resolution_fallback_when_global_topic_search_misses():
+    calls = []
+
+    def fake_get_json(url, *, params, headers):
+        calls.append((url, params))
+        if url == "https://api.openalex.org/works" and "search.title_and_abstract" in params:
+            # Global top-15 topic page has no paper by Jane Smith
+            return {"results": []}
+        if url == "https://api.openalex.org/authors":
+            return {
+                "results": [
+                    {
+                        "id": "https://openalex.org/A5023888391",
+                        "display_name": "Jane Smith",
+                        "last_known_institutions": [
+                            {"display_name": "Stub University"}
+                        ],
+                    }
+                ]
+            }
+        if url == "https://api.openalex.org/works" and "authorships.author.id:A5023888391" in str(
+            params.get("filter")
+        ):
+            return {
+                "results": [
+                    {
+                        "id": "https://openalex.org/W_AUTHOR_RESOLVED",
+                        "doi": "https://doi.org/10.1000/resolved.2025",
+                        "title": "Equivariant Message Passing on Molecular Graphs",
+                        "publication_year": 2025,
+                        "is_retracted": False,
+                        "primary_topic": {
+                            "id": "https://openalex.org/T1001",
+                            "display_name": "Geometric Deep Learning",
+                            "subfield": {"display_name": "Artificial Intelligence"},
+                        },
+                        "authorships": [
+                            {
+                                "author": {"display_name": "Jane Smith"},
+                                "author_position": "last",
+                                "is_corresponding": True,
+                                "institutions": [{"display_name": "Stub University"}],
+                            }
+                        ],
+                        "abstract_inverted_index": {
+                            "We": [0],
+                            "introduce": [1],
+                            "equivariant": [2],
+                            "message": [3],
+                            "passing": [4],
+                            "for": [5],
+                            "conformers.": [6],
+                        },
+                    }
+                ]
+            }
+        return {"results": []}
+
+    aid = resolve_openalex_author_id(
+        entity="Prof. Jane Smith",
+        institution_name="Stub University",
+        api_key="oa-key",
+        get_json=fake_get_json,
+    )
+    assert aid == "A5023888391"
+
+    match = lookup_person_paper(
+        entity="Prof. Jane Smith",
+        topic="geometric deep learning",
+        institution_name="Stub University",
+        current_year=2026,
+        api_key="oa-key",
+        get_json=fake_get_json,
+    )
+    assert match is not None
+    assert match.url == "https://doi.org/10.1000/resolved.2025"
+    assert match.finding == "We introduce equivariant message passing for conformers."
+
+
+def test_europepmc_and_arxiv_abstract_recovery_and_method_or_question_extraction():
+    arxiv_atom = """<?xml version="1.0" encoding="UTF-8"?>
+    <feed xmlns="http://www.w3.org/2005/Atom">
+      <entry>
+        <id>http://arxiv.org/abs/2502.12345v1</id>
+        <title>Constrained Diffusion Policies for Dexterous Manipulation</title>
+        <summary>
+          However, contact-rich manipulation remains challenging under latency.
+          We demonstrate a projected diffusion policy that halves grasp failure rates.
+        </summary>
+      </entry>
+    </feed>
+    """
+
+    def fake_get_json(url, *, params, headers):
+        if url.startswith("https://api.crossref.org/works/"):
+            return {"message": {}}
+        if url == "https://www.ebi.ac.uk/europepmc/webservices/rest/search":
+            return {
+                "resultList": {
+                    "result": [
+                        {
+                            "abstractText": (
+                                "Single-cell trajectory inference remains limited by "
+                                "dropout noise. We show that optimal-transport "
+                                "regularization recovers lineage trees."
+                            )
+                        }
+                    ]
+                }
+            }
+        if url == "https://export.arxiv.org/api/query":
+            return {"xml": arxiv_atom}
+        if params.get("search.title_and_abstract") == "single-cell trajectory inference":
+            return {
+                "results": [
+                    {
+                        "id": "https://openalex.org/W_BIOMED",
+                        "doi": "https://doi.org/10.1038/s41587-025-0001-x",
+                        "title": "Optimal-Transport Lineage Inference",
+                        "publication_year": 2025,
+                        "is_retracted": False,
+                        "authorships": [
+                            {
+                                "author": {"display_name": "Jane Smith"},
+                                "author_position": "last",
+                                "is_corresponding": True,
+                                "institutions": [{"display_name": "Stub University"}],
+                            }
+                        ],
+                        "abstract_inverted_index": None,
+                    }
+                ]
+            }
+        return {
+            "results": [
+                {
+                    "id": "https://openalex.org/W_ARXIV",
+                    "doi": "https://doi.org/10.48550/arXiv.2502.12345",
+                    "title": "Constrained Diffusion Policies for Dexterous Manipulation",
+                    "publication_year": 2025,
+                    "is_retracted": False,
+                    "authorships": [
+                        {
+                            "author": {"display_name": "Jane Smith"},
+                            "author_position": "last",
+                            "is_corresponding": True,
+                            "institutions": [{"display_name": "Stub University"}],
+                        }
+                    ],
+                    "abstract_inverted_index": None,
+                }
+            ]
+        }
+
+    biomed_match = lookup_person_paper(
+        entity="Prof. Jane Smith",
+        topic="single-cell trajectory inference",
+        institution_name="Stub University",
+        current_year=2026,
+        api_key="oa-key",
+        get_json=fake_get_json,
+    )
+    assert biomed_match is not None
+    assert (
+        biomed_match.finding
+        == "We show that optimal-transport regularization recovers lineage trees."
+    )
+    assert (
+        biomed_match.method_or_question
+        == "Single-cell trajectory inference remains limited by dropout noise."
+    )
+
+    arxiv_match = lookup_person_paper(
+        entity="Prof. Jane Smith",
+        topic="constrained diffusion manipulation",
+        institution_name="Stub University",
+        current_year=2026,
+        api_key="oa-key",
+        get_json=fake_get_json,
+    )
+    assert arxiv_match is not None
+    assert (
+        arxiv_match.finding
+        == "We demonstrate a projected diffusion policy that halves grasp failure rates."
+    )
+    assert (
+        arxiv_match.method_or_question
+        == "However, contact-rich manipulation remains challenging under latency."
+    )
+
+
+def test_humanities_monograph_metadata_and_multilingual_abstract_extraction():
+    from apps.documents.research_fit.papers import extract_method_or_question, extract_work_phrase
+
+    de_abstract = (
+        "Die Quantifizierung von Übergangszuständen erfordert hohe Genauigkeit. "
+        "Jedoch bleibt ungeklärt, wie sich Spin-Bahn-Kopplungen auf große Liganden auswirken. "
+        "Wir zeigen, dass äquivariante Netzwerke die Barrieren auf 1.0 kcal/mol genau vorhersagen."
+    )
+    assert "Wir zeigen, dass äquivariante Netzwerke" in extract_work_phrase(
+        de_abstract, "Übergangszustände"
+    )
+    assert "Jedoch bleibt ungeklärt" in extract_method_or_question(de_abstract)
+
+    law_abstract = (
+        "At issue is whether bilateral investment treaties constrain sovereign climate measures. "
+        "This article argues that proportionality review reconciles treaty obligations with "
+        "regulatory autonomy."
+    )
+    assert "This article argues that proportionality review" in extract_work_phrase(
+        law_abstract, "Investment Treaties"
+    )
+    assert "At issue is whether bilateral investment treaties" in extract_method_or_question(
+        law_abstract
+    )
+
+    def fake_monograph_json(url, *, params, headers):
+        if "authors" in url:
+            return {"results": []}
+        if "crossref.org" in url or "europepmc" in url:
+            return {}
+        return {
+            "results": [
+                {
+                    "id": "https://openalex.org/W777",
+                    "title": "Byzantine Epigraphy and Imperial Chancery Seals",
+                    "publication_year": 2025,
+                    "doi": "https://doi.org/10.1000/byz.2025",
+                    "is_retracted": False,
+                    "authorships": [
+                        {
+                            "author": {"display_name": "Elena Papadopoulou"},
+                            "author_position": "first",
+                            "is_corresponding": True,
+                            "institutions": [{"display_name": "Stub University"}],
+                        }
+                    ],
+                    "abstract_inverted_index": None,
+                    "keywords": [
+                        {"display_name": "Lead Seals"},
+                        {"display_name": "Sigillography"},
+                    ],
+                    "primary_topic": {
+                        "id": "https://openalex.org/T99",
+                        "display_name": "Byzantine Administrative History",
+                    },
+                }
+            ]
+        }
+
+    monograph = lookup_person_paper(
+        entity="Prof. Elena Papadopoulou",
+        topic="byzantine epigraphy sigillography",
+        institution_name="Stub University",
+        current_year=2026,
+        api_key="oa-key",
+        get_json=fake_monograph_json,
+    )
+    assert monograph is not None
+    assert monograph.finding == "Byzantine Epigraphy and Imperial Chancery Seals"
+    assert (
+        monograph.method_or_question
+        == "Addresses Lead Seals, Sigillography, Byzantine Administrative History."
+    )
+
+
+def test_normalize_inverted_person_name_and_bitstream_url_filtering():
+    from apps.documents.research_fit.papers import (
+        normalize_inverted_person_name,
+        strip_academic_titles,
+    )
+    from apps.documents.research_fit.service import _prioritize_web_page_urls
+
+    assert normalize_inverted_person_name("Broeders, D.W.J.") == "D.W.J. Broeders"
+    assert normalize_inverted_person_name("Copéret, Christophe") == "Christophe Copéret"
+    assert normalize_inverted_person_name("Jane Doe, PhD") == "Jane Doe, PhD"
+    assert strip_academic_titles("Broeders, D.W.J.") == "D.W.J. Broeders"
+
+    urls = (
+        "https://www.research-collection.ethz.ch/bitstreams/a5ebf4bd/download",
+        "https://coperetgroup.ethz.ch/research/designing/descriptors.html",
+        "https://www.research-collection.ethz.ch/server/api/core/bitstreams/af00799f/content",
+        "https://scholarlypublications.universiteitleiden.nl/handle/1887/138552",
+        "https://ethz.ch/content/dam/ethz/brochure.pdf",
+    )
+    filtered = _prioritize_web_page_urls(urls)
+    assert filtered == (
+        "https://coperetgroup.ethz.ch/research/designing/descriptors.html",
+        "https://scholarlypublications.universiteitleiden.nl/handle/1887/138552",
+    )
+
+
+
+
 
 

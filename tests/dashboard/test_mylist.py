@@ -137,3 +137,59 @@ def test_a_missing_recommendation_letter_links_to_its_references_tab(
         "Recommendation letters"
     )
     assert expected_link in body
+
+
+def test_plain_reason_renders_failed_conditions_accurately() -> None:
+    from apps.dashboard.mylist import plain_reason
+
+    assert (
+        plain_reason("GRADE", "GRADE: 75 on 100 against 80", outcome="FAILED")
+        == "Your grade of 75 on a 100 scale is below the 80 required"
+    )
+    assert (
+        plain_reason("LANGUAGE", "LANGUAGE: English at B1 against B2", outcome="FAILED")
+        == "Your English at B1 is below the B2 level required"
+    )
+    assert (
+        plain_reason("FIELD", "FIELD: mathematics against computer science", outcome="FAILED")
+        == "A degree in computer science is required (yours is in mathematics)"
+    )
+    assert (
+        plain_reason(
+            "WORK_EXPERIENCE", "WORK_EXPERIENCE: 6 months against 12.0", outcome="FAILED"
+        )
+        == "Your 6 months of work experience is below the 12 months required"
+    )
+    assert (
+        plain_reason("AGE", "AGE: 32 against LTE 30.0", outcome="FAILED")
+        == "Your age (32) exceeds the maximum age of 30"
+    )
+    assert (
+        plain_reason("CITIZENSHIP", "nationality AZ against DE", outcome="FAILED")
+        == "Open to DE citizens (your citizenship is Azerbaijan)"
+    )
+
+
+def test_programme_in_university_preserves_canonical_degree_prefixes() -> None:
+    from apps.dashboard.templatetags.dashboard import programme_in_university
+
+    assert (
+        programme_in_university("MA in International Relations", "Freie Universität Berlin")
+        == "MA in International Relations in Freie Universität Berlin"
+    )
+    assert (
+        programme_in_university("LL.M. in European Law", "Leiden University")
+        == "LLM in European Law in Leiden University"
+    )
+    assert (
+        programme_in_university("BSc in Computer Science", "TU Munich")
+        == "BSc in Computer Science in TU Munich"
+    )
+    assert (
+        programme_in_university("Master of Engineering in Robotics", "ETH Zurich")
+        == "MEng in Robotics in ETH Zurich"
+    )
+    assert (
+        programme_in_university("Data Science", "TU Munich")
+        == "MSc in Data Science in TU Munich"
+    )

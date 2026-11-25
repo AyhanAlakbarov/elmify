@@ -70,7 +70,13 @@ from .answers import MAX_ANSWERS, Answer, AnswerRefused, learn_from_answers, rec
 from .bench import RecordingRefused, is_bench_operator, operator_forbidden_values, store_bench_page
 from .escalation import Trigger, escalate, has_open_escalation, request_first_portal_review
 from .http import SERVED_TYPES, TYPE_BY_EXTENSION, inert_response
-from .learn import RateLimited, UnmappedField, _page_origin, learn_from_snapshot
+from .learn import (
+    RateLimited,
+    UnmappedField,
+    _page_origin,
+    learn_from_snapshot,
+    promote_consensus_field_map,
+)
 from .models import (
     Application,
     ApplicationStep,
@@ -309,6 +315,74 @@ def packet(request: HttpRequest, pairing: ExtensionPairing, application_id: UUID
     # datetimes, and this is the one serialization the extension and the tests
     # agree on.
     return JsonResponse(json.loads(minted.model_dump_json()))
+
+
+@require_POST
+@_device_endpoint
+def bind_portal(
+    request: HttpRequest, pairing: ExtensionPairing, application_id: UUID
+) -> HttpResponse:
+    """Bind a portal URL discovered in the student's browser to a portal-less application."""
+    _limit("ext-packet", pairing, _PACKET_RATE_LIMIT)
+    application = (
+        Application.objects.filter(id=application_id, student=pairing.membership)
+        .select_related("portal_form", "candidate__evidence")
+        .first()
+    )
+    if application is None:
+        raise _ApiError(404, "not_found")
+    if application.portal_form is not None:
+        return JsonResponse(
+            {
+                "portal_form_id": str(application.portal_form_id),
+                "form_url": application.portal_form.form_url,
+                "bound": False,
+            },
+            status=200,
+        )
+    body = _json_body(request)
+    form_url = str(body.get("form_url") or "")
+    from urllib.parse import urlsplit
+
+    from apps.dashboard.templatetags.dashboard import https_only
+    from apps.mailbox.filter import _FREE_MAIL_DOMAINS, _SHARED_PLATFORMS, host_in
+    from apps.research.hosts import registrable_domain
+
+    from .applications import _KNOWN_PORTAL_PLATFORMS, ApplicationRefused, record_portal
+
+    url = https_only(form_url)
+    if not url or len(url) > 500:
+        raise _ApiError(400, "untrusted_portal_host")
+    host = (urlsplit(url).hostname or "").casefold()
+    domain = registrable_domain(host)
+    if not domain or host.rstrip(".").endswith(".arpa"):
+        raise _ApiError(400, "untrusted_portal_host")
+    evidence_domain = ""
+    evidence_host = ""
+    if application.candidate is not None and application.candidate.evidence_id is not None:
+        evidence_host = (
+            urlsplit(application.candidate.evidence.source_url).hostname or ""
+        ).casefold()
+        evidence_domain = registrable_domain(evidence_host)
+    portal_platforms = (_SHARED_PLATFORMS - _FREE_MAIL_DOMAINS) | frozenset(_KNOWN_PORTAL_PLATFORMS)
+    trusted = (
+        (bool(evidence_domain) and domain == evidence_domain)
+        or (bool(evidence_host) and bool(host_in(host, (evidence_host,))))
+        or bool(host_in(host, portal_platforms))
+    )
+    if not trusted:
+        raise _ApiError(400, "untrusted_portal_host")
+    try:
+        with tenant_transaction(application.tenant_id):
+            form = record_portal(application, url, actor=pairing.membership)
+    except ApplicationRefused as refused:
+        if refused.reason == "rate_limited":
+            raise _ApiError(429, "rate_limited") from refused
+        raise _ApiError(400, "untrusted_portal_host") from refused
+    return JsonResponse(
+        {"portal_form_id": str(form.id), "form_url": form.form_url, "bound": True},
+        status=201,
+    )
 
 
 @require_POST
@@ -702,6 +776,7 @@ def events(request: HttpRequest, pairing: ExtensionPairing, application_id: UUID
     image = _decoded_image(body.get("image"))
 
     with tenant_transaction(application.tenant_id):
+        Application.objects.select_for_update().filter(pk=application.pk).exists()
         step = ApplicationStep.objects.create(
             tenant=application.tenant,
             application=application,
@@ -721,15 +796,18 @@ def events(request: HttpRequest, pairing: ExtensionPairing, application_id: UUID
 
     if kind == ApplicationStep.Kind.SUBMITTED:
         with tenant_transaction(application.tenant_id):
-            Application.objects.filter(pk=application.pk).update(
-                state=Application.State.SUBMITTED
+            Application.objects.filter(pk=application.pk).exclude(
+                state=Application.State.CONFIRMED
+            ).update(state=Application.State.SUBMITTED)
+    elif kind == ApplicationStep.Kind.READ_BACK:
+        if detail.get("mismatches") and not has_open_escalation(application, Trigger.PORTAL_ERROR):
+            escalate(
+                application,
+                Trigger.PORTAL_ERROR,
+                detail=json.dumps(detail["mismatches"])[:500],
             )
-    elif (
-        kind == ApplicationStep.Kind.READ_BACK
-        and detail.get("mismatches")
-        and not has_open_escalation(application, Trigger.PORTAL_ERROR)
-    ):
-        escalate(application, Trigger.PORTAL_ERROR, detail=json.dumps(detail["mismatches"])[:500])
+        elif not detail.get("mismatches") and application.portal_form is not None:
+            promote_consensus_field_map(application.portal_form)
     return JsonResponse({"step_id": str(step.id)}, status=201)
 
 
@@ -834,6 +912,7 @@ def application_status(
     except ValidationError as error:
         raise _ApiError(400, "invalid_status") from error
     with tenant_transaction(application.tenant_id):
+        Application.objects.select_for_update().filter(pk=application.pk).exists()
         step = ApplicationStep.objects.create(
             tenant=application.tenant,
             application=application,
@@ -1122,6 +1201,19 @@ def _resolve_or_create_portal_password(
     return password, created
 
 
+def _latest_application_number(application: Application) -> str:
+    if isinstance(application.route_snapshot, dict):
+        snap_num = str(application.route_snapshot.get("application_number") or "").strip()
+        if snap_num:
+            return snap_num
+    for step in application.steps.order_by("-sequence"):
+        if isinstance(step.detail, dict):
+            step_num = str(step.detail.get("application_number") or "").strip()
+            if step_num:
+                return step_num
+    return ""
+
+
 @require_POST
 @_device_endpoint
 def portal_login(
@@ -1179,7 +1271,11 @@ def portal_login(
                 event=event,
                 object_id=account.id,
             )
-    response = JsonResponse({"username": account.address, "password": password})
+        app_number = _latest_application_number(application)
+    payload: dict[str, str] = {"username": account.address, "password": password}
+    if app_number:
+        payload["application_number"] = app_number
+    response = JsonResponse(payload)
     response["Cache-Control"] = "no-store"
     return response
 

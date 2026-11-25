@@ -428,3 +428,67 @@ def test_a_proposal_left_on_a_decided_card_uses_up_nobody(
     with reads_no_catalogue():
         body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
     assert 'role="alert"' not in body
+
+
+def test_saving_status_on_plan_page_renders_agreed_and_declined_badges(
+    client, agency_a, domain_a, user_a, membership_a, card
+) -> None:
+    """When a student saves Agreed or Declined on /student/referees/plan/, the professor's
+    row stays visible on the application card with a clear status badge and row class."""
+    with tenant_scope(agency_a.id):
+        aliyev = _referee(agency_a, membership_a, "Aliyev")
+        karimova = _referee(agency_a, membership_a, "Karimova")
+        req_agreed = RefereeRequest.objects.create(
+            tenant=agency_a, referee=aliyev, application=card, mode="PORTAL_INVITE", state="ASKED"
+        )
+        req_declined = RefereeRequest.objects.create(
+            tenant=agency_a, referee=karimova, application=card, mode="PORTAL_INVITE", state="ASKED"
+        )
+    client.force_login(user_a)
+    client.post(
+        f"/student/referees/requests/{req_agreed.id}/state/",
+        {"state": "AGREED", "next": PAGE},
+        HTTP_HOST=domain_a.host,
+    )
+    client.post(
+        f"/student/referees/requests/{req_declined.id}/state/",
+        {"state": "DECLINED", "next": PAGE},
+        HTTP_HOST=domain_a.host,
+    )
+    with reads_no_catalogue():
+        body = client.get(PAGE, HTTP_HOST=domain_a.host).content.decode()
+    assert "ref-plan-row--agreed" in body
+    assert "Agreed to write" in body
+    assert "ref-plan-row--declined" in body
+    assert "Not agreed (declined)" in body
+    assert "Prof. Aliyev" in body and "Prof. Karimova" in body
+
+
+def test_adding_a_new_professor_directly_from_plan_card_creates_and_assigns_them(
+    client, agency_a, domain_a, user_a, membership_a, card
+) -> None:
+    """Submitting the inline '+ Add a new professor / referee' form on an application card
+    in /student/referees/plan/ creates the Referee and assigns them to that application."""
+    client.force_login(user_a)
+    response = client.post(
+        "/student/referees/add/",
+        {
+            "title": "Prof.",
+            "name": "Leyla Mammadova",
+            "institution": "ADA University",
+            "email": "lmammadova@ada.edu.az",
+            "institutional_email": "on",
+            "kind": "ACADEMIC",
+            "agreed_requests": "4",
+            "application_id": str(card.id),
+            "next": PAGE,
+        },
+        HTTP_HOST=domain_a.host,
+    )
+    assert response.status_code == 302
+    assert response["Location"] == PAGE
+    assert _states(agency_a, membership_a) == [
+        ("Leyla Mammadova", "PROPOSED", "PORTAL_INVITE"),
+    ]
+
+

@@ -2265,6 +2265,100 @@ def test_non_eu_eea_deadline_not_confused_with_eu_eea_substring(agency_a, member
     assert res_eea.program_deadlines[str(program.id)] == "2027-05-15"
 
 
+def test_evidence_claim_grade_winner_cohort_selectivity_and_duration_constraint() -> None:
+    from apps.accounts.schemas import ProfileConstraint
+    from apps.funding.evaluation import _constraint_satisfied
+    from apps.funding.facts import program_facts
+    from apps.research.models import WinnerCohortProfile
+
+    institution = Institution.objects.create(
+        canonical_key="de:tu_select",
+        name="TU Select",
+        country_code="DE",
+        official_website="https://select.example.de",
+    )
+    program = Program.objects.create(
+        institution=institution,
+        canonical_key="master:robotics_select",
+        name="M.Sc. in Robotics and Control",
+        degree_level="MASTER",
+        country_code="DE",
+        city="Munich",
+        location_key="de:munich",
+        teaching_languages=["Englisch"],
+        duration_months=18,
+        origin_domain="select.example.de",
+        evidence_domain="select.example.de",
+    )
+    CostComponent.objects.create(
+        program=program,
+        kind="TUITION",
+        amount=Decimal("0.00"),
+        currency="EUR",
+        period="ANNUAL",
+    )
+    wc = WinnerCohortProfile.objects.create(
+        program_id=program.id,
+        target_kind=WinnerCohortProfile.TargetKind.PROGRAM,
+        target_name=program.name,
+        sample_size=20,
+        research_signal_rate=Decimal("0.5500"),
+    )
+    low_gpa_profile = make_profile(
+        target_field="Robotics and Control",
+        academic_history=[
+            {
+                "institution": "Example University",
+                "qualification": "Bachelor of Science",
+                "field": "Robotics",
+                "grade": "2.4",
+                "grading_scale": "4.0 GPA",
+                "country_code": "US",
+                "completed_on": "2026-06-01",
+            }
+        ],
+    )
+    facts_fail = program_facts(
+        program,
+        costs=(),
+        benefits=(),
+        rules=(),
+        profile=low_gpa_profile,
+        evidence_claims=("GRADE: Minimum grade 3.5 (4.0) [3.5 / 4.0] — Minimum GPA 3.5",),
+        winner_cohort=wc,
+        today=dt.date(2026, 10, 1),
+    )
+    assert facts_fail.confirmed_eligibility_failure is True
+    assert facts_fail.admission_baseline_pct == Decimal("25.00")
+
+    assert _constraint_satisfied(
+        ProfileConstraint(kind="DURATION", value="ONE_AND_HALF_YEAR"),
+        facts_fail,
+    )
+    assert _constraint_satisfied(
+        ProfileConstraint(kind="DURATION", value="18 months"),
+        facts_fail,
+    )
+
+    from apps.funding.eligibility import _normalize_language
+    from apps.funding.transcript_eligibility import evaluate_program_statement
+
+    assert _normalize_language("Englisch") == "english"
+    assert _normalize_language("Anglais") == "english"
+    assert _normalize_language("Allemand") == "german"
+    assert _normalize_language("Französisch") == "french"
+    assert (
+        evaluate_program_statement(
+            "GRE Quantitative score of at least 160 "
+            "(waived for applicants with a minimum GPA of 3.5 / 4.0)",
+            make_profile(),
+        ).outcome
+        == "SATISFIED"
+    )
+
+
+
+
 
 
 

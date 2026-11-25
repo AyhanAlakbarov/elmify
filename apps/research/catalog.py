@@ -376,12 +376,18 @@ def claim_rows(
         # persists it -- so a field claim_rows does not emit is extracted and then
         # thrown away. Commitment-payment coverage decides whether an outcome
         # exists for the student at all, and financial proof decides the visa gate.
+        awards_suffix = (
+            f", awards per cycle [{track.awards_per_cycle}]"
+            if track.awards_per_cycle is not None
+            else ""
+        )
         rows.append(
             (
                 classes.FUNDING,
                 f"{track.name} ({track.initiation}, financial proof "
                 f"{track.satisfies_financial_proof or 'UNSTATED'}, commitment payment "
-                f"{track.covers_commitment_payment or 'UNSTATED'}): {track.evidence}",
+                f"{track.covers_commitment_payment or 'UNSTATED'}{awards_suffix}): "
+                f"{track.evidence}",
             )
         )
     if claims.return_service is not None:
@@ -415,6 +421,57 @@ def claim_rows(
                 f"{claims.funding_family.evidence}",
             )
         )
+    target_selectivity_class = (
+        classes.FUNDING if claims.funding_family is not None else classes.STRUCTURE
+    )
+    if claims.published_selection_rate is not None:
+        sr = claims.published_selection_rate
+        rows.append(
+            (
+                target_selectivity_class,
+                f"Published selection rate ({sr.cycle_label}) [{sr.rate}] — {sr.evidence}",
+            )
+        )
+    if claims.awards_per_cycle is not None:
+        ac = claims.awards_per_cycle
+        rows.append(
+            (
+                target_selectivity_class,
+                f"Awards per cycle ({ac.cycle_label}) [{ac.value}] — {ac.evidence}",
+            )
+        )
+    if claims.applicants_per_cycle is not None:
+        apc = claims.applicants_per_cycle
+        rows.append(
+            (
+                target_selectivity_class,
+                f"Applicants per cycle ({apc.cycle_label}) [{apc.value}] — {apc.evidence}",
+            )
+        )
+    if claims.published_minimum_grade is not None:
+        pmg = claims.published_minimum_grade
+        rows.append(
+            (
+                classes.ELIGIBILITY,
+                f"GRADE: Minimum grade {pmg.minimum} ({pmg.scale}) "
+                f"[{pmg.minimum} / {pmg.scale}] — {pmg.evidence}",
+            )
+        )
+    for eq_rule in claims.grade_equivalence_rules:
+        rows.append(
+            (
+                classes.ELIGIBILITY,
+                f"GRADE_EQUIVALENCE ({eq_rule.scope}): {eq_rule.rule_text} — {eq_rule.evidence}",
+            )
+        )
+    for sig in claims.selectivity_signals:
+        if sig.strip():
+            rows.append(
+                (
+                    classes.STRUCTURE,
+                    f"Selectivity signal: {sig.strip()}",
+                )
+            )
     return tuple((claim_class, text[:_MAX_CLAIM_CHARS]) for claim_class, text in rows)
 
 

@@ -201,18 +201,19 @@ def render_and_store(
         # let one student's approval burst park every other tenant's queue.
         # Re-raised so SQS redelivers once the student's window rolls over.
         raise
-    except EuropassUnavailable:
-        circuit.consecutive_failures += 1
-        # ponytail: unlocked read-modify-write on the shared counter. Safe
-        # only because exactly one pinned worker ever calls this
-        # (DesiredCount: 1, enforced by Tasks 5/6) -- add select_for_update()
-        # on EuropassCircuit here if that ever stops being true.
-        if circuit.consecutive_failures >= _FAILURE_THRESHOLD:
-            circuit.paused_until = timezone.now() + timedelta(seconds=_FAILURE_PAUSE_SECONDS)
-            circuit.reason = "consecutive failures"
-            circuit.save(update_fields=["consecutive_failures", "paused_until", "reason"])
-        else:
-            circuit.save(update_fields=["consecutive_failures"])
+    except EuropassUnavailable as error:
+        if "no Europass language code" not in str(error):
+            circuit.consecutive_failures += 1
+            # ponytail: unlocked read-modify-write on the shared counter. Safe
+            # only because exactly one pinned worker ever calls this
+            # (DesiredCount: 1, enforced by Tasks 5/6) -- add select_for_update()
+            # on EuropassCircuit here if that ever stops being true.
+            if circuit.consecutive_failures >= _FAILURE_THRESHOLD:
+                circuit.paused_until = timezone.now() + timedelta(seconds=_FAILURE_PAUSE_SECONDS)
+                circuit.reason = "consecutive failures"
+                circuit.save(update_fields=["consecutive_failures", "paused_until", "reason"])
+            else:
+                circuit.save(update_fields=["consecutive_failures"])
         raise
 
     if circuit.consecutive_failures:

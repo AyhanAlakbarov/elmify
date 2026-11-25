@@ -13,39 +13,65 @@
  */
 const TOKENS_INSTITUTION: readonly string[] = [
   "institution", "university", "school", "hochschule", "universitat", "universite",
-  "universidad", "okul",
+  "universidad", "okul", "universiteit", "universita", "uczelnia",
 ];
 const TOKENS_DEGREE: readonly string[] = [
-  "degree", "qualification", "abschluss", "diplome", "titulo", "derece",
+  "degree", "qualification", "abschluss", "diplome", "titulo", "título", "derece",
+  "opleiding", "laurea", "dyplom", "grado",
 ];
 
 export const TOKENS: Record<string, readonly string[]> = {
-  given_name: ["given", "first", "forename", "christian", "vorname", "prenom", "nombre", "ad"],
-  family_name: ["family", "last", "surname", "nachname", "familienname", "nom", "apellido", "soyad"],
+  given_name: [
+    "given", "first", "forename", "christian", "vorname", "prenom", "nombre", "ad",
+    "voornaam", "nome", "imie", "imię",
+  ],
+  family_name: [
+    "family", "last", "surname", "nachname", "familienname", "nom", "apellido", "soyad",
+    "achternaam", "cognome", "nazwisko",
+  ],
   middle_name: ["middle", "zweiter"],
   full_name: ["full name", "nom complet", "vollstandiger", "ad soyad"],
   date_of_birth: ["date of birth", "birth date", "birthdate", "birthday", "born", "dob",
                   "geburtsdatum", "date de naissance", "fecha de nacimiento", "dogum tarihi",
-                  "dogum tarixi"],
+                  "dogum tarixi", "geboortedatum", "data di nascita", "nascita",
+                  "data urodzenia", "urodzenia"],
   place_of_birth: ["place of birth", "birthplace", "birth place", "geburtsort",
                    "lieu de naissance", "lugar de nacimiento", "dogum yeri", "dogdugu yer",
-                   "anadan oldugu yer"],
-  nationality: ["nationality", "citizen", "staatsangeh", "nationalite", "nacionalidad", "uyruk"],
-  gender: ["gender", "sex", "geschlecht", "sexe", "cinsiyet"],
+                   "anadan oldugu yer", "geboorteplaats", "luogo di nascita", "miejsce urodzenia"],
+  nationality: [
+    "nationality", "citizen", "staatsangeh", "nationalite", "nacionalidad", "uyruk",
+    "nationaliteit", "cittadinanza", "obywatelstwo",
+  ],
+  gender: ["gender", "sex", "geschlecht", "sexe", "cinsiyet", "geslacht", "sesso", "plec", "płeć"],
   email: ["email", "e-mail", "mail", "correo", "eposta", "e-posta"],
-  phone: ["phone", "mobile", "telephone", "telefon", "movil", "cep"],
-  address: ["address", "street", "adresse", "strasse", "direccion", "adres"],
-  city: ["city", "town", "stadt", "ort", "ville", "ciudad", "sehir"],
+  phone: [
+    "phone", "mobile", "telephone", "telefon", "movil", "cep", "telefoon", "telefono",
+  ],
+  address: [
+    "address", "street", "adresse", "strasse", "direccion", "adres", "indirizzo",
+  ],
+  city: [
+    "city", "town", "stadt", "ort", "ville", "ciudad", "sehir", "stad", "citta", "città", "miasto",
+  ],
   postal_code: ["postal", "post code", "zip", "plz", "postleitzahl", "code postal", "posta kodu"],
-  country: ["country", "land", "pays", "pais", "ulke"],
+  country: [
+    "country", "land", "pays", "pais", "ulke", "paese", "kraj",
+  ],
   passport_number: ["passport", "reisepass", "passeport", "pasaporte", "pasaport"],
   national_id: ["national id", "identity", "personalausweis", "kimlik", "tc"],
   // Spec 2026-10-12 §4: the keys a passport read writes.
-  given_names: ["given", "first", "forename", "christian", "vorname", "prenom", "nombre", "ad"],
-  surname: ["family", "last", "surname", "nachname", "familienname", "nom", "apellido", "soyad"],
-  sex: ["gender", "sex", "geschlecht", "sexe", "cinsiyet"],
+  given_names: [
+    "given", "first", "forename", "christian", "vorname", "prenom", "nombre", "ad",
+    "voornaam", "nome", "imie", "imię",
+  ],
+  surname: [
+    "family", "last", "surname", "nachname", "familienname", "nom", "apellido", "soyad",
+    "achternaam", "cognome", "nazwisko",
+  ],
+  sex: ["gender", "sex", "geschlecht", "sexe", "cinsiyet", "geslacht", "sesso", "plec", "płeć"],
   citizenship: ["citizenship", "nationality", "citizen", "staatsangeh", "nationalite",
-                "nacionalidad", "uyruk", "vatandaslik"],
+                "nacionalidad", "uyruk", "vatandaslik", "nationaliteit", "cittadinanza",
+                "obywatelstwo"],
   number: ["passport number", "passport no", "document number", "reisepassnummer",
            "numero de passeport", "pasaport no", "pasaport numarasi"],
   expiry_date: ["expiry", "expiration", "valid until", "gultig bis", "date d expiration",
@@ -66,11 +92,13 @@ export const TOKENS: Record<string, readonly string[]> = {
   field_of_study: ["field of study", "subject", "major", "studienfach", "domaine", "bolum"],
   graduation_date: ["graduation date", "date of graduation", "graduation", "completed",
                     "abschlussdatum", "obtention", "mezuniyet tarihi", "mezuniyyet tarixi", "mezuniyet"],
-  grade: ["grade", "gpa", "mark", "note", "durchschnitt", "moyenne", "not"],
+  grade: ["grade", "gpa", "mark", "note", "durchschnitt", "moyenne", "not", "calificaciones"],
   // Spec 2026-10-12 §4.3-4.4: certificate and diploma keys. Phrases, never a bare
   // "test" or "date": "Test date" must not also match the test name, or the box
   // reads as ambiguous and is refused.
-  language: ["test language", "language tested", "language of the test", "testsprache", "test dili"],
+  language: [
+    "test language", "language tested", "language of the test", "testsprache", "test dili", "idioma",
+  ],
   test_name: ["test name", "name of test", "language test", "english test", "exam name",
               "sinav adi"],
   test_variant: ["test module", "ielts module", "test type", "test version"],
@@ -105,7 +133,8 @@ export const TOKENS: Record<string, readonly string[]> = {
   // Open-ended narrative and essay prompts.
   motivation_letter: ["motivation letter", "letter of motivation", "statement of purpose",
                       "personal statement", "motivational statement", "motivationsschreiben",
-                      "lettre de motivation", "motivasyon mektubu", "motivasiya mektubu"],
+                      "lettre de motivation", "motivasyon mektubu", "motivasiya mektubu",
+                      "motivatiebrief", "carta de motivacion", "carta"],
   why_programme: ["why this programme", "why this program", "choice of programme",
                   "choice of program", "interest in the programme", "interest in this program",
                   "program secimi", "proqram secimi"],
@@ -139,9 +168,9 @@ export const TOKENS: Record<string, readonly string[]> = {
               "activity description"],
   kind: ["activity type", "entry type", "type of activity"],
   organisation: ["employer", "company name", "organisation name", "organization name",
-                 "arbeitgeber", "employeur", "kurum adi", "sirket adi"],
+                 "arbeitgeber", "employeur", "kurum adi", "sirket adi", "empresa", "experiencia"],
   employer: ["employer", "company name", "organisation name", "organization name",
-             "arbeitgeber", "employeur", "kurum adi", "sirket adi", "is yeri"],
+             "arbeitgeber", "employeur", "kurum adi", "sirket adi", "is yeri", "empresa", "experiencia"],
   role: ["job title", "role title", "position held", "berufsbezeichnung",
          "poste occupe", "gorev", "vezife"],
   unpaid: ["unpaid", "volunteer", "voluntary", "ehrenamtlich", "gonullu", "odenissiz"],
@@ -233,7 +262,7 @@ export function normalise(text: string): string {
     .replace(/œ/g, "oe")
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
 
@@ -266,26 +295,37 @@ export function tokenGroupKey(profileField: string): string {
  *  Cyrillic tokens below survive (normalise() would turn "паспорт" into "").
  *  Combining marks are still stripped, identically on both sides. */
 export function normaliseDoc(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
+  return normalise(text);
 }
 
 /** Words a box's visible text uses for each document kind. Matched with
  *  normaliseDoc on both sides; a token that normalises to "" never matches. */
 export const DOC_TOKENS: Record<string, readonly string[]> = {
   CV: ["cv", "resume", "curriculum", "lebenslauf", "ozgecmis", "резюме"],
-  TRANSCRIPT: ["transcript", "grades", "records", "notenspiegel", "transkript",
-               "приложение к диплому"],
-  DIPLOMA: ["diploma", "degree certificate", "zeugnis", "diplom", "диплом"],
-  PASSPORT: ["passport", "reisepass", "pasaport", "паспорт", "identity document"],
-  LANGUAGE_CERTIFICATE: ["ielts", "toefl", "language certificate", "sprachnachweis",
-                         "dil belgesi"],
-  REFERENCE_LETTER: ["recommendation", "reference", "referenz", "tavsiye", "рекомендация"],
-  MOTIVATION_LETTER: ["motivation", "statement of purpose", "personal statement",
-                      "motivasyon"],
+  TRANSCRIPT: [
+    "transcript", "grades", "records", "notenspiegel", "transkript",
+    "приложение к диплому", "cijferlijst", "calificaciones",
+    "relevé", "releve", "notes", "qiymət", "qiymet",
+  ],
+  DIPLOMA: [
+    "diploma", "degree certificate", "zeugnis", "diplom", "диплом",
+    "diplôme", "diplome", "laurea", "certificato", "dyplom", "título", "titulo",
+  ],
+  PASSPORT: [
+    "passport", "reisepass", "pasaport", "паспорт", "identity document",
+    "passeport", "pasaporte",
+  ],
+  LANGUAGE_CERTIFICATE: [
+    "ielts", "toefl", "language certificate", "sprachnachweis",
+    "dil belgesi", "langue", "dil", "idioma",
+  ],
+  REFERENCE_LETTER: [
+    "recommendation", "reference", "referenz", "tavsiye", "рекомендация",
+    "recommandation", "tövsiyə", "tovsiye",
+  ],
+  MOTIVATION_LETTER: [
+    "motivation", "statement of purpose", "personal statement",
+    "motivasyon", "motivatiebrief", "motivasiya", "carta",
+  ],
   OTHER: [],
 };

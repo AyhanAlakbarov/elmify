@@ -31,8 +31,10 @@ from babel import Locale, UnknownLocaleError
 
 from apps.accounts.field_taxonomy import (
     TaxonomyParser,
+    localized_field_terms,
     resolve_field_taxonomy,
     resolve_field_taxonomy_with_llm,
+    scrub_taxonomy_phrase,
 )
 from apps.accounts.schemas import StudentProfileSnapshot
 from apps.documents.research_fit.anchors import guard_phrase, strip_named_runs
@@ -107,6 +109,7 @@ _MONEY = {
 }
 _DURATION: dict[str, tuple[str, ...]] = {
     "ONE_YEAR": ("one-year master's", "1 year, 60 ECTS"),
+    "ONE_AND_HALF_YEAR": ("1.5-year master's", "3 semesters, 90 ECTS"),
     "TWO_YEAR": ("2 years, 120 ECTS",),
     "NONE": (),
 }
@@ -129,9 +132,21 @@ def _banned(profile: StudentProfileSnapshot) -> frozenset[str]:
     return frozenset(name for name in names if name)
 
 
+_DOTTED_ACRONYM = re.compile(
+    r"\b([A-Za-z]{1,2})\.([A-Za-z]{1,2})(?:\.([A-Za-z]{1,2}))?\.?"
+)
+
+
 def _words(text: str, *, banned: frozenset[str]) -> str:
-    held = _SYMBOL_WORD.sub(lambda m: f" {_SYMBOL_WORDS[m.group(1).lower()]} ", text)
-    guarded = guard_phrase(strip_named_runs(held).lower(), banned=banned).split()
+    collapsed = _DOTTED_ACRONYM.sub(
+        lambda m: "".join(g for g in m.groups() if g),
+        text,
+    )
+    held = _SYMBOL_WORD.sub(lambda m: f" {_SYMBOL_WORDS[m.group(1).lower()]} ", collapsed)
+    stripped = strip_named_runs(held)
+    if not stripped.strip():
+        stripped = scrub_taxonomy_phrase(held, banned=banned)
+    guarded = guard_phrase(stripped.lower(), banned=banned).split()
     back = {stand_in: word for word, stand_in in _SYMBOL_WORDS.items()}
     guarded = [back.get(word, word) for word in guarded]
     while guarded and guarded[0] in _CONNECTORS:
@@ -247,14 +262,24 @@ def render_tap_queries(
         "pathway": _PATHWAY if inputs.research_pathway else "",
     }
     fields, interests, destinations = inputs.field_words, inputs.interest_words, inputs.destinations
+    loc_cache: dict[tuple[str, str], str] = {}
+
+    def _localize(term: str, language: str) -> str:
+        if not term or language == "en":
+            return term
+        key = (language, term)
+        if key not in loc_cache:
+            loc_terms = localized_field_terms(term, language)
+            loc_cache[key] = loc_terms[0] if loc_terms else term
+        return loc_cache[key]
 
     def request(
         angle: AngleRow, field_val: str, interest: str, codes: tuple[str, ...]
     ) -> SearchRequest:
         filled = {
             **values,
-            "field": field_val,
-            "interest": interest,
+            "field": _localize(field_val, angle.language),
+            "interest": _localize(interest, angle.language),
             "destination": ", ".join(_country(code, angle.language) for code in codes),
         }
         return SearchRequest(

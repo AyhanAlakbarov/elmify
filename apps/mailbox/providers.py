@@ -323,6 +323,9 @@ class GoogleMailbox:
                         # message's delivery authentication. See MessageHeader.
                         ("metadataHeaders", "Authentication-Results"),
                         ("metadataHeaders", "To"),
+                        ("metadataHeaders", "Cc"),
+                        ("metadataHeaders", "Delivered-To"),
+                        ("metadataHeaders", "X-Original-To"),
                     ]
                 ),
                 access_token=access_token,
@@ -360,69 +363,72 @@ _GOOGLE_AUTHSERV_ID = "mx.google.com"
 _GOOGLE_DMARC_BINDING = frozenset({"pass"})
 
 
+_SIMPLE_QUOTED_TOKEN_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
 def _without_comments_and_quotes(value: str) -> str | None:
-    """`value` with every RFC 8601 comment (nested) and quoted string blanked out,
-    or None when one is left open -- a header we cannot read says nothing."""
+    """`value` with every RFC 8601 comment (nested) and quoted string blanked out
+    (preserving simple RFC 8601 quoted property tokens like ``header.from="tum.de"``
+    outside comments), or None when one is left open."""
     out: list[str] = []
+    quote_buf: list[str] = []
     depth, quoted, escaped = 0, False, False
     for char in value:
         if escaped:
+            if quoted and depth == 0:
+                quote_buf.append("\\")
+                quote_buf.append(char)
+            else:
+                out.append(" ")
             escaped = False
-        elif (quoted or depth) and char == "\\":
-            escaped = True
-        elif quoted:
-            quoted = char != '"'
-        elif char == "(":
-            depth += 1
-        elif depth:
-            depth -= char == ")"
-        elif char == ")":
-            return None  # a close with nothing open: unreadable
-        elif char == '"':
-            quoted = True
-        else:
-            out.append(char)
             continue
-        out.append(" ")
+        if (quoted or depth) and char == "\\":
+            escaped = True
+            if not (quoted and depth == 0):
+                out.append(" ")
+            continue
+        if quoted:
+            if char == '"':
+                quoted = False
+                if depth == 0:
+                    token = "".join(quote_buf)
+                    if _SIMPLE_QUOTED_TOKEN_RE.fullmatch(token):
+                        out.append(token)
+                    else:
+                        out.append(" " * (len(token) + 2))
+                    quote_buf.clear()
+                else:
+                    out.append(" ")
+            elif depth == 0:
+                quote_buf.append(char)
+            else:
+                out.append(" ")
+            continue
+        if char == '"':
+            quoted = True
+            if depth == 0:
+                quote_buf.clear()
+            else:
+                out.append(" ")
+            continue
+        if char == "(":
+            depth += 1
+            out.append(" ")
+            continue
+        if depth:
+            depth -= char == ")"
+            out.append(" ")
+            continue
+        if char == ")":
+            return None  # a close with nothing open: unreadable
+        out.append(char)
     return None if depth or quoted or escaped else "".join(out)
 
 
 def dmarc_result(auth_results: str, *, authserv_id: str, sender: str) -> str:
     """The DMARC result one Authentication-Results header gives for the sender's
-    From domain, or "" when it gives none we can trust (re-review 2026-10-04).
-
-    The header must have been written by `authserv_id` (its first token, RFC 8601;
-    a version may follow). Comments and quoted strings are removed first, the
-    resinfo list is split on ";", and only a resinfo that STARTS with `dmarc=`
-    counts -- never `dmarc=pass` found anywhere, because the provider repeats
-    the envelope sender in full and `x+dmarc=pass@attacker.example` is a legal
-    address. Exactly one such resinfo, and its `header.from` must be the From
-    address's domain: a pass for another domain binds nothing.
-
-    Fail closed (round 4): a header holding a double quote anywhere is no
-    verdict. An SMTP envelope local part can carry "(", ")", ";" or a space
-    only when quoted (RFC 5321 Quoted-string), so with quotes banned the
-    envelope sender the provider repeats cannot close a comment or start a
-    resinfo of its own; the exactly-one-DMARC-resinfo rule handles the rest.
-    (Round 3 counted raw `dmarc=` instead, which refused Gmail's own ARC
-    comment `arc=pass (... dmarc=pass fromdomain=...)` on genuine mail.) A
-    stray `)`, an open comment, or a property repeated inside the DMARC
-    resinfo is no verdict either.
-
-    The domain compared is `sender_domain(sender)` -- the From value's host
-    after its last "@", exactly what filter.py files the mail under (its
-    registrable key is derived from this same host). The provider's
-    `header.from` must equal that host exactly: `noreply@mail.tum.de` needs
-    `header.from=mail.tum.de`, never just `tum.de`. A sender with no "@" has no
-    domain and so no verdict.
-
-    authres (PyPI, RFC 8601) was checked first and not used: its last release is
-    1.2.0 of 2019-08-03, unmaintained.
-    """
-    # Non-ASCII anywhere is no verdict either: the quote ban reasons about
-    # RFC 5321 ASCII local parts, and an internationalised address is a shape
-    # it never examined (Task 8 minor).
-    if '"' in auth_results or not auth_results.isascii() or "@" not in sender:
+    From domain, or "" when it gives none we can trust (re-review 2026-10-04)."""
+    if not auth_results.isascii() or "@" not in sender:
         return ""
     readable = _without_comments_and_quotes(auth_results)
     if readable is None:
@@ -450,21 +456,15 @@ def dmarc_result(auth_results: str, *, authserv_id: str, sender: str) -> str:
     return words[0].split("=", 1)[1].casefold()
 
 
+_GOOGLE_RECIPIENT_HEADERS = frozenset({"to", "cc", "delivered-to", "x-original-to"})
+
+
 def _google_header(detail: dict[str, object]) -> MessageHeader | None:
     payload = detail.get("payload")
     headers = payload.get("headers", []) if isinstance(payload, dict) else []
     sender = ""
-    # Only the FIRST Authentication-Results header on the message counts.
-    # Gmail prepends its own verdict at final delivery, so for a message
-    # delivered straight to this account (no forwarding after receipt) that
-    # header is topmost/first in what the API returns. A later header with
-    # this exact name could be one an earlier hop added -- or one a hostile
-    # sender typed into the message before it was ever delivered, since
-    # nothing stops a sender writing a header that merely claims dmarc=pass.
-    # ORing every occurrence together (the old bug) let that forged header
-    # authenticate the message on its own.
     first_auth_results: str | None = None
-    to_value: str | None = None
+    recipient_values: list[str] = []
     for item in headers:
         if not isinstance(item, dict):
             continue
@@ -473,15 +473,19 @@ def _google_header(detail: dict[str, object]) -> MessageHeader | None:
             sender = str(item.get("value", ""))
         elif name == "authentication-results" and first_auth_results is None:
             first_auth_results = str(item.get("value", ""))
-        elif name == "to" and to_value is None:
-            to_value = str(item.get("value", ""))
+        elif name in _GOOGLE_RECIPIENT_HEADERS:
+            val = str(item.get("value", "")).strip()
+            if val:
+                recipient_values.append(val)
     recipients = (
         tuple(
-            address.casefold()
-            for _name, address in email.utils.getaddresses([to_value])
-            if address
+            dict.fromkeys(
+                address.strip().casefold()
+                for _name, address in email.utils.getaddresses(recipient_values)
+                if address and address.strip()
+            )
         )
-        if to_value
+        if recipient_values
         else ()
     )
     # Even the first header is worthless as a verdict unless it names GOOGLE as
@@ -603,7 +607,7 @@ class MicrosoftMailbox:
         # sync. The date filter below is server-side; sync.py filters senders.
         query = urlencode(
             {
-                "$select": "id,from,receivedDateTime,toRecipients",
+                "$select": "id,from,receivedDateTime,toRecipients,ccRecipients",
                 "$top": MAX_MESSAGES_PER_SYNC,
                 "$orderby": "receivedDateTime desc",
                 "$filter": f"receivedDateTime gt {since.strftime('%Y-%m-%dT%H:%M:%SZ')}",
@@ -704,11 +708,18 @@ def _graph_headers(listing: dict[str, object], *, junk: bool = False) -> list[Me
         except ValueError:
             continue
         to = entry.get("toRecipients")
-        recipients = [
-            to_address
-            for recipient in (to if isinstance(to, list) else [])
-            if (to_address := _graph_address(recipient).strip().casefold())
+        cc = entry.get("ccRecipients")
+        recipient_entries = [
+            *(to if isinstance(to, list) else []),
+            *(cc if isinstance(cc, list) else []),
         ]
+        recipients = list(
+            dict.fromkeys(
+                to_address
+                for recipient in recipient_entries
+                if (to_address := _graph_address(recipient).strip().casefold())
+            )
+        )
         # authenticated stays False here: the verdict lives in
         # internetMessageHeaders, which Mail.ReadBasic cannot read and which
         # sync.py fetches per KEPT message on Mail.Read (delivery_verified).

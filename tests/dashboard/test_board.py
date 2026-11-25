@@ -638,3 +638,21 @@ def test_pass3_i3_r2_g2_board_linked_award_rejection_conditional_satisfaction_an
                 student=membership_a, candidate_id=programme.id, actor=membership_a
             )
         assert exc_info.value.reason == "not_eligible"
+
+        # Stage 2 Item 8: _chance_credible_interval preserves epistemic_se_logit when
+        # cannot_afford=True switches chance_pct from estimated_chance_pct to funded_pct
+        from apps.dashboard.board import _chance_credible_interval
+
+        programme.estimated_chance_pct = 75
+        programme.estimated_funded_chance_pct = 30
+        programme.calibration_features = {
+            "base_prior": 0.50,
+            "ci_low_pct": 68.0,
+            "ci_high_pct": 81.0,
+            "epistemic_se_logit": 0.15,
+        }
+        ci_calibrated = _chance_credible_interval(30, programme)
+        programme.calibration_features = {"base_prior": 0.50}
+        ci_cold = _chance_credible_interval(30, programme)
+        assert (ci_calibrated[1] - ci_calibrated[0]) < (ci_cold[1] - ci_cold[0])
+

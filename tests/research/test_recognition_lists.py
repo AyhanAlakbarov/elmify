@@ -375,6 +375,21 @@ def test_name_variants() -> None:
     assert name_variants("Azerbaijan State Oil and Industry University (ADNSU)") == (
         "azerbaijan state oil and industry university", "adnsu",
     )
+    assert name_variants("Technische Universität München (TUM)") == (
+        "technische universität münchen", "tum",
+    )
+    assert name_variants("国立大学法人東京大学（東大）") == (
+        "国立大学法人東京大学", "東京大学", "東大",
+    )
+    assert name_variants("学校法人早稲田大学") == (
+        "学校法人早稲田大学", "早稲田大学",
+    )
+    assert name_variants("국립대학법인 서울대학교") == (
+        "국립대학법인 서울대학교", "서울대학교",
+    )
+    assert name_variants("Stiftung Universität Hildesheim") == (
+        "stiftung universität hildesheim", "universität hildesheim",
+    )
 
 
 def test_the_command_reports_each_row(monkeypatch) -> None:

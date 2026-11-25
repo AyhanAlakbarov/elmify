@@ -182,3 +182,72 @@ def test_unconsumed_cycle_past_7_days_closes_cash_refund_but_keeps_rollover(
         assert not status.refund_eligible
         assert status.rollover_eligible
         assert "7-Day Refund Window Closed · Rollover Eligible" in status.status_label
+
+
+def test_prior_cycle_consumption_does_not_contaminate_renewed_cycle(agency_a, membership_a):
+    from django.utils import timezone
+
+    from apps.portals.models import PreparedDocument
+
+    with tenant_scope(agency_a.id):
+        t0 = timezone.now() - timedelta(days=365)
+        old_cycle = StudentCycle.objects.create(
+            student=membership_a, academic_year="2025-2026", paid_at=t0
+        )
+        app1 = Application.objects.create(student=membership_a, program_id=uuid4())
+        app2 = Application.objects.create(student=membership_a, program_id=uuid4())
+        Application.objects.filter(id__in=(app1.id, app2.id)).update(
+            created_at=t0 + timedelta(days=1)
+        )
+
+        draft_exp = DocumentDraft.objects.create(
+            student=membership_a,
+            kind=DocumentDraft.Kind.CV,
+            version=1,
+            content={},
+            is_general=False,
+            rendered_filename="old-cv.pdf",
+        )
+        DocumentDraft.objects.filter(id=draft_exp.id).update(created_at=t0 + timedelta(days=1))
+
+        step = ApplicationStep.objects.create(
+            application=app1,
+            sequence=1,
+            kind=ApplicationStep.Kind.FILL,
+            detail={"fields": 5},
+        )
+        ApplicationStep.objects.filter(id=step.id).update(created_at=t0 + timedelta(days=1))
+
+        prep = PreparedDocument.objects.create(
+            application=app1,
+            student=membership_a,
+            slot="CV",
+            document="CV",
+            inputs_digest="a" * 64,
+            state=PreparedDocument.State.READY,
+            filename="cv_out.pdf",
+        )
+        PreparedDocument.objects.filter(id=prep.id).update(prepared_at=t0 + timedelta(days=1))
+
+        old_status = cycle_consumption_status(
+            membership_a.id, old_cycle, now=t0 + timedelta(days=2)
+        )
+        assert old_status.is_consumed
+        assert old_status.kits_count == 2
+        assert old_status.exports_count == 2
+        assert old_status.extension_sessions_count == 1
+
+        # Student purchases a new cycle a year later
+        now = timezone.now()
+        new_cycle = StudentCycle.objects.create(
+            student=membership_a, academic_year="2026-2027", paid_at=now
+        )
+        new_status = cycle_consumption_status(
+            membership_a.id, new_cycle, now=now + timedelta(hours=1)
+        )
+        assert new_status.kits_count == 0
+        assert new_status.exports_count == 0
+        assert new_status.extension_sessions_count == 0
+        assert not new_status.is_consumed
+        assert new_status.refund_eligible
+        assert new_status.rollover_eligible

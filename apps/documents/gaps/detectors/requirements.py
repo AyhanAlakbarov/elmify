@@ -16,9 +16,10 @@ from apps.documents.gaps.models import (
     _current,
     _cv_on_file,
     _group_questions,
+    _identity_with_full_name,
 )
 from apps.documents.models import VerifiedFact
-from apps.documents.verification import has_full_name, payload_keys, unsuperseded_facts
+from apps.documents.verification import payload_keys, unsuperseded_facts
 from apps.funding.models import Program
 from apps.tenancy.models import Membership
 
@@ -159,6 +160,16 @@ def _is_research_applicant(student: Membership) -> bool:
     and it is English-shaped in a product whose applicants are not. The
     student's own ledger answers the same question without a list.
     """
+    cached: tuple[VerifiedFact, ...] | None = getattr(student, "_gap_facts_cache", None)
+    if cached is not None:
+        return any(
+            f.category
+            in (
+                VerifiedFact.Category.RESEARCH,
+                VerifiedFact.Category.PUBLICATION,
+            )
+            for f in cached
+        )
     return (
         unsuperseded_facts(student)
         .filter(
@@ -458,7 +469,7 @@ def _programme_directives_questions(
         facts = (
             # A passport read writes one IDENTITY row per key; only the named
             # row is "the person" a question can be about.
-            list(has_full_name(unsuperseded_facts(student)))
+            _identity_with_full_name(student)
             if category == VerifiedFact.Category.IDENTITY
             else _current(student, category)
         )
@@ -506,16 +517,7 @@ def _active_draft_programme_questions(student: Membership) -> tuple[GapQuestion,
     from apps.documents.requirement_list import RequirementList
     from apps.portals.models import Application
 
-    closed_app_ids = set(
-        (
-            Application.objects.filter(
-                student=student,
-                state__in=(Application.State.SUBMITTED, Application.State.CONFIRMED),
-            )
-            | Application.objects.filter(student=student).exclude(outcome="")
-        ).values_list("id", flat=True)
-    )
-    drafts = (
+    drafts = list(
         DocumentDraft.objects.filter(
             student=student,
             kind=DocumentDraft.Kind.CV,
@@ -523,6 +525,21 @@ def _active_draft_programme_questions(student: Membership) -> tuple[GapQuestion,
         )
         .exclude(status=DocumentDraft.Status.SUPERSEDED)
         .order_by("version")
+    )
+    if not drafts:
+        return ()
+    closed_app_ids = (
+        set(
+            (
+                Application.objects.filter(
+                    student=student,
+                    state__in=(Application.State.SUBMITTED, Application.State.CONFIRMED),
+                )
+                | Application.objects.filter(student=student).exclude(outcome="")
+            ).values_list("id", flat=True)
+        )
+        if any(d.application_id is not None for d in drafts)
+        else set()
     )
     seen: set[tuple[object, str]] = set()
     collected: list[GapQuestion] = []

@@ -779,3 +779,169 @@ def test_onboarding_captures_unconstrained_self_funded_and_priority_notes(
         assert snap_override.weights["ACADEMIC_FIT"] == Decimal("0.25")
         assert isinstance(snap_override, StudentProfileSnapshot)
 
+
+def test_note_parser_guards_positive_funding_need_decimal_years_and_conjunctions():
+    from apps.accounts.consultation import _experience_from_notes, _priorities_from_notes
+
+    payload_mandatory: dict[str, object] = {"funding_dependency": "MANDATORY"}
+    _priorities_from_notes(
+        "I have no funding from my family, so I need a full scholarship.",
+        payload_mandatory,
+    )
+    assert payload_mandatory["funding_dependency"] == "MANDATORY"
+
+    payload_without: dict[str, object] = {"funding_dependency": "MANDATORY"}
+    _priorities_from_notes(
+        "Without any funding I cannot study abroad.",
+        payload_without,
+    )
+    assert payload_without["funding_dependency"] == "MANDATORY"
+
+    exp_decimal = _experience_from_notes("I have 1.5 years of work experience in software.")
+    assert exp_decimal is not None
+    assert len(exp_decimal) == 1
+    assert exp_decimal[0]["months"] == 18
+    assert exp_decimal[0]["kind"] == "WORK"
+
+    exp_conj = _experience_from_notes(
+        "I need full funding and I have 3 years of work experience."
+    )
+    assert exp_conj is not None
+    assert len(exp_conj) == 1
+    assert exp_conj[0]["months"] == 36
+
+
+def test_with_answer_preserves_courses_on_institution_expansion_and_reading():
+    from uuid import uuid4
+
+    courses = [{"title": "Algorithms", "credits": "6", "grade": "95"}]
+    draft = ConsultationDraft(
+        uuid4(),
+        uuid4(),
+        {
+            "academic_history": [
+                {
+                    **_RECORD,
+                    "institution": "BSU",
+                    "courses": courses,
+                }
+            ]
+        },
+    )
+    updated = draft.with_answer(
+        "academic_history",
+        [{**_RECORD, "institution": "Baku State University", "courses": []}],
+    )
+    assert updated.answer("academic_history")[0]["courses"] == courses
+
+
+def test_prefill_flexible_dates_and_multiple_degrees(agency_a, django_user_model):
+    from django.utils import timezone
+
+    from apps.documents.models import VerifiedFact
+
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "multi_deg_student")
+        now = timezone.now()
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.IDENTITY,
+            payload={"citizenship": "Türkiye", "date_of_birth": "15.04.2001"},
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:11111111-2222-3333-4444-555555555555",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.LANGUAGE,
+            payload={
+                "test_name": "IELTS",
+                "language": "English",
+                "test_score": "7.5",
+                "cefr_level": "C1",
+                "test_date": "10/03/2026",
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:22222222-2222-3333-4444-555555555555",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={
+                "institution_original": "Baku State University",
+                "country": "Azerbaijan",
+                "degree_as_awarded": "BSc",
+                "field": "Computer Science",
+                "grade_native": "90",
+                "grade_scale": "100",
+                "end_date": "15.06.2023",
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:33333333-2222-3333-4444-555555555555",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={
+                "institution_original": "ADA University",
+                "country": "Azerbaijan",
+                "degree_as_awarded": "MSc",
+                "field": "Data Science",
+                "grade_native": "3.9",
+                "grade_scale": "4.0",
+                "end_date": "2025-06",
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="document:44444444-2222-3333-4444-555555555555",
+            confirmed_by=student,
+            confirmed_at=now,
+            created_by=student,
+        )
+        draft = prefill_from_latest_reading(
+            ConsultationDraft(agency_a.id, student.id, {}), membership=student
+        )
+    assert draft.answer("nationality") == "TR"
+    assert draft.answer("date_of_birth") == "2001-04-15"
+    assert draft.answer("language_evidence")[0]["available_by"] == "2026-03-10"
+    acad = draft.answer("academic_history")
+    assert len(acad) == 2
+    assert acad[0]["institution"] == "ADA University"
+    assert acad[0]["completed_on"] == "2025-06-01"
+    assert acad[1]["institution"] == "Baku State University"
+    assert acad[1]["completed_on"] == "2023-06-15"
+
+
+def test_language_context_note_respects_anglophone_codes_and_teaching_languages():
+    from uuid import uuid4
+
+    from apps.accounts.views import _language_context_note_for
+
+    sg_draft = ConsultationDraft(
+        uuid4(),
+        uuid4(),
+        {
+            "acceptable_teaching_languages": ["English"],
+            "academic_history": [{**_RECORD, "country_code": "SG"}],
+        },
+    )
+    assert _language_context_note_for(sg_draft, "language_evidence") == ""
+
+    german_only_draft = ConsultationDraft(
+        uuid4(),
+        uuid4(),
+        {
+            "acceptable_teaching_languages": ["German"],
+            "academic_history": [{**_RECORD, "country_code": "AZ"}],
+        },
+    )
+    assert _language_context_note_for(german_only_draft, "language_evidence") == ""
+
+

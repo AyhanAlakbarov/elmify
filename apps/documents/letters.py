@@ -59,12 +59,24 @@ from .evidence.readings import UsableReading
 from .generation import _has_refusal
 from .hygiene import normalize_text
 from .letter_defaults import DefaultRow, defaults_for
+from .letter_exemplars import (
+    build_question_focus_plan,
+    exemplars_payload,
+    select_exemplars_for_letter,
+    unit_plans_payload,
+)
 from .letter_gates import (
+    _EXEMPT_ARCHETYPES,
+    _PROVENANCE_CLAIM_KINDS,
     SAFE_GATE_SUBCODES,
     GateCode,
     LetterGateViolation,
+    _has_trigger,
+    _salient_words,
+    capitalised_phrases,
     names_worth_guarding,
     run_letter_gates,
+    sentence_spans,
 )
 from .letter_render import (
     _check_letter_constraint,
@@ -76,7 +88,7 @@ from .letter_render import (
     renders_formal_letter,
     select_letter_variant,
 )
-from .letter_schemas import LetterContent, LetterUnit, Storyline
+from .letter_schemas import ClaimKind, LetterClaim, LetterContent, LetterUnit, Storyline
 from .letter_shape import (
     LetterShape,
     NotGeneratable,
@@ -89,7 +101,9 @@ from .letter_shape import (
     validate_shape_bounds,
 )
 from .letter_verification import (
+    _NUMBER,
     LetterClaimVerdict,
+    _normalize,
     check_written_requirements,
     verify_letter_claims,
 )
@@ -288,10 +302,14 @@ def _research_payload(inputs: dict[UUID, NarrativeInput]) -> str | None:
         }
         for paper_key in (
             "fit_mode",
+            "orientation_slug",
+            "orientation_label",
             "paper_title",
             "paper_year",
             "paper_url",
             "paper_finding",
+            "paper_method_or_question",
+            "paper_active_topic",
             "paper_author_role",
         ):
             if prov.get(paper_key):
@@ -712,7 +730,12 @@ _DOC_LANG_ALIASES: dict[str, frozenset[str]] = {
     "de": frozenset({"de", "deu", "ger", "german", "deutsch", "allemand"}),
     "fr": frozenset({"fr", "fra", "fre", "french", "français", "francais", "französisch"}),
     "it": frozenset({"it", "ita", "italian", "italiano", "italienisch"}),
+    "es": frozenset({"es", "spa", "spanish", "español", "espanol", "spanisch", "espagnol"}),
+    "pt": frozenset({"pt", "por", "portuguese", "português", "portugues", "portugiesisch"}),
     "nl": frozenset({"nl", "nld", "dut", "dutch", "nederlands"}),
+    "pl": frozenset({"pl", "pol", "polish", "polski", "polnisch"}),
+    "cs": frozenset({"cs", "ces", "cze", "czech", "čeština", "cestina", "tschechisch"}),
+    "hu": frozenset({"hu", "hun", "hungarian", "magyar", "ungarisch"}),
     "sv": frozenset({"sv", "swe", "swedish", "svenska"}),
     "da": frozenset({"da", "dan", "danish", "dansk"}),
     "no": frozenset({"no", "nob", "nno", "nor", "norwegian", "norsk"}),
@@ -720,10 +743,39 @@ _DOC_LANG_ALIASES: dict[str, frozenset[str]] = {
     "ja": frozenset({"ja", "jpn", "japanese", "日本語"}),
     "ko": frozenset({"ko", "kor", "korean", "한국어"}),
     "zh": frozenset({"zh", "zho", "chi", "chinese", "mandarin", "中文"}),
+    "ar": frozenset({"ar", "ara", "arabic", "العربية", "arabisch"}),
     "ru": frozenset({"ru", "rus", "russian", "русский"}),
+    "uk": frozenset({"uk", "ukr", "ukrainian", "українська", "ukrainisch"}),
     "tr": frozenset({"tr", "tur", "turkish", "türkçe", "turkce"}),
+    "az": frozenset({"az", "aze", "azerbaijani", "azərbaycan", "azerbaycan"}),
+    "kk": frozenset({"kk", "kaz", "kazakh", "қазақ", "қазақша"}),
 }
 _CEFR_ORDER: dict[str, int] = {"A1": 1, "A2": 2, "B1": 3, "B2": 4, "C1": 5, "C2": 6}
+_TEST_NAME_LANGUAGE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("de", re.compile(r"\b(?:testdaf|dsh|goethe|telc|ösd|oesd)\b", re.IGNORECASE)),
+    ("fr", re.compile(r"\b(?:delf|dalf|tcf|tef)\b", re.IGNORECASE)),
+    ("es", re.compile(r"\b(?:dele|siele)\b", re.IGNORECASE)),
+    ("it", re.compile(r"\b(?:cils|celi|plida)\b", re.IGNORECASE)),
+    ("ja", re.compile(r"\b(?:jlpt)\b", re.IGNORECASE)),
+    ("ko", re.compile(r"\b(?:topik)\b", re.IGNORECASE)),
+    ("zh", re.compile(r"\b(?:hsk|tocfl)\b", re.IGNORECASE)),
+    ("tr", re.compile(r"\b(?:tömer|tomer|tys)\b", re.IGNORECASE)),
+    ("ru", re.compile(r"\b(?:torfl|трки)\b", re.IGNORECASE)),
+    (
+        "en",
+        re.compile(
+            r"\b(?:ielts|toefl|pte|duolingo|cambridge|cae|cpe|fce|languagecert|trinity\s+ise)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
+
+
+def _infer_test_language(combined_test: str) -> str:
+    for code, pattern in _TEST_NAME_LANGUAGE_PATTERNS:
+        if pattern.search(combined_test):
+            return code
+    return ""
 
 
 def _student_cefr_for_language(
@@ -743,19 +795,12 @@ def _student_cefr_for_language(
         test_name = str(payload.get("test_name") or "").strip()
         test_score = str(payload.get("test_score") or "").strip()
         combined_test = f"{test_name} {test_score}".strip()
+        inferred_lang = _infer_test_language(combined_test)
         if raw_lang and raw_lang not in aliases:
-            continue
-        if (
-            not raw_lang
-            and lang_key == "en"
-            and not re.search(
-                r"\b(?:ielts|toefl|pte|duolingo|cambridge|cae|cpe|fce)\b",
-                combined_test,
-                re.IGNORECASE,
-            )
-        ):
-            continue
-        if not raw_lang and lang_key != "en":
+            en_aliases = _DOC_LANG_ALIASES.get("en", frozenset())
+            if not (inferred_lang == lang_key and raw_lang in en_aliases):
+                continue
+        if not raw_lang and inferred_lang != lang_key:
             continue
         if payload.get("mother_tongue") or str(
             payload.get("cefr_level") or ""
@@ -903,6 +948,8 @@ def _call_model(
     storyline_json: str | None = None,
     research_json: str | None = None,
     readings_json: str | None = None,
+    unit_plans_json: str | None = None,
+    exemplars_json: str | None = None,
     student_cefr: str | None = None,
 ) -> LetterContent:
     instructions = _INSTRUCTIONS
@@ -919,7 +966,8 @@ def _call_model(
             " Tell the story in the storyline below: lead with its theme, use its anchor facts in "
             "the given order, treat its turn as the moment the direction changed, state its gap "
             "as what the applicant cannot yet do, and write each of its assumptions as an "
-            "INTERPRETIVE claim naming the facts it interprets. Do not add a second theme."
+            "INTERPRETIVE claim (with fact_id=null, input_id=null and source_url=null) connecting "
+            "the facts in prose. Do not add a second theme."
         )
     # What the letter may say about the programme is decided by what was read
     # off its pages, never by the prompt. Measured live 2026-09-25: an
@@ -931,7 +979,8 @@ def _call_model(
             " Name one module or track from the programme research facts and connect it; "
             "never list related courses. When a programme research fact names a research_group, "
             "named_person or industry_partner, connect that group's, person's or partner's work "
-            "(and any cited paper finding) directly to the applicant's work in anchor_fact_id "
+            "(and any cited paper finding or paper_method_or_question) directly to the "
+            "applicant's work in anchor_fact_id "
             "(the shared problem, method, system or technical gap) rather than summarising "
             "their webpage: when fit_mode is 'direct' (or anchor_fact_id is in the same "
             "subfield), connect the shared problem or open question directly; when fit_mode is "
@@ -942,7 +991,9 @@ def _call_model(
             "module, track or group as the specific capability that closes the gap between the "
             "applicant's foundation and their target direction. When paper_author_role is "
             "'group', attribute the cited paper to that person's group or co-authors rather "
-            "than as their sole-authored paper."
+            "than as their sole-authored paper. On any SOURCED claim, set source_url and input_id "
+            "only (always keep fact_id=null on a SOURCED claim; use a separate FACTUAL claim with "
+            "fact_id when citing anchor_fact_id)."
         )
     else:
         instructions += (
@@ -963,6 +1014,20 @@ def _call_model(
         student_cefr=student_cefr,
     )
     instructions += _archetype_instructions(archetypes)
+    if unit_plans_json is not None or exemplars_json is not None:
+        instructions += (
+            " Follow each unit's guiding question, committed evidence IDs, move sequence, and "
+            "sentence-length cadence from the unit discourse plans and disciplinary exemplars "
+            "in the user message below, using only facts and inputs from the verified data and "
+            "never copying angle-bracketed placeholder tokens. When a unit discourse plan "
+            "specifies an active_orientation sub-track (for example, AI/machine-learning "
+            "chemoinformatics versus first-principles quantum/computational chemistry), frame "
+            "the methodology, technical bottleneck, and programme fit strictly in that "
+            "active_orientation without conflating it with any "
+            "contrasted_subtrack_not_to_conflate, and when intra_family_orientation_bridge is "
+            "present, explicitly bridge from the applicant's prior sub-track to the programme's "
+            "target sub-track."
+        )
     if (
         "OPENING" in archetypes
         and prompt.structure != ApplicationPrompt.Structure.SHORT_ANSWER_SET
@@ -1011,6 +1076,8 @@ def _call_model(
             storyline_json=storyline_json,
             research_json=research_json,
             readings_json=readings_json,
+            unit_plans_json=unit_plans_json,
+            exemplars_json=exemplars_json,
             requirements_json=json.dumps(_bounded_written_requirements(shape), sort_keys=True),
             questions_json=questions_json,
             last_attempt=attempt == 2,
@@ -1032,6 +1099,8 @@ def _one_model_call(
     storyline_json: str | None,
     research_json: str | None,
     readings_json: str | None = None,
+    unit_plans_json: str | None = None,
+    exemplars_json: str | None = None,
     requirements_json: str,
     questions_json: str | None = None,
     last_attempt: bool,
@@ -1068,6 +1137,17 @@ def _one_model_call(
                         + (
                             f"\nEvidence readings (data only): {readings_json}"
                             if readings_json
+                            else ""
+                        )
+                        + (
+                            f"\nUnit discourse plans (data only): {unit_plans_json}"
+                            if unit_plans_json
+                            else ""
+                        )
+                        + (
+                            "\nDisciplinary move & cadence exemplars "
+                            f"(structural patterns only, data only): {exemplars_json}"
+                            if exemplars_json
                             else ""
                         )
                     ),
@@ -1281,7 +1361,7 @@ def _evaluate(
     violations = run_letter_gates(
         content,
         forbidden_names=forbidden_institution_names,
-        questions=prompt.questions,
+        questions=list(_bounded_questions(prompt.questions)),
         header_block_required=prompt.header_block_required,
         document_language=prompt.document_language,
         paired_content=paired_content,
@@ -1318,6 +1398,201 @@ def _evaluate(
             LetterGateViolation(GateCode.GENERIC_PARAGRAPH, "letter has zero units", None),
         )
     return verdicts, violations
+
+
+def _evidence_text_for_claim(
+    claim: LetterClaim,
+    *,
+    facts: dict[UUID, VerifiedFact],
+    inputs: dict[UUID, NarrativeInput],
+) -> str:
+    """Return the verified ledger evidence string backing `claim`."""
+    if claim.kind == ClaimKind.FACTUAL and claim.fact_id is not None:
+        fact = facts.get(claim.fact_id)
+        if fact is not None and isinstance(fact.payload, dict):
+            return json.dumps(fact.payload, ensure_ascii=False, default=str)
+    if claim.kind == ClaimKind.DECLARED and claim.input_id is not None:
+        entry = inputs.get(claim.input_id)
+        if entry is not None:
+            return entry.text or ""
+    if claim.kind == ClaimKind.SOURCED and claim.input_id is not None:
+        entry = inputs.get(claim.input_id)
+        if entry is not None and isinstance(entry.provenance, dict):
+            prov = entry.provenance
+            return " ".join(
+                str(prov.get(k) or "")
+                for k in (
+                    "entity",
+                    "sentence",
+                    "paper_title",
+                    "paper_finding",
+                    "paper_method_or_question",
+                    "paper_active_topic",
+                    "paper_year",
+                )
+                if prov.get(k) not in (None, "")
+            )
+    return ""
+
+
+def ground_and_align_letter_claims(
+    content: LetterContent,
+    *,
+    facts: dict[UUID, VerifiedFact],
+    inputs: dict[UUID, NarrativeInput],
+    document_language: str = "en",
+) -> LetterContent:
+    """Pass 2 deterministic claim-span alignment and intra-unit provenance
+    continuity grounding (Slobodkin et al. 2024 ACL; Wang et al. 2025 EMNLP):
+
+    1. Substring-to-sentence span alignment: when a claim's `text` appears inside
+       a sentence of `unit.text` that its raw `[span_start, span_end)` offsets
+       missed (due to LLM character-counting drift across multi-sentence units),
+       snap `[span_start, span_end)` to enclose that sentence.
+    2. Intra-unit multi-sentence provenance continuity: when a unit already has
+       at least one valid provenance claim and another sentence in the same unit
+       carries a trigger (`_has_trigger`), check if 100% of the sentence's numbers
+       and capitalized phrases appear in an existing provenance claim's verified
+       ledger payload and pass `verify_letter_claims` as `SUPPORTED`. If so,
+       bind a covering `LetterClaim` to that sentence; otherwise leave it
+       uncovered so Pass 3 (`check_claim_coverage`) flags `UNDECLARED_ASSERTION`.
+    """
+    if not content.units:
+        return content
+    updated_units: list[LetterUnit] = []
+    changed = False
+    for unit in content.units:
+        spans = sentence_spans(unit.text)
+        if not spans:
+            updated_units.append(unit)
+            continue
+        aligned_claims: list[LetterClaim] = []
+        unit_changed = False
+        for claim in unit.claims:
+            if claim.span_start <= len(unit.text) and claim.span_end <= len(unit.text):
+                needle = claim.text.strip()
+                current_slice = unit.text[claim.span_start : claim.span_end]
+                if needle and needle.casefold() not in current_slice.casefold():
+                    matched_indices = [
+                        idx
+                        for idx, (s_text, _, _) in enumerate(spans)
+                        if needle.casefold() in s_text.casefold()
+                    ]
+                    if matched_indices:
+                        new_start = spans[matched_indices[0]][1]
+                        new_end = spans[matched_indices[-1]][2]
+                        if (new_start, new_end) != (claim.span_start, claim.span_end):
+                            claim = claim.model_copy(
+                                update={"span_start": new_start, "span_end": new_end}
+                            )
+                            unit_changed = True
+            aligned_claims.append(claim)
+
+        prov_claims = [c for c in aligned_claims if c.kind in _PROVENANCE_CLAIM_KINDS]
+        if (
+            unit.archetype not in _EXEMPT_ARCHETYPES
+            and not any(c.kind in {ClaimKind.FACTUAL, ClaimKind.SOURCED} for c in aligned_claims)
+            and facts
+        ):
+            confirmed_facts = [
+                (fid, json.dumps(f.payload, ensure_ascii=False, default=str))
+                for fid, f in facts.items()
+                if f.confirmed_by_id is not None and isinstance(f.payload, dict)
+            ]
+            best_match: tuple[int, LetterClaim] | None = None
+            for sent_text, s_start, s_end in spans:
+                sent_words = _salient_words(sent_text)
+                if len(sent_words) < 2:
+                    continue
+                sent_norm = _normalize(sent_text)
+                sent_nums = _NUMBER.findall(sent_norm)
+                sent_phrases = capitalised_phrases(sent_text)
+                for fid, payload_text in confirmed_facts:
+                    ev_norm = _normalize(payload_text)
+                    ev_nums = set(_NUMBER.findall(ev_norm))
+                    if any(num not in ev_nums for num in sent_nums):
+                        continue
+                    if any(_normalize(p) not in ev_norm for p in sent_phrases if _normalize(p)):
+                        continue
+                    overlap = len(sent_words & _salient_words(payload_text))
+                    if overlap >= 2 and (best_match is None or overlap > best_match[0]):
+                        best_match = (
+                            overlap,
+                            LetterClaim(
+                                text=sent_text.strip(),
+                                span_start=s_start,
+                                span_end=s_end,
+                                kind=ClaimKind.FACTUAL,
+                                fact_id=fid,
+                            ),
+                        )
+            if best_match is not None:
+                aligned_claims.append(best_match[1])
+                prov_claims.append(best_match[1])
+                unit_changed = True
+        if prov_claims:
+            for sent_text, s_start, s_end in spans:
+                if not _has_trigger(sent_text, document_language=document_language):
+                    continue
+                covered = any(
+                    c.kind in _PROVENANCE_CLAIM_KINDS
+                    and c.span_start <= s_start
+                    and c.span_end >= s_end
+                    for c in aligned_claims
+                )
+                if covered:
+                    continue
+                sent_norm = _normalize(sent_text)
+                sent_nums = _NUMBER.findall(sent_norm)
+                sent_phrases = capitalised_phrases(sent_text)
+                if not sent_nums and not sent_phrases:
+                    continue
+                for base_claim in prov_claims:
+                    ev_text = _evidence_text_for_claim(
+                        base_claim, facts=facts, inputs=inputs
+                    )
+                    if not ev_text:
+                        continue
+                    ev_norm = _normalize(ev_text)
+                    ev_nums = set(_NUMBER.findall(ev_norm))
+                    if any(num not in ev_nums for num in sent_nums):
+                        continue
+                    if any(_normalize(p) not in ev_norm for p in sent_phrases if _normalize(p)):
+                        continue
+                    candidate = LetterClaim(
+                        text=sent_text.strip(),
+                        span_start=s_start,
+                        span_end=s_end,
+                        kind=base_claim.kind,
+                        fact_id=base_claim.fact_id,
+                        input_id=base_claim.input_id,
+                        source_url=base_claim.source_url,
+                    )
+                    probe = LetterContent(
+                        language=content.language,
+                        units=(
+                            LetterUnit(
+                                archetype=unit.archetype,
+                                text=unit.text,
+                                claims=(candidate,),
+                            ),
+                        ),
+                    )
+                    verdicts = verify_letter_claims(
+                        probe, facts=facts, inputs=inputs, immigration=False
+                    )
+                    if verdicts and verdicts[0].verdict == Verdict.SUPPORTED:
+                        aligned_claims.append(candidate)
+                        unit_changed = True
+                        break
+        if unit_changed:
+            changed = True
+            updated_units.append(unit.model_copy(update={"claims": tuple(aligned_claims)}))
+        else:
+            updated_units.append(unit)
+    if not changed:
+        return content
+    return content.model_copy(update={"units": tuple(updated_units)})
 
 
 def generate_letter(
@@ -1430,15 +1705,28 @@ def generate_letter(
         )
     )
     prompt_archetypes = tuple(prompt.archetypes) or question_archetypes or row.archetypes
+    usable_core = (
+        core_narrative
+        if (
+            core_narrative is not None
+            and core_narrative.language.lower() == prompt.document_language.lower()
+            and (
+                storyline is None
+                or core_narrative.storyline is None
+                or set(storyline.anchors) <= set(core_narrative.storyline.anchors)
+            )
+        )
+        else None
+    )
     archetypes_needed = (
         prompt_archetypes
         if prompt.questions
-        else _archetypes_to_generate(prompt_archetypes, core_narrative)
+        else _archetypes_to_generate(prompt_archetypes, usable_core)
     )
     reused = (
         ()
         if prompt.questions
-        else _reused_units(prompt_archetypes, core_narrative, archetypes_needed)
+        else _reused_units(prompt_archetypes, usable_core, archetypes_needed)
     )
     reused_json = _reused_units_payload(reused)
     # 2026-09-14: the story is data in the prompt (Task 11b), threaded into
@@ -1447,13 +1735,47 @@ def generate_letter(
     effective_storyline = (
         storyline
         if storyline is not None
-        else (core_narrative.storyline if core_narrative is not None else None)
+        else (usable_core.storyline if usable_core is not None else None)
     )
     storyline_json = (
         json.dumps(effective_storyline.model_dump(mode="json"), sort_keys=True)
         if effective_storyline is not None
         else None
     )
+    programme_name = str(getattr(prompt.programme, "name", "") or "")
+    portfolio_led = bool(getattr(prompt.programme, "portfolio_led", False))
+    unit_plans = (
+        build_question_focus_plan(
+            archetypes=archetypes_needed,
+            facts=facts,
+            inputs=inputs,
+            storyline=effective_storyline,
+            programme_name=programme_name,
+            readings=readings,
+            student=student,
+            portfolio_led=portfolio_led,
+            forbid_naming=shape.naming == "FORBIDDEN",
+        )
+        if archetypes_needed
+        else ()
+    )
+    exemplars = (
+        select_exemplars_for_letter(
+            archetypes=archetypes_needed,
+            programme_name=programme_name,
+            portfolio_led=portfolio_led,
+            facts=facts,
+            inputs=inputs,
+            readings=readings,
+            storyline=effective_storyline,
+            student=student,
+            forbid_naming=shape.naming == "FORBIDDEN",
+        )
+        if archetypes_needed
+        else ()
+    )
+    unit_plans_json = unit_plans_payload(unit_plans)
+    exemplars_json = exemplars_payload(exemplars)
 
     # Rate-limit budget is spent above regardless of what happens next,
     # including the full-reuse branch below where no model call is made --
@@ -1477,6 +1799,8 @@ def generate_letter(
             storyline_json=storyline_json,
             research_json=research_json,
             readings_json=readings_json,
+            unit_plans_json=unit_plans_json,
+            exemplars_json=exemplars_json,
             student_cefr=student_cefr,
         )
     else:
@@ -1487,9 +1811,9 @@ def generate_letter(
         # this is the actual reuse decision the design spec's "Clustering"
         # section describes.
         language = (
-            core_narrative.language if core_narrative is not None else prompt.document_language
+            usable_core.language if usable_core is not None else prompt.document_language
         )
-        header_block = core_narrative.header_block if core_narrative is not None else None
+        header_block = usable_core.header_block if usable_core is not None else None
         fresh_content = LetterContent(
             language=language,
             header_block=header_block,
@@ -1505,6 +1829,12 @@ def generate_letter(
     # re-anchors claim spans, so this cannot spuriously fail a claim the
     # model wrote correctly.
     content = hygienic_letter_content(content)
+    content = ground_and_align_letter_claims(
+        content,
+        facts=facts,
+        inputs=inputs,
+        document_language=prompt.document_language,
+    )
 
     verdicts, violations = _evaluate(
         content,
@@ -1562,6 +1892,42 @@ def generate_letter(
     pass1_failed = _failed_unit_archetypes(
         verdicts, violations, immigration=prompt.immigration
     )
+    has_storyline_drift = GateCode.STORYLINE_DRIFT in [v.code for v in violations]
+    unlock_all_reused = bool(has_storyline_drift or unmet or length_violations)
+    if reused and (unlock_all_reused or any(u.archetype in pass1_failed for u in reused)):
+        failed_reused = (
+            {u.archetype for u in reused}
+            if unlock_all_reused
+            else {u.archetype for u in reused if u.archetype in pass1_failed}
+        )
+        reused = tuple(u for u in reused if u.archetype not in failed_reused)
+        reused_json = _reused_units_payload(reused)
+        needed_set = set(archetypes_needed) | failed_reused
+        archetypes_needed = tuple(a for a in prompt_archetypes if a in needed_set)
+        unit_plans = build_question_focus_plan(
+            archetypes=archetypes_needed,
+            facts=facts,
+            inputs=inputs,
+            storyline=effective_storyline,
+            programme_name=programme_name,
+            readings=readings,
+            student=student,
+            portfolio_led=portfolio_led,
+            forbid_naming=shape.naming == "FORBIDDEN",
+        )
+        exemplars = select_exemplars_for_letter(
+            archetypes=archetypes_needed,
+            programme_name=programme_name,
+            portfolio_led=portfolio_led,
+            facts=facts,
+            inputs=inputs,
+            readings=readings,
+            storyline=effective_storyline,
+            student=student,
+            forbid_naming=shape.naming == "FORBIDDEN",
+        )
+        unit_plans_json = unit_plans_payload(unit_plans)
+        exemplars_json = exemplars_payload(exemplars)
     content = _call_model(
         parser,
         student_id=str(student.id),
@@ -1577,12 +1943,20 @@ def generate_letter(
         storyline_json=storyline_json,
         research_json=research_json,
         readings_json=readings_json,
+        unit_plans_json=unit_plans_json,
+        exemplars_json=exemplars_json,
         student_cefr=student_cefr,
     )
     content = _merge_reused(content, reused, prompt_archetypes)
     if content.storyline != effective_storyline:
         content = content.model_copy(update={"storyline": effective_storyline})
     content = hygienic_letter_content(content)
+    content = ground_and_align_letter_claims(
+        content,
+        facts=facts,
+        inputs=inputs,
+        document_language=prompt.document_language,
+    )
     verdicts, violations = _evaluate(
         content,
         facts=facts,

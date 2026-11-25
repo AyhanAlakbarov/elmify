@@ -27,7 +27,9 @@ logger = logging.getLogger(__name__)
 
 _MAX_WORDS = 12
 _MAX_OUTPUT_TOKENS = 200
-_CAPITALISED_WORD = r"(?:[A-ZÀ-ÝĞİÖÜŞÇ][a-zà-ÿğıöüşç]+|[A-Z]{2,})"
+_UPPER = r"A-ZÀ-ÝĞİÖÜŞÇƏŁŚŹŻĆŃČŘŠŽĎŤŇŐŰĀĒĪŌŪĢĶĻŅА-ЯЁІЇЄҐӘҒҚҢӨҰҮҺ"
+_LOWER = r"a-zà-ÿğıöüşçəłśźżćńčřšžďťňőűāēīōūģķļņа-яёіїєґәғқңөұүһ"
+_CAPITALISED_WORD = rf"(?:[{_UPPER}][{_LOWER}]+|[{_UPPER}]{{2,}})"
 _CAPITALISED_PHRASE = re.compile(rf"\b{_CAPITALISED_WORD}(?:\s+{_CAPITALISED_WORD})+\b")
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 _NON_WORD = re.compile(r"[^\w\s-]", re.UNICODE)
@@ -37,6 +39,7 @@ _RUNG_BY_CATEGORY: dict[str, int] = {
     VerifiedFact.Category.RESEARCH: 1,
     VerifiedFact.Category.PUBLICATION: 1,
     VerifiedFact.Category.EXPERIENCE: 2,
+    VerifiedFact.Category.AWARD: 2,
     VerifiedFact.Category.SKILL: 2,
     VerifiedFact.Category.EDUCATION: 3,
 }
@@ -89,16 +92,19 @@ def _anchor_text(fact: VerifiedFact) -> str:
 
 def _sub_rank(fact: VerifiedFact) -> int:
     payload = fact.payload if isinstance(fact.payload, dict) else {}
-    if str(fact.category) == VerifiedFact.Category.SKILL:
+    if str(fact.category) == VerifiedFact.Category.AWARD:
         return 1
+    if str(fact.category) == VerifiedFact.Category.SKILL:
+        return 2
     if str(fact.category) == VerifiedFact.Category.EDUCATION:
         return 0 if _strings(payload.get("thesis_title")) else 1
     return 0
 
 
-def _reading_text(reading: UsableReading) -> str:
+def _reading_text(reading: UsableReading, *, max_bullets: int | None = 2) -> str:
     bullets = [b.text for b in reading.bullets if b.verdict != "rejected" and b.text]
-    parts = ([reading.summary] if reading.summary else []) + bullets[:2]
+    selected = bullets[:max_bullets] if max_bullets is not None else bullets
+    parts = ([reading.summary] if reading.summary else []) + selected
     return " ".join(parts).strip()
 
 
@@ -125,7 +131,7 @@ def pick_anchor(
         if not text:
             continue
         rung = 2
-        key = (rung, 0 if reading.kind == "thesis" else 1)
+        key = (rung, 0 if reading.kind in {"thesis", "portfolio"} else 1)
         if best is None or best_key is None or key < best_key:
             best = Anchor(rung=rung, text=text, fact_id=None)
             best_key = key
@@ -141,9 +147,12 @@ def banned_terms(facts: dict[UUID, VerifiedFact]) -> frozenset[str]:
     for fact in facts.values():
         payload = fact.payload if isinstance(fact.payload, dict) else {}
         if str(fact.category) == VerifiedFact.Category.IDENTITY:
-            for name in _strings(payload.get("full_name")):
-                terms.add(name.lower())
-                terms.update(token.lower() for token in name.split() if len(token) > 1)
+            for key in ("full_name", "given_name", "given_names", "surname"):
+                val = payload.get(key)
+                if isinstance(val, str) and val.strip():
+                    cleaned = val.strip()
+                    terms.add(cleaned.lower())
+                    terms.update(token.lower() for token in cleaned.split() if len(token) > 1)
         for key in _INSTITUTION_KEYS:
             for value in _strings(payload.get(key)):
                 terms.add(value.lower())
@@ -176,9 +185,15 @@ _NAME_MARKERS = frozenset({
 #: sits mid-run ("Charité Hospital Berlin") is not caught -- ponytail: position
 #: rule, a known-bodies list if one turns up in real answers.
 _SHARED_MARKERS = frozenset({"school", "lab", "laboratory", "hospital", "company", "bank"})
+_FIELD_HEAD_NOUNS = frozenset({
+    "administration", "management", "leadership", "engineering", "operations",
+    "architecture", "systems", "technology", "design", "policy", "education",
+    "studies", "counseling", "advising", "affairs", "infrastructure", "networks",
+    "security", "science", "sciences",
+})
 
 _CAPITALISED_RUN = re.compile(
-    r"\b(?:[A-ZÀ-ÝĞİÖÜŞÇ][\wÀ-ÿğıöüşç]*\.?)(?:\s+[A-ZÀ-ÝĞİÖÜŞÇ][\wÀ-ÿğıöüşç]*\.?)*"
+    rf"\b(?:[{_UPPER}][\w{_LOWER}]*\.?)(?:\s+[{_UPPER}][\w{_LOWER}]*\.?)*"
 )
 
 def strip_named_runs(text: str) -> str:
@@ -187,10 +202,18 @@ def strip_named_runs(text: str) -> str:
     title-case field ("Computer Science") to its capitalised-run strip."""
     def drop(match: re.Match[str]) -> str:
         words = [word.strip(".").lower() for word in match.group(0).split()]
-        if set(words) & _NAME_MARKERS:
+        followed_by_of = text[match.end():].lstrip().lower().startswith(("of ", "for "))
+        marker_hits = set(words) & _NAME_MARKERS
+        if marker_hits:
+            if (
+                marker_hits <= {"center", "centre", "college"}
+                and words[-1] not in _NAME_MARKERS
+                and not followed_by_of
+                and words[-1] in _FIELD_HEAD_NOUNS
+            ):
+                return match.group(0)
             return " "
         shared = [i for i, word in enumerate(words) if word in _SHARED_MARKERS]
-        followed_by_of = text[match.end():].lstrip().lower().startswith("of ")
         if shared and (shared[-1] == len(words) - 1 and len(words) > 1 or followed_by_of):
             return " "
         return match.group(0)
@@ -316,10 +339,17 @@ def student_profile_terms(
     facts: dict[UUID, VerifiedFact],
     storyline: Storyline | None = None,
     readings: tuple[UsableReading, ...] = (),
+    *,
+    student: object | None = None,
+    programme_name: str = "",
 ) -> tuple[str, ...]:
     """Local-only technical vocabulary from the student's confirmed facts,
-    readings, and storyline. Used strictly in-memory to rank returned OpenAlex
-    papers by method/tool/problem overlap -- never sent in any outbound query."""
+    readings, storyline, and resolved `FieldOrientation` sub-track (e.g.
+    `ai_digital_chemistry` vs `computational_quantum_chemistry`). Used strictly
+    in-memory to rank university sentences and OpenAlex papers by method/tool/problem
+    overlap -- never sent in any outbound query."""
+    from ..letter_exemplars import resolve_field_orientation_profile
+
     banned = banned_terms(facts)
     chunks: list[str] = []
     for fact in facts.values():
@@ -327,12 +357,26 @@ def student_profile_terms(
             continue
         chunks.append(_anchor_text(fact))
     for reading in readings:
-        chunks.append(_reading_text(reading))
+        chunks.append(_reading_text(reading, max_bullets=None))
     if storyline is not None:
         chunks.extend([storyline.theme, storyline.future])
         if storyline.gap:
             chunks.append(storyline.gap)
         chunks.extend(storyline.assumptions)
+    orientation_profile = resolve_field_orientation_profile(
+        programme_name=programme_name,
+        facts=facts,
+        readings=readings,
+        storyline=storyline,
+        student=student,
+    )
+    if orientation_profile.target_field:
+        chunks.append(orientation_profile.target_field)
+    chunks.extend(orientation_profile.research_interests)
+    if orientation_profile.active_orientation is not None:
+        active = orientation_profile.active_orientation
+        chunks.extend(active.track_keywords)
+        chunks.extend(active.trigger_keywords)
     seen: dict[str, None] = {}
     for raw in chunks:
         for word in _flat(raw).split():

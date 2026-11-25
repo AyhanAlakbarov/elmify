@@ -247,3 +247,63 @@ def test_any_other_failure_abstains_and_logs_only_its_type(caplog) -> None:
         assert _read(broken) is UNAVAILABLE
     assert "RuntimeError" in caplog.text
     assert "amina" not in caplog.text
+
+
+def test_strip_identifiers_preserves_common_words_university_tokens_iso_and_ids() -> None:
+    text = (
+        "Dear Can, you can view your offer in May at Humboldt University. "
+        "Intake 2026/2027-01-15. Application no. 123456789."
+    )
+    app = {"programme": "MSc Physics", "university": "Humboldt University"}
+    stripped = strip_identifiers(
+        text,
+        names=frozenset({"can", "may", "humboldt"}),
+        application=app,
+    )
+    assert stripped == (
+        "Dear [name], you can view your offer in May at Humboldt University. "
+        "Intake 2026/2027-01-15. Application no. 123456789."
+    )
+
+
+def test_verified_normalizes_soft_hyphens_invisible_chars_and_line_wrapped_hyphens() -> None:
+    from apps.mailbox.decision_reader import verified
+
+    body = "Please submit your offi\u00adcial trans-\n  cript\u200b before enrollment."
+    assert verified("official transcript", body) is True
+
+
+def test_independent_negative_bars_and_tuple_bars_control_false_omission_rate(monkeypatch) -> None:
+    """Verify `decision_bars.negative_bar` supports `NEGATIVE_BARS`, `(bar_pos, bar_neg)` tuples
+    in `BARS`, and `None` abstention on the negative branch."""
+    monkeypatch.setattr(decision_bars, "MEASURED_ON", "2026-11-03")
+    monkeypatch.setattr(
+        decision_bars,
+        "BARS",
+        {"is_decision": 0.95, "other_programme": (0.93, 0.02)},
+    )
+    monkeypatch.setattr(
+        decision_bars,
+        "NEGATIVE_BARS",
+        {"is_decision": 0.01},
+    )
+    assert decision_bars.bar("is_decision") == 0.95
+    assert decision_bars.negative_bar("is_decision") == 0.01
+    assert decision_bars.bar("other_programme") == 0.93
+    assert decision_bars.negative_bar("other_programme") == 0.02
+
+    # p_yes = 0.03 is <= legacy 1 - 0.95 (0.05), but > calibrated negative_bar (0.01) -> abstains!
+    reading_abstain = _read(FakeJev({"is_decision": 0.03, "other_programme": 0.03}, {}))
+    assert reading_abstain.is_decision is None
+    assert reading_abstain.other_programme_offered is None
+
+    # p_yes = 0.005 clears calibrated negative_bar (0.01) -> False
+    reading_neg = _read(FakeJev({"is_decision": 0.005, "other_programme": 0.015}, {}))
+    assert reading_neg.is_decision is False
+    assert reading_neg.other_programme_offered is False
+
+    # When negative bar is None (uncalibrated), negative branch never fires
+    monkeypatch.setattr(decision_bars, "NEGATIVE_BARS", {"is_decision": None})
+    assert decision_bars.negative_bar("is_decision") == -0.01
+    assert _read(FakeJev({"is_decision": 0.0}, {})).is_decision is None
+

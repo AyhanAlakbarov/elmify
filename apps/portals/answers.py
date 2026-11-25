@@ -37,6 +37,7 @@ _PASSWORD = re.compile(r"pass(word|wd)|pwd", re.IGNORECASE)
 _LOCKED_IDENTITY_FIELDS = frozenset(
     {
         "identity.given_names",
+        "identity.given_name",
         "identity.surname",
         "identity.full_name",
         "identity.date_of_birth",
@@ -49,7 +50,7 @@ def _identity_value_matches(field: str, typed_value: str, expected: str) -> bool
     from apps.documents import mrz
     from apps.documents.id_reading import owner_matches_full_name
 
-    if field == "identity.given_names":
+    if field in ("identity.given_names", "identity.given_name"):
         return mrz.same_given_name(typed_value, expected)
     if field == "identity.surname":
         return mrz.same_name_token(typed_value, expected)
@@ -184,6 +185,10 @@ def record_answers(application: Application, answers: list[Answer]) -> list[Port
         )
         if outcome == PortalAnswer.Outcome.CHANGED_OUR_VALUE and field in _LOCKED_IDENTITY_FIELDS:
             expected = facts.get(field, "").strip()
+            if not expected and field in ("identity.given_name", "identity.given_names"):
+                expected = (
+                    facts.get("identity.given_names", "") or facts.get("identity.given_name", "")
+                ).strip()
             if expected and not _identity_value_matches(field, answer.value, expected):
                 from apps.documents.id_reading import raise_identity_mismatch_alert
                 from apps.funding.models import AuditEvent

@@ -1245,3 +1245,44 @@ def test_repeated_failed_pairing_codes_are_rate_limited_per_ip(client, domain_a)
     )
     assert blocked.status_code == 429
     assert blocked.json() == {"error": "rate_limited"}
+
+
+def test_submitted_event_does_not_downgrade_confirmed_application_and_sequences_steps(
+    client, agency_a, domain_a, membership_a
+) -> None:
+    from apps.portals.models import Application, ApplicationStep
+
+    with tenant_scope(agency_a.id):
+        application = _application(agency_a, membership_a, entries=ENTRIES)
+        Application.objects.filter(pk=application.pk).update(state=Application.State.CONFIRMED)
+    token = _pair(client, agency_a, membership_a, domain_a)
+
+    ev_resp = client.post(
+        f"/ext/applications/{application.id}/events",
+        data=json.dumps({"kind": "SUBMITTED", "detail": {"form_url": "https://portal.tum.de/apply"}}),
+        content_type="application/json",
+        HTTP_HOST=domain_a.host,
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert ev_resp.status_code == 201
+
+    st_resp = client.post(
+        f"/ext/applications/{application.id}/status",
+        data=json.dumps({"portal_state": "Submitted", "application_number": "TUM-12345"}),
+        content_type="application/json",
+        HTTP_HOST=domain_a.host,
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert st_resp.status_code == 201
+
+    with tenant_scope(agency_a.id):
+        application.refresh_from_db()
+        assert application.state == Application.State.CONFIRMED
+        steps = list(
+            ApplicationStep.objects.filter(application=application).order_by("sequence")
+        )
+        assert [s.kind for s in steps] == [
+            ApplicationStep.Kind.SUBMITTED,
+            ApplicationStep.Kind.STATUS,
+        ]
+        assert [s.sequence for s in steps] == [1, 2]

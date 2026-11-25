@@ -1477,6 +1477,7 @@ def test_a_held_value_is_not_a_read_back_mismatch(
     sent = _run_with_stubbed_messaging(page, {"packet": _plain_packet(fixture_server)})
     [read_back] = [m for m in _of_type(sent, "event") if m["kind"] == "READ_BACK"]
     assert read_back["detail"]["mismatches"] == []
+
     final = [m["patch"] for m in sent if m.get("type") == "dock" and "message" in m["patch"]][-1]
     # no READ_BACK mismatch, so no consultant escalation: the only check is the held value
     assert all(
@@ -2570,6 +2571,27 @@ def test_a_login_widget_in_site_furniture_is_still_typed(
     assert _docks(sent) == [{"status": "login", "message": "log_in_typed"}]
 
 
+@pytest.mark.extension
+def test_a_login_asking_for_applicant_number_types_application_number_when_available(
+    browser_context, fixture_server
+) -> None:
+    body = """<form><label for="u">Bewerbernummer / Applicant ID</label>
+      <input id="u" type="text"><input id="p" type="password"></form>"""
+    page = browser_context.new_page()
+    page.goto(f"{fixture_server}/login.html")
+    page.evaluate("(b) => { document.body.innerHTML = b; }", body)
+    _content_with_listener(
+        page,
+        {
+            "packet": _plain_packet(fixture_server),
+            "portal-login": {"ok": True, **LOGIN_REPLY, "application_number": "2026-004192"},
+        },
+    )
+    _deliver(page, _start("en", fixture_server))
+    page.wait_for_function("() => window.__sent.some((m) => m.type === 'dock')")
+    assert _values(page) == {"u": "2026-004192", "p": LOGIN_REPLY["password"]}
+
+
 ARIA_HIDDEN_BOX = """<form><div aria-hidden="true"><input id="hp" type="email"></div>
   <input id="u" type="text"><input id="p" type="password"></form>"""
 UNFOCUSABLE_BOX = """<form><input id="hp" type="email" tabindex="-1">
@@ -3641,14 +3663,22 @@ def test_a_code_page_asks_for_the_mail_and_takes_the_code(
 
 
 @pytest.mark.extension
-def test_a_split_code_input_is_left_to_the_student(browser_context, fixture_server) -> None:
+@pytest.mark.parametrize("fixture", ["code_split.html", "code_first_marked.html"])
+def test_a_split_code_input_types_one_character_per_box(
+    browser_context, fixture_server, fixture
+) -> None:
     page = browser_context.new_page()
-    page.goto(f"{fixture_server}/code_split.html")
+    page.goto(f"{fixture_server}/{fixture}")
     _content_with_listener(page, {"packet": _plain_packet(fixture_server)})
-    assert _type_code(page, "482913", fixture_server) == {"typed": False}
-    assert page.evaluate(
-        "() => [...document.querySelectorAll('input')].every((i) => i.value === '')"
-    )
+    assert _type_code(page, "482913", fixture_server) == {"typed": True}
+    assert page.evaluate("() => [...document.querySelectorAll('input')].map((i) => i.value)") == [
+        "4",
+        "8",
+        "2",
+        "9",
+        "1",
+        "3",
+    ]
 
 
 @pytest.mark.extension
@@ -3965,7 +3995,7 @@ def test_the_watch_ask_says_whether_a_watch_runs(browser_context, check) -> None
     [
         ("code_number_box.html", "AB12CD"),  # a number box blanks letters
         ("code_short_box.html", "AB12CD34"),  # maxlength 6 cannot hold 8
-        ("code_first_marked.html", "482913"),  # a split box marked on its first digit only
+        ("code_first_marked.html", "48291378"),  # 6 split boxes cannot hold an 8-digit code
     ],
 )
 def test_a_code_the_box_cannot_hold_is_not_reported_typed(
@@ -5624,4 +5654,466 @@ def test_cross_section_same_key_and_compound_phrase_labels_verify_without_false_
     amb_verdicts = page.evaluate("(entries) => window.__elmify_verify(entries)", amb_entries)
     assert amb_verdicts[0]["ok"] is False
     assert amb_verdicts[0]["reason"] == "ambiguous_name"
+
+
+@pytest.mark.extension
+def test_multilingual_dutch_italian_polish_tokens_gender_synonyms_and_status_numbers(
+    browser_context, fixture_server
+) -> None:
+    page = browser_context.new_page()
+    page.goto(f"{fixture_server}/plain_form.html")
+    page.set_content(
+        """<!doctype html><html><body>
+        <form>
+          <label for="nl_gn">Voornaam</label><input id="nl_gn" type="text">
+          <label for="it_fn">Cognome</label><input id="it_fn" type="text">
+          <label for="pl_cit">Obywatelstwo</label><input id="pl_cit" type="text">
+          <label for="sex">Geschlecht</label>
+          <select id="sex" name="sex">
+            <option value="">Bitte wählen</option>
+            <option value="W">Weiblich</option>
+            <option value="M">Männlich</option>
+          </select>
+        </form></body></html>"""
+    )
+    entries = [
+        {
+            "selector": "#nl_gn",
+            "method": "fill",
+            "value": "Leyla",
+            "profile_field": "personal.given_name",
+        },
+        {
+            "selector": "#it_fn",
+            "method": "fill",
+            "value": "Aliyeva",
+            "profile_field": "personal.family_name",
+        },
+        {
+            "selector": "#pl_cit",
+            "method": "fill",
+            "value": "Azerbaijan",
+            "profile_field": "personal.nationality",
+        },
+        {
+            "selector": "#sex",
+            "method": "selectOption",
+            "value": "F",
+            "profile_field": "personal.gender",
+        },
+    ]
+    packet = {
+        "ok": True,
+        "packet": {
+            "application_id": "app-1",
+            "portal_form_id": "form-1",
+            "field_map_version": 1,
+            "form_url": fixture_server,
+            "entries": entries,
+            "documents": [],
+            "issued_at": "2026-09-27T10:00:00Z",
+            "expires_at": "2099-01-01T00:00:00Z",
+            "min_extension_version": "0.1.0",
+            "confirmation_markers": ["Thank you"],
+            "plain_email": PLAIN,
+        },
+    }
+    _run_with_stubbed_messaging(page, {"packet": packet})
+    assert page.input_value("#nl_gn") == "Leyla"
+    assert page.input_value("#it_fn") == "Aliyeva"
+    assert page.input_value("#pl_cit") == "Azerbaijan"
+    assert page.input_value("#sex") == "W"
+
+    page.evaluate(
+        """() => {
+            const p = document.createElement("p");
+            p.textContent = "Thank you — Bewerbungsnummer: DE-2027-9001";
+            document.body.appendChild(p);
+        }"""
+    )
+    sent = page.evaluate("() => window.__sent")
+    status_msgs = _of_type(sent, "status")
+    assert len(status_msgs) == 1
+    assert status_msgs[0]["status"]["application_number"] == "DE-2027-9001"
+
+
+@pytest.mark.extension
+def test_expected_label_verifies_unseen_language_controls_and_rejects_mismatches(
+    browser_context, fixture_server
+) -> None:
+    page = browser_context.new_page()
+    page.goto(f"{fixture_server}/plain_form.html")
+    page.set_content(
+        """<!doctype html><html><body>
+        <form>
+          <label for="cz_gn">Křestní jméno</label><input id="cz_gn" type="text">
+          <label for="ko_fn">성 (희망자)</label><input id="ko_fn" type="text">
+          <label for="sv_cit">Medborgarskap</label><input id="sv_cit" type="text">
+          <label for="wrong_unseen">Datum narození</label><input id="wrong_unseen" type="text">
+          <label for="wrong_known">Passport number</label><input id="wrong_known" type="text">
+        </form></body></html>"""
+    )
+    page.add_script_tag(path=str(DIST / "content.js"))
+
+    valid_entries = [
+        {
+            "selector": "#cz_gn",
+            "method": "fill",
+            "value": "Leyla",
+            "profile_field": "personal.given_name",
+            "expected_label": "Křestní jméno",
+        },
+        {
+            "selector": "#ko_fn",
+            "method": "fill",
+            "value": "Aliyeva",
+            "profile_field": "personal.family_name",
+            "expected_label": "성 (희망자)",
+        },
+        {
+            "selector": "#sv_cit",
+            "method": "fill",
+            "value": "Azerbaijan",
+            "profile_field": "personal.nationality",
+            "expected_label": "Medborgarskap",
+        },
+    ]
+    verdicts = page.evaluate("(entries) => window.__elmify_verify(entries)", valid_entries)
+    assert all(v["ok"] for v in verdicts), verdicts
+
+    # Without expected_label, unseen-language controls fail with name_mismatch.
+    no_label_entries = [
+        {
+            "selector": "#cz_gn",
+            "method": "fill",
+            "value": "Leyla",
+            "profile_field": "personal.given_name",
+        }
+    ]
+    no_label_verdicts = page.evaluate(
+        "(entries) => window.__elmify_verify(entries)", no_label_entries
+    )
+    assert no_label_verdicts[0]["ok"] is False
+    assert no_label_verdicts[0]["reason"] == "name_mismatch"
+
+    # With a wrong expected_label or a label matching another known field, verification fails.
+    bad_entries = [
+        {
+            "selector": "#wrong_unseen",
+            "method": "fill",
+            "value": "Leyla",
+            "profile_field": "personal.given_name",
+            "expected_label": "Křestní jméno",
+        },
+        {
+            "selector": "#wrong_known",
+            "method": "fill",
+            "value": "Leyla",
+            "profile_field": "personal.given_name",
+            "expected_label": "Passport number",
+        },
+    ]
+    bad_verdicts = page.evaluate("(entries) => window.__elmify_verify(entries)", bad_entries)
+    assert [v["reason"] for v in bad_verdicts] == ["name_mismatch", "name_mismatch"]
+
+
+@pytest.mark.extension
+def test_radio_button_groups_and_aria_combobox_snapshot_verify_fill_and_read_back(
+    browser_context, fixture_server
+) -> None:
+    page = browser_context.new_page()
+    page.goto(f"{fixture_server}/plain_form.html")
+    page.set_content(
+        """<!doctype html><html><body>
+        <form>
+          <fieldset id="gender_group">
+            <legend>Geschlecht</legend>
+            <label for="gender_w">
+              <input type="radio" id="gender_w" name="applicant_gender" value="W"> Weiblich
+            </label>
+            <label for="gender_m">
+              <input type="radio" id="gender_m" name="applicant_gender" value="M"> Männlich
+            </label>
+          </fieldset>
+          <fieldset id="consent_group">
+            <legend>I agree to the terms and privacy policy</legend>
+            <label for="consent_y">
+              <input type="radio" id="consent_y" name="consent_terms" value="yes"> Yes
+            </label>
+            <label for="consent_n">
+              <input type="radio" id="consent_n" name="consent_terms" value="no"> No
+            </label>
+          </fieldset>
+          <label for="country_cb">Country of residence</label>
+          <input id="country_cb" role="combobox" aria-controls="country_listbox"
+                 aria-expanded="false" type="text">
+          <ul id="country_listbox" role="listbox">
+            <li id="opt-de" role="option" data-value="Germany">Deutschland</li>
+            <li id="opt-az" role="option" data-value="Azerbaijan">Azerbaijan</li>
+          </ul>
+        </form></body></html>"""
+    )
+    page.add_script_tag(path=str(DIST / "content.js"))
+
+    snapshot = page.evaluate("() => window.__elmify_snapshot()")
+    by_type = {c["type"]: c for c in snapshot["controls"]}
+    assert "radio" in by_type
+    assert by_type["radio"]["label"] == "Geschlecht"
+    assert by_type["radio"]["options"] == ["Weiblich", "Männlich"]
+    # Consent radio group is excluded from the snapshot.
+    assert len([c for c in snapshot["controls"] if c["type"] == "radio"]) == 1
+    assert "combobox" in by_type
+    assert by_type["combobox"]["selector"] == "#country_cb"
+    assert by_type["combobox"]["options"] == ["Deutschland", "Azerbaijan"]
+
+    # Consent radio buttons are refused by verifyEntries with refused_type.
+    consent_verdicts = page.evaluate(
+        "(entries) => window.__elmify_verify(entries)",
+        [
+            {
+                "selector": 'input[type="radio"][name="consent_terms"]',
+                "method": "selectOption",
+                "value": "yes",
+                "profile_field": "personal.gender",
+            }
+        ],
+    )
+    assert consent_verdicts[0]["ok"] is False
+    assert consent_verdicts[0]["reason"] == "refused_type"
+
+    # Full E2E fill + read-back for radio group and ARIA combobox.
+    page2 = browser_context.new_page()
+    page2.goto(f"{fixture_server}/plain_form.html")
+    page2.set_content(
+        """<!doctype html><html><body>
+        <form>
+          <fieldset id="gender_group">
+            <legend>Geschlecht</legend>
+            <label for="gender_w">
+              <input type="radio" id="gender_w" name="applicant_gender" value="W"> Weiblich
+            </label>
+            <label for="gender_m">
+              <input type="radio" id="gender_m" name="applicant_gender" value="M"> Männlich
+            </label>
+          </fieldset>
+          <label for="country_cb">Státní příslušnost</label>
+          <input id="country_cb" role="combobox" aria-controls="country_listbox"
+                 aria-expanded="false" type="text">
+          <ul id="country_listbox" role="listbox">
+            <li id="opt-de" role="option" data-value="Germany">Deutschland</li>
+            <li id="opt-az" role="option" data-value="AZ">Azerbaijan</li>
+          </ul>
+        </form></body></html>"""
+    )
+    entries = [
+        {
+            "selector": by_type["radio"]["selector"],
+            "method": "selectOption",
+            "value": "F",
+            "profile_field": "personal.gender",
+        },
+        {
+            "selector": "#country_cb",
+            "method": "selectOption",
+            "value": "Azerbaijan",
+            "profile_field": "personal.nationality",
+            "expected_label": "Státní příslušnost",
+        },
+    ]
+    packet = {
+        "ok": True,
+        "packet": {
+            "application_id": "app-radio-cb",
+            "portal_form_id": "form-radio-cb",
+            "field_map_version": 1,
+            "form_url": fixture_server,
+            "entries": entries,
+            "documents": [],
+            "issued_at": "2026-09-27T10:00:00Z",
+            "expires_at": "2099-01-01T00:00:00Z",
+            "min_extension_version": "0.1.0",
+            "confirmation_markers": ["Submitted"],
+            "plain_email": PLAIN,
+        },
+    }
+    sent = _run_with_stubbed_messaging(page2, {"packet": packet})
+    assert page2.is_checked("#gender_w") is True
+    assert page2.is_checked("#gender_m") is False
+    assert page2.input_value("#country_cb") == "Azerbaijan"
+    assert page2.get_attribute("#opt-az", "aria-selected") == "true"
+    assert page2.get_attribute("#country_cb", "aria-activedescendant") == "opt-az"
+
+    [read_back] = [m for m in _of_type(sent, "event") if m["kind"] == "READ_BACK"]
+    assert read_back["detail"]["mismatches"] == []
+
+
+@pytest.mark.extension
+def test_autonomous_confirmation_detects_multilingual_receipt_and_rejects_form_pages(
+    browser_context, fixture_server
+) -> None:
+    page = browser_context.new_page()
+    page.goto(f"{fixture_server}/plain_form.html")
+    page.add_script_tag(path=str(DIST / "content.js"))
+
+    # Active form page with fillable inputs is not a confirmation page.
+    form_res = page.evaluate("() => window.__elmify_detect_autonomous_confirmation()")
+    assert form_res == {"confirmed": False, "applicationNumber": ""}
+    assert page.evaluate("() => window.__elmify_detect_confirmation(null)") is False
+
+    # Zero fillable inputs + receipt phrase + reference number -> confirmed with extracted number.
+    page2 = browser_context.new_page()
+    page2.goto(f"{fixture_server}/plain_form.html")
+    page2.set_content(
+        """<!doctype html><html><body>
+        <main>
+          <h1>Vielen Dank für Ihre Bewerbung</h1>
+          <p>Ihre Bewerbung wurde eingereicht. Bewerbungsnummer: TUM-2027-4410</p>
+        </main></body></html>"""
+    )
+    page2.add_script_tag(path=str(DIST / "content.js"))
+    res2 = page2.evaluate("() => window.__elmify_detect_autonomous_confirmation()")
+    assert res2 == {"confirmed": True, "applicationNumber": "TUM-2027-4410"}
+    assert page2.evaluate("() => window.__elmify_detect_confirmation(null)") is True
+
+    # Confirmation route URL + receipt phrase + application ID -> confirmed.
+    page3 = browser_context.new_page()
+    page3.goto(f"{fixture_server}/plain_form.html")
+    page3.set_content(
+        """<!doctype html><html><body>
+        <input type="search" id="site_search">
+        <p>Your application has been submitted. Application ID: APP-2027-8899</p>
+        </body></html>"""
+    )
+    page3.add_script_tag(path=str(DIST / "content.js"))
+    res3 = page3.evaluate(
+        "() => window.__elmify_detect_autonomous_confirmation("
+        "'https://portal.uni.de/application/submitted')"
+    )
+    assert res3 == {"confirmed": True, "applicationNumber": "APP-2027-8899"}
+
+    # Even on /submitted, a page with a visible fillable input or active submit button is rejected.
+    page4 = browser_context.new_page()
+    page4.goto(f"{fixture_server}/plain_form.html")
+    page4.set_content(
+        """<!doctype html><html><body>
+        <input type="text" id="still_filling">
+        <p>Your application has been submitted. Application ID: APP-2027-0001</p>
+        </body></html>"""
+    )
+    page4.add_script_tag(path=str(DIST / "content.js"))
+    res4 = page4.evaluate(
+        "() => window.__elmify_detect_autonomous_confirmation("
+        "'https://portal.uni.de/application/submitted')"
+    )
+    assert res4 == {"confirmed": False, "applicationNumber": ""}
+
+    # Conditional/instructional qualifiers before a receipt phrase are rejected.
+    page5 = browser_context.new_page()
+    page5.goto(f"{fixture_server}/plain_form.html")
+    page5.set_content(
+        """<!doctype html><html><body>
+        <p>Once your application has been submitted, you will receive an email receipt.</p>
+        <p>Please review all sections before your application was submitted.</p>
+        </body></html>"""
+    )
+    page5.add_script_tag(path=str(DIST / "content.js"))
+    res5 = page5.evaluate(
+        "() => window.__elmify_detect_autonomous_confirmation("
+        "'https://portal.uni.de/complete-application')"
+    )
+    assert res5 == {"confirmed": False, "applicationNumber": ""}
+
+    # Configured URL/path markers starting with '/' or 'http' match currentUrl.
+    assert (
+        page2.evaluate(
+            "() => window.__elmify_detect_confirmation(['/thank-you'], "
+            "'https://portal.uni.de/apply/thank-you?ref=1')"
+        )
+        is True
+    )
+
+
+@pytest.mark.extension
+def test_select_option_matches_zero_value_real_labels_and_rejects_different_country_substrings(
+    browser_context, fixture_server
+) -> None:
+    page = browser_context.new_page()
+    page.goto(f"{fixture_server}/plain_form.html")
+    page.set_content(
+        """<!doctype html><html><body><form>
+          <label for="sex">Gender</label>
+          <select id="sex">
+            <option value="">Please select</option>
+            <option value="0">Female</option>
+            <option value="1">Male</option>
+          </select>
+          <label for="cit">Citizenship</label>
+          <select id="cit">
+            <option value="-1">Select country</option>
+            <option value="0">Azerbaijan</option>
+            <option value="1">Germany</option>
+          </select>
+          <label for="unp">Unpaid</label>
+          <select id="unp">
+            <option value="">Select</option>
+            <option value="none">No</option>
+            <option value="yes">Yes</option>
+          </select>
+          <label for="gn_country">Country of birth</label>
+          <select id="gn_country">
+            <option value="">Select</option>
+            <option value="GQ">Equatorial Guinea</option>
+            <option value="SS">South Sudan</option>
+            <option value="AS">American Samoa</option>
+            <option value="CH">Switzerland (German)</option>
+          </select>
+        </form></body></html>"""
+    )
+    page.add_script_tag(path=str(DIST / "content.js"))
+
+    entries = [
+        {
+            "selector": "#sex",
+            "method": "selectOption",
+            "value": "Female",
+            "profile_field": "identity.sex",
+            "expected_label": "Gender",
+        },
+        {
+            "selector": "#cit",
+            "method": "selectOption",
+            "value": "Azerbaijan",
+            "profile_field": "identity.citizenship",
+            "expected_label": "Citizenship",
+        },
+        {
+            "selector": "#unp",
+            "method": "selectOption",
+            "value": "No",
+            "profile_field": "experience.unpaid",
+            "expected_label": "Unpaid",
+        },
+    ]
+    filled = page.evaluate("(entries) => window.__elmify_fill(entries)", entries)
+    assert filled == ["identity.sex", "identity.citizenship", "experience.unpaid"]
+    assert page.input_value("#sex") == "0"
+    assert page.input_value("#cit") == "0"
+    assert page.input_value("#unp") == "none"
+
+    for wrong_target in ("Guinea", "Sudan", "Samoa", "German"):
+        mismatch_fill = page.evaluate(
+            "(entries) => window.__elmify_fill(entries)",
+            [
+                {
+                    "selector": "#gn_country",
+                    "method": "selectOption",
+                    "value": wrong_target,
+                    "profile_field": "identity.place_of_birth",
+                    "expected_label": "Country of birth",
+                }
+            ],
+        )
+        assert mismatch_fill == [], f"Unexpectedly matched {wrong_target}"
+
+
 

@@ -10,9 +10,14 @@ from apps.documents.cv_fixes import (
     reverted_subjects,
     subject_of,
 )
-from apps.documents.gaps.models import GapQuestion, Kind, _current
+from apps.documents.gaps.models import (
+    GapQuestion,
+    Kind,
+    _current,
+    _identity_with_full_name,
+)
 from apps.documents.models import VerifiedFact
-from apps.documents.verification import disowned_refs, has_full_name, unsuperseded_facts
+from apps.documents.verification import disowned_refs
 from apps.tenancy.models import Membership
 
 #: (payload key, alternative key that also counts as present, prompt).
@@ -51,7 +56,8 @@ def missing_contact(student: Membership) -> tuple[GapQuestion, ...]:
     Cheapest to detect and cheapest to answer, so this should never be the
     reason a CV is weak. Asks only for what is genuinely absent.
     """
-    fact = has_full_name(unsuperseded_facts(student)).last()
+    named = _identity_with_full_name(student)
+    fact = named[-1] if named else None
     if fact is None:
         return ()
     payload = fact.payload if isinstance(fact.payload, dict) else {}
@@ -91,23 +97,12 @@ def name_parts(student: Membership) -> tuple[GapQuestion, ...]:
     from apps.portals.models import Application
 
     # The row that names the person: a passport writes one IDENTITY row per key.
-    fact = has_full_name(unsuperseded_facts(student)).last()
+    named = _identity_with_full_name(student)
+    fact = named[-1] if named else None
     if fact is None or fact.source_tier == VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT:
         # Answering over it would raise and fail the whole submit; the file
         # keeps the name_needs_name_parts note instead.
         return ()
-    held = {
-        key
-        # What prepare.jobs_for will read: confirmed, and never a disowned document's.
-        for row in unsuperseded_facts(student)
-        .filter(category=VerifiedFact.Category.IDENTITY)
-        .exclude(source_ref__in=disowned_refs(student))
-        if row == fact or row.confirmed_at is not None
-        for key, value in (row.payload if isinstance(row.payload, dict) else {}).items()
-        if value
-    }
-    if "given_names" in held:  # a passport's given names are the file name's given name
-        held.add("given_name")
     patterns = [
         str(record.get("value"))
         for application in Application.objects.filter(student=student).exclude(
@@ -116,6 +111,23 @@ def name_parts(student: Membership) -> tuple[GapQuestion, ...]:
         for record in application.kit_file_rules or []
         if isinstance(record, dict) and record.get("field") == "name_pattern"
     ]
+    if not any(
+        placeholder in pattern
+        for _, placeholder, _ in _NAME_PART_PROMPTS
+        for pattern in patterns
+    ):
+        return ()
+    disowned = disowned_refs(student)
+    held = {
+        key
+        # What prepare.jobs_for will read: confirmed, and never a disowned document's.
+        for row in _current(student, VerifiedFact.Category.IDENTITY)
+        if row.source_ref not in disowned and (row == fact or row.confirmed_at is not None)
+        for key, value in (row.payload if isinstance(row.payload, dict) else {}).items()
+        if value
+    }
+    if "given_names" in held:  # a passport's given names are the file name's given name
+        held.add("given_name")
     return tuple(
         GapQuestion(
             kind=Kind.NAME_PARTS,

@@ -45,6 +45,9 @@ class LastInPack(PackCommandError):
 
 
 def current_pack(student: Membership) -> PackVersion | None:
+    if getattr(student, "_gap_facts_depth", 0) > 0 and hasattr(student, "_current_pack_cache"):
+        cached: PackVersion | None = getattr(student, "_current_pack_cache", None)
+        return cached
     # Once a run's *initial* pack has been auto-published (run.state becomes
     # PUBLISHED — apps/funding/services.py::auto_publish_pack), later student
     # commands (reject/replace) create newer pack versions that supersede it
@@ -62,14 +65,17 @@ def current_pack(student: Membership) -> PackVersion | None:
         .order_by("-created_at")
         .first()
     )
-    if latest_run is None:
-        return None
-    return (
+    pack = (
         PackVersion.objects.filter(run=latest_run)
         .select_related("run__profile_version")
         .order_by("-version")
         .first()
+        if latest_run is not None
+        else None
     )
+    if getattr(student, "_gap_facts_depth", 0) > 0:
+        student._current_pack_cache = pack  # type: ignore[attr-defined]
+    return pack
 
 
 def latest_empty_pack(student: Membership) -> PackVersion | None:
@@ -454,6 +460,14 @@ def resolve_named_program(
         )
         estimated_chance_pct = est.chance_pct
         calibration_features = dict(est.features)
+        if est.ci_low_pct is not None:
+            calibration_features.setdefault("ci_low_pct", float(est.ci_low_pct))
+        if est.ci_high_pct is not None:
+            calibration_features.setdefault("ci_high_pct", float(est.ci_high_pct))
+        if est.epistemic_se_logit is not None:
+            calibration_features.setdefault(
+                "epistemic_se_logit", round(float(est.epistemic_se_logit), 4)
+            )
         tier = risk_tier_for(estimated_chance_pct)
         if tier:
             calibration_features["risk_tier"] = tier

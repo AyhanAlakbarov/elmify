@@ -982,3 +982,75 @@ def test_programme_scoped_negation_classified_as_i2_joins_i5_dual_degree_award()
     )
     assert joins(subpage_positive, em_subject) is False
 
+
+def test_wayback_anchors_to_seasonal_open_month_and_reprobes_same_year_skew():
+    """When the subject's cadence names open_month=10 (October), Wayback probes October 15
+    first, and if CDX returns `archive_skew:YYYY-MM-DD` within the same target year, it
+    re-probes that snapshot date automatically."""
+    from apps.funding.validity import RegisterCadence
+
+    url = "https://f.example/award"
+    wayback_dates: list[dt.date] = []
+    script = Script(
+        pages={url: _page(url, "call opens in October")},
+        reads={
+            url: (_decision(stated_on="2026-03-03", deadlines=(("2026-05-15", "ALL"),)),),
+        },
+    )
+    year_reads = {
+        2025: _decision(stated_on="2025-10-15", deadlines=(("2025-12-15", "ALL"),)),
+        2024: _decision(stated_on="2024-10-15", deadlines=(("2024-12-15", "ALL"),)),
+    }
+    base_seams = script.seams()
+
+    def capture_near(u, *, at, **kw):
+        wayback_dates.append(at)
+        if at == dt.date(2025, 10, 15):
+            return replace(
+                _page(u, "", Outcome.BLOCKED),
+                reason="archive_skew:2025-11-20",
+            )
+        if at == dt.date(2025, 11, 20):
+            return replace(
+                _page(u, "2025 call"),
+                outcome=Outcome.ARCHIVED,
+                captured_at="2025-11-20",
+            )
+        if at == dt.date(2024, 10, 15):
+            return replace(
+                _page(u, "2024 call"),
+                outcome=Outcome.ARCHIVED,
+                captured_at="2024-10-15",
+            )
+        return _page(u, "", Outcome.BLOCKED)
+
+    def read(page):
+        if page.captured_at:
+            return (year_reads[int(page.captured_at[:4])],)
+        return base_seams.read(page)
+
+    seams = replace(
+        base_seams,
+        capture_near=capture_near,
+        read=read,
+        crawl=lambda *a, **k: _empty_crawl(),
+    )
+    meter = Meter(SweepBudget({"FIRECRAWL": 1000, "SCRAPE_DO": 1000}))
+    subject = replace(
+        SUBJECT,
+        cadence=RegisterCadence(
+            open_month=10,
+            deadline_month=12,
+            source="https://r.example",
+            verified_for_cycle=2025,
+        ),
+    )
+    verdict = verify_cycle(
+        subject, intake_year=2027, today=TODAY, seams=seams, meter=meter, stored=[]
+    )
+    assert (verdict.state, verdict.step) == ("UPCOMING", "1b")
+    assert dt.date(2025, 10, 15) in wayback_dates
+    assert dt.date(2025, 11, 20) in wayback_dates
+    assert dt.date(2024, 10, 15) in wayback_dates
+
+

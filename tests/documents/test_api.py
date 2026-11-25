@@ -305,7 +305,8 @@ def test_a_transcript_upload_records_its_role_and_language(
     ({"role": "ORIGINAL", "mode": "RETAKE", "slot": True}, "invalid_slot"),
     ({"role": "ORIGINAL", "slot": 1}, "invalid_slot"),
     ({"role": "TRANSLATION", "language": "az"}, "invalid_language"),
-    ({"role": "ORIGINAL", "language": "de"}, "invalid_language"),
+    ({"role": "ORIGINAL", "language": "en"}, "invalid_language"),
+    ({"role": "ORIGINAL", "language": "zz"}, "invalid_language"),
     ({"role": "ORIGINAL", "language": ["az"]}, "invalid_language"),
 ])
 def test_a_malformed_transcript_upload_is_refused(

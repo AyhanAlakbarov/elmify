@@ -47,15 +47,251 @@
     });
   }
 
+  var lastPathname = window.location.pathname;
+  var lastSearch = window.location.search;
+  var pendingPackAnchor = null;
+
+  function capturePackAnchor(elt) {
+    if (!elt || elt.tagName !== "FORM" || !elt.closest || !elt.closest("#pack")) {
+      pendingPackAnchor = null;
+      return;
+    }
+    var activePill = document.querySelector(".pack-filter-bar button[data-pack-filter].is-active");
+    var activeFilter = activePill ? (activePill.getAttribute("data-pack-filter") || "all") : "all";
+    var card = elt.closest(".candidate");
+    var sec = elt.closest(".pack-section");
+    if (!card || !sec) {
+      pendingPackAnchor = { activeFilter: activeFilter, scrollY: window.scrollY };
+      return;
+    }
+    var packList = sec.getAttribute("data-pack-list") || "pack";
+    var groupId = sec.getAttribute("data-funding-group") || "";
+    var candidateId = card.getAttribute("data-candidate-id") || "";
+    var isBanner = card.classList.contains("is-banner");
+    var cardViewportTop = card.getBoundingClientRect().top;
+    var secViewportTop = sec.getBoundingClientRect().top;
+    var listSecs = Array.prototype.slice.call(
+      document.querySelectorAll('.pack-section[data-pack-list="' + packList + '"]')
+    ).filter(function (s) {
+      return !s.hidden && s.querySelector(".candidate");
+    });
+    var secIdx = listSecs.indexOf(sec);
+    var nextGroupIds = secIdx >= 0
+      ? listSecs.slice(secIdx + 1).map(function (s) { return s.getAttribute("data-funding-group") || ""; })
+      : [];
+    var prevGroupIds = secIdx > 0
+      ? listSecs.slice(0, secIdx).reverse().map(function (s) { return s.getAttribute("data-funding-group") || ""; })
+      : [];
+    var secCards = Array.prototype.slice.call(sec.querySelectorAll(".match-grid .candidate")).filter(function (c) {
+      return !c.hidden;
+    });
+    var cardIdx = secCards.indexOf(card);
+    var nextCardIds = cardIdx >= 0
+      ? secCards.slice(cardIdx + 1).map(function (c) { return c.getAttribute("data-candidate-id") || ""; })
+      : [];
+    var prevCardIds = cardIdx > 0
+      ? secCards.slice(0, cardIdx).reverse().map(function (c) { return c.getAttribute("data-candidate-id") || ""; })
+      : [];
+    pendingPackAnchor = {
+      activeFilter: activeFilter,
+      scrollY: window.scrollY,
+      packList: packList,
+      groupId: groupId,
+      candidateId: candidateId,
+      isBanner: isBanner,
+      cardViewportTop: cardViewportTop,
+      secViewportTop: secViewportTop,
+      nextGroupIds: nextGroupIds,
+      prevGroupIds: prevGroupIds,
+      nextCardIds: nextCardIds,
+      prevCardIds: prevCardIds
+    };
+  }
+
+  function restorePackAnchor() {
+    if (!pendingPackAnchor || !document.getElementById("pack")) {
+      pendingPackAnchor = null;
+      return false;
+    }
+    var anchor = pendingPackAnchor;
+    pendingPackAnchor = null;
+    if (anchor.activeFilter && anchor.activeFilter !== "all") {
+      var pill = document.querySelector('.pack-filter-bar button[data-pack-filter="' + anchor.activeFilter + '"]');
+      if (pill) { pill.click(); }
+    }
+    if (!anchor.groupId) {
+      window.scrollTo(0, anchor.scrollY || 0);
+      return true;
+    }
+    var newSec = document.querySelector(
+      '.pack-section[data-pack-list="' + anchor.packList + '"][data-funding-group="' + anchor.groupId + '"]'
+    );
+    if (newSec && !newSec.hidden && newSec.querySelector(".candidate")) {
+      if (anchor.candidateId) {
+        var sameCard = newSec.querySelector('.candidate[data-candidate-id="' + anchor.candidateId + '"]');
+        if (sameCard && !sameCard.hidden) {
+          window.scrollTo(0, Math.max(0, window.scrollY + sameCard.getBoundingClientRect().top - anchor.cardViewportTop));
+          return true;
+        }
+      }
+      if (!anchor.isBanner) {
+        var neighborIds = (anchor.nextCardIds || []).concat(anchor.prevCardIds || []);
+        for (var i = 0; i < neighborIds.length; i++) {
+          var neighbor = neighborIds[i] && newSec.querySelector('.candidate[data-candidate-id="' + neighborIds[i] + '"]');
+          if (neighbor && !neighbor.hidden) {
+            window.scrollTo(0, Math.max(0, window.scrollY + neighbor.getBoundingClientRect().top - anchor.cardViewportTop));
+            return true;
+          }
+        }
+      }
+      var clampedSecTop = Math.max(24, Math.min(220, anchor.secViewportTop));
+      window.scrollTo(0, Math.max(0, window.scrollY + newSec.getBoundingClientRect().top - clampedSecTop));
+      return true;
+    }
+    var groupCandidates = (anchor.nextGroupIds || []).concat(anchor.prevGroupIds || []);
+    for (var j = 0; j < groupCandidates.length; j++) {
+      var gid = groupCandidates[j];
+      if (!gid) { continue; }
+      var candidateSec = document.querySelector(
+        '.pack-section[data-pack-list="' + anchor.packList + '"][data-funding-group="' + gid + '"]'
+      );
+      if (candidateSec && !candidateSec.hidden && candidateSec.querySelector(".candidate")) {
+        var targetTop = Math.max(24, Math.min(220, anchor.secViewportTop));
+        window.scrollTo(0, Math.max(0, window.scrollY + candidateSec.getBoundingClientRect().top - targetTop));
+        return true;
+      }
+    }
+    var packHead = document.querySelector("#pack .pack-section-head");
+    if (packHead) {
+      window.scrollTo(0, Math.max(0, window.scrollY + packHead.getBoundingClientRect().top - 32));
+      return true;
+    }
+    return false;
+  }
+
+  document.addEventListener("htmx:beforeRequest", function (event) {
+    if (event.detail && event.detail.target && event.detail.target.id === "palette-results") { return; }
+    lastPathname = window.location.pathname;
+    lastSearch = window.location.search;
+    capturePackAnchor(event.detail && event.detail.elt);
+  });
+
   document.addEventListener("htmx:afterSettle", function (event) {
     // Live search results land inside the open dialog: not a page change.
     if (event.detail && event.detail.target && event.detail.target.id === "palette-results") { return; }
+    var hasShell = Boolean(document.querySelector("body > .shell"));
+    document.body.classList.toggle("has-shell", hasShell);
+    document.body.classList.toggle("no-shell", !hasShell);
+    if (!hasShell) { document.body.classList.remove("is-posting"); }
     closeMenu();
+    if (restorePackAnchor()) { return; }
     var config = (event.detail && event.detail.requestConfig) || {};
-    if ((config.verb || "get").toLowerCase() === "get") {
+    var samePageQuerySwitch = window.location.pathname === lastPathname && window.location.search !== lastSearch;
+    if (!samePageQuerySwitch && ((config.verb || "get").toLowerCase() === "get" || !hasShell)) {
       window.scrollTo(0, 0);
       var main = document.getElementById("main");
       if (main) { main.focus({ preventScroll: true }); }
+    }
+  });
+
+  // Instant in-place switching between tailored CV versions on /student/writing/
+  // without reloading the page or jumping scroll position.
+  document.addEventListener("click", function (event) {
+    var cvTab = event.target.closest && event.target.closest("a[data-cv-tab]");
+    if (!cvTab) { return; }
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) { return; }
+    var cvId = cvTab.getAttribute("data-cv-tab");
+    var section = cvTab.closest("#drafts") || document;
+    var panels = section.querySelectorAll("[data-cv-panel]");
+    if (!cvId || !panels.length) { return; }
+    event.preventDefault();
+    section.querySelectorAll("a[data-cv-tab]").forEach(function (tab) {
+      var active = tab.getAttribute("data-cv-tab") === cvId;
+      tab.classList.toggle("is-active", active);
+      if (active) {
+        tab.setAttribute("aria-current", "page");
+      } else {
+        tab.removeAttribute("aria-current");
+      }
+    });
+    panels.forEach(function (panel) {
+      panel.hidden = panel.getAttribute("data-cv-panel") !== cvId;
+    });
+    var select = document.getElementById("cv-programme-select");
+    if (select) {
+      var progId = cvTab.getAttribute("data-programme-id") || "";
+      if (Array.from(select.options).some(function (opt) { return opt.value === progId; })) {
+        select.value = progId;
+      }
+    }
+    if (window.history && typeof window.history.replaceState === "function") {
+      var nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("cv", cvId);
+      window.history.replaceState(null, "", nextUrl.pathname + nextUrl.search + nextUrl.hash);
+    }
+  });
+
+  // Instant in-place switching between document tabs (Motivation letter /
+  // Recommendation letters / Scholarship essay) on /student/writing/letters/<id>/
+  // without a server round-trip or page pop.
+  document.addEventListener("click", function (event) {
+    var docTab = event.target.closest && event.target.closest(".doc-tabs a[href^='?doc=']");
+    if (!docTab) { return; }
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) { return; }
+    var panels = document.querySelectorAll("[data-ws-tab-panel]");
+    if (!panels.length) { return; }
+    var url;
+    try { url = new URL(docTab.href, window.location.href); } catch (e) { return; }
+    var docKey = url.searchParams.get("doc");
+    if (!docKey) { return; }
+    event.preventDefault();
+    var nav = docTab.closest(".doc-tabs");
+    if (nav) {
+      nav.querySelectorAll("a[href^='?doc=']").forEach(function (link) {
+        if (link === docTab) {
+          link.setAttribute("aria-current", "page");
+        } else {
+          link.removeAttribute("aria-current");
+        }
+      });
+    }
+    panels.forEach(function (panel) {
+      panel.hidden = panel.getAttribute("data-ws-tab-panel") !== docKey;
+    });
+    if (window.history && typeof window.history.replaceState === "function") {
+      var nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("doc", docKey);
+      window.history.replaceState(null, "", nextUrl.pathname + nextUrl.search + nextUrl.hash);
+    }
+  });
+
+  // Instant in-place switching between linked scholarships inside the Scholarship essay tab.
+  document.addEventListener("click", function (event) {
+    var awardLink = event.target.closest && event.target.closest("a[data-ws-award]");
+    if (!awardLink) { return; }
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) { return; }
+    var awardId = awardLink.getAttribute("data-ws-award");
+    var panels = document.querySelectorAll("[data-ws-award-panel]");
+    if (!awardId || !panels.length) { return; }
+    event.preventDefault();
+    var nav = awardLink.closest(".ws-award-switch");
+    if (nav) {
+      nav.querySelectorAll("a[data-ws-award]").forEach(function (link) {
+        if (link.getAttribute("data-ws-award") === awardId) {
+          link.setAttribute("aria-current", "page");
+        } else {
+          link.removeAttribute("aria-current");
+        }
+      });
+    }
+    panels.forEach(function (panel) {
+      panel.hidden = panel.getAttribute("data-ws-award-panel") !== awardId;
+    });
+    if (window.history && typeof window.history.replaceState === "function") {
+      var nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set("doc", "essay");
+      nextUrl.searchParams.set("award", awardId);
+      window.history.replaceState(null, "", nextUrl.pathname + nextUrl.search + nextUrl.hash);
     }
   });
 
@@ -176,6 +412,24 @@
     alertOnPage("You seem to be offline. Check your connection and try again.");
   });
 
+  function highlightNavLink(elt) {
+    if (!elt || elt.tagName !== "A") { return; }
+    var navGroup = elt.closest(".sidebar, .view-switch, .doc-tabs");
+    if (!navGroup) { return; }
+    navGroup.querySelectorAll('a[aria-current="page"]').forEach(function (a) {
+      a.removeAttribute("aria-current");
+    });
+    elt.setAttribute("aria-current", "page");
+  }
+
+  document.addEventListener("pointerdown", function (event) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) { return; }
+    var link = event.target && event.target.closest && event.target.closest(".sidebar a[href], .view-switch a[href], .doc-tabs a[href]");
+    if (link && !mustNavigate(link.href)) {
+      highlightNavLink(link);
+    }
+  });
+
   // The page's entrance motion is for arriving somewhere. After a form posts
   // and the same page comes back, play nothing: the reader stays put.
   document.addEventListener("htmx:beforeRequest", function (event) {
@@ -183,13 +437,7 @@
     document.body.classList.toggle("is-posting", verb !== "get");
     var elt = event.detail && event.detail.elt;
     if (verb === "get" && elt && elt.tagName === "A") {
-      var navGroup = elt.closest(".sidebar, .view-switch, .doc-tabs");
-      if (navGroup) {
-        navGroup.querySelectorAll('a[aria-current="page"]').forEach(function (a) {
-          a.removeAttribute("aria-current");
-        });
-        elt.setAttribute("aria-current", "page");
-      }
+      highlightNavLink(elt);
     }
   });
 
@@ -297,13 +545,52 @@ document.addEventListener("click", function (event) {
       }
       if (match) { visibleInSec += 1; }
     });
+    var fundingHead = sec.querySelector(".funding-head");
     var groupLabel = sec.querySelector(".group-label");
     var matchGrid = sec.querySelector(".match-grid");
     var quietLine = sec.querySelector(".quiet-line");
-    if (groupLabel) { groupLabel.hidden = visibleInGrid === 0; }
+    if (fundingHead) { fundingHead.hidden = filter === "kind:programme"; }
+    if (groupLabel) { groupLabel.hidden = visibleInGrid === 0 || filter === "kind:programme"; }
     if (matchGrid) { matchGrid.hidden = visibleInGrid === 0; }
     if (quietLine) { quietLine.hidden = filter === "kind:award"; }
     sec.hidden = visibleInSec === 0;
+  });
+});
+
+// Client-side filter pills on the Home / Applications board and By-country list (All / Programmes / Scholarships).
+document.addEventListener("click", function (event) {
+  var pill = event.target.closest && event.target.closest("button[data-board-filter]");
+  if (!pill) { return; }
+  var bar = pill.closest(".board-filter-bar");
+  if (!bar) { return; }
+  var filter = pill.getAttribute("data-board-filter") || "all";
+  bar.querySelectorAll("button[data-board-filter]").forEach(function (b) {
+    b.setAttribute("aria-pressed", b === pill ? "true" : "false");
+    b.classList.toggle("is-active", b === pill);
+  });
+  var section = pill.closest(".board-section") || document;
+  section.querySelectorAll(".kanban-col").forEach(function (col) {
+    var visibleCount = 0;
+    col.querySelectorAll(".app-card[data-board-kind]").forEach(function (card) {
+      var kind = card.getAttribute("data-board-kind") || "programme";
+      var show = filter === "all" || kind === filter;
+      card.hidden = !show;
+      if (show) { visibleCount += 1; }
+    });
+    var badge = col.querySelector("[data-stage-count]");
+    if (badge) { badge.textContent = String(visibleCount); }
+  });
+  section.querySelectorAll(".country-group").forEach(function (group) {
+    var visibleCount = 0;
+    group.querySelectorAll(".option-row[data-board-kind]").forEach(function (row) {
+      var kind = row.getAttribute("data-board-kind") || "programme";
+      var show = filter === "all" || kind === filter;
+      row.hidden = !show;
+      if (show) { visibleCount += 1; }
+    });
+    var badge = group.querySelector("[data-country-count]");
+    if (badge) { badge.textContent = String(visibleCount); }
+    group.hidden = visibleCount === 0;
   });
 });
 

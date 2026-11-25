@@ -106,12 +106,38 @@ _TOKEN = re.compile(r"[^\W\d_]+(?:[-'’][^\W\d_]+)*|[^\w\s]")
 #: Intelligence" are one name each; breaking at `of` yielded "Technical
 #: University", which matched no institution this catalog holds.
 _CONNECTORS = frozenset(
-    {"of", "for", "and", "the", "de", "del", "della", "di", "du", "des", "der", "van", "von", "zu"}
+    {
+        "of", "for", "and", "the", "de", "del", "della", "di", "du", "des", "der", "van", "von",
+        "zu", "für", "und", "am", "im", "in", "an", "auf", "bei",
+    }
 )
 #: Dropped from the FRONT of a run, so a sentence that opens "The University
 #: welcomes ..." does not make "The University" a name (Task 9 review: it
 #: blocked a letter for saying "The University I attended taught me").
-_LEADING_ARTICLES = frozenset({"the", "a", "an"})
+_LEADING_ARTICLES = frozenset(
+    {
+        "the", "a", "an",
+        "der", "die", "das", "ein", "eine", "einer", "einem", "einen", "eines",
+        "le", "la", "les", "un", "une", "des",
+        "de", "het", "een",
+        "il", "lo", "gli",
+        "el", "los", "las",
+    }
+)
+#: German polite pronouns, possessives, and determiners that are capitalised in
+#: ordinary prose ("Ich danke Ihnen für Ihre Aufmerksamkeit") and must never
+#: form a proper-noun run.
+_GERMAN_STOPWORDS = frozenset(
+    {
+        "sie", "ihnen", "ihr", "ihre", "ihrer", "ihrem", "ihren",
+        "mein", "meine", "meiner", "meinem", "meinen",
+        "dieser", "diese", "dieses", "diesem", "diesen",
+        "jeder", "jede", "jedes", "jedem", "jeden",
+        "welcher", "welche", "welches", "welchem", "welchen",
+        "unser", "unsere", "unserer", "unserem", "unseren",
+        "kein", "keine", "keiner", "keinem", "keinen",
+    }
+)
 
 
 def capitalised_phrases(text: str, *, minimum_words: int = 2) -> list[str]:
@@ -128,7 +154,7 @@ def capitalised_phrases(text: str, *, minimum_words: int = 2) -> list[str]:
     for match in _TOKEN.finditer(text):
         part = match.group()
         if not part[:1].isalpha():
-            if part == "." and run and run[-1].casefold() in _PERSON_TITLES:
+            if part == "." and run and run[-1].casefold().rstrip(".") in _PERSON_TITLES:
                 # An abbreviated title is part of the name, not the end of a
                 # sentence: "Prof. Dr. Jane Roe" closed three runs of one word
                 # each and guarded nothing, and that is the dominant German
@@ -137,6 +163,17 @@ def capitalised_phrases(text: str, *, minimum_words: int = 2) -> list[str]:
                 # next one.
                 run[-1] = f"{run[-1]}."
                 continue
+            run, pending = _close(run, phrases, minimum_words), []
+            continue
+        if (
+            part.casefold() == "ssa"
+            and run
+            and run[-1].endswith(".")
+            and f"{run[-1].casefold()}ssa" in _PERSON_TITLES
+        ):
+            run[-1] = f"{run[-1]}{part}"
+            continue
+        if part.casefold() in _GERMAN_STOPWORDS:
             run, pending = _close(run, phrases, minimum_words), []
             continue
         if part[:1].isupper():
@@ -152,7 +189,7 @@ def capitalised_phrases(text: str, *, minimum_words: int = 2) -> list[str]:
 
 
 def _close(run: list[str], phrases: list[str], minimum_words: int) -> list[str]:
-    while run and run[0].casefold() in _LEADING_ARTICLES:
+    while run and run[0].casefold() in _LEADING_ARTICLES | _GERMAN_STOPWORDS:
         run = run[1:]
     if len(run) >= minimum_words:
         phrases.append(" ".join(run))
@@ -164,18 +201,40 @@ def _close(run: list[str], phrases: list[str], minimum_words: int) -> list[str]:
 #: sentence be covered. INTERPRETIVE and ASPIRATIONAL claims carry no id "by
 #: design" (letter_verification.py's _classify auto-SUPPORTS both, precisely
 #: because there is nothing to verify); letting either kind cover a sentence
-#: with a proper noun or a date would let a fabricated factual claim clear
+#: with a proper noun or a date would let a fabricated claim clear
 #: this gate just by being mislabelled. This must match (or be a subset of)
 #: letter_verification.py's own provenance-bearing kinds.
 _PROVENANCE_CLAIM_KINDS = frozenset({ClaimKind.FACTUAL, ClaimKind.DECLARED, ClaimKind.SOURCED})
 
+_GERMAN_ENTITY_MARKERS = frozenset(
+    {
+        "university", "universität", "universitaet", "hochschule", "institut", "institute",
+        "stiftung", "gmbh", "ag", "max-planck", "fraunhofer", "helmholtz", "leibniz",
+        "daad", "dfg", "cern", "dlr", "charité", "charite", "fakultät", "fakultaet",
+        "zentrum", "klinikum", "akademie", "gesellschaft", "bundesamt", "ministerium",
+        "lehrstuhl", "fachgebiet", "abteilung", "forschungsgruppe",
+    }
+)
 
-def _has_trigger(sentence: str) -> bool:
-    return bool(
-        _DIGIT_PATTERN.search(sentence)
-        or _DATE_PATTERN.search(sentence)
-        or bool(capitalised_phrases(sentence))
-    )
+
+def _is_german_entity_phrase(phrase: str) -> bool:
+    raw_words = phrase.split()
+    words = [w.casefold().rstrip(".") for w in raw_words]
+    if any(w in _PERSON_TITLES or w in _GROUP_WORDS or w in _GERMAN_ENTITY_MARKERS for w in words):
+        return True
+    return any(len(w.rstrip(".")) >= 2 and w.rstrip(".").isupper() for w in raw_words)
+
+
+def _has_trigger(sentence: str, *, document_language: str = "en") -> bool:
+    if _DIGIT_PATTERN.search(sentence) or _DATE_PATTERN.search(sentence):
+        return True
+    phrases = capitalised_phrases(sentence)
+    if not phrases:
+        return False
+    lang = (document_language or "en").lower().split("-")[0]
+    if lang == "de":
+        return any(_is_german_entity_phrase(p) for p in phrases)
+    return True
 
 
 def sentence_spans(text: str) -> list[tuple[str, int, int]]:
@@ -201,10 +260,12 @@ def sentence_spans(text: str) -> list[tuple[str, int, int]]:
     return spans
 
 
-def check_claim_coverage(unit: LetterUnit) -> tuple[LetterGateViolation, ...]:
+def check_claim_coverage(
+    unit: LetterUnit, *, document_language: str = "en"
+) -> tuple[LetterGateViolation, ...]:
     violations: list[LetterGateViolation] = []
     for sentence, start, end in sentence_spans(unit.text):
-        if not _has_trigger(sentence):
+        if not _has_trigger(sentence, document_language=document_language):
             continue
         covered = any(
             claim.span_start <= start and claim.span_end >= end
@@ -216,6 +277,9 @@ def check_claim_coverage(unit: LetterUnit) -> tuple[LetterGateViolation, ...]:
                 LetterGateViolation(GateCode.UNDECLARED_ASSERTION, sentence.strip(), unit.archetype)
             )
     return tuple(violations)
+
+
+check_undeclared_assertions = check_claim_coverage
 
 
 def check_wrong_institution(
@@ -237,12 +301,24 @@ def check_wrong_institution(
 #: its words names a body. This is the whole test for whether something read
 #: off a programme's page is a name at all -- see `names_worth_guarding`.
 _PERSON_TITLES = frozenset(
-    {"professor", "prof", "dr", "doctor", "mr", "ms", "mrs", "miss", "sir", "dame", "herr", "frau"}
+    {
+        "professor", "prof", "dr", "doctor", "mr", "ms", "mrs", "miss", "sir", "dame",
+        "herr", "frau",
+        "pr", "m", "m.", "mme",
+        "dott", "dott.ssa", "prof.ssa", "dra",
+        "ir", "pd", "priv.-doz", "univ.-prof", "doç",
+    }
 )
 _GROUP_WORDS = frozenset(
     {
         "lab", "laboratory", "labor", "group", "institute", "institut", "centre", "center",
         "chair", "department", "faculty", "school", "unit", "cluster", "college", "division",
+        "laboratoire", "équipe", "chaire", "département",
+        "onderzoeksgroep", "vakgroep", "leerstoel",
+        "laboratorio", "gruppo", "dipartimento",
+        "grupo",
+        "laboratuvarı", "bölümü",
+        "lehrstuhl", "fachgebiet", "abteilung", "forschungsgruppe",
     }
 )
 
@@ -711,12 +787,13 @@ _AI_CLOSING_SUMMARY_RE = re.compile(
     re.IGNORECASE,
 )
 _NOMINALIZATION_WORD_RE = re.compile(
-    r"\b(?:"
+    r"(?<![-\w])(?!(?:universit(?:y|ies|ät|é)|institution|foundation|department|"
+    r"operations?|questions?|conditions?|positions?|sections?|regions?)\b)(?:"
     r"[a-zàâäéèêëîïôöùûüç]{4,}(?:tions?|ments?|ness(?:es)?|it(?:y|ies|és?)|ances?|ences?)|"
     r"[a-zäöüß]{4,}(?:ungen|ung|keiten|keit|heiten|heit|itäten|ität)|"
     r"[а-яё]{4,}(?:ост(?:ь|и|ей|ью)|ени(?:е|я|й|ю|ем)|ани(?:е|я|й|ю|ем))|"
     r"[a-zçğıöşü]{4,}(?:l[ıiuü]k(?:lar|ler)?|m[ae]s[ıi])"
-    r")\b",
+    r")(?![-\w])",
     re.IGNORECASE,
 )
 _CONTENT_WORD_RE = re.compile(r"[^\W\d_]{4,}")
@@ -732,16 +809,25 @@ _VOICE_STOPWORDS = frozenset(
 )
 
 
-def _has_three_consecutive_uniform_sentences(counts: list[int]) -> bool:
-    """True when 3+ consecutive sentences of >=12 words differ by <=1 word."""
+def _has_three_consecutive_uniform_sentences(
+    counts: list[int], *, min_len: int = 12, max_diff: int = 1
+) -> bool:
+    """True when 3+ consecutive sentences of >=min_len differ by <=max_diff."""
     return any(
-        min(w) >= 12 and (max(w) - min(w)) <= 1 for w in zip(counts, counts[1:], counts[2:])
+        min(w) >= min_len and (max(w) - min(w)) <= max_diff
+        for w in zip(counts, counts[1:], counts[2:])
     )
+
+
+_CJK_SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?])\s*(?=\S)")
 
 
 def check_ai_style(content: LetterContent) -> tuple[LetterGateViolation, ...]:
     """Deterministic enforcement of the anti-AI style and burstiness rules in
     `letters._INSTRUCTIONS` (`docs/research/2026-09-28-letter-engine/human-voice.md`)."""
+    lang = (content.language or "en").lower().split("-")[0]
+    is_en = lang == "en"
+    is_cjk = lang in CHARACTER_COUNTED_LANGUAGES
     violations: list[LetterGateViolation] = []
     for unit in content.units:
         text = unit.text
@@ -756,17 +842,18 @@ def check_ai_style(content: LetterContent) -> tuple[LetterGateViolation, ...]:
                 )
             )
             continue
-        trailer_match = _AI_PARTICIPIAL_TRAILER_RE.search(text)
-        if trailer_match is not None:
-            violations.append(
-                LetterGateViolation(
-                    GateCode.AI_STYLE,
-                    f"participial trailer: {trailer_match.group(0)}",
-                    unit.archetype,
-                    subcode="participial_trailer",
+        if is_en:
+            trailer_match = _AI_PARTICIPIAL_TRAILER_RE.search(text)
+            if trailer_match is not None:
+                violations.append(
+                    LetterGateViolation(
+                        GateCode.AI_STYLE,
+                        f"participial trailer: {trailer_match.group(0)}",
+                        unit.archetype,
+                        subcode="participial_trailer",
+                    )
                 )
-            )
-            continue
+                continue
         if "\u2014" in text:
             violations.append(
                 LetterGateViolation(
@@ -778,7 +865,9 @@ def check_ai_style(content: LetterContent) -> tuple[LetterGateViolation, ...]:
             )
             continue
         spans = sentence_spans(text)
-        if len(spans) >= 2:
+        if is_cjk and len(spans) <= 1 and _CJK_SENTENCE_SPLIT_RE.search(text):
+            spans = [(s, 0, len(s)) for s in _CJK_SENTENCE_SPLIT_RE.split(text) if s.strip()]
+        if is_en and len(spans) >= 2:
             last_sentence = spans[-1][0]
             if _AI_CLOSING_SUMMARY_RE.search(last_sentence) is not None:
                 violations.append(
@@ -794,7 +883,7 @@ def check_ai_style(content: LetterContent) -> tuple[LetterGateViolation, ...]:
         for sent_text, _, _ in spans:
             words = sent_text.split()
             if 0 < len(words) <= 28:
-                noms = {m.lower() for m in _NOMINALIZATION_WORD_RE.findall(sent_text)}
+                noms = {m.lower().rstrip("s") for m in _NOMINALIZATION_WORD_RE.findall(sent_text)}
                 if len(noms) >= 5:
                     violations.append(
                         LetterGateViolation(
@@ -808,8 +897,17 @@ def check_ai_style(content: LetterContent) -> tuple[LetterGateViolation, ...]:
                     break
         if nom_violation:
             continue
-        counts = [len(s.split()) for s, _, _ in spans if s.strip()]
-        if len(counts) >= 4 and min(counts) >= 10 and (max(counts) - min(counts)) <= 2:
+        if is_cjk:
+            counts = [len(re.sub(r"\s+", "", s)) for s, _, _ in spans if s.strip()]
+            min_uniform, max_spread, min_consec, max_consec_diff = 20, 3, 24, 2
+        else:
+            counts = [len(s.split()) for s, _, _ in spans if s.strip()]
+            min_uniform, max_spread, min_consec, max_consec_diff = 10, 2, 12, 1
+        if (
+            len(counts) >= 4
+            and min(counts) >= min_uniform
+            and (max(counts) - min(counts)) <= max_spread
+        ):
             violations.append(
                 LetterGateViolation(
                     GateCode.AI_STYLE,
@@ -818,7 +916,9 @@ def check_ai_style(content: LetterContent) -> tuple[LetterGateViolation, ...]:
                     subcode="uniform_sentence_length",
                 )
             )
-        elif len(counts) >= 3 and _has_three_consecutive_uniform_sentences(counts):
+        elif len(counts) >= 3 and _has_three_consecutive_uniform_sentences(
+            counts, min_len=min_consec, max_diff=max_consec_diff
+        ):
             violations.append(
                 LetterGateViolation(
                     GateCode.AI_STYLE,
@@ -930,7 +1030,7 @@ def run_letter_gates(
     service combines both tuples to decide whether to retry."""
     violations: list[LetterGateViolation] = []
     for unit in content.units:
-        violations.extend(check_claim_coverage(unit))
+        violations.extend(check_claim_coverage(unit, document_language=document_language))
     violations.extend(check_wrong_institution(content, forbidden_names=forbidden_names))
     violations.extend(check_prompt_requirement_unmet(content, questions=questions))
     violations.extend(check_header_block_missing(content, required=header_block_required))

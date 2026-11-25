@@ -7,6 +7,7 @@ capture_requirements stored on the Application, never ProgramStatement.
 
 from __future__ import annotations
 
+import functools
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -53,30 +54,76 @@ _WANTING = frozenset({Cell.MISSING, Cell.CERTIFIED})
 # naming two documents marks both. Upgrade path: have the statement reader label
 # the document kind a sentence names.
 _WORDS: dict[str, re.Pattern[str]] = {
-    "PASSPORT": re.compile(r"\bpassport", re.I),
-    "TRANSCRIPT": re.compile(r"\btranscript|\brecord of (?:study|studies|grades)", re.I),
-    "DIPLOMA": re.compile(r"\bdiploma|\bdegree certificate|\bbachelor'?s certificate", re.I),
-    "LANGUAGE_CERTIFICATE": re.compile(
-        r"\bielts\b|\btoefl\b|\blanguage (?:certificate|proficiency|test)|\bcefr\b"
-        r"|\bproof of english|\benglish (?:language )?(?:proficiency|skills)", re.I
+    "PASSPORT": re.compile(
+        r"\b(?:passport|reisepass|passeport|pasaport|xarici\s+pasport"
+        r"|şəxsiyyət\s+vəsiqəsi|pasaporte|passaporto|загранпаспорт|паспорт)",
+        re.I,
     ),
-    "CV": re.compile(r"\bcv\b|\bcurriculum vitae\b|\br[ée]sum[ée]\b", re.I),
+    "TRANSCRIPT": re.compile(
+        r"\b(?:transcript|record of (?:study|studies|grades)|notenspiegel"
+        r"|leistungsnachweis|fächer-\s*und\s*notenübersicht|relevé\s+de\s+notes"
+        r"|transkript|not\s+dökümü|akademik\s+arayış|qiymət\s+cədvəli"
+        r"|certificado\s+de\s+notas|expediente\s+académico"
+        r"|certificato\s+degli\s+esami|выписка\s+из\s+зач[её]тной\s+ведомости"
+        r"|академическая\s+справка|приложение\s+к\s+диплому)",
+        re.I,
+    ),
+    "DIPLOMA": re.compile(
+        r"\b(?:diploma|degree certificate|bachelor'?s certificate|zeugnis"
+        r"|abschlusszeugnis|urkunde|bachelorurkunde|masterurkunde|diplôme"
+        r"|attestation\s+de\s+réussite|diplom|mezuniyet\s+belgesi"
+        r"|título\s+universitario|diploma\s+di\s+laurea|pergamino|диплом|аттестат)",
+        re.I,
+    ),
+    "LANGUAGE_CERTIFICATE": re.compile(
+        r"\b(?:ielts|toefl|cefr|testdaf|dsh|goethe[-\s]+zertifikat|telc|[oö]sd"
+        r"|delf|dalf|tcf|tef|dele|siele|cils|celi|t[oö]mer|yds|torfl|трки|jlpt|topik|hsk"
+        r"|sprachnachweis|sprachzertifikat|attestation\s+de\s+langue"
+        r"|dil\s+(?:belgesi|sertifikası)|certificado\s+de\s+idioma"
+        r"|certificazione\s+linguistica|сертификат\s+о\s+знании\s+языка)\b"
+        r"|\blanguage (?:certificate|proficiency|test)"
+        r"|\bproof of english|\benglish (?:language )?(?:proficiency|skills)",
+        re.I,
+    ),
+    "CV": re.compile(
+        r"\b(?:cv|curriculum\s+vitae|r[ée]sum[ée]|lebenslauf|özgeçmiş"
+        r"|tərcümeyi[-\s]+hal|curr[íi]culum|резюме|автобиография)\b",
+        re.I,
+    ),
     "MOTIVATION_LETTER": re.compile(
-        r"\bmotivation\b|\bstatement of purpose\b|\bpersonal statement\b|\bcover letter\b"
-        r"|\bletter of intent\b",
+        r"\b(?:motivation|statement of purpose|personal statement|cover letter"
+        r"|letter of intent|motivationsschreiben|bewerbungsschreiben"
+        r"|lettre\s+de\s+motivation|motivasyon\s+mektubu|niyet\s+mektubu"
+        r"|motivasiya\s+məktubu|carta\s+de\s+motivación|lettera\s+motivazionale"
+        r"|мотивационное\s+письмо)\b",
         re.I,
     ),
     "REFERENCE_LETTER": re.compile(
-        r"\brecommendation\b|\bletters? of reference|\breference letters?"
-        r"|\breferees?\b|\b(?:two|three|\d|academic|professional)\s+references\b",
+        r"\b(?:recommendation|letters? of reference|reference letters?|referees?"
+        r"|(?:two|three|\d|academic|professional)\s+references"
+        r"|empfehlungsschreiben|referenzschreiben|gutachten"
+        r"|lettre\s+de\s+recommandation|referans\s+mektubu|tavsiye\s+mektubu"
+        r"|tövsiyə\s+məktubu|carta\s+de\s+recomendación|lettera\s+di\s+referenza"
+        r"|lettera\s+di\s+raccomandazione|рекомендательное\s+письмо)\b",
         re.I,
     ),
 }
-_CERTIFIED = re.compile(r"\bcertified\b|\bnotari[sz]ed\b|\bapostille\b|\battested\b", re.I)
+_CERTIFIED = re.compile(
+    r"\b(?:certified|notari[sz]ed|apostille|attested|beglaubigt\w*"
+    r"|amtlich\s+beglaubigt|copie\s+certifiée\s+conforme|traduction\s+assermentée"
+    r"|noter\s+onaylı|aslı\s+gibidir|notarial\s+təsdiq|copia\s+compulsada"
+    r"|copia\s+autenticata|нотариально\s+заверен\w*|апостиль)\b",
+    re.I,
+)
+
+
+@functools.lru_cache(maxsize=1024)
+def _kinds_named_cached(text: str) -> frozenset[str]:
+    return frozenset(kind for kind, pattern in _WORDS.items() if pattern.search(text))
 
 
 def kinds_named(text: str) -> set[str]:
-    return {kind for kind, pattern in _WORDS.items() if pattern.search(text)}
+    return set(_kinds_named_cached(text))
 
 
 @dataclass(frozen=True)
@@ -162,17 +209,22 @@ class Table:
         return tuple(h for h in every if h.source == "upload")
 
 
-def needed_kinds(column: ApplicationNeeds) -> dict[str, bool]:
-    """kind -> whether a certified copy is asked for, for every kind named."""
+@functools.lru_cache(maxsize=512)
+def _needed_kinds_for_sentences(sentences: tuple[str, ...]) -> tuple[tuple[str, bool], ...]:
     out: dict[str, bool] = {}
-    for sentence in column.sentences:
+    for sentence in sentences:
         # "Certified copies of diploma and transcript; a CV": the word binds
         # only the clause it sits in.
         for clause in sentence.split(";"):
             certified = bool(_CERTIFIED.search(clause))
-            for kind in kinds_named(clause):
+            for kind in _kinds_named_cached(clause):
                 out[kind] = out.get(kind, False) or certified
-    return out
+    return tuple(out.items())
+
+
+def needed_kinds(column: ApplicationNeeds) -> dict[str, bool]:
+    """kind -> whether a certified copy is asked for, for every kind named."""
+    return dict(_needed_kinds_for_sentences(column.sentences))
 
 
 def build_table(columns: Sequence[ApplicationNeeds], held: Iterable[Held]) -> Table:
@@ -263,15 +315,14 @@ def table_for(
         for ref in disowned_refs(student)
         if ref.startswith("document:")
     }
-    refused_tx_ids = set(
-        TranscriptUpload.objects.filter(
-            student=student, state=TranscriptUpload.State.REFUSED
-        ).values_list("document_id", flat=True)
-    ) - set(
-        TranscriptUpload.objects.filter(student=student)
-        .exclude(state=TranscriptUpload.State.REFUSED)
-        .values_list("document_id", flat=True)
+    tx_rows = list(
+        TranscriptUpload.objects.filter(student=student).values_list("document_id", "state")
     )
+    refused_tx_ids = {
+        doc_id for doc_id, state in tx_rows if state == TranscriptUpload.State.REFUSED
+    } - {
+        doc_id for doc_id, state in tx_rows if state != TranscriptUpload.State.REFUSED
+    }
     uploads = (
         DocumentVersion.objects.filter(
             student=student, state__in=("AVAILABLE", "CHECKING"), retired_at__isnull=True

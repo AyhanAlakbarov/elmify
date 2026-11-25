@@ -28,6 +28,11 @@ urlpatterns = [
         workspace.letter_workspace,
         name="student-letter-workspace",
     ),
+    path(
+        "student/writing/letters/<uuid:application_id>/notes/",
+        workspace.letter_notes_save,
+        name="student-letter-notes",
+    ),
     path("student/writing/references/", workspace.references_page, name="student-references"),
     path("counselor/letters/", review.letter_review_queue, name="counselor-letter-review"),
     path(
@@ -39,6 +44,11 @@ urlpatterns = [
         "student/writing/letters/<uuid:draft_id>/approve/",
         writing.letter_approve,
         name="student-letter-approve",
+    ),
+    path(
+        "student/writing/letters/<uuid:draft_id>/refine/",
+        writing.letter_refine,
+        name="student-letter-refine",
     ),
     path("student/documents/submit/", views.submit_document, name="student-document-submit"),
     path(

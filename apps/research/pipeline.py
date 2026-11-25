@@ -109,7 +109,7 @@ SOURCE_TYPES = {
 #: its children, which would otherwise write a doctoral stipend and a
 #: "Master's required" eligibility claim onto the master's row.
 _DEGREE_LEVEL_PATH_TERMS = frozenset(
-    {"phd", "doctoral", "postdoc", "graduate", "bachelor", "bachelors", "bsc"}
+    {"phd", "doctoral", "postdoc", "bachelor", "bachelors", "bsc"}
 )
 
 
@@ -634,8 +634,11 @@ def run_discovery(
         written += 1
         unreadable_dates += write_res.unreadable_dates
         if page_lead.can_support_claim:
+            from .card_engine.readers import tenant_limit
+            from .card_engine.screen import screen as default_screen
             from .programme_scraper import scrape_fetched_programme_page
 
+            use_live_arbitration = funding_parser is not None or card_reader is not None
             scrape_fetched_programme_page(
                 write_res.program,
                 source=page_source,
@@ -643,6 +646,8 @@ def run_discovery(
                 html=fetched_page.body,
                 evidence_strength=page_lead.evidence_strength,
                 visibility=page_lead.visibility,
+                screen=default_screen if use_live_arbitration else None,
+                limit=tenant_limit(actor) if use_live_arbitration else None,
                 now=now,
             )
         take_pointers(

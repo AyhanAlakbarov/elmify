@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from django.utils import timezone
@@ -47,21 +48,33 @@ def latest_table(*, on: date | None = None, base: str = "AZN") -> RateTable | No
     )
     rates = {currency: rate for currency, rate, _source in rows}
     cross: set[str] = set()
-    # CBAR does not quote MYR, ZAR, THB...: cross them through EUR (X per EUR x EUR per AZN).
-    if base == "AZN" and "EUR" in rates:
-        ecb_day = (
-            ExchangeRate.objects.filter(base="EUR", day__lte=on)
+    # Cross missing currencies through stored pivot tables (EUR, USD, AZN)
+    # whenever a direct rate is missing, regardless of whether base == "AZN".
+    for pivot in ("EUR", "USD", "AZN"):
+        if pivot == base:
+            continue
+        pivot_day = (
+            ExchangeRate.objects.filter(base=pivot, day__lte=on)
             .order_by("-day")
             .values_list("day", flat=True)
             .first()
         )
-        if ecb_day is not None:
-            for currency, rate in ExchangeRate.objects.filter(
-                base="EUR", day=ecb_day
-            ).values_list("currency", "rate"):
-                if currency not in rates:
-                    rates[currency] = rate * rates["EUR"]
-                    cross.add(currency)
+        if pivot_day is None:
+            continue
+        pivot_rows = dict(
+            ExchangeRate.objects.filter(base=pivot, day=pivot_day).values_list(
+                "currency", "rate"
+            )
+        )
+        pivot_per_base = rates.get(pivot)
+        if pivot_per_base is None and base in pivot_rows and pivot_rows[base] != 0:
+            pivot_per_base = Decimal("1") / pivot_rows[base]
+        if pivot_per_base is None:
+            continue
+        for currency, rate in pivot_rows.items():
+            if currency not in rates:
+                rates[currency] = rate * pivot_per_base
+                cross.add(currency)
     return RateTable(
         base=base,
         rates=rates,

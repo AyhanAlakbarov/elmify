@@ -227,3 +227,14 @@ def test_the_rate_note_names_the_ecb_only_when_a_currency_was_crossed() -> None:
         "Converted at the CBAR rate of 8 Oct, via the ECB's euro rate for currencies "
         "CBAR doesn't publish; your bank may charge more"
     )
+    crossed_nbg = RateTable(
+        base="GEL",
+        rates={"GEL": Decimal("1")},
+        source="NBG",
+        retrieved_on=date(2026, 10, 8),
+        cross=frozenset({"MYR"}),
+    )
+    assert rate_note(crossed_nbg) == (
+        "Converted at the NBG rate of 8 Oct, via the ECB's euro rate for currencies "
+        "NBG doesn't publish; your bank may charge more"
+    )

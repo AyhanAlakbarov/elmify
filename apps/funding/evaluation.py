@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -209,6 +211,7 @@ class CandidateFacts(BaseModel):
     applicant_conditions: tuple[ApplicantConditionFact, ...] = ()
     return_service: tuple[ReturnServiceFact, ...] = ()
     dimension_scores: Mapping[EvaluationDimension, Decimal]
+    admission_baseline_pct: Decimal | None = Field(default=None, ge=0, le=100)
 
     @field_validator("program_country_code")
     @classmethod
@@ -254,6 +257,7 @@ class EvaluationScores:
     overall: Decimal
     dimensions: tuple[DimensionScore, ...]
     critical_values: tuple[Decimal, ...]
+    conjunctive_overall: Decimal = Decimal("0.00")
 
 
 @dataclass(frozen=True)
@@ -261,6 +265,18 @@ class RecommendationOutcome:
     outcome: EligibilityOutcome
     reasons: tuple[str, ...]
     scores: EvaluationScores | None
+
+
+DurationBand = Literal["ONE_YEAR", "ONE_AND_HALF_YEAR", "TWO_YEAR"]
+
+
+def duration_band(duration_months: int) -> DurationBand:
+    """Classify programme duration into 1-year (<=14m), 1.5-year (15-18m), or 2-year (>=19m)."""
+    if duration_months <= 14:
+        return "ONE_YEAR"
+    if duration_months <= 18:
+        return "ONE_AND_HALF_YEAR"
+    return "TWO_YEAR"
 
 
 def duration_category(duration_months: int) -> Literal["ONE_YEAR", "TWO_YEAR"]:
@@ -304,7 +320,12 @@ def _constraint_satisfied(constraint: ProfileConstraint, candidate: CandidateFac
     if constraint.kind == "FIELD":
         return value in candidate.field_of_study.casefold()
     if constraint.kind == "DURATION":
-        return value == str(candidate.duration_months)
+        if value == str(candidate.duration_months):
+            return True
+        if value.upper() == duration_band(candidate.duration_months):
+            return True
+        m_dur = re.match(r"^(\d+)\s*(?:m|mo|month|months)$", value)
+        return bool(m_dur and int(m_dur.group(1)) == candidate.duration_months)
     # ponytail: OTHER constraints have no structured field to check against; treat as
     # satisfied until a richer constraint taxonomy exists for this catch-all kind.
     return True
@@ -317,7 +338,7 @@ def _non_negotiables_gate(profile: StudentProfileSnapshot, candidate: CandidateF
 def _duration_gate(profile: StudentProfileSnapshot, candidate: CandidateFacts) -> bool:
     if profile.duration_flexibility != "NON_NEGOTIABLE":
         return True
-    return duration_category(candidate.duration_months) == profile.duration_preference
+    return duration_band(candidate.duration_months) == profile.duration_preference
 
 
 def _country_preference_gate(profile: StudentProfileSnapshot, candidate: CandidateFacts) -> bool:
@@ -513,6 +534,53 @@ def _affordability_score(affordability: AffordabilityResult) -> Decimal:
     return max(Decimal("0"), min(Decimal("100"), score))
 
 
+_POWER_MEAN_DELTA = 1.0
+_BALANCED_POWER_P = -0.5
+
+
+def compute_weighted_power_mean(
+    dimensions: Sequence[DimensionScore],
+    *,
+    p: float = _BALANCED_POWER_P,
+    delta: float = _POWER_MEAN_DELTA,
+) -> Decimal:
+    """Compute the weighted generalized power mean (Holder mean) M_p(w, s).
+
+    For p != 0: M_p(w, s) = (sum_i w_i * max(s_i, delta)^p)^(1/p).
+    For p == 0: M_0(w, s) = exp(sum_i w_i * ln(max(s_i, delta))).
+    Strictly monotonically increasing, C^infinity-smooth, and strictly Schur-concave
+    for p < 1, with diminishing MRS_{ij} = (w_i / w_j) * (s_j / s_i)^(1 - p).
+    """
+    if not dimensions:
+        return Decimal("0.00")
+
+    total_w = sum(float(d.weight) for d in dimensions)
+    if total_w <= 0.0:
+        return Decimal("0.00")
+
+    if abs(p - 1.0) < 1e-12:
+        val = sum(float(d.weight) * float(d.score) for d in dimensions) / total_w
+        return Decimal(str(val)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    if abs(p) < 1e-12:
+        log_sum = sum(
+            (float(d.weight) / total_w) * math.log(max(float(d.score), delta))
+            for d in dimensions
+        )
+        val = math.exp(log_sum)
+        return Decimal(str(val)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    p_logs = [p * math.log(max(float(d.score), delta)) for d in dimensions]
+    max_plog = max(p_logs)
+    weighted_exp = sum(
+        (float(d.weight) / total_w) * math.exp(pl - max_plog)
+        for d, pl in zip(dimensions, p_logs, strict=True)
+    )
+    lse = max_plog + math.log(weighted_exp)
+    val = math.exp(lse / p)
+    return Decimal(str(val)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 def score_dimensions(
     profile: StudentProfileSnapshot, candidate: CandidateFacts, affordability: AffordabilityResult
 ) -> EvaluationScores:
@@ -521,15 +589,18 @@ def score_dimensions(
     scores: dict[EvaluationDimension, Decimal] = dict(candidate.dimension_scores)
     scores["AFFORDABILITY"] = _affordability_score(affordability)
 
+    cand_band = duration_band(candidate.duration_months)
     if (
         "DURATION" in scores
-        and profile.duration_preference == "ONE_YEAR"
+        and profile.duration_preference in {"ONE_YEAR", "ONE_AND_HALF_YEAR"}
         and profile.duration_flexibility == "WEIGHTED"
-        and duration_category(candidate.duration_months) == "TWO_YEAR"
+        and cand_band in {"ONE_AND_HALF_YEAR", "TWO_YEAR"}
+        and cand_band != profile.duration_preference
         and "FUNDING" in profile.longer_program_justifications
         and (affordability.covered > 0 or affordability.conditional_savings > 0)
     ):
-        scores["DURATION"] = max(scores["DURATION"], Decimal("85"))
+        target_floor = Decimal("88") if cand_band == "ONE_AND_HALF_YEAR" else Decimal("85")
+        scores["DURATION"] = max(scores["DURATION"], target_floor)
 
     _pref_kind_to_dim: dict[str, EvaluationDimension] = {
         "LOCATION": "MOBILITY_FIT",
@@ -547,8 +618,14 @@ def score_dimensions(
         for dim in sorted(applicable)
     )
     overall = sum((d.score * d.weight for d in dimensions), Decimal("0"))
+    conjunctive_overall = compute_weighted_power_mean(dimensions, p=_BALANCED_POWER_P)
     critical_values = tuple(d.score for d in dimensions)
-    return EvaluationScores(overall=overall, dimensions=dimensions, critical_values=critical_values)
+    return EvaluationScores(
+        overall=overall,
+        dimensions=dimensions,
+        critical_values=critical_values,
+        conjunctive_overall=conjunctive_overall,
+    )
 
 
 def _below_bar_reasons(
@@ -933,6 +1010,13 @@ def scheme_pays_for(
     if award.scope == "INSTITUTION":
         return bool(award.institution_id) and award.institution_id == candidate.institution_id
     if award.scope in ("HOLDER", "COUNTRY"):
+        if bool(home_country) and award.country_code == home_country:
+            if award.pays_for_program_ids:
+                return False
+            return (
+                bool(candidate.program_country_code)
+                and candidate.program_country_code != home_country
+            )
         return (
             bool(award.country_code)
             and award.country_code != home_country

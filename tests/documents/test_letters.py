@@ -2602,6 +2602,620 @@ def test_generate_letter_wires_declared_voice_and_cohort_overlap(agency_a, djang
     assert "cohort_overlap" in subcodes
 
 
+def test_disciplinary_exemplars_and_question_focus_plan_route_across_fields():
+    from apps.documents.letter_exemplars import (
+        RhetoricalDiscipline,
+        build_question_focus_plan,
+        resolve_rhetorical_discipline,
+        select_exemplars_for_letter,
+    )
+
+    assert (
+        resolve_rhetorical_discipline(programme_name="MSc Robotics and Control")
+        == RhetoricalDiscipline.STEM_QUANT
+    )
+    assert (
+        resolve_rhetorical_discipline(programme_name="MSc Molecular Oncology and Immunology")
+        == RhetoricalDiscipline.LIFE_BIOMED
+    )
+    assert (
+        resolve_rhetorical_discipline(programme_name="Master of Public Policy and Economics")
+        == RhetoricalDiscipline.SOCIAL_POLICY_ECON
+    )
+    assert (
+        resolve_rhetorical_discipline(programme_name="LLM Comparative Constitutional Law")
+        == RhetoricalDiscipline.HUMANITIES_LAW_ARTS
+    )
+    assert (
+        resolve_rhetorical_discipline(programme_name="Master of Architecture", portfolio_led=True)
+        == RhetoricalDiscipline.PROFESSIONAL_DESIGN
+    )
+    # Multilingual, morphological-compound, and specialized fields via 2-hop ISCED-F graph:
+    assert (
+        resolve_rhetorical_discipline(programme_name="Rechtswissenschaften")
+        == RhetoricalDiscipline.HUMANITIES_LAW_ARTS
+    )
+    assert (
+        resolve_rhetorical_discipline(programme_name="İqtisadiyyat")
+        == RhetoricalDiscipline.SOCIAL_POLICY_ECON
+    )
+    assert (
+        resolve_rhetorical_discipline(programme_name="Sustainable Viticulture and Enology")
+        == RhetoricalDiscipline.LIFE_BIOMED
+    )
+    assert (
+        resolve_rhetorical_discipline(programme_name="计算机科学")
+        == RhetoricalDiscipline.STEM_QUANT
+    )
+
+    econ_exemplars = select_exemplars_for_letter(
+        programme_name="Master of Public Policy and Economics",
+        archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME", "HOME_COUNTRY_CONTRIBUTION"),
+    )
+    assert len(econ_exemplars) == 3
+    assert all(ex.discipline == RhetoricalDiscipline.SOCIAL_POLICY_ECON for ex in econ_exemplars)
+    assert all("<" in ex.positive_pattern and ">" in ex.positive_pattern for ex in econ_exemplars)
+
+    # Cross-disciplinary pivot (BSc Computer Science -> Master of Public Policy):
+    cs_fact = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.EDUCATION,
+        payload={"field_of_study": "Computer Science", "institution": "Baku State University"},
+    )
+    r_input = _research_input(program_id=uuid4())
+    pivot_exemplars = select_exemplars_for_letter(
+        programme_name="Master of Public Policy and Economics",
+        facts={cs_fact.id: cs_fact},
+        inputs={r_input.id: r_input},
+        archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME"),
+    )
+    assert pivot_exemplars[0].discipline == RhetoricalDiscipline.STEM_QUANT
+    assert pivot_exemplars[1].discipline == RhetoricalDiscipline.SOCIAL_POLICY_ECON
+    assert "Cross-Disciplinary Bridge" in pivot_exemplars[1].move_sequence
+
+    # No RESEARCH_FIT input -> WHY_PROGRAMME exemplar omits <SOURCED_ENTITY>:
+    no_rf_exemplars = select_exemplars_for_letter(
+        programme_name="MSc Robotics and Control",
+        facts={cs_fact.id: cs_fact},
+        inputs={},
+        archetypes=("WHY_PROGRAMME",),
+    )
+    assert "<SOURCED_ENTITY>" not in no_rf_exemplars[0].positive_pattern
+
+    f_edu = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.EDUCATION,
+        payload={"field_of_study": "Econometrics", "institution": "Baku State University"},
+    )
+    plans = build_question_focus_plan(
+        archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME"),
+        facts={f_edu.id: f_edu},
+        inputs={r_input.id: r_input},
+        programme_name="MSc Econometrics and Public Policy",
+    )
+    assert len(plans) == 2
+    assert plans[0].archetype == "ACADEMIC_PREPARATION"
+    assert str(f_edu.id) in plans[0].committed_fact_ids
+    assert plans[1].archetype == "WHY_PROGRAMME"
+    assert str(r_input.id) in plans[1].committed_input_ids
+    assert "https://www.tum.de/robotics" in plans[1].committed_source_urls
+
+
+def test_chemoinformatics_and_multi_orientation_subtracks_synchronize_search_and_letter_plans():
+    from apps.documents.letter_exemplars import (
+        RhetoricalDiscipline,
+        build_question_focus_plan,
+        resolve_field_orientation_profile,
+        resolve_rhetorical_discipline,
+        select_exemplars_for_letter,
+    )
+    from apps.documents.research_fit.anchors import student_profile_terms
+
+    # Type 1 Chemoinformatics: AI / Molecular ML / Digital Chemistry
+    ml_chem_fact = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.RESEARCH,
+        payload={
+            "title": "Graph Neural Networks for Molecular Property Prediction",
+            "methods": "machine learning, chemoinformatics, generative drug design",
+        },
+        confirmed_by_id=uuid4(),
+    )
+    ai_profile = resolve_field_orientation_profile(
+        programme_name="MSc Chemoinformatics",
+        facts={ml_chem_fact.id: ml_chem_fact},
+    )
+    assert ai_profile.active_orientation is not None
+    assert ai_profile.active_orientation.slug == "ai_digital_chemistry"
+    assert ai_profile.is_ai_data_orientation is True
+    assert any(
+        o.slug == "computational_quantum_chemistry" for o in ai_profile.contrasted_orientations
+    )
+    assert (
+        resolve_rhetorical_discipline(
+            programme_name="MSc Chemoinformatics",
+            facts={ml_chem_fact.id: ml_chem_fact},
+        )
+        == RhetoricalDiscipline.STEM_QUANT
+    )
+
+    ai_exemplars = select_exemplars_for_letter(
+        programme_name="MSc Chemoinformatics",
+        facts={ml_chem_fact.id: ml_chem_fact},
+        archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME", "RESEARCH_PLAN"),
+    )
+    assert ai_exemplars[0].discipline == RhetoricalDiscipline.STEM_QUANT
+    assert "OOD_SCAFFOLD_OR_SPARSE_LABEL_CONDITION_BROKE" in ai_exemplars[0].positive_pattern
+    assert "computational and theoretical chemistry" in ai_exemplars[0].error_explanation
+
+    ai_terms = student_profile_terms(
+        {ml_chem_fact.id: ml_chem_fact},
+        programme_name="MSc Chemoinformatics",
+    )
+    assert "digital" in ai_terms and "chemoinformatics" in ai_terms
+
+    # Type 2 Chemoinformatics: Traditional Computational & Quantum Chemistry (DFT, MD, ab initio)
+    dft_chem_fact = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.RESEARCH,
+        payload={
+            "title": "Density Functional Theory and Ab Initio Molecular Dynamics of Catalysis",
+            "methods": "quantum chemistry, DFT, molecular dynamics simulation",
+        },
+        confirmed_by_id=uuid4(),
+    )
+    qc_profile = resolve_field_orientation_profile(
+        programme_name="MSc Chemoinformatics",
+        facts={dft_chem_fact.id: dft_chem_fact},
+    )
+    assert qc_profile.active_orientation is not None
+    assert qc_profile.active_orientation.slug == "computational_quantum_chemistry"
+    assert qc_profile.is_theoretical_mechanistic_orientation is True
+    assert any(o.slug == "ai_digital_chemistry" for o in qc_profile.contrasted_orientations)
+    assert (
+        resolve_rhetorical_discipline(
+            programme_name="MSc Chemoinformatics",
+            facts={dft_chem_fact.id: dft_chem_fact},
+        )
+        == RhetoricalDiscipline.LIFE_BIOMED
+    )
+
+    qc_exemplars = select_exemplars_for_letter(
+        programme_name="MSc Chemoinformatics",
+        facts={dft_chem_fact.id: dft_chem_fact},
+        archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME", "RESEARCH_PLAN"),
+    )
+    assert qc_exemplars[0].discipline == RhetoricalDiscipline.LIFE_BIOMED
+    assert "FREE_ENERGY_OR_ELECTRONIC_MECHANISM" in qc_exemplars[0].positive_pattern
+    assert "AI, machine learning and digital chemistry" in qc_exemplars[0].error_explanation
+
+    qc_terms = student_profile_terms(
+        {dft_chem_fact.id: dft_chem_fact},
+        programme_name="MSc Chemoinformatics",
+    )
+    assert "quantum" in qc_terms and "theoretical" in qc_terms
+
+    # Intra-family sub-track shift (student did DFT -> applying to AI/Digital Chemistry track):
+    bridge_plans = build_question_focus_plan(
+        archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME"),
+        facts={dft_chem_fact.id: dft_chem_fact},
+        inputs={},
+        programme_name="MSc Digital Chemistry and Machine Learning",
+    )
+    foci_str = " ".join(bridge_plans[1].attentional_foci)
+    assert (
+        "intra_family_orientation_bridge:computational_quantum_chemistry->ai_digital_chemistry"
+        in foci_str
+    )
+    assert "contrasted_subtrack_not_to_conflate:" in foci_str
+
+    # Niche non-STEAM subfields across Humanities, Law, Social Sciences, Policy & Design:
+    for prog_name, expected_disc, expected_orient in (
+        (
+            "MA Papyrology and Epigraphy",
+            RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+            "archival_textual_philological",
+        ),
+        (
+            "MA Sinology and Tang Dynasty Historiography",
+            RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+            "archival_textual_philological",
+        ),
+        (
+            "MA Bioethics and Medical Jurisprudence",
+            RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+            "theoretical_critical_hermeneutic",
+        ),
+        (
+            "LL.M. Maritime and Admiralty Dispute Resolution",
+            RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+            "commercial_regulatory_arbitration_law",
+        ),
+        (
+            "LL.M. International Human Rights and Constitutional Law",
+            RhetoricalDiscipline.HUMANITIES_LAW_ARTS,
+            "doctrinal_public_comparative_law",
+        ),
+        (
+            "MA Peacebuilding and Conflict Transformation",
+            RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+            "applied_policy_governance_diplomacy",
+        ),
+        (
+            "MA Forced Migration and Refugee Ethnography",
+            RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+            "qualitative_ethnographic_institutional",
+        ),
+        (
+            "MSc Psychometrics and Item Response Theory",
+            RhetoricalDiscipline.SOCIAL_POLICY_ECON,
+            "computational_modeling_psychology",
+        ),
+        (
+            "MA Curatorial Practice and Contemporary Art",
+            RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+            "studio_curatorial_spatial_practice",
+        ),
+        (
+            "Master in Humanitarian Logistics and Supply Chain",
+            RhetoricalDiscipline.PROFESSIONAL_DESIGN,
+            "analytical_operations_strategic_management",
+        ),
+    ):
+        assert resolve_rhetorical_discipline(programme_name=prog_name) == expected_disc, prog_name
+        prof = resolve_field_orientation_profile(programme_name=prog_name)
+        assert prof.active_orientation is not None, prog_name
+        assert prof.active_orientation.slug == expected_orient, (
+            prog_name,
+            prof.active_orientation.slug,
+        )
+        exs = select_exemplars_for_letter(
+            programme_name=prog_name,
+            archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME"),
+        )
+        assert exs[0].discipline == expected_disc
+        assert prof.active_orientation.label in exs[0].move_sequence
+
+
+def test_compile_attributed_letter_content_builds_exact_sentence_spans():
+    from apps.documents.letter_schemas import (
+        AttributedSentence,
+        SentenceAttributedLetterContent,
+        SentenceAttributedUnit,
+        SentenceClaimBinding,
+        compile_attributed_letter_content,
+    )
+
+    fid = uuid4()
+    s0 = "I completed my BSc in Robotics at Baku State University in 2024."
+    s1 = "That project exposed where linear controllers fail under packet loss."
+    attributed = SentenceAttributedLetterContent(
+        language="en",
+        units=(
+            SentenceAttributedUnit(
+                archetype="ACADEMIC_PREPARATION",
+                sentences=(
+                    AttributedSentence(
+                        text=s0,
+                        claims=(SentenceClaimBinding(kind=ClaimKind.FACTUAL, fact_id=fid),),
+                    ),
+                    AttributedSentence(
+                        text=s1,
+                        claims=(SentenceClaimBinding(kind=ClaimKind.INTERPRETIVE),),
+                    ),
+                ),
+            ),
+        ),
+    )
+    compiled = compile_attributed_letter_content(attributed)
+    unit = compiled.units[0]
+    assert unit.text == f"{s0} {s1}"
+    assert len(unit.claims) == 2
+    assert unit.text[unit.claims[0].span_start : unit.claims[0].span_end] == s0
+    assert unit.text[unit.claims[1].span_start : unit.claims[1].span_end] == s1
+
+
+def test_pass2_ground_and_align_rescues_misaligned_spans_and_multi_sentence_fact_elaboration(
+    agency_a, django_user_model
+):
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "pass2-ground")
+        prompt = _prompt_stub(
+            ApplicationPrompt.Structure.CONTINUOUS_LETTER,
+            archetypes=["ACADEMIC_PREPARATION", "WHY_PROGRAMME"],
+        )
+        edu_fact = VerifiedFact.objects.create(
+            student=student,
+            category=VerifiedFact.Category.EDUCATION,
+            payload={
+                "institution": "Baku State University",
+                "degree_english": "BSc Computer Science",
+                "credits_ects": "240",
+                "gpa": "3.9",
+            },
+            source_tier=VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT,
+            source_ref="edu-1",
+            created_by=student,
+            confirmed_by=student,
+            confirmed_at=timezone.now(),
+        )
+        rf_input = NarrativeInput.objects.create(
+            student=student,
+            kind=NarrativeInput.Kind.RESEARCH_FIT,
+            text="Prof. Dr. Mehmet Kaya leads the Chair of Robotics.",
+            proposed_by=NarrativeInput.ProposedBy.ENGINE,
+            confirmed_at=timezone.now(),
+            provenance={
+                "program_id": str(prompt.programme_id),
+                "entity": "Prof. Dr. Mehmet Kaya",
+                "sentence": "Prof. Dr. Mehmet Kaya leads the Chair of Robotics.",
+                "source_url": "https://www.tum.de/robotics",
+                "kind": "named_person",
+                "anchor_fact_id": str(edu_fact.id),
+                "paper_title": "Robust MPC under Actuator Saturation",
+                "paper_year": 2025,
+                "paper_url": "https://doi.org/10.1000/mpc.2025",
+                "paper_finding": "We prove closed-loop stability bounds under packet loss.",
+                "paper_method_or_question": (
+                    "However, Lyapunov Synthesis remains challenging under 50 ms delay."
+                ),
+                "paper_active_topic": "Nonlinear Control Theory",
+            },
+        )
+        # Unit 1: Two factual sentences about edu_fact, where the model only attached a
+        # claim span to Sentence 0; Sentence 1 cites "Baku State University" and "240"
+        # from the same edu_fact payload.
+        u1_s0 = "I completed my BSc Computer Science at Baku State University with a 3.9 GPA."
+        u1_s1 = "My coursework at Baku State University covered 240 credits in control."
+        u1_text = f"{u1_s0} {u1_s1}"
+        u1_claim = LetterClaim(
+            text=u1_s0,
+            span_start=0,
+            span_end=len(u1_s0),
+            kind=ClaimKind.FACTUAL,
+            fact_id=edu_fact.id,
+        )
+        # Unit 2: Sentence 0 has no trigger; Sentence 1 cites Prof. Dr. Mehmet Kaya and
+        # "Lyapunov Synthesis" + "50" from paper_method_or_question, but the model
+        # mis-indexed span_start=0, span_end=20 (pointing at Sentence 0!).
+        u2_s0 = "Closing this gap requires formal verification tools."
+        u2_s1 = (
+            "In this programme, Prof. Dr. Mehmet Kaya examines how Lyapunov Synthesis "
+            "behaves under 50 ms delay."
+        )
+        u2_text = f"{u2_s0} {u2_s1}"
+        u2_claim = LetterClaim(
+            text=u2_s1,
+            span_start=0,
+            span_end=20,
+            kind=ClaimKind.SOURCED,
+            input_id=rf_input.id,
+            source_url="https://doi.org/10.1000/mpc.2025",
+        )
+        draft_content = LetterContent(
+            language="en",
+            units=(
+                LetterUnit(archetype="ACADEMIC_PREPARATION", text=u1_text, claims=(u1_claim,)),
+                LetterUnit(archetype="WHY_PROGRAMME", text=u2_text, claims=(u2_claim,)),
+            ),
+        )
+        client = _mock_client(draft_content)
+        result = generate_letter(
+            student=student,
+            prompt=prompt,
+            facts={edu_fact.id: edu_fact},
+            inputs={rf_input.id: rf_input},
+            forbidden_institution_names=frozenset(),
+            client=client,
+        )
+    assert result.retried is False
+    assert GateCode.UNDECLARED_ASSERTION not in {v.code for v in result.gate_violations}
+    assert all(v.verdict == Verdict.SUPPORTED for v in result.claim_verdicts)
+    prompt_body = _prompt_text(client)
+    assert "Unit discourse plans (data only):" in prompt_body
+    assert "Disciplinary move & cadence exemplars" in prompt_body
+    assert "paper_method_or_question" in prompt_body
+    assert "paper_active_topic" in prompt_body
+
+
+def test_cross_subtrack_orientation_pivot_routes_preparation_and_why_programme_distinctly():
+    from apps.documents.letter_exemplars import (
+        build_question_focus_plan,
+        select_exemplars_for_letter,
+    )
+
+    dft_fact = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.RESEARCH,
+        payload={
+            "thesis_title": "CCSD(T) and DFT transition-state barriers in palladium catalysis",
+            "methods": ["DFT", "ab initio molecular dynamics", "free energy perturbation"],
+        },
+    )
+    ai_rf_input = NarrativeInput(
+        id=uuid4(),
+        kind=NarrativeInput.Kind.RESEARCH_FIT,
+        text=(
+            "Prof. Chen develops graph neural networks and SMILES transformers "
+            "for retrosynthesis."
+        ),
+        provenance={
+            "entity": "Prof. Chen",
+            "sentence": (
+                "Prof. Chen develops graph neural networks and SMILES transformers "
+                "for retrosynthesis."
+            ),
+            "source_url": "https://chem.example.edu/chen",
+            "kind": "named_person",
+            "fit_mode": "method_transfer",
+            "paper_title": "Equivariant Graph Neural Networks for Retrosynthesis",
+            "paper_finding": "Learns reaction-center message passing on USPTO-50k.",
+        },
+    )
+    exemplars = select_exemplars_for_letter(
+        programme_name="MSc in Chemoinformatics and Data Science",
+        facts={dft_fact.id: dft_fact},
+        inputs={ai_rf_input.id: ai_rf_input},
+        archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME"),
+    )
+    by_arch = {ex.archetype: ex for ex in exemplars}
+    # ACADEMIC_PREPARATION anchors in the student's quantum/DFT sub-track
+    assert (
+        "traditional computational and theoretical chemistry (quantum chemistry"
+        in by_arch["ACADEMIC_PREPARATION"].move_sequence
+    )
+    assert "ai_digital_chemistry" not in by_arch["ACADEMIC_PREPARATION"].move_sequence
+    assert (
+        "AI, machine learning and digital chemistry"
+        in by_arch["WHY_PROGRAMME"].move_sequence
+    )
+    plans = build_question_focus_plan(
+        archetypes=("ACADEMIC_PREPARATION", "WHY_PROGRAMME"),
+        facts={dft_fact.id: dft_fact},
+        inputs={ai_rf_input.id: ai_rf_input},
+        programme_name="MSc in Chemoinformatics and Data Science",
+    )
+    plan_by_arch = {p.archetype: p for p in plans}
+    assert (
+        "anchor_prior_work_in_student_subtrack:computational_quantum_chemistry"
+        in plan_by_arch["ACADEMIC_PREPARATION"].attentional_foci
+    )
+    assert (
+        "expose_limit_motivating_bridge_to:ai_digital_chemistry"
+        in plan_by_arch["ACADEMIC_PREPARATION"].attentional_foci
+    )
+    assert (
+        "bridge_from_student_subtrack:computational_quantum_chemistry_"
+        "to_programme_subtrack:ai_digital_chemistry"
+        in plan_by_arch["WHY_PROGRAMME"].attentional_foci
+    )
+
+
+def test_discipline_routing_undergrad_credentials_and_core_narrative_language_and_retry(
+    agency_a, django_user_model
+):
+    from apps.documents.letter_exemplars import (
+        RhetoricalDiscipline,
+        resolve_rhetorical_discipline,
+    )
+    from apps.documents.letter_shape import LetterShape, validate_shape_bounds
+
+    # 1. Undergraduate credentials and ledger payload keys route accurately
+    llb_fact = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.EDUCATION,
+        payload={"degree_as_awarded": "LL.B.", "relevant_coursework": "Constitutional Law"},
+    )
+    assert (
+        resolve_rhetorical_discipline(facts={llb_fact.id: llb_fact})
+        == RhetoricalDiscipline.HUMANITIES_LAW_ARTS
+    )
+    bfa_fact = VerifiedFact(
+        id=uuid4(),
+        category=VerifiedFact.Category.EDUCATION,
+        payload={"degree_as_awarded": "B.F.A."},
+    )
+    assert (
+        resolve_rhetorical_discipline(facts={bfa_fact.id: bfa_fact})
+        == RhetoricalDiscipline.PROFESSIONAL_DESIGN
+    )
+    assert (
+        resolve_rhetorical_discipline(research_interests=("econometric causal inference",))
+        == RhetoricalDiscipline.SOCIAL_POLICY_ECON
+    )
+
+    # 2. CJK character bounds (min_chars=900, max_chars=1000) are not rejected by space ratio
+    validate_shape_bounds(LetterShape(min_chars=900, max_chars=1000), "ja")
+
+    # 3. Core narrative in a different language is not reused, and failed reused units
+    # are regenerated on Pass 2
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "g-core-lang")
+        prompt_de = _prompt_stub(
+            ApplicationPrompt.Structure.CONTINUOUS_LETTER,
+            archetypes=["OPENING", "PERSONAL_BACKGROUND"],
+        )
+        prompt_de.document_language = "de"
+        en_core = LetterContent(
+            language="en",
+            units=(_unit("PERSONAL_BACKGROUND", "English paragraph."),),
+        )
+        de_fresh = LetterContent(
+            language="de",
+            units=(
+                _unit("OPENING", "Ich bewerbe mich für dieses Programm."),
+                _unit("PERSONAL_BACKGROUND", "Mein Hintergrund liegt in der Informatik."),
+            ),
+        )
+        client_de = _mock_client(de_fresh)
+        res_de = generate_letter(
+            student=student,
+            prompt=prompt_de,
+            facts={},
+            inputs={},
+            forbidden_institution_names=frozenset(),
+            core_narrative=en_core,
+            client=client_de,
+        )
+        assert res_de.content.units[1].text == "Mein Hintergrund liegt in der Informatik."
+
+        # Partial reuse where the reused unit fails on Pass 1 -> Pass 2 regenerates it
+        prompt_en = _prompt_stub(
+            ApplicationPrompt.Structure.CONTINUOUS_LETTER,
+            archetypes=["OPENING", "PERSONAL_BACKGROUND"],
+        )
+        bad_claim = LetterClaim(
+            text="a scholarship worth 10000 EUR",
+            span_start=0,
+            span_end=len("a scholarship worth 10000 EUR"),
+            kind=ClaimKind.FACTUAL,
+            fact_id=uuid4(),
+        )
+        bad_core = LetterContent(
+            language="en",
+            units=(
+                _unit(
+                    "PERSONAL_BACKGROUND",
+                    "a scholarship worth 10000 EUR",
+                    claims=(bad_claim,),
+                ),
+            ),
+        )
+        pass1_reply = LetterContent(
+            language="en",
+            units=(_unit("OPENING", "This programme fits my goal."),),
+        )
+        pass2_reply = LetterContent(
+            language="en",
+            units=(
+                _unit("OPENING", "This programme fits my goal."),
+                _unit("PERSONAL_BACKGROUND", "My preparation built a clear foundation."),
+            ),
+        )
+        client_retry = MagicMock()
+        client_retry.responses.parse.side_effect = [
+            MagicMock(output_parsed=pass1_reply, output=[], usage=None, id="p1"),
+            MagicMock(output_parsed=pass2_reply, output=[], usage=None, id="p2"),
+        ]
+        res_retry = generate_letter(
+            student=student,
+            prompt=prompt_en,
+            facts={},
+            inputs={},
+            forbidden_institution_names=frozenset(),
+            core_narrative=bad_core,
+            client=client_retry,
+        )
+        assert res_retry.retried is True
+        assert [u.text for u in res_retry.content.units] == [
+            "This programme fits my goal.",
+            "My preparation built a clear foundation.",
+        ]
+
+
+
+
+
 
 
 

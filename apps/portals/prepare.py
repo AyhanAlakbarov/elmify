@@ -24,6 +24,7 @@ from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
+from anyascii import anyascii
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -81,6 +82,8 @@ _FOLD = str.maketrans(
         "Æ": "AE",
         "œ": "oe",
         "Œ": "OE",
+        "й": "i",
+        "Й": "I",
     }
 )
 #: The bundle's order: R-008's own (CV, academic documents, language, references,
@@ -108,14 +111,14 @@ class Job:
 
 
 def _ascii(text: str) -> str:
-    folded = unicodedata.normalize("NFKD", text.translate(_FOLD))
+    folded = anyascii(unicodedata.normalize("NFKD", text.translate(_FOLD)))
     return "".join(c for c in folded if c.isascii() and (c.isalnum() or c in "._-") or c == " ")
 
 
 def _folds(value: str) -> bool:
-    """Every letter survives the ASCII fold: "Məmmədova" and "Weiß" do, "Айсель" does not."""
-    alpha = [c for c in value if c.isalpha()]
-    return bool(alpha) and all(any(ch.isalpha() for ch in _ascii(c)) for c in alpha)
+    """Every word with letters survives the ASCII fold."""
+    words = [w for w in value.split() if any(c.isalpha() for c in w)]
+    return bool(words) and all(any(ch.isalpha() for ch in _ascii(w)) for w in words)
 
 
 def file_name(pattern: str | None, *, full_name: str, fallback: str,

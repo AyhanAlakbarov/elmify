@@ -488,3 +488,124 @@ def test_an_authenticated_tagged_mail_from_another_application_s_domain_is_not_a
     assert signal.trusted is True
     assert signal.sender_authenticated is False
     assert bonn.outcome == ""
+
+
+def test_two_tenants_confirming_a_learned_sender_promotes_it_to_portal_form(
+    student_client, agency_a, membership_a, agency_b, membership_b
+):
+    from apps.portals.models import PortalForm
+    from apps.portals.tags import promote_sender_domain_consensus
+
+    host = "apply.consensus-portal.edu"
+    form = PortalForm.objects.create(portal_host=host, form_key="grad-2027")
+    client_a, _ = student_client
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        learned_a = LearnedSender.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            domain="portalvendor.com",
+            portal_host=host,
+        )
+
+    resp_a = client_a.post(f"/mailbox/senders/{learned_a.id}/confirm/")
+    assert resp_a.status_code == 200
+    form.refresh_from_db()
+    assert form.sender_domains == []
+
+    with tenant_scope(agency_b.id), tenant_transaction(agency_b.id):
+        LearnedSender.objects.create(
+            tenant=agency_b,
+            student=membership_b,
+            domain="portalvendor.com",
+            portal_host=host,
+            confirmed_at=datetime(2026, 9, 20, tzinfo=UTC),
+        )
+        promoted = promote_sender_domain_consensus(
+            host, "portalvendor.com", tenant_id=agency_b.id
+        )
+
+    assert promoted is True
+    form.refresh_from_db()
+    assert form.sender_domains == ["portalvendor.com"]
+
+
+def test_two_tenants_receiving_authenticated_tagged_mail_promotes_sender_domain(
+    agency_a, membership_a, agency_b, membership_b, monkeypatch
+):
+    from uuid import uuid4
+
+    from apps.mailbox import sync as sync_module
+    from apps.mailbox.models import MailboxConnection
+    from apps.portals.models import Application, PortalForm
+    from tests.funding.conftest import make_published_pack, make_run
+
+    monkeypatch.setattr(sync_module, "classify_message", lambda **_: MailVerdict(label="OTHER"))
+    host = "portal.uni-bonn.de"
+    form = PortalForm.objects.create(portal_host=host, form_key="application")
+
+    run_a = make_run(agency_a, membership_a)
+    make_published_pack(agency_a, run_a, ())
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        Application.objects.create(
+            tenant=agency_a, student=membership_a, program_id=uuid4(), portal_form=form
+        )
+        connection_a = MailboxConnection.objects.create(
+            tenant=agency_a,
+            membership=membership_a,
+            provider=MailboxConnection.Provider.GOOGLE,
+            address="student@gmail.test",
+        )
+        PortalAccount.objects.create(
+            tenant=agency_a,
+            student=membership_a,
+            portal_host=host,
+            tag="ab12cd",
+            address=TAGGED,
+        )
+
+    header_a = _header("m-auth-a", "no-reply@mail-eu.portalvendor.com").model_copy(
+        update={"authenticated": True}
+    )
+    with tenant_scope(agency_a.id):
+        [signal_a] = sync_connection(
+            connection_a, provider=FakeProvider((header_a,)), secrets_client=_grant()
+        )
+
+    assert signal_a.sender_authenticated is False
+    form.refresh_from_db()
+    assert form.sender_domains == []
+
+    # Second tenant receives authenticated mail on their +tag for the same portal host
+    run_b = make_run(agency_b, membership_b)
+    make_published_pack(agency_b, run_b, ())
+    tagged_b = "hasan+zz99yy@gmail.test"
+    with tenant_scope(agency_b.id), tenant_transaction(agency_b.id):
+        Application.objects.create(
+            tenant=agency_b, student=membership_b, program_id=uuid4(), portal_form=form
+        )
+        connection_b = MailboxConnection.objects.create(
+            tenant=agency_b,
+            membership=membership_b,
+            provider=MailboxConnection.Provider.GOOGLE,
+            address="hasan@gmail.test",
+        )
+        PortalAccount.objects.create(
+            tenant=agency_b,
+            student=membership_b,
+            portal_host=host,
+            tag="zz99yy",
+            address=tagged_b,
+        )
+
+    header_b = _header(
+        "m-auth-b", "no-reply@mail-eu.portalvendor.com", to=tagged_b
+    ).model_copy(update={"authenticated": True})
+    with tenant_scope(agency_b.id):
+        [signal_b] = sync_connection(
+            connection_b, provider=FakeProvider((header_b,)), secrets_client=_grant()
+        )
+
+    form.refresh_from_db()
+    assert form.sender_domains == ["portalvendor.com"]
+    assert signal_b.sender_authenticated is True
+

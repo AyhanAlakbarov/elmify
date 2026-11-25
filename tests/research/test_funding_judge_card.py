@@ -180,6 +180,28 @@ def test_a_per_semester_figure_keeps_its_text_and_no_number():
     assert (amount.amount, amount.currency, amount.period) == (None, None, "OTHER")
 
 
+def test_a_semester_or_term_period_converts_to_annual_while_keeping_verbatim_text():
+    line = "ESOP scholars receive CHF 4,000 pro Semester."
+    stated = AmountStated(covers="LIVING", amount="CHF 4,000", currency="CHF", period="SEMESTER")
+    reading = _r(verdict(0, amounts=(stated,)))
+    (amount,) = _decide(reading, reading, reading, chunk=(Line(line, "Scholarships"),)).amounts
+    assert (amount.amount, amount.currency, amount.period) == (Decimal("8000"), "CHF", "ANNUAL")
+    assert amount.amount_text == "CHF 4,000"
+
+    term_line = "Bursary of £3,000 per term."
+    term_stated = AmountStated(covers="LIVING", amount="£3,000", currency="GBP", period="TERM")
+    term_reading = _r(verdict(0, amounts=(term_stated,)))
+    (term_amount,) = _decide(
+        term_reading, term_reading, term_reading, chunk=(Line(term_line, "Bursaries"),)
+    ).amounts
+    assert (term_amount.amount, term_amount.currency, term_amount.period) == (
+        Decimal("9000"),
+        "GBP",
+        "ANNUAL",
+    )
+    assert term_amount.amount_text == "£3,000"
+
+
 def test_a_split_on_timing_blanks_timing_and_keeps_the_award_shown():
     a = _r(verdict(1, **CARD))
     b = _r(verdict(1, **{**CARD, "timing": "UNSTATED"}))

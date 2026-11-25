@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from apps.documents.gaps.models import GapNote, _current, _cv_on_file
+from apps.documents.gaps.models import GapNote, _current, _cv_on_file, preload_gap_facts
 from apps.documents.models import VerifiedFact
 from apps.tenancy.models import Membership
 
@@ -36,6 +36,7 @@ def gap_notes(student: Membership) -> tuple[GapNote, ...]:
     One detector left. Timeline gaps were the other, until the TIMELINE
     category gave their answer somewhere to live.
     """
-    if _cv_on_file(student) and not _current(student, VerifiedFact.Category.CERTIFICATION):
-        return (_CERTIFICATES_NOTE,)
-    return ()
+    with preload_gap_facts(student):
+        if _cv_on_file(student) and not _current(student, VerifiedFact.Category.CERTIFICATION):
+            return (_CERTIFICATES_NOTE,)
+        return ()

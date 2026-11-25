@@ -93,23 +93,46 @@ _FREE_MAIL_DOMAINS = frozenset(
         "gmail.com",
         "googlemail.com",
         "outlook.com",
+        "outlook.de",
         "hotmail.com",
+        "hotmail.co.uk",
         "live.com",
         "msn.com",
         "yahoo.com",
+        "yahoo.co.uk",
+        "yahoo.de",
+        "yahoo.fr",
         "icloud.com",
         "me.com",
         "aol.com",
         "proton.me",
         "protonmail.com",
+        "tuta.com",
+        "fastmail.com",
         "gmx.de",
         "gmx.net",
         "web.de",
+        "t-online.de",
         "mail.ru",
+        "bk.ru",
+        "inbox.ru",
+        "list.ru",
+        "rambler.ru",
         "yandex.ru",
         "yandex.com",
+        "ukr.net",
+        "box.az",
+        "mail.az",
+        "wp.pl",
+        "onet.pl",
+        "seznam.cz",
+        "libero.it",
+        "orange.fr",
+        "free.fr",
+        "naver.com",
         "qq.com",
         "163.com",
+        "126.com",
     }
 )
 
@@ -129,7 +152,18 @@ _FREE_MAIL_DOMAINS = frozenset(
 _SHARED_PLATFORMS = (
     frozenset(
         {
+            "uni-assist.de",
             "dreamapply.com",
+            "mobility-online.com",
+            "fullfabric.com",
+            "embark.com",
+            "technolutions.net",
+            "applyweb.com",
+            "studielink.nl",
+            "osiris-student.nl",
+            "parcoursup.fr",
+            "ucas.com",
+            "commonapp.org",
             "google.com",
             "googleusercontent.com",
             "office.com",
@@ -182,6 +216,25 @@ _PATH_TENANTED_HOSTS = frozenset(
 )
 
 
+def shared_platforms() -> frozenset[str]:
+    """Union of baseline `_SHARED_PLATFORMS` and catalogue-discovered multi-tenant portal hosts."""
+    from apps.portals.applications import catalogue_shared_portal_hosts
+
+    return _SHARED_PLATFORMS | catalogue_shared_portal_hosts()
+
+
+def is_shared_platform(host: str) -> bool:
+    """Whether ``host`` or its registrable domain is in `shared_platforms()`."""
+    cleaned = ascii_host((host or "").strip().casefold().rstrip("."))
+    if not cleaned:
+        return False
+    platforms = shared_platforms()
+    if cleaned in platforms:
+        return True
+    domain = registrable_domain(cleaned)
+    return bool(domain and domain in platforms)
+
+
 def _is_platform_host(host: str) -> bool:
     """Whether ``host`` is a shared platform's own name, never one customer's
     corner of it: a bare `_SHARED_PLATFORMS` apex, a bare PSL private suffix
@@ -199,7 +252,7 @@ def _is_platform_host(host: str) -> bool:
     callers already do).
     """
     return (
-        host in _SHARED_PLATFORMS
+        host in shared_platforms()
         or registrable_domain(host) == ""
         or host_in(host, _PATH_TENANTED_HOSTS) != ""
     )
@@ -226,7 +279,7 @@ def _key(host: str) -> str:
         # sites.google.com) as "" -- it names the landlord, not a publisher.
         # Reading still keys it on the full host, as for _SHARED_PLATFORMS.
         return host if is_hosting_platform(host) else ""
-    return host if domain in _SHARED_PLATFORMS else domain
+    return host if domain in shared_platforms() else domain
 
 
 def sender_key(sender: str) -> str:
@@ -273,7 +326,7 @@ def learnable_domain(domain: str, *, own_domains: Iterable[str]) -> bool:
     return (
         domain not in own_domains
         and not _is_platform_host(domain)
-        and registrable_domain(domain) not in _SHARED_PLATFORMS
+        and registrable_domain(domain) not in shared_platforms()
     )
 
 

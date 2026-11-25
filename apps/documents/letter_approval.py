@@ -34,11 +34,16 @@ from .letter_gates import (
     LetterGateViolation,
     check_ai_style,
     check_first_person_plural,
+    check_header_block_missing,
     check_language_mismatch,
+    check_naming_forbidden,
+    check_prompt_requirement_unmet,
+    check_wrong_institution,
 )
 from .letter_schemas import ClaimKind, LetterContent
+from .letter_shape import shape_from_prompt
 from .letter_verification import LetterClaimVerdict, verify_letter_claims
-from .letters import inputs_for_programme, is_letter_blocked
+from .letters import _bounded_questions, _target_names, inputs_for_programme, is_letter_blocked
 from .models import DocumentDraft, NarrativeInput, VerifiedFact
 from .research_fit.service import recheck_research_fit
 from .verification import _SPEC_BY_CATEGORY, Verdict, _details_conflict, _fact_payload, _identity
@@ -210,6 +215,7 @@ def mark_letter_ready(
     inputs: dict[UUID, NarrativeInput],
     binding_violation_after_retry: bool,
     accepted_by: Membership,
+    forbidden_institution_names: frozenset[str] = frozenset(),
     recheck: Callable[[dict[UUID, NarrativeInput]], tuple[UUID, ...]] = recheck_research_fit,
 ) -> DocumentDraft:
     """Three-way outcome for a finished letter draft.
@@ -249,7 +255,26 @@ def mark_letter_ready(
     # exercises. Real ApplicationPrompt rows always carry immigration.
     immigration = getattr(prompt, "immigration", False)
     doc_language = getattr(prompt, "document_language", content.language) or content.language
+    raw_questions = getattr(prompt, "questions", None)
+    bounded_qs = (
+        list(_bounded_questions(raw_questions))
+        if isinstance(raw_questions, list)
+        else []
+    )
+    header_block_required = bool(getattr(prompt, "header_block_required", False))
+    naming_mode = str(getattr(prompt, "naming", "") or "")
+    if not naming_mode and hasattr(prompt, "structure"):
+        try:
+            naming_mode = shape_from_prompt(prompt).naming
+        except Exception:  # noqa: BLE001
+            naming_mode = "ANY"
+    naming_mode = naming_mode or "ANY"
     inputs = inputs_for_programme(inputs, prompt.programme_id)
+    inst_names, res_names = (
+        _target_names(prompt)
+        if naming_mode == "FORBIDDEN" and hasattr(prompt, "programme")
+        else (frozenset(), frozenset())
+    )
     claim_verdicts = verify_letter_claims(
         content, facts=facts, inputs=inputs, immigration=immigration
     )
@@ -258,6 +283,15 @@ def mark_letter_ready(
         *check_language_mismatch(content, document_language=doc_language),
         *check_first_person_plural(content),
         *check_ai_style(content),
+        *check_wrong_institution(content, forbidden_names=forbidden_institution_names),
+        *check_header_block_missing(content, required=header_block_required),
+        *check_prompt_requirement_unmet(content, questions=bounded_qs),
+        *check_naming_forbidden(
+            content,
+            naming=naming_mode,
+            institution_names=inst_names,
+            research_names=res_names,
+        ),
     )
     if is_letter_blocked(claim_verdicts, effective_gate_violations, immigration=immigration):
         raise ApprovalBlocked("letter carries a blocking claim verdict or gate violation")

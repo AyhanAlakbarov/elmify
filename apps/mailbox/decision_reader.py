@@ -40,7 +40,37 @@ READ_LIMIT = 40
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
 #: "/" is a separator too: 0176/12345678 is how a German number is written.
 _PHONE_RE = re.compile(r"(?<![\w-])\+?\d[\d\s()./-]{6,}\d(?![\w-])")
+_ISO_OR_YEAR_RANGE_RE = re.compile(r"\b(?:19|20)\d{2}(?:-\d{2}-\d{2}|/(?:19|20)\d{2})\b")
+_ID_LABEL_PREFIX_RE = re.compile(
+    r"(?:application|reference|ref|id|no\.|number|nummer|dossier|bewerbungsnummer|antragsnummer)"
+    r"(?:\s+(?:no\.?|number|id|nr\.?))?[\s:#-]*$",
+    re.IGNORECASE,
+)
+_COMMON_PROSE_WORDS = frozenset(
+    {
+        "can",
+        "may",
+        "will",
+        "grant",
+        "mark",
+        "dean",
+        "art",
+        "said",
+        "march",
+        "april",
+        "june",
+        "august",
+    }
+)
+_MONTH_NAMES = frozenset({"march", "april", "may", "june", "august"})
+_MONTH_PREPOSITION_RE = re.compile(
+    r"\b(?:in|on|by|of|from|until|before|after|early|mid|late|\d{1,2})\s+$",
+    re.IGNORECASE,
+)
+_MONTH_SUFFIX_RE = re.compile(r"^\s+\d{1,4}\b")
 _QUOTES = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
+_INVISIBLE_CHARS = str.maketrans("", "", "\u00ad\u200b\u200c\ufeff")
+_LINE_WRAP_HYPHEN_RE = re.compile(r"-\r?\n\s*")
 
 
 @dataclass(frozen=True)
@@ -61,7 +91,62 @@ class DecisionReading:
 UNAVAILABLE = DecisionReading(None, "", "", None, unavailable=True)
 
 
-def strip_identifiers(text: str, *, names: frozenset[str], addresses: Iterable[str] = ()) -> str:
+def _application_tokens(application: Any) -> frozenset[str]:
+    if application is None:
+        return frozenset()
+    parts: list[str] = []
+    if isinstance(application, Mapping):
+        for key in ("title", "programme", "university", "university_name"):
+            val = application.get(key)
+            if val:
+                parts.append(str(val))
+    else:
+        for attr in ("title", "university_name"):
+            val = getattr(application, attr, "")
+            if val:
+                parts.append(str(val))
+        candidate = getattr(application, "candidate", None)
+        if candidate is not None:
+            inst = getattr(candidate, "institution_name", "")
+            if inst:
+                parts.append(str(inst))
+    return frozenset(
+        _fold(_nfc(w)) for w in re.findall(r"\w+", " ".join(parts)) if len(w) >= 2
+    )
+
+
+def _should_replace_phone(match: re.Match[str], text: str) -> bool:
+    raw = match.group()
+    if sum(c.isdigit() for c in raw) < 9:
+        return False
+    if _ISO_OR_YEAR_RANGE_RE.search(raw):
+        return False
+    prefix = text[max(0, match.start() - 40) : match.start()]
+    return not _ID_LABEL_PREFIX_RE.search(prefix)
+
+
+def _should_replace_name(match: re.Match[str], text: str, active_names: frozenset[str]) -> bool:
+    word = match.group()
+    folded = _fold(word)
+    if folded not in active_names:
+        return False
+    if folded in _COMMON_PROSE_WORDS and not word[0].isupper():
+        return False
+    if folded in _MONTH_NAMES:
+        before = text[max(0, match.start() - 16) : match.start()]
+        after = text[match.end() : match.end() + 8]
+        if _MONTH_PREPOSITION_RE.search(before) or _MONTH_SUFFIX_RE.search(after):
+            return False
+    return True
+
+
+def strip_identifiers(
+    text: str,
+    *,
+    names: frozenset[str],
+    addresses: Iterable[str] = (),
+    application: Any = None,
+) -> str:
     """The student's name words, every email address and every phone number, replaced.
 
     A run of nine or more digits is a phone number; an ISO date (eight digits) is not.
@@ -69,18 +154,24 @@ def strip_identifiers(text: str, *, names: frozenset[str], addresses: Iterable[s
     would otherwise split a name word in two before it is folded.
     """
     text = _nfc(text)
+    active_names = names - _application_tokens(application)
     for address in addresses:
         if address:
             text = re.sub(re.escape(address), "[email]", text, flags=re.IGNORECASE)
     text = _EMAIL_RE.sub("[email]", text)
     text = _PHONE_RE.sub(
-        lambda m: "[phone]" if sum(c.isdigit() for c in m.group()) >= 9 else m.group(), text
+        lambda m: "[phone]" if _should_replace_phone(m, text) else m.group(), text
     )
-    return re.sub(r"\w+", lambda m: "[name]" if _fold(m.group()) in names else m.group(), text)
+    return re.sub(
+        r"\w+",
+        lambda m: "[name]" if _should_replace_name(m, text, active_names) else m.group(),
+        text,
+    )
 
 
 def _norm(text: str) -> str:
-    return " ".join(text.translate(_QUOTES).split()).casefold()
+    cleaned = _LINE_WRAP_HYPHEN_RE.sub("", text.translate(_INVISIBLE_CHARS).translate(_QUOTES))
+    return " ".join(cleaned.split()).casefold()
 
 
 def verified(phrase: str, body: str) -> bool:
@@ -105,10 +196,10 @@ def _p_yes(answer: Answer) -> float:
 def _decide(answers: Mapping[str, Answer], qid: str) -> bool | None:
     if qid not in answers:
         return None
-    p, cut = _p_yes(answers[qid]), bars.bar(qid)
-    if p >= cut:
+    p = _p_yes(answers[qid])
+    if p >= bars.bar(qid):
         return True
-    return False if p <= 1 - cut else None
+    return False if p <= bars.negative_bar(qid) else None
 
 
 def _gated(answers: Mapping[str, Answer], choice: str, prefix: str) -> str:
@@ -172,13 +263,23 @@ def read_decision(
     if rate_limited("mailbox-decision", student_id, limit=READ_LIMIT, window_seconds=3600):
         return UNAVAILABLE
     listed = tuple(addresses)
+    application = {"programme": programme, "university": university}
     email: dict[str, str] = {
         "from_domain": sender_domain,
-        "body": strip_identifiers(email_text[:MAX_BODY_CHARS], names=names, addresses=listed),
+        "body": strip_identifiers(
+            email_text[:MAX_BODY_CHARS],
+            names=names,
+            addresses=listed,
+            application=application,
+        ),
     }
     if subject:
-        email["subject"] = strip_identifiers(subject, names=names, addresses=listed)
-    application = {"programme": programme, "university": university}
+        email["subject"] = strip_identifiers(
+            subject,
+            names=names,
+            addresses=listed,
+            application=application,
+        )
     if funding_name:
         application["funding"] = funding_name
     try:
@@ -211,7 +312,7 @@ class MailContext:
     addresses: tuple[str, ...]
 
 
-def mail_context(signal: MailSignal) -> MailContext | None:
+def mail_context(signal: MailSignal, *, application: Any = None) -> MailContext | None:
     """What the reader needs about the card the mail belongs to. Inside a tenant
     transaction: every row read here is tenant-scoped.
 
@@ -223,7 +324,8 @@ def mail_context(signal: MailSignal) -> MailContext | None:
     from apps.portals.models import PortalAccount
     from apps.portals.outcome import is_funding_application
 
-    application = signal.application
+    if application is None:
+        application = signal.application
     if application is None:
         return None
     candidate, student = application.candidate, application.student
@@ -246,6 +348,6 @@ def mail_context(signal: MailSignal) -> MailContext | None:
         programme=application.title,
         university=candidate.institution_name if candidate is not None else "",
         funding=funding,
-        names=personal_names(student),
+        names=personal_names(student) - _application_tokens(application),
         addresses=tuple(a for a in addresses if a),
     )

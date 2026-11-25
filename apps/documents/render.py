@@ -1131,13 +1131,14 @@ def content_warnings(
         content, (), today=today,
         constraints=constraints if variant == "EUROPASS_API" else (),
     )
+    artifact = replace(_NO_ARTIFACT, variant=variant) if variant else _NO_ARTIFACT
     return tuple(
         ConstraintViolation(rule, detail)
         for rule in constraints
         if rule.enforcement != Enforcement.BINDING
         and rule.key in _ARTIFACT_FREE_KEYS
         and rule.key in _CHECKERS
-        and (detail := _evaluate(rule, clean, _NO_ARTIFACT)) is not None
+        and (detail := _evaluate(rule, clean, artifact)) is not None
     )
 
 

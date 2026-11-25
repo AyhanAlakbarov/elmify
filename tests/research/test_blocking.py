@@ -242,6 +242,19 @@ def test_the_accreditor_span_keeps_the_name_on_a_long_sentence() -> None:
     assert len(hit.span) <= 300 and hit.span.endswith("Global  Accreditation\tCommission")
 
 
+def test_cjk_sentence_breaks_split_long_paragraphs() -> None:
+    from apps.research.blocking import sentences
+
+    cjk_text = (
+        "本奨学金は大学院修士課程の留学生を対象としており授業料が全額免除されます。"
+        "応募書類の提出期限は毎年十月末日となっておりオンラインで申請できます！"
+    )
+    parts = sentences(cjk_text)
+    assert len(parts) == 2
+    assert parts[0].startswith("本奨学金は")
+    assert parts[1].startswith("応募書類の")
+
+
 def test_a_near_miss_model_version_or_a_failed_call_is_skipped(settings) -> None:
     settings.JEV_API_KEY = "k"
     pages = [("https://funder.example.com/", FEE_RELEASE)]

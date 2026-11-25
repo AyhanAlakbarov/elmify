@@ -989,3 +989,148 @@ def test_a_reader_that_breaks_never_stops_the_batch(connection_with_pack, monkey
 
     assert labels == ["OTHER", "OTHER"]
     assert all(r["unavailable"] is True for r in readings)
+
+
+@pytest.mark.django_db
+def test_untagged_decision_on_shared_university_host_resolves_application_and_runs_jev(
+    connection_with_pack, monkeypatch
+) -> None:
+    from uuid import uuid4
+
+    from apps.mailbox import decision_reader
+    from apps.mailbox.providers import MailBody
+    from apps.portals.models import Application, ApplicationStep, PortalForm
+    from tests.mailbox.test_decision_reader import FakeJev
+
+    connection = connection_with_pack
+    with tenant_transaction(connection.tenant_id), tenant_scope(connection.tenant_id):
+        app1 = Application.objects.get(student=connection.membership)
+        app1.name = "M.Sc. Informatics"
+        app1.save(update_fields=["name"])
+        form = PortalForm.objects.get(id=app1.portal_form_id)
+        ApplicationStep.objects.create(
+            tenant_id=connection.tenant_id,
+            application=app1,
+            sequence=1,
+            kind=ApplicationStep.Kind.STATUS,
+            detail={"application_number": "BONN-1001"},
+        )
+        app2 = Application.objects.create(
+            tenant=connection.tenant,
+            student=connection.membership,
+            program_id=uuid4(),
+            portal_form=form,
+            name="M.Sc. Robotics",
+        )
+        ApplicationStep.objects.create(
+            tenant_id=connection.tenant_id,
+            application=app2,
+            sequence=1,
+            kind=ApplicationStep.Kind.STATUS,
+            detail={"application_number": "BONN-2002"},
+        )
+
+    header = MessageHeader(
+        message_id="m-shared-dec",
+        sender="admissions@portal.uni-bonn.de",
+        received_at=datetime(2026, 9, 5, tzinfo=UTC),
+        authenticated=True,
+    )
+
+    class _DecProvider(FakeProvider):
+        def fetch_body(self, *, access_token, message_id):
+            return MailBody(
+                text="Application BONN-2002 for M.Sc. Robotics has been admitted.",
+                subject="Decision on BONN-2002",
+            )
+
+    fake = FakeJev({"is_decision": 0.99, "gate:ADMITTED": 0.99}, {"outcome": "ADMITTED"})
+    real_read = decision_reader.read_decision
+    monkeypatch.setattr(
+        "apps.mailbox.sync.read_decision", lambda *a, **k: real_read(*a, **k, client=fake)
+    )
+    monkeypatch.setattr(
+        "apps.mailbox.sync.classify_message",
+        lambda **_: MailVerdict(label="DECISION", application_number="BONN-2002"),
+    )
+
+    with tenant_scope(connection.tenant_id):
+        sync_connection(
+            connection, provider=_DecProvider((header,)), secrets_client=_grant()
+        )
+        sig = MailSignal.objects.get(provider_message_id="m-shared-dec")
+
+    assert sig.application_id == app2.id
+    assert sig.decision_reading["outcome"] == "ADMITTED"
+    assert len(fake.states) == 1
+
+
+@pytest.mark.django_db
+def test_untagged_received_mail_on_shared_university_host_disambiguates_and_confirms(
+    connection_with_pack, monkeypatch
+) -> None:
+    from uuid import uuid4
+
+    from apps.mailbox.providers import MailBody
+    from apps.portals.models import Application, ApplicationStep, PortalForm
+
+    connection = connection_with_pack
+    with tenant_transaction(connection.tenant_id), tenant_scope(connection.tenant_id):
+        app1 = Application.objects.get(student=connection.membership)
+        app1.name = "M.Sc. Informatics"
+        app1.state = Application.State.SUBMITTED
+        app1.save(update_fields=["name", "state"])
+        form = PortalForm.objects.get(id=app1.portal_form_id)
+        ApplicationStep.objects.create(
+            tenant_id=connection.tenant_id,
+            application=app1,
+            sequence=1,
+            kind=ApplicationStep.Kind.STATUS,
+            detail={"application_number": "BONN-1001"},
+        )
+        app2 = Application.objects.create(
+            tenant=connection.tenant,
+            student=connection.membership,
+            program_id=uuid4(),
+            portal_form=form,
+            name="M.Sc. Robotics",
+            state=Application.State.SUBMITTED,
+        )
+        ApplicationStep.objects.create(
+            tenant_id=connection.tenant_id,
+            application=app2,
+            sequence=1,
+            kind=ApplicationStep.Kind.STATUS,
+            detail={"application_number": "BONN-2002"},
+        )
+
+    header = MessageHeader(
+        message_id="m-shared-rec",
+        sender="admissions@portal.uni-bonn.de",
+        received_at=datetime(2026, 9, 5, tzinfo=UTC),
+        authenticated=True,
+    )
+
+    class _RecProvider(FakeProvider):
+        def fetch_body(self, *, access_token, message_id):
+            return MailBody(
+                text="We have received your application BONN-2002 for M.Sc. Robotics.",
+                subject="Application received BONN-2002",
+            )
+
+    monkeypatch.setattr(
+        "apps.mailbox.sync.classify_message",
+        lambda **_: MailVerdict(label="RECEIVED", application_number="BONN-2002"),
+    )
+
+    with tenant_scope(connection.tenant_id):
+        sync_connection(
+            connection, provider=_RecProvider((header,)), secrets_client=_grant()
+        )
+        sig = MailSignal.objects.get(provider_message_id="m-shared-rec")
+        app1.refresh_from_db()
+        app2.refresh_from_db()
+
+    assert sig.application_id == app2.id
+    assert app1.state == Application.State.SUBMITTED
+    assert app2.state == Application.State.CONFIRMED

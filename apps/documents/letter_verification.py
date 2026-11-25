@@ -30,8 +30,9 @@ from apps.research.extraction import (
     privacy_safe_identifier,
 )
 
-from .letter_gates import _PERSON_TITLES, capitalised_phrases
+from .letter_gates import _PERSON_TITLES, _is_german_entity_phrase, capitalised_phrases
 from .letter_schemas import ClaimKind, LetterClaim, LetterContent
+from .letter_terms import normalise_numerals
 from .models import NarrativeInput, VerifiedFact
 from .research_fit.papers import strip_academic_titles
 from .verification import Verdict
@@ -48,7 +49,33 @@ def _normalize(text: str) -> str:
 
 #: Digit runs, with separators kept as written: "1998", "40", "2,500", "3.5".
 _NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+_THOUSANDS_DOT = re.compile(r"(?<=\d)\.(?=\d{3}(?!\d))")
 _POSSESSIVE_SUFFIX = re.compile(r"['\u2019]s\b", re.IGNORECASE)
+_WORLD_BANK_ALIASES = frozenset(
+    {
+        "world bank",
+        "weltbank",
+        "banque mondiale",
+        "banco mundial",
+        "dünya bankası",
+        "dunya bankasi",
+        "всемирный банк",
+    }
+)
+_GERMAN_FUNCTION_WORDS = frozenset(
+    {"der", "die", "das", "und", "für", "mit", "von", "auf", "nach", "laut", "durch", "bei", "im"}
+)
+
+
+def _normalise_number_text(text: str) -> str:
+    return _THOUSANDS_DOT.sub("", normalise_numerals(text))
+
+
+def _is_world_bank_entity(norm_entity: str, provenance: Mapping[str, object]) -> bool:
+    return (
+        norm_entity in _WORLD_BANK_ALIASES
+        or str(provenance.get("provider") or "").strip().casefold() == "world_bank"
+    )
 
 
 def _entity_anchored_in_text(
@@ -67,6 +94,10 @@ def _entity_anchored_in_text(
         else frozenset()
     )
     if norm_entity in text:
+        return True, person_tokens
+    if _is_world_bank_entity(norm_entity, provenance) and any(
+        alias in text for alias in _WORLD_BANK_ALIASES
+    ):
         return True, person_tokens
     if is_person and bare_person:
         norm_bare = _normalize(bare_person)
@@ -106,14 +137,6 @@ def sourced_claim_matches(claim: LetterClaim, provenance: Mapping[str, object]) 
     the provenance evidence, so a figure the model added is caught too; (4) the
     cited URL is one the provenance verified. The letter may paraphrase the
     work, never the name and never a number.
-
-    Matched on digit boundaries, so the "40" in a sentence's "1940" does not
-    satisfy a claim's "40". Two limits, both deliberate: a spelled-out number
-    ("forty") is not checked, because that needs a language-aware parser and
-    every one of these sentences is quoted verbatim from a page that mostly
-    writes figures as digits; and "40,000" against a sentence's "40000" reads
-    as a mismatch, which fails toward blocking rather than toward shipping an
-    unverifiable figure.
     """
     entity = str(provenance.get("entity") or "")
     raw_sentence = str(provenance.get("sentence") or "")
@@ -122,24 +145,50 @@ def sourced_claim_matches(claim: LetterClaim, provenance: Mapping[str, object]) 
         return False
     raw_evidence = " ".join(
         str(provenance.get(key) or "")
-        for key in ("entity", "sentence", "paper_title", "paper_finding", "paper_year")
+        for key in (
+            "entity",
+            "sentence",
+            "paper_title",
+            "paper_finding",
+            "paper_method_or_question",
+            "paper_active_topic",
+            "paper_year",
+        )
         if provenance.get(key) not in (None, "")
     )
     evidence = _normalize(_POSSESSIVE_SUFFIX.sub("", raw_evidence))
     text = _normalize(claim.text)
+    norm_entity = _normalize(entity)
+    is_wb = _is_world_bank_entity(norm_entity, provenance)
     anchored, person_tokens = _entity_anchored_in_text(entity, text, provenance)
     if not anchored:
         return False
+    text_words = {w.strip(".,;:!?()\"'") for w in text.split()}
+    looks_german = bool(text_words & _GERMAN_FUNCTION_WORDS)
     for phrase in capitalised_phrases(claim.text):
         clean_phrase = _normalize(_POSSESSIVE_SUFFIX.sub("", phrase))
+        if not clean_phrase:
+            continue
+        if is_wb and clean_phrase in _WORLD_BANK_ALIASES:
+            continue
+        if looks_german:
+            if not _is_german_entity_phrase(phrase):
+                continue
+            if norm_entity and norm_entity in clean_phrase:
+                remainder = clean_phrase.replace(norm_entity, " ").strip()
+                if remainder and not _is_german_entity_phrase(remainder):
+                    continue
         if (
-            clean_phrase
-            and clean_phrase not in evidence
+            clean_phrase not in evidence
             and not _phrase_matches_person(clean_phrase, person_tokens)
         ):
             return False
-    for number in _NUMBER.findall(claim.text):
-        if not re.search(rf"(?<!\d){re.escape(number)}(?!\d)", raw_evidence):
+    norm_claim_num_text = _normalise_number_text(claim.text)
+    norm_evidence_num_text = _normalise_number_text(raw_evidence)
+    for number in _NUMBER.findall(norm_claim_num_text):
+        if not re.search(rf"(?<!\d){re.escape(number)}(?!\d)", norm_evidence_num_text) and not (
+            re.search(rf"(?<!\d){re.escape(number)}(?!\d)", raw_evidence)
+        ):
             return False
     allowed_urls = {
         u for u in (provenance.get("source_url"), provenance.get("paper_url")) if u

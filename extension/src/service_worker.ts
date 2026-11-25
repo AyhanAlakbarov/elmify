@@ -471,7 +471,12 @@ function handle(message: any, sender: chrome.runtime.MessageSender, sendResponse
         }
         // Straight back to the page that asked. Never in storage, the dock or
         // a log: the extension holds a portal password only for this reply.
-        sendResponse({ ok: true, username: login.username, password: login.password });
+        sendResponse({
+          ok: true,
+          username: login.username,
+          password: login.password,
+          ...(login.application_number ? { application_number: login.application_number } : {}),
+        });
       } catch (error) {
         sendResponse({ ok: false, code: error instanceof ExtError ? error.code : "request_failed" });
       }
@@ -1248,6 +1253,19 @@ async function answerActions(origin: string): Promise<void> {
     }
     if (action.kind === "TYPE_CODE") {
       await deliverCode(origin, action);
+      continue;
+    }
+    if (action.kind === "OPEN_UPLOAD_PAGE") {
+      const uploadLink = safeLink(
+        (action as unknown as { target_url?: unknown }).target_url ??
+          action.payload["target_url"] ??
+          action.payload["url"],
+      );
+      if (uploadLink) {
+        await chrome.tabs.create({ url: uploadLink, active: false });
+        await postActionResult(origin, action.id, true, { opened: true });
+      }
+      if (!watching) await patchDock({ message: action.kind });
       continue;
     }
     const link =

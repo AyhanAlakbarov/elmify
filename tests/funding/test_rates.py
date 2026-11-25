@@ -135,3 +135,30 @@ def test_an_ecb_day_after_the_date_is_ignored_and_an_older_one_used() -> None:
     store(_ecb(date(2026, 10, 9), MYR="9.0"))
 
     assert latest_table(on=date(2026, 10, 8)).rates["MYR"] == Decimal("2.0")
+
+
+def test_wp3_cross_rates_work_for_non_azn_base_and_implicit_base_unit() -> None:
+    store(_ecb(date(2026, 10, 8), USD="1.10"))
+    store(
+        RateTable(
+            base="USD",
+            rates={"USD": Decimal("1"), "CAD": Decimal("1.40")},
+            source="FED",
+            retrieved_on=date(2026, 10, 8),
+        )
+    )
+
+    eur_table = latest_table(base="EUR", on=date(2026, 10, 8))
+    assert eur_table is not None
+    assert eur_table.rates["CAD"] == Decimal("1.54")
+    assert "CAD" in eur_table.cross
+
+    # Implicit base=1 in convert() when base is omitted from rates dict
+    implicit_base_table = RateTable(
+        base="EUR",
+        rates={"USD": Decimal("1.25")},
+        source="ECB",
+        retrieved_on=date(2026, 10, 8),
+    )
+    assert convert(Decimal("100.00"), "EUR", "USD", implicit_base_table) == Decimal("125.00")
+

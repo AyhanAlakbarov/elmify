@@ -47,6 +47,7 @@ from apps.documents.letters import (
     LetterGenerationError,
     LetterGenerationResult,
     generate_letter,
+    inputs_for_programme,
     is_letter_blocked,
 )
 from apps.documents.models import DocumentDraft, NarrativeInput, VerifiedFact
@@ -109,9 +110,13 @@ class Command(BaseCommand):
                     f"programme {prompt.programme_id} is BLOCKED ({code}): {WORDING[code][0]}"
                 )
             facts = {fact.id: fact for fact in generatable_facts(student)}
-            inputs = {
-                entry.id: entry for entry in NarrativeInput.objects.filter(student=student)
-            }
+            inputs = inputs_for_programme(
+                {
+                    entry.id: entry
+                    for entry in NarrativeInput.objects.filter(student=student)
+                },
+                prompt.programme_id,
+            )
             readings = usable_readings(student)
             forbidden = self._forbidden_institutions(
                 student,
@@ -228,6 +233,7 @@ class Command(BaseCommand):
                 inputs=inputs,
                 theme_kind=theme_kind,
                 readings=readings,
+                programme_name=prompt.programme.name,
             )
         except (StorylineProposalFailure, StorylineRateLimited) as error:
             logger.warning(

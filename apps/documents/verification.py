@@ -31,6 +31,7 @@ details agree", not "this entire entry is verified word for word."
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -248,8 +249,13 @@ CERTIFICATE_ONLY_LANGUAGE_KEYS: tuple[str, ...] = (
     "score_writing",
     "score_speaking",
 )
-#: The series and number a CIS diploma prints, which portals ask for.
-DIPLOMA_ONLY_EDUCATION_KEYS: tuple[str, ...] = ("diploma_number",)
+#: The series and number a CIS diploma prints, which portals ask for, plus
+#: degree field keys read from diplomas/intake.
+DIPLOMA_ONLY_EDUCATION_KEYS: tuple[str, ...] = (
+    "diploma_number",
+    "field",
+    "field_of_study",
+)
 #: What the transcript check adds to a degree (plan 3b Task 7), carried and never compared:
 #: the checked courses, the ones the student could not read (never quoted by a letter), the
 #: names the transcript printed for it -- so the next document matches exactly -- and, on a CV
@@ -477,11 +483,16 @@ def payload_keys(category: str) -> tuple[str, ...]:
     return _PAYLOAD_KEYS.get(category, ())
 
 
+@functools.lru_cache(maxsize=4096)
+def _norm_str(value: str) -> str:
+    return normalize_text(value).casefold()
+
+
 def _norm(value: object) -> str:
     """Compare on meaning, not formatting. Empty and missing are the same."""
     if value is None:
         return ""
-    return normalize_text(str(value)).casefold()
+    return _norm_str(str(value))
 
 
 def fact_payload(entry: object, *, category: str) -> dict[str, object]:
@@ -682,13 +693,19 @@ def confirm_candidates(student: Membership) -> list[VerifiedFact]:
     from .degree_match import held_duplicates  # degree_match imports this module
 
     excluded_refs = disowned_refs(student) | retired_refs(student)
-    facts = [
-        fact
-        for fact in unsuperseded_facts(student)
+    cached: tuple[VerifiedFact, ...] | None = getattr(student, "_gap_facts_cache", None)
+    source: Iterable[VerifiedFact] = (
+        (
+            f
+            for f in cached
+            if f.confirmed_by_id is None and f.source_ref not in excluded_refs
+        )
+        if cached is not None
+        else unsuperseded_facts(student)
         .filter(confirmed_by__isnull=True)
         .exclude(source_ref__in=excluded_refs)
-        if not nameless_identity(fact)
-    ]
+    )
+    facts = [fact for fact in source if not nameless_identity(fact)]
     held = held_duplicates(facts)  # wait for "Different degree" (plan 3b Task 7)
     return [fact for fact in facts if fact.id not in held]
 
@@ -802,6 +819,10 @@ def disowned_refs(student: Membership) -> set[str]:
 
     A replaced upload is NOT disowned (retired_refs): it was the student's own, and
     the writer dedups a clearer scan of the same document against its rows."""
+    if getattr(student, "_gap_facts_depth", 0) > 0:
+        cached: set[str] | None = getattr(student, "_disowned_refs_cache", None)
+        if cached is not None:
+            return cached.copy()
     from .models import TranscriptUpload
 
     refs = {
@@ -827,6 +848,8 @@ def disowned_refs(student: Membership) -> set[str]:
             .values_list("document_id", flat=True)
         )
         refs |= {f"document:{d}" for d in refused_tx_docs - accepted_tx_docs}
+    if getattr(student, "_gap_facts_depth", 0) > 0:
+        student._disowned_refs_cache = refs.copy()  # type: ignore[attr-defined]
     return refs
 
 
@@ -838,24 +861,38 @@ def retired_refs(student: Membership) -> set[str]:
     being served or offered (retired_hides). Confirmed identity, degree and test rows
     and every STUDENT_STATEMENT keep being served, because the writer dedups a clearer
     scan of the same document against them."""
-    return {
+    if getattr(student, "_gap_facts_depth", 0) > 0:
+        cached: set[str] | None = getattr(student, "_retired_refs_cache", None)
+        if cached is not None:
+            return cached.copy()
+    refs = {
         f"document:{d}"
         for d in DocumentVersion.objects.filter(
             student=student, retired_at__isnull=False
         ).values_list("id", flat=True)
     }
+    if getattr(student, "_gap_facts_depth", 0) > 0:
+        student._retired_refs_cache = refs.copy()  # type: ignore[attr-defined]
+    return refs
 
 
-def live_retired_refs(student: Membership) -> set[str]:
+def live_retired_refs(
+    student: Membership,
+    *,
+    retired: set[str] | None = None,
+    disowned: set[str] | None = None,
+) -> set[str]:
     """The retired refs whose ID document is still held: the group (id_document_groups:
     same type and normalised number) holds an unretired document too, so it is the
     same passport scanned again. Its rows, the student's own corrections on the
     retired ref included, keep counting (D5). A group whose documents are all retired
     is hidden: a renewed passport with a new number leaves the old one out."""
-    retired = retired_refs(student)
+    if retired is None:
+        retired = retired_refs(student)
     if not retired:
         return set()
-    disowned = disowned_refs(student)
+    if disowned is None:
+        disowned = disowned_refs(student)
     groups = id_document_groups(
         f for f in unsuperseded_facts(student)
         if f.category == VerifiedFact.Category.ID_DOCUMENT and f.source_ref not in disowned

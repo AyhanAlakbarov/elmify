@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Book a demo — Elmify{% endblock %}
-{% block meta_description %}{% if audience == "student" %}Book a 1-on-1 student and parent walkthrough of Elmify's funded master's and scholarship workspace, hidden funding layers, and glass-box browser extension.{% else %}Book a walkthrough of Elmify's white-label master's and scholarship application workspace for study-abroad agencies and educational counsellors.{% endif %}{% endblock %}
+{% block meta_description %}{% if audience == "student" %}Book a 1-on-1 student and parent walkthrough of Elmify's funded master's and scholarship workspace across 50+ countries, tailored zero-fabrication CVs and motivation letters, and glass-box browser extension.{% else %}Book a walkthrough of Elmify's white-label master's and scholarship application workspace across 50+ countries for study-abroad agencies and educational counsellors.{% endif %}{% endblock %}
 {% block content %}
   <nav aria-label="Demo audience" class="lang-switch">
     Audience:
@@ -12,11 +12,11 @@
   </nav>
   {% if audience == "student" %}
     <h1>Book a student &amp; parent walkthrough</h1>
-    <p class="muted">See how Elmify checks your GPA, Bachelor&rsquo;s ECTS credits, and IELTS/TOEFL against both flagship national scholarships (D&ouml;vl&#601;t Proqram&#305;, HTP, DAAD, Chevening) and 5 layers of low-competition funding — plus a live demo of our browser extension co-pilot on official university portals.</p>
+    <p class="muted">See how Elmify reads official university and funder regulations across 50+ countries, checks your GPA, Bachelor&rsquo;s ECTS credits, and IELTS or TOEFL scores against government and bilateral awards (D&ouml;vl&#601;t Proqram&#305;, HTP, DAAD, Chevening), Erasmus Mundus, tuition waivers, regional grants, foundations, and paid RA/TA assistantships, builds tailored CVs and letters from your verified record, and autofills official portals in your browser.</p>
     <p class="note"><strong>Prefer to start right away?</strong> Matching and eligibility checks are 100% free: <a href="{% url 'privacy-signup' %}">create your free student account</a> in 2 minutes.</p>
   {% else %}
     <h1>Book a demo</h1>
-    <p class="muted">Run your study-abroad agency&rsquo;s master&rsquo;s and scholarship applications on Elmify under your own brand and domain. Tell us about your team and we will email you within two working days.</p>
+    <p class="muted">Run your study-abroad agency&rsquo;s master&rsquo;s and scholarship applications across 50+ countries on Elmify under your own brand and domain — with sentence-linked eligibility verification, programme-tailored CVs and letters, and counsellor review queues. Tell us about your team and we will email you within two working days.</p>
     <p class="note"><strong>30-day white-label agency pilot:</strong> Onboard up to 10 real students on your own custom domain with counsellor review queues and audit trails (100% credited toward your annual agency plan).</p>
   {% endif %}
   {% if error %}<p role="alert" class="note note-error">{{ error }}</p>{% endif %}

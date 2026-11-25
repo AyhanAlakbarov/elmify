@@ -4,6 +4,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import date
+from decimal import Decimal
 from typing import cast
 from uuid import UUID
 
@@ -12,6 +13,7 @@ from django.db import transaction
 from django.utils import timezone
 from pydantic import TypeAdapter, ValidationError
 
+from apps.documents.degree_match import _initials, institution_key, same_name
 from apps.documents.models import TranscriptReading, VerifiedFact
 from apps.documents.schemas import _cefr_code
 from apps.documents.text_reading import TESTS
@@ -36,7 +38,11 @@ from .field_taxonomy import (
 from .forms import answer_adapter, normalize_country_code, question_field
 from .models import ConsultationDraftRecord, StudentProfileVersion
 from .profile_versions import create_profile_version
-from .schemas import StudentProfileSnapshot
+from .schemas import (
+    DEFAULT_WEIGHTS,
+    StudentProfileSnapshot,
+    infer_simplex_weights_from_profile,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -220,20 +226,23 @@ class ConsultationDraft:
                 value = [value[0], *prev_hist[1:]]
             if isinstance(value, list) and isinstance(prev_hist, list):
                 # A typed degree carries no courses; keep a transcript's courses on
-                # the degree at the same institution.
-                held = {
-                    str(rec.get("institution") or "").strip().casefold(): rec.get("courses")
-                    for rec in prev_hist
-                    if isinstance(rec, dict) and rec.get("courses")
-                }
-                kept = [
-                    {**rec, "courses": held[inst]}
-                    if isinstance(rec, dict)
-                    and not rec.get("courses")
-                    and (inst := str(rec.get("institution") or "").strip().casefold()) in held
-                    else rec
-                    for rec in value
-                ]
+                # the degree at the same institution ("BSU" and "Baku State
+                # University" count as the same). A record read from a document
+                # keeps the first degree's courses whatever the student retyped.
+                kept: list[object] = []
+                for i, rec in enumerate(value):
+                    if isinstance(rec, dict) and not rec.get("courses"):
+                        inst = str(rec.get("institution") or "").strip()
+                        for j, prev in enumerate(prev_hist):
+                            if not isinstance(prev, dict) or not prev.get("courses"):
+                                continue
+                            prev_inst = str(prev.get("institution") or "").strip()
+                            if _institutions_overlap(prev_inst, inst) or (
+                                self.reading_id is not None and i == 0 and j == 0
+                            ):
+                                rec = {**rec, "courses": prev["courses"]}
+                                break
+                    kept.append(rec)
                 answers["academic_history"] = kept
             if not _undated(answers):
                 answers.pop("expected_completion", None)
@@ -245,6 +254,24 @@ class ConsultationDraft:
 
     def with_correction(self, key: str) -> ConsultationDraft:
         return replace(self, correction_key=key)
+
+
+def _institutions_overlap(prev_inst: str, new_inst: str) -> bool:
+    if not prev_inst or not new_inst:
+        return False
+    if prev_inst.casefold() == new_inst.casefold():
+        return True
+    if same_name(prev_inst, new_inst) or _initials(prev_inst, new_inst):
+        return True
+    prev_tokens = {t for t in institution_key(prev_inst).split() if len(t) >= 3}
+    new_tokens = {t for t in institution_key(new_inst).split() if len(t) >= 3}
+    if prev_tokens & new_tokens:
+        return True
+    return any(
+        pt.startswith(nt) or nt.startswith(pt)
+        for pt in prev_tokens
+        for nt in new_tokens
+    )
 
 
 def read_draft(*, tenant_id: UUID, membership_id: UUID) -> ConsultationDraft:
@@ -404,9 +431,13 @@ _NEGATED_OR_REQUIRED_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _EXPERIENCE_SPAN_RE = re.compile(
-    r"\b(\d{1,2})\s*(?:\+\s*)?(years?|yrs?|months?|mos?)\s+(?:of\s+)?"
-    r"(?:full[- ]time\s+|professional\s+|relevant\s+|academic\s+)?"
+    r"(?<!\d\.)(?<!\d)\b(\d{1,2}(?:\.\d+)?)\s*(?:\+\s*)?(years?|yrs?|months?|mos?)\s+(?:of\s+)?"
+    r"(?:full[- ]time\s+|professional\s+|relevant\s+|academic\s+|prior\s+|industry\s+)?"
     r"(work|professional|research|internship)\s+experience\b",
+    re.IGNORECASE,
+)
+_CLAUSE_SPLIT_RE = re.compile(
+    r"[,.;!?\n]|\b(?:and|but|while|although|though|however|yet|so|because|since)\b",
     re.IGNORECASE,
 )
 
@@ -417,13 +448,13 @@ def _experience_from_notes(notes: object) -> list[dict[str, object]] | None:
     text = notes.strip()
     records: list[dict[str, object]] = []
     for match in _EXPERIENCE_SPAN_RE.finditer(text):
-        clause_prefix = re.split(r"[,.;!?\n]", text[: match.start()])[-1][-60:]
+        clause_prefix = _CLAUSE_SPLIT_RE.split(text[: match.start()])[-1][-60:]
         if _NEGATED_OR_REQUIRED_PREFIX_RE.search(clause_prefix):
             continue
-        amount = int(match.group(1))
+        amount = float(match.group(1))
         unit = match.group(2).casefold()
         raw_kind = match.group(3).casefold()
-        months = amount * 12 if unit.startswith("y") else amount
+        months = int(round(amount * 12)) if unit.startswith("y") else int(round(amount))
         if months <= 0 or months > 600:
             continue
         if raw_kind == "research":
@@ -470,11 +501,23 @@ _NEGATED_STRICT_RE = re.compile(
 _NO_FUNDING_NEEDED_RE = re.compile(
     r"\b(?:don'?t|do\s+not|doesn'?t)\s+(?:care\s+about|need|want|require|mind)\s+"
     r"(?:any\s+)?(?:funding(?:\s+options?)?|scholarships?|financial\s+aid|grants?|stipends?)\b"
-    r"|\b(?:no|without\s+any|ignore|ignoring|skip)\s+"
-    r"(?:funding(?:\s+options?)?|scholarships?|financial\s+aid)\s*"
-    r"(?:needed|required|necessary|options?)?\b"
+    r"|\b(?:no|without(?:\s+any)?)\s+"
+    r"(?:funding(?:\s+options?)?|scholarships?|financial\s+aid)\s+"
+    r"(?:is\s+)?(?:needed|required|necessary)\b"
+    r"|\b(?:ignore|ignoring|skip)\s+(?:any\s+)?"
+    r"(?:funding(?:\s+options?)?|scholarships?|financial\s+aid)"
+    r"(?:\s+(?:needed|required|necessary|options?))?\b"
     r"|\b(?:fully\s+self[- ]funded|self[- ]funded\s+only|100%\s+self[- ]funded"
     r"|pay\s+full\s+tuition\s+myself|cover\s+(?:the\s+)?full\s+cost\s+myself)\b",
+    re.IGNORECASE,
+)
+_POSITIVE_FUNDING_NEED_RE = re.compile(
+    r"(?<!don't\s)(?<!do\snot\s)(?<!doesn't\s)(?<!not\s)"
+    r"\b(?:need|needs|require|requires|must\s+have|depend\s+on|rely\s+on)\s+"
+    r"(?:a\s+|an\s+|any\s+|full\s+|partial\s+)?"
+    r"(?:funding|scholarships?|financial\s+aid|stipends?|grants?)\b"
+    r"|\b(?:cannot|can'?t)\s+(?:afford|study|go|pay|attend)\b"
+    r"|\bno\s+funding\s+from\b",
     re.IGNORECASE,
 )
 _NO_RETURN_BOND_RE = re.compile(
@@ -504,11 +547,17 @@ _BALANCED_NOTE_RE = re.compile(
 )
 _DURATION_PREF_RE = re.compile(
     r"(?:(?:\b(?:prefer|want|only|strictly|looking\s+for|must\s+be|seeking)\s+(?:a\s+)?)"
-    r"(1[- ]year|one[- ]year|1\s+year|one\s+year|12[- ]month|12\s+months"
+    r"(1\.5[- ]years?|1\.5\s+years?|one\s+and\s+a\s+half[- ]years?"
+    r"|(?:15|16|18)[- ]months?|(?:15|16|18)\s+months?"
+    r"|(?:3|three)[- ]semesters?|(?:3|three)\s+semesters?"
+    r"|1[- ]year|one[- ]year|1\s+year|one\s+year|12[- ]month|12\s+months"
     r"|2[- ]year|two[- ]year|2\s+years?|two\s+years?|24[- ]month|24\s+months)"
     r"(?!\s+(?:of\s+)?(?:full[- ]time\s+|professional\s+|relevant\s+|academic\s+|prior\s+)?"
     r"(?:work|professional|research|internship)\s+experience\b))"
-    r"|(?:\b(1[- ]year|one[- ]year|1\s+year|one\s+year|12[- ]month|12\s+months"
+    r"|(?:\b(1\.5[- ]years?|1\.5\s+years?|one\s+and\s+a\s+half[- ]years?"
+    r"|(?:15|16|18)[- ]months?|(?:15|16|18)\s+months?"
+    r"|(?:3|three)[- ]semesters?|(?:3|three)\s+semesters?"
+    r"|1[- ]year|one[- ]year|1\s+year|one\s+year|12[- ]month|12\s+months"
     r"|2[- ]year|two[- ]year|2\s+years?|two\s+years?|24[- ]month|24\s+months)\s+"
     r"(?:only|master'?s?|msc|ma|program(?:me)?s?|degrees?|tracks?|courses?|duration|studies)\b)",
     re.IGNORECASE,
@@ -565,7 +614,7 @@ def _priorities_from_notes(notes: object, payload: dict[str, object]) -> None:
         )
         break
 
-    if _NO_FUNDING_NEEDED_RE.search(text):
+    if _NO_FUNDING_NEEDED_RE.search(text) and not _POSITIVE_FUNDING_NEED_RE.search(text):
         _add_constraint(
             payload,
             target_key="negotiable_preferences",
@@ -627,7 +676,10 @@ def _apply_duration_preference_from_notes(text: str, payload: dict[str, object])
     if dur_match is None:
         return
     raw_token = (dur_match.group(1) or dur_match.group(2) or "").casefold()
-    is_one_year = raw_token.startswith(("1", "one"))
+    is_one_half = bool(
+        re.match(r"^(?:1\.5|one\s+and\s+a\s+half|15|16|18|3\b|three\b)", raw_token)
+    )
+    is_one_year = not is_one_half and raw_token.startswith(("1", "one"))
     clause_prefix = re.split(r"[,.;!?\n]", text[: dur_match.start()])[-1][-40:]
     negated_dur = bool(
         re.search(
@@ -637,15 +689,18 @@ def _apply_duration_preference_from_notes(text: str, payload: dict[str, object])
             re.IGNORECASE,
         )
     )
-    if negated_dur:
-        is_one_year = not is_one_year
-    pref = "ONE_YEAR" if is_one_year else "TWO_YEAR"
+    if is_one_half and not negated_dur:
+        pref = "ONE_AND_HALF_YEAR"
+    else:
+        if negated_dur:
+            is_one_year = not is_one_year
+        pref = "ONE_YEAR" if is_one_year else "TWO_YEAR"
     window = text[max(0, dur_match.start() - 30) : min(len(text), dur_match.end() + 40)]
     strict = bool(
         negated_dur
         or (_STRICT_MODIFIER_RE.search(window) and not _NEGATED_STRICT_RE.search(window))
         or re.search(
-            r"\bno\s+(?:1[- ]year|one[- ]year|2[- ]year|two[- ]year)\b",
+            r"\bno\s+(?:1[- ]year|one[- ]year|1\.5[- ]year|2[- ]year|two[- ]year)\b",
             text,
             re.IGNORECASE,
         )
@@ -656,7 +711,7 @@ def _apply_duration_preference_from_notes(text: str, payload: dict[str, object])
         payload["longer_program_justifications"] = []
         return
     payload["duration_flexibility"] = "WEIGHTED"
-    if pref != "ONE_YEAR":
+    if pref not in {"ONE_YEAR", "ONE_AND_HALF_YEAR"}:
         payload["longer_program_justifications"] = []
         return
     justifications: list[str] = []
@@ -666,7 +721,10 @@ def _apply_duration_preference_from_notes(text: str, payload: dict[str, object])
         justifications.append("INTERNSHIP")
     if re.search(r"\bresearch|thesis|phd|lab\b", text, re.IGNORECASE):
         justifications.append("RESEARCH")
-    payload["longer_program_justifications"] = justifications or ["FUNDING", "RESEARCH"]
+    if pref == "ONE_YEAR":
+        payload["longer_program_justifications"] = justifications or ["FUNDING", "RESEARCH"]
+    else:
+        payload["longer_program_justifications"] = justifications
 
 
 def _experience_from_roles(roles: list[object]) -> list[dict[str, object]]:
@@ -742,6 +800,8 @@ def _profile_payload(
         if parsed_exp is not None:
             payload["experience"] = parsed_exp
     _priorities_from_notes(payload.get("additional_notes"), payload)
+    if "weights" not in payload:
+        payload["weights"] = infer_simplex_weights_from_profile(payload)
     return payload
 
 
@@ -754,6 +814,32 @@ def validate_draft(
     return StudentProfileSnapshot.model_validate(
         _profile_payload(draft, parser=parser, student_id=student_id)
     )
+
+
+_YMD_DATE_RE = re.compile(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})")
+_DMY_DATE_RE = re.compile(r"^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})")
+_YM_DATE_RE = re.compile(r"^(\d{4})[-/.](\d{1,2})$")
+_MY_DATE_RE = re.compile(r"^(\d{1,2})[-/.](\d{4})$")
+
+
+def _normalize_flexible_date(raw: object) -> str | None:
+    if not isinstance(raw, str):
+        return None
+    text = raw.strip()
+    if not text:
+        return None
+    try:
+        if m := _YMD_DATE_RE.match(text):
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3))).isoformat()
+        if m := _DMY_DATE_RE.match(text):
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1))).isoformat()
+        if m := _YM_DATE_RE.match(text):
+            return date(int(m.group(1)), int(m.group(2)), 1).isoformat()
+        if m := _MY_DATE_RE.match(text):
+            return date(int(m.group(2)), int(m.group(1)), 1).isoformat()
+    except ValueError:
+        return None
+    return None
 
 
 def _prefill_identity_fact(
@@ -778,11 +864,10 @@ def _prefill_identity_fact(
                 )
     if "date_of_birth" not in draft_answers:
         raw_dob = payload.get("date_of_birth")
-        if isinstance(raw_dob, str) and raw_dob.strip():
+        norm_dob = _normalize_flexible_date(raw_dob)
+        if norm_dob is not None:
             try:
-                updates["date_of_birth"] = _canonical_answer(
-                    "date_of_birth", raw_dob.strip()[:10]
-                )
+                updates["date_of_birth"] = _canonical_answer("date_of_birth", norm_dob)
             except ValidationError as exc:
                 logger.debug(
                     "consultation._prefill_identity_fact skipped date_of_birth from fact %s: %s",
@@ -805,7 +890,11 @@ def _collect_language_fact(
         return
     raw_cefr = str(_cefr_code(payload.get("cefr_level")) or "").strip()
     score = str(payload.get("test_score") or "").strip()
-    level_str = raw_cefr or (f"{test_name} {score}".strip() if score else test_name)
+    level_str = (
+        raw_cefr
+        or (f"{test_name} {score}".strip() if (test_name and score) else "")
+        or test_name
+    )
     if not level_str:
         return
     raw_ev = str(payload.get("evidence_type") or "").strip().upper()
@@ -815,8 +904,7 @@ def _collect_language_fact(
         ev_type = raw_ev
     else:
         ev_type = "ATTESTED"
-    raw_date = str(payload.get("test_date") or "").strip()[:10]
-    avail_by = raw_date if len(raw_date) == 10 else today_iso
+    avail_by = _normalize_flexible_date(payload.get("test_date")) or today_iso
     lang_key = raw_lang.casefold()
     existing_lang = lang_rows_by_name.get(lang_key)
     if existing_lang is None:
@@ -857,12 +945,14 @@ def _extract_education_candidate(
     qual = str(payload.get("degree_as_awarded") or "").strip()
     if not (inst and country and qual):
         return None
-    field_val = str(payload.get("field") or "").strip() or "not stated"
+    field_val = (
+        str(payload.get("field") or payload.get("field_of_study") or "").strip() or "not stated"
+    )
     grade_val = str(payload.get("grade_native") or "").strip() or "not stated"
     scale_val = str(payload.get("grade_scale") or "").strip() or "not stated"
-    end_raw = str(payload.get("end_date") or "").strip()[:10]
-    completed_on = end_raw if (len(end_raw) == 10 and end_raw <= today_iso) else None
-    expected_comp = end_raw if (len(end_raw) == 10 and end_raw > today_iso) else None
+    end_norm = _normalize_flexible_date(payload.get("end_date"))
+    completed_on = end_norm if (end_norm is not None and end_norm <= today_iso) else None
+    expected_comp = end_norm if (end_norm is not None and end_norm > today_iso) else None
     courses = payload.get("courses")
     return {
         "institution": inst[:200],
@@ -875,6 +965,17 @@ def _extract_education_candidate(
         "expected_completion": expected_comp,
         "courses": courses if isinstance(courses, list) else [],
     }
+
+
+def _edu_dedup_keys(candidate: Mapping[str, object]) -> tuple[tuple[str, ...], ...]:
+    inst = str(candidate.get("institution") or "").casefold()
+    country = str(candidate.get("country_code") or "").upper()
+    qual = str(candidate.get("qualification") or "").casefold()
+    field = str(candidate.get("field") or "").casefold()
+    when = str(candidate.get("completed_on") or candidate.get("expected_completion") or "")
+    full_key = (inst, country, qual, field, when)
+    wildcard_key = (inst, country, qual, "not stated", when)
+    return (full_key, wildcard_key) if field != "not stated" else (full_key,)
 
 
 def _prefill_from_verified_facts(
@@ -961,9 +1062,16 @@ def _prefill_from_verified_facts(
             if c["grade"] != "not stated" and c["grading_scale"] != "not stated"
         ]
         chosen_edu = graded[-1] if graded else edu_candidates[-1]
+        ordered_edu = [chosen_edu]
+        seen_edu: set[tuple[str, ...]] = set(_edu_dedup_keys(chosen_edu))
+        for candidate in reversed(edu_candidates):
+            keys = _edu_dedup_keys(candidate)
+            if not any(k in seen_edu for k in keys) and len(ordered_edu) < 20:
+                seen_edu.update(keys)
+                ordered_edu.append(candidate)
         try:
             updates["academic_history"] = _canonical_answer(
-                "academic_history", [chosen_edu]
+                "academic_history", ordered_edu
             )
         except ValidationError as exc:
             logger.debug(
@@ -1288,9 +1396,8 @@ def finalize_consultation(
                 )
     if previous_pair is not None and isinstance(previous_pair[1], dict):
         prev_snap = previous_pair[1]
-        for preserved_key in ("mobility_priorities", "weights"):
-            if preserved_key not in payload and preserved_key in prev_snap:
-                payload[preserved_key] = prev_snap[preserved_key]
+        if "mobility_priorities" not in payload and "mobility_priorities" in prev_snap:
+            payload["mobility_priorities"] = prev_snap["mobility_priorities"]
         if (prev_snap.get("additional_notes") or "") == (payload.get("additional_notes") or ""):
             for note_derived_key in (
                 "strategy",
@@ -1302,6 +1409,23 @@ def finalize_consultation(
             ):
                 if note_derived_key not in payload and note_derived_key in prev_snap:
                     payload[note_derived_key] = prev_snap[note_derived_key]
+        if "weights" not in draft.answers:
+            prev_weights = prev_snap.get("weights")
+            if isinstance(prev_weights, dict) and prev_weights:
+                prev_inferred = {
+                    k: str(v) for k, v in infer_simplex_weights_from_profile(prev_snap).items()
+                }
+                prev_default = {k: str(v) for k, v in DEFAULT_WEIGHTS.items()}
+                prev_actual = {
+                    k: str(Decimal(str(v)).quantize(Decimal("0.01")))
+                    for k, v in prev_weights.items()
+                }
+                if prev_actual != prev_inferred and prev_actual != prev_default:
+                    payload["weights"] = prev_weights
+                else:
+                    payload["weights"] = infer_simplex_weights_from_profile(payload)
+            else:
+                payload["weights"] = infer_simplex_weights_from_profile(payload)
     try:
         snapshot = StudentProfileSnapshot.model_validate(payload)
     except ValidationError as exc:

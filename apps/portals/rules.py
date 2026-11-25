@@ -13,14 +13,16 @@ _ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _ISO_MONTH = re.compile(r"^(\d{4})-(\d{2})$")
 _FORMATS = {
     "DD.MM.YYYY": "%d.%m.%Y",
+    "DD-MM-YYYY": "%d-%m-%Y",
     "MM/DD/YYYY": "%m/%d/%Y",
     "YYYY-MM-DD": "%Y-%m-%d",
     "DD/MM/YYYY": "%d/%m/%Y",
     "MM/YYYY": "%m/%Y",
     "MM.YYYY": "%m.%Y",
     "YYYY-MM": "%Y-%m",
+    "YYYY": "%Y",
 }
-_MONTH_FORMATS = {"MM/YYYY", "MM.YYYY", "YYYY-MM"}
+_MONTH_FORMATS = {"MM/YYYY", "MM.YYYY", "YYYY-MM", "YYYY"}
 
 
 class RulesForm(Protocol):

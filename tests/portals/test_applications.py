@@ -703,3 +703,205 @@ def test_removing_an_application_with_a_cv_attached_succeeds(
         draft.refresh_from_db()
         assert draft.application_id is None and draft.requirements is not None
         assert not Application.objects.filter(id=application.id).exists()
+
+
+def test_adding_resolves_portal_from_candidate_metadata_or_portal_evidence_and_reuses_cross_tenant(
+    agency_a, agency_b, membership_a, membership_b, captured, program_factory
+) -> None:
+    programme = program_factory()
+    run_a = make_run(agency_a, membership_a)
+    cand_a = make_db_candidate(agency_a, run_a, program_name="MSc Informatics")
+    with tenant_scope(agency_a.id):
+        RecommendationCandidate.objects.filter(id=cand_a.id).update(
+            program_id=programme.id,
+            details={"portal_url": "https://my.uni-assist.de/apply/tum-informatics"},
+        )
+        make_published_pack(agency_a, run_a, (cand_a,))
+        card_a = applications_module.add_application(
+            student=membership_a, candidate_id=cand_a.id, actor=membership_a
+        )
+        assert card_a.portal_form is not None
+        assert card_a.portal_form.form_url == "https://my.uni-assist.de/apply/tum-informatics"
+        assert card_a.exception_item is None
+
+    # Agency B adds the same programme without portal_url and gets the cached portal.
+    run_b = make_run(agency_b, membership_b)
+    cand_b = make_db_candidate(agency_b, run_b, program_name="MSc Informatics")
+    with tenant_scope(agency_b.id):
+        RecommendationCandidate.objects.filter(id=cand_b.id).update(program_id=programme.id)
+        make_published_pack(agency_b, run_b, (cand_b,))
+        card_b = applications_module.add_application(
+            student=membership_b, candidate_id=cand_b.id, actor=membership_b
+        )
+        assert card_b.portal_form_id == card_a.portal_form_id
+
+
+def test_extension_bind_portal_binds_trusted_portal_and_refuses_untrusted_host(
+    client, agency_a, domain_a, membership_a, candidate, captured
+) -> None:
+    import json
+
+    from apps.funding.models import EvidenceClaim
+
+    with tenant_scope(agency_a.id):
+        EvidenceClaim.objects.filter(id=candidate.evidence_id).update(
+            source_url="https://www.tum.de/study/msc-chemistry"
+        )
+        card = applications_module.add_application(
+            student=membership_a, candidate_id=candidate.id, actor=membership_a
+        )
+        assert card.portal_form is None
+        token = redeem_pairing_code(issue_pairing_code(membership_a), "install-bind")[1]
+
+    bad = client.post(
+        f"/api/ext/applications/{card.id}/bind-portal",
+        data=json.dumps({"form_url": "https://evil.example.com/apply"}),
+        content_type="application/json",
+        HTTP_HOST=domain_a.host,
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert bad.status_code == 400
+    assert bad.json()["error"] == "untrusted_portal_host"
+
+    ok = client.post(
+        f"/api/ext/applications/{card.id}/bind-portal",
+        data=json.dumps({"form_url": "https://campus.tum.de/tumonline/apply"}),
+        content_type="application/json",
+        HTTP_HOST=domain_a.host,
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert ok.status_code == 201
+    payload = ok.json()
+    assert payload["bound"] is True
+    assert payload["form_url"] == "https://campus.tum.de/tumonline/apply"
+
+    again = client.post(
+        f"/api/ext/applications/{card.id}/bind-portal",
+        data=json.dumps({"form_url": "https://campus.tum.de/tumonline/apply"}),
+        content_type="application/json",
+        HTTP_HOST=domain_a.host,
+        HTTP_AUTHORIZATION=f"Bearer {token}",
+    )
+    assert again.status_code == 200
+    assert again.json()["bound"] is False
+
+
+def test_catalogue_shared_portal_hosts_discovers_multi_institution_platforms(
+    agency_a, membership_a, captured, program_factory
+) -> None:
+    from django.core.cache import cache
+
+    from apps.funding.models import EvidenceClaim, Institution, Program
+
+    cache.delete("portals:shared_platform_hosts:v1")
+    inst_a = Institution.objects.create(
+        canonical_key="tum-cat-test",
+        name="Technical University of Munich",
+        country_code="DE",
+        official_website="https://www.tum.de",
+    )
+    inst_b = Institution.objects.create(
+        canonical_key="lmu-cat-test",
+        name="LMU Munich",
+        country_code="DE",
+        official_website="https://www.lmu.de",
+    )
+    prog_a = program_factory(institution=inst_a)
+    prog_b = program_factory(institution=inst_b)
+    Program.objects.filter(id=prog_a.id).update(
+        cv_format_source_url="https://tum.soknadsweb-portal.no/admissions"
+    )
+    Program.objects.filter(id=prog_b.id).update(
+        cv_format_source_url="https://lmu.soknadsweb-portal.no/admissions"
+    )
+    # Multiple portal forms on an institution's own official_website domain are never shared.
+    PortalForm.objects.create(
+        portal_host="campus.tum.de",
+        form_key="/prog-1",
+        form_url="https://campus.tum.de/prog-1",
+    )
+    PortalForm.objects.create(
+        portal_host="campus.tum.de",
+        form_key="/prog-2",
+        form_url="https://campus.tum.de/prog-2",
+    )
+    # Single-institution external vendor is not shared (degree == 1 < 2).
+    PortalForm.objects.create(
+        portal_host="tum.single-vendor.org",
+        form_key="/start",
+        form_url="https://tum.single-vendor.org/start",
+    )
+
+    cache.delete("portals:shared_platform_hosts:v1")
+    discovered = applications_module.catalogue_shared_portal_hosts()
+    assert "soknadsweb-portal.no" in discovered
+    assert "tum.de" not in discovered
+    assert "single-vendor.org" not in discovered
+    assert cache.get("portals:shared_platform_hosts:v1") == discovered
+    assert applications_module._is_shared_portal_platform(
+        "https://ntnu.soknadsweb-portal.no/form"
+    ) is True
+    assert applications_module._is_shared_portal_platform(
+        "https://campus.tum.de/prog-1"
+    ) is False
+
+    # Feed the discovered shared platform host to add_application -> _portal_from_candidate.
+    run = make_run(agency_a, membership_a)
+    cand = make_db_candidate(agency_a, run, program_name="MSc Computational Science")
+    with tenant_scope(agency_a.id):
+        EvidenceClaim.objects.filter(id=cand.evidence_id).update(
+            source_url="https://tum.soknadsweb-portal.no/msc-cs"
+        )
+        make_published_pack(agency_a, run, (cand,))
+        card = applications_module.add_application(
+            student=membership_a, candidate_id=cand.id, actor=membership_a
+        )
+        assert card.portal_form is not None
+        assert card.portal_form.portal_host == "tum.soknadsweb-portal.no"
+
+
+def test_catalogue_shared_portal_hosts_reads_no_catalogue_and_excludes_same_institution_variants(
+    agency_a, membership_a, monkeypatch
+) -> None:
+    from django.core.cache import cache
+
+    from apps.mailbox.filter import shared_platforms
+    from tests.conftest import reads_no_catalogue
+
+    run = make_run(agency_a, membership_a)
+    cand_1 = make_db_candidate(
+        agency_a,
+        run,
+        program_name="MSc Informatics",
+    )
+    cand_2 = make_db_candidate(
+        agency_a,
+        run,
+        program_name="MSc Robotics",
+    )
+    with tenant_scope(agency_a.id):
+        RecommendationCandidate.objects.filter(id=cand_1.id).update(
+            institution_name="TU Munich",
+            details={"portal_url": "https://campus.tum.de/tumonline/apply"},
+        )
+        RecommendationCandidate.objects.filter(id=cand_2.id).update(
+            institution_name="Technical University of Munich",
+            details={"portal_url": "https://apply.tum.de/tumonline/robotics"},
+        )
+    assert cand_1.id != cand_2.id
+
+    cache.delete("portals:shared_platform_hosts:v1")
+    with tenant_scope(agency_a.id), reads_no_catalogue():
+        discovered = applications_module.catalogue_shared_portal_hosts()
+        platforms = shared_platforms()
+
+    assert "tum.de" not in discovered
+    assert "tum.de" not in platforms
+    assert cache.get("portals:shared_platform_hosts:v1") is None
+
+    monkeypatch.setenv("DATABASE_ROLE", "runtime_web")
+    cache.delete("portals:shared_platform_hosts:v1")
+    with tenant_scope(agency_a.id), reads_no_catalogue():
+        discovered_web = applications_module.catalogue_shared_portal_hosts()
+    assert "tum.de" not in discovered_web
+    assert cache.get("portals:shared_platform_hosts:v1") is None

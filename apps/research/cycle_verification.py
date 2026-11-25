@@ -571,6 +571,68 @@ def _years_back(today: dt.date, back: int) -> dt.date:
         return today.replace(year=today.year - back, day=28)
 
 
+def _seasonal_anchor_month(
+    subject: Subject, entries: Sequence[dict[str, Any]]
+) -> int | None:
+    """Infer the peak seasonal call month (1..12) from register cadence or
+    historical cycle evidence so Wayback probes target the active call window
+    rather than an arbitrary off-season wall-clock date.
+    """
+    if subject.cadence is not None:
+        if subject.cadence.open_month and 1 <= subject.cadence.open_month <= 12:
+            return int(subject.cadence.open_month)
+        if subject.cadence.deadline_month and 1 <= subject.cadence.deadline_month <= 12:
+            return ((int(subject.cadence.deadline_month) - 2) % 12) + 1
+    for obs in observations(_as_entries(list(entries))):
+        if obs.get("open"):
+            try:
+                return dt.date.fromisoformat(str(obs["open"])).month
+            except ValueError:
+                pass
+        if obs.get("deadline"):
+            try:
+                dl = dt.date.fromisoformat(str(obs["deadline"]))
+                return ((dl.month - 2) % 12) + 1
+            except ValueError:
+                pass
+    return None
+
+
+def _wayback_target_dates(
+    subject: Subject,
+    entries: Sequence[dict[str, Any]],
+    today: dt.date,
+    years_back: int,
+) -> list[dt.date]:
+    """Return one target date per prior year, anchored at the peak seasonal
+    call-opening month when known, else `today - back years`.
+    """
+    anchor_month = _seasonal_anchor_month(subject, entries)
+    targets: list[dt.date] = []
+    for back in range(1, years_back + 1):
+        target_year = today.year - back
+        if anchor_month is not None and anchor_month != today.month:
+            candidate = dt.date(target_year, anchor_month, 15)
+        else:
+            candidate = _years_back(today, back)
+        targets.append(candidate)
+    return targets
+
+
+def _skew_in_same_year(reason: str, target_year: int) -> dt.date | None:
+    """If `reason` is `archive_skew:YYYY-MM-DD` with `YYYY == target_year`,
+    return that exact snapshot date so Step 1b can probe the in-year capture.
+    """
+    if not reason.startswith("archive_skew:"):
+        return None
+    raw = reason.partition("archive_skew:")[2].strip()
+    try:
+        captured = dt.date.fromisoformat(raw)
+    except ValueError:
+        return None
+    return captured if captured.year == target_year else None
+
+
 #: `archive.capture_near` refusals that ANSWER the question -- the archive has
 #: no capture, none near the date, or only one of another site. Every other
 #: refusal (`archive_unavailable`, `archive_unfetchable:*`,
@@ -594,9 +656,11 @@ def _definite(page: FetchedPage, read: _Read | None) -> bool:
 
 def _step_wayback(run: _Run) -> None:
     looked = {t["url"] for t in run.looked if t["step"] == "1b" and t["outcome"] == LOOKED}
+    targets = _wayback_target_dates(
+        run.subject, run.entries, run.today, _settings.CYCLE_ARCHIVE_YEARS_BACK
+    )
     for url in run.subject.own_urls[:1]:  # the call page: the award's first own page
-        for back in range(1, _settings.CYCLE_ARCHIVE_YEARS_BACK + 1):
-            at = _years_back(run.today, back)
+        for at in targets:
             key = f"{url}@{at.year}"
             if key in looked:
                 continue  # a definite answer is cached for good (spec 9.2)
@@ -612,6 +676,28 @@ def _step_wayback(run: _Run) -> None:
                 run.meter.run.spend("SCRAPE_DO", page.cost_credits)
             except FetchBudgetExhausted as error:
                 exhausted = str(error)  # paid for already: read it, then stop
+            # If CDX reports an archive_skew date within the SAME target year,
+            # re-probe at that exact seasonal snapshot date rather than caching
+            # an off-season skew miss as a permanent refusal.
+            same_year_skew = (
+                _skew_in_same_year(page.reason, at.year) if not page.ok else None
+            )
+            if same_year_skew is not None and same_year_skew != at:
+                if exhausted:
+                    run.note("1b", key, "RETRY", page.reason)
+                    run.note("1b", key, "BUDGET", exhausted)
+                    return
+                try:
+                    run.meter.run.check("SCRAPE_DO")
+                    page = run.seams.capture_near(url, at=same_year_skew)
+                    try:
+                        run.meter.run.spend("SCRAPE_DO", page.cost_credits)
+                    except FetchBudgetExhausted as error:
+                        exhausted = str(error)
+                except FetchBudgetExhausted as error:
+                    run.note("1b", key, "RETRY", page.reason)
+                    run.note("1b", key, "BUDGET", str(error))
+                    return
             read = _absorb(run, page, step="1b") if page.ok else None
             run.note("1b", key, LOOKED if _definite(page, read) else "RETRY",
                      page.reason or str(page.outcome))
@@ -977,8 +1063,14 @@ def persist_verdict(
     locked.cost_detail = detail
     locked.cost_complete = locked.cost_complete and complete
     locked.verified_at = timezone.now()
-    due = next_check(today=today, deadlines=[d for d, _ in evidence.deadlines],
-                     last_call_open=last_open, projected_open=verdict.projected_open)
+    cad = cadence_of(opportunity)
+    due = next_check(
+        today=today,
+        deadlines=[d for d, _ in evidence.deadlines],
+        last_call_open=last_open,
+        projected_open=verdict.projected_open,
+        open_month=cad.open_month if cad else None,
+    )
     locked.next_check_at = timezone.make_aware(dt.datetime.combine(due, dt.time(6)))
     locked.save()
     _withdraw_if_sole_page_silent(opportunity, verdict)

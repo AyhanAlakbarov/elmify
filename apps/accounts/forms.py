@@ -15,7 +15,9 @@ from apps.reference_data import ISO_3166_ALPHA2_CODES, ISO_4217_CODES
 
 from .question_widgets import (
     CHOICE_LABELS,
+    _norm_country_key,
     country_choices,
+    country_code,
     money_widget,
 )
 from .row_fields import RowPart, RowsField, month_to_date, year_or_none
@@ -97,7 +99,7 @@ _COUNTRY_NAME_ALIASES: dict[str, str] = {
 
 @cache
 def _country_name_lookup() -> dict[str, str]:
-    table = dict(_COUNTRY_NAME_ALIASES)
+    table = {_norm_country_key(k): v for k, v in _COUNTRY_NAME_ALIASES.items()}
     locale = Locale.parse("en")
     for code, name in locale.territories.items():
         if (
@@ -106,21 +108,26 @@ def _country_name_lookup() -> dict[str, str]:
             and code.upper() in ISO_3166_ALPHA2_CODES
             and isinstance(name, str)
         ):
-            table[name.strip().upper()] = code.upper()
+            table[_norm_country_key(name)] = code.upper()
     return table
 
 
 def normalize_country_code(raw: object) -> str:
-    """Resolve a 2-letter ISO code, common alias ('UK', 'USA'), or English country name."""
+    """Resolve a 2-letter ISO code, common alias ('UK', 'USA'), or country name."""
     if not isinstance(raw, str):
         return ""
     cleaned = " ".join(raw.strip().split())
     if not cleaned:
         return ""
-    upper = cleaned.upper()
-    if len(upper) == 2 and upper in ISO_3166_ALPHA2_CODES:
-        return upper
-    return _country_name_lookup().get(upper, upper)
+    if len(cleaned) == 2 and cleaned.isascii() and cleaned.upper() in ISO_3166_ALPHA2_CODES:
+        return cleaned.upper()
+    alias_hit = _country_name_lookup().get(_norm_country_key(cleaned))
+    if alias_hit:
+        return alias_hit
+    resolved = country_code(cleaned)
+    if resolved:
+        return resolved
+    return cleaned.upper()
 _OPTIONAL_VALUES = {
     "language_evidence",
     "other_target_fields",
@@ -195,7 +202,7 @@ POPULAR_FIELDS: tuple[str, ...] = (
     "Physics",
 )
 DURATION_TICK_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("", "Any length"),
+    ("", "Any duration (1, 1.5, or 2 years)"),
     (
         "Strictly 1-year master's only.",
         "1 year only",
@@ -203,6 +210,10 @@ DURATION_TICK_OPTIONS: tuple[tuple[str, str], ...] = (
     (
         "Prefer a 1-year master's unless there is funding, research, or internship.",
         "1 year, or 2 if there is funding or research",
+    ),
+    (
+        "Prefer a 1.5-year (18-month) master's program.",
+        "Prefer 1.5-year master's (15–18 months / 90 ECTS)",
     ),
     (
         "Prefer a 2-year master's program.",
@@ -351,9 +362,10 @@ _EVIDENCE_TYPES = [
     ),
     ("OTHER", "Other proof"),
 ]
-#: One row per language the student said they could study in (2026-11-16: five,
-#: the template shows only the languages from the previous question).
-_LANGUAGE_ROWS = 5
+#: ponytail: three rows by default; expand dynamically up to _MAX_LANGUAGE_ROWS when more rows
+#: are prefilled or submitted.
+_LANGUAGE_ROWS = 3
+_MAX_LANGUAGE_ROWS = 20
 _LANGUAGE_PARTS = ("language", "level", "evidence_type", "available_by")
 _LANGUAGE_ROW_INCOMPLETE = (
     "For each language, fill in the level, how you can prove it and the date you will "
@@ -404,6 +416,8 @@ class _RecordWidget(forms.MultiWidget):
             for record in records
             for part in self.parts
         ]
+        if len(flat) >= len(self.widgets):
+            return flat
         return (flat + [None] * len(self.widgets))[: len(self.widgets)]
 
     def get_context(
@@ -550,20 +564,25 @@ class AcademicRecordField(forms.MultiValueField):
         return records
 
 
-class LanguageEvidenceField(forms.MultiValueField):
-    """Up to three languages with how each is evidenced. A blank row is skipped; a
-    half-filled one is refused by the profile schema."""
+def _language_row_fields() -> list[forms.Field]:
+    return [
+        forms.CharField(max_length=100, required=False),
+        forms.CharField(max_length=50, required=False),
+        forms.ChoiceField(choices=_EVIDENCE_TYPES, required=False),
+        forms.DateField(required=False),
+    ]
 
-    def __init__(self) -> None:
+
+class LanguageEvidenceField(forms.MultiValueField):
+    """Three language rows by default, expanding dynamically up to 20 when more rows
+    are prefilled or submitted. A blank row is skipped; a half-filled one is refused."""
+
+    def __init__(self, *, rows: int = _LANGUAGE_ROWS) -> None:
+        self.rows = max(_LANGUAGE_ROWS, min(_MAX_LANGUAGE_ROWS, rows))
         fields: list[forms.Field] = []
         widgets: list[forms.Widget] = []
-        for idx in range(1, _LANGUAGE_ROWS + 1):
-            fields += [
-                forms.CharField(max_length=100, required=False),
-                forms.CharField(max_length=50, required=False),
-                forms.ChoiceField(choices=_EVIDENCE_TYPES, required=False),
-                forms.DateField(required=False),
-            ]
+        for idx in range(1, self.rows + 1):
+            fields += _language_row_fields()
             widgets += [
                 forms.TextInput(
                     attrs={
@@ -588,13 +607,23 @@ class LanguageEvidenceField(forms.MultiValueField):
             "Level or score",
             "Proof type",
             "Date available (or planned)",
-        ) * _LANGUAGE_ROWS
+        ) * self.rows
         super().__init__(
             fields=tuple(fields),
             widget=_RecordWidget(widgets, _LANGUAGE_PARTS, labels=lang_labels),
             require_all_fields=False,
             required=False,
         )
+
+    def clean(self, value: Any) -> Any:
+        if isinstance(value, (list, tuple)) and len(value) > len(self.fields):
+            extra_rows = min(_MAX_LANGUAGE_ROWS, (len(value) + 3) // 4) - len(self.fields) // 4
+            if extra_rows > 0:
+                extra_fields: list[forms.Field] = []
+                for _ in range(extra_rows):
+                    extra_fields.extend(_language_row_fields())
+                self.fields = (*self.fields, *extra_fields)
+        return super().clean(value)
 
     def compress(self, data_list: list[object]) -> list[dict[str, object]]:
         rows: list[dict[str, object]] = []
@@ -972,24 +1001,33 @@ def _merge_quick_inputs(key: str, data: Mapping[str, Any] | None) -> dict[str, A
                 except ValueError:
                     parsed_lang = None
             if isinstance(parsed_lang, list):
-                for row_idx, row in enumerate(parsed_lang[:_LANGUAGE_ROWS]):
+                for row_idx, row in enumerate(parsed_lang[:_MAX_LANGUAGE_ROWS]):
                     if isinstance(row, dict):
                         for j, part in enumerate(_LANGUAGE_PARTS):
                             merged[f"value_{row_idx * 4 + j}"] = str(row.get(part) or "")
         if any(
             f"value_{row_idx}_{part}" in data
-            for row_idx in range(_LANGUAGE_ROWS)
+            for row_idx in range(_MAX_LANGUAGE_ROWS)
             for part in _LANGUAGE_PARTS
         ):
-            for row_idx in range(_LANGUAGE_ROWS):
+            max_row_idx = max(
+                (
+                    row_idx
+                    for row_idx in range(_MAX_LANGUAGE_ROWS)
+                    if any(f"value_{row_idx}_{part}" in data for part in _LANGUAGE_PARTS)
+                ),
+                default=_LANGUAGE_ROWS - 1,
+            )
+            for row_idx in range(max(_LANGUAGE_ROWS, max_row_idx + 1)):
                 for j, part in enumerate(_LANGUAGE_PARTS):
                     cell_key = f"value_{row_idx * 4 + j}"
                     if cell_key not in data:
                         merged[cell_key] = str(data.get(f"value_{row_idx}_{part}") or "")
         preset = str(data.get("language_quick_preset") or "").strip().upper()
         if preset == "NONE":
-            for idx in range(_LANGUAGE_ROWS * 4):
-                merged[f"value_{idx}"] = ""
+            for idx in range(_MAX_LANGUAGE_ROWS * 4):
+                if idx < _LANGUAGE_ROWS * 4 or f"value_{idx}" in merged:
+                    merged[f"value_{idx}"] = ""
         elif preset in {"IELTS", "TOEFL", "DUOLINGO", "TESTDAF"}:
             # Fills the language and the proof type only. It used to fill a score
             # too ("IELTS 7.0"), saving a result the student never stated.
@@ -1056,6 +1094,16 @@ class ConsultationQuestionForm(forms.Form):
         initial_value: object = None,
     ) -> None:
         normalized_data = _merge_quick_inputs(key, data)
+        if key == "language_evidence" and isinstance(field, LanguageEvidenceField):
+            needed_rows = field.rows
+            if isinstance(initial_value, list):
+                needed_rows = max(needed_rows, min(_MAX_LANGUAGE_ROWS, len(initial_value)))
+            if normalized_data is not None:
+                for idx in range(_MAX_LANGUAGE_ROWS * 4):
+                    if str(normalized_data.get(f"value_{idx}") or "").strip():
+                        needed_rows = max(needed_rows, idx // 4 + 1)
+            if needed_rows > field.rows:
+                field = LanguageEvidenceField(rows=needed_rows)
         initial = (
             {"value": _initial_form_value(key, initial_value)}
             if initial_value is not None and normalized_data is None

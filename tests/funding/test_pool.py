@@ -325,6 +325,27 @@ def test_candidate_pool_prioritizes_inferred_degree_level_and_non_negotiable_dur
     all_two = candidate_pool(one_year_non_neg, limit=10)
     assert [p.id for p in all_two.programs] == [msc_12m.id, msc_24m.id]
 
+    msc_18m = Program.objects.create(
+        institution=institution,
+        canonical_key="m-middle-msc-18m",
+        name="MSc Computer Science 1.5yr",
+        campus_name="Main",
+        city="Munich",
+        country_code="DE",
+        location_key="DE:munich",
+        degree_level="MASTER",
+        teaching_languages=["English"],
+        duration_months=18,
+    )
+    one_and_half_non_neg = profile.model_copy(
+        update={
+            "duration_flexibility": "NON_NEGOTIABLE",
+            "duration_preference": "ONE_AND_HALF_YEAR",
+        }
+    )
+    top_half = candidate_pool(one_and_half_non_neg, limit=1)
+    assert [p.id for p in top_half.programs] == [msc_18m.id]
+
 
 @pytest.mark.django_db
 def test_home_country_holder_award_not_excluded_when_student_excludes_home_country(
@@ -350,6 +371,70 @@ def test_home_country_holder_award_not_excluded_when_student_excludes_home_count
     award_ids = {a.id for a in pool.awards}
     assert home_award.id in award_ids
     assert foreign_excluded_award.id not in award_ids
+
+
+def test_candidate_pool_duration_priority_bands_align_with_evaluation_duration_band(
+    profile,
+    institution,
+):
+    """Item 6: SQL `duration_priority` bands in `candidate_pool` match
+    `evaluation.py::duration_band` (`ONE_YEAR <= 14`, `ONE_AND_HALF_YEAR 15..18`,
+    `TWO_YEAR >= 19`)."""
+    prog_14m = Program.objects.create(
+        institution=institution,
+        canonical_key="z-prog-14m",
+        name="MSc Computer Science 14m",
+        campus_name="Main",
+        city="Munich",
+        country_code="DE",
+        location_key="DE:munich",
+        degree_level="MASTER",
+        teaching_languages=["English"],
+        duration_months=14,
+    )
+    prog_16m = Program.objects.create(
+        institution=institution,
+        canonical_key="m-prog-16m",
+        name="MSc Computer Science 16m",
+        campus_name="Main",
+        city="Munich",
+        country_code="DE",
+        location_key="DE:munich",
+        degree_level="MASTER",
+        teaching_languages=["English"],
+        duration_months=16,
+    )
+    prog_20m = Program.objects.create(
+        institution=institution,
+        canonical_key="a-prog-20m",
+        name="MSc Computer Science 20m",
+        campus_name="Main",
+        city="Munich",
+        country_code="DE",
+        location_key="DE:munich",
+        degree_level="MASTER",
+        teaching_languages=["English"],
+        duration_months=20,
+    )
+
+    p_one = profile.model_copy(
+        update={"duration_flexibility": "NON_NEGOTIABLE", "duration_preference": "ONE_YEAR"}
+    )
+    assert [p.id for p in candidate_pool(p_one, limit=1).programs] == [prog_14m.id]
+
+    p_half = profile.model_copy(
+        update={
+            "duration_flexibility": "NON_NEGOTIABLE",
+            "duration_preference": "ONE_AND_HALF_YEAR",
+        }
+    )
+    assert [p.id for p in candidate_pool(p_half, limit=1).programs] == [prog_16m.id]
+
+    p_two = profile.model_copy(
+        update={"duration_flexibility": "NON_NEGOTIABLE", "duration_preference": "TWO_YEAR"}
+    )
+    assert [p.id for p in candidate_pool(p_two, limit=1).programs] == [prog_20m.id]
+
 
 
 

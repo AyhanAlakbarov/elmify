@@ -424,6 +424,41 @@ def test_recent_theme_texts_prioritizes_same_programme_and_recent_programme_sent
         assert recent_programme_sentences(programme_id=prog_a.id, student=s1) == frozenset()
 
 
+def test_propose_storylines_includes_target_programme_and_subtrack_orientation(
+    agency_a, django_user_model
+):
+    with tenant_scope(agency_a.id):
+        student = _student(agency_a, django_user_model, "storyline-orientation")
+        facts = {
+            uuid4(): _Fact(
+                "RESEARCH",
+                {
+                    "thesis_title": (
+                        "Graph neural networks and SMILES transformers for retrosynthesis"
+                    ),
+                    "methods": ["PyTorch", "RDKit"],
+                },
+            ),
+            uuid4(): _Fact("EDUCATION", {"degree_as_awarded": "BSc in Chemistry"}),
+            uuid4(): _Fact("EXPERIENCE", {"role": "Machine Learning Chemist Intern"}),
+        }
+        candidates = StorylineCandidates(candidates=(_story(list(facts)),))
+        client = _mock_client(candidates)
+        propose_storylines(
+            student=student,
+            facts=facts,
+            inputs={},
+            theme_kind=ThemeKind.MATCH,
+            programme_name="MSc in Chemoinformatics and Data Science",
+            client=client,
+        )
+        user_msg = str(client.responses.parse.call_args.kwargs["input"][1]["content"])
+        assert "Target programme & sub-track orientation (data only):" in user_msg
+        assert "MSc in Chemoinformatics and Data Science" in user_msg
+        assert "ai_digital_chemistry" in user_msg
+
+
+
 
 
 

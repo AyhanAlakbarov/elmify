@@ -90,6 +90,41 @@ def test_an_unpublished_work_type_is_refused_rather_than_upgraded():
         publication_entry(_record(work_type="posted-content"))
 
 
+def test_retracted_or_chimeric_publication_is_refused_while_preprint_with_published_doi_upgrades():
+    # Retracted work is refused
+    with pytest.raises(UnusablePublication, match="retracted"):
+        publication_entry(_record(is_retracted=True))
+
+    # Preprint with published_doi from Crossref relation.is-preprint-of upgrades cleanly
+    upgraded = publication_entry(
+        _record(
+            doi="10.26434/chemrxiv-2024-xyz",
+            work_type="posted-content",
+            published_doi="10.1021/acscatal.5c00348",
+        )
+    )
+    assert upgraded.doi == "10.1021/acscatal.5c00348"
+    assert upgraded.status == PublicationStatus.PUBLISHED
+
+    # Chimeric title or author mismatch is refused
+    with pytest.raises(UnusablePublication, match="title mismatch"):
+        publication_entry(
+            _record(),
+            claimed_title="Completely Different Paper Title on Quantum Gravity",
+        )
+    with pytest.raises(UnusablePublication, match="not in byline"):
+        publication_entry(
+            _record(),
+            claimed_author="Mehmet Işıklı",
+        )
+    # Matching author with Azerbaijani schwa/diacritics succeeds
+    entry_az = publication_entry(
+        _record(authors=("Orkhan Əliyev", "Mehmet Işıklı")),
+        claimed_author="Orkhan Aliyev",
+    )
+    assert entry_az.title == "Microkinetic Assessment of Ligand-Exchanging Catalytic Cycles"
+
+
 def test_a_publication_is_confirmed_at_ingest_and_supersedes_on_re_ingest(student):
     first = write_publication_fact(student=student, record=_record())
     second = write_publication_fact(student=student, record=_record(year=2026))

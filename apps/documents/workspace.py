@@ -27,17 +27,21 @@ import re
 from dataclasses import dataclass
 from uuid import UUID
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from apps.portals.models import Application, ApplicationLink
 from apps.tenancy.models import Membership
 from apps.tenancy.services import current_membership
 
-from .models import DocumentDraft, RefereeRequest, VerifiedFact
-from .referee_views import referee_context
-from .verification import generatable_facts
+from .audit import record_event
+from .models import DocumentDraft, NarrativeInput
+from .referee_views import referee_context, visible_referee_requests
+from .verification import generatable_facts, has_full_name
 from .writing import LETTER_NOTES, LetterRow, _writable
 
 #: Requirement sentences about the letter itself, shown first. English only, and
@@ -66,14 +70,51 @@ TABS = (
     ("essay", "Scholarship essay"),
 )
 
-#: The questions a good letter needs that the ledger does not hold. Shown now
-#: so the page has its final shape; saving answers is the backend still owed.
-LETTER_QUESTIONS = (
-    ("why_programme", "Why this programme, and not a similar one elsewhere?"),
-    ("goal", "What do you want to do in the five years after it?"),
-    ("story", "One moment that made you choose this field."),
-    ("avoid", "Anything the letter must not mention?"),
+#: Structured prompts that feed the student's confirmed NarrativeInput ledger
+#: for motivation letters (mapped 1-to-1 to NarrativeInput.Kind).
+LETTER_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
+    (
+        "research_plan",
+        "Which courses, labs, or professors at this university match your research or study plan?",
+        (
+            "e.g. Prof. Weber's Catalysis Group, the Advanced Synthesis Lab module, "
+            "or your proposed MSc thesis topic"
+        ),
+        NarrativeInput.Kind.RESEARCH_PLAN,
+    ),
+    (
+        "career_goal",
+        (
+            "What specific career role or research path are you aiming for "
+            "after completing this degree?"
+        ),
+        (
+            "e.g. R&D process chemist in sustainable catalysis, or pursuing a PhD "
+            "in organometallic chemistry"
+        ),
+        NarrativeInput.Kind.DEVELOPMENT_IMPACT,
+    ),
+    (
+        "key_project",
+        (
+            "Which past thesis, research project, or technical achievement best proves "
+            "you are ready for this programme?"
+        ),
+        (
+            "e.g. My BSc thesis on selective oxidation of aromatics using FTIR "
+            "and GC-MS reaction monitoring"
+        ),
+        NarrativeInput.Kind.PERSONAL_BACKGROUND,
+    ),
+    (
+        "home_impact",
+        "How will you apply what you learn to your field or home country after graduating?",
+        "e.g. Modernizing cleaner catalytic and environmental monitoring workflows in Azerbaijan",
+        NarrativeInput.Kind.HOME_COUNTRY_CIRCUMSTANCES,
+    ),
 )
+
+_MAX_NOTE_CHARS = 2000
 
 
 @dataclass(frozen=True)
@@ -205,28 +246,62 @@ def letter_workspace(request: HttpRequest, application_id: UUID) -> HttpResponse
         (a for a in scholarship_apps if str(a.id) == selected_award_id),
         scholarship_apps[0] if scholarship_apps else None,
     )
-    essay_drafts = _essay_drafts(student, scholarship_app)
-    essay_target = scholarship_app or application
-    essay_row = LetterRow(
-        application=essay_target,
-        drafts=essay_drafts,
-        note=LETTER_NOTES.get(essay_target.letter_note, ""),
-        writable=False,
+
+    def _holder_for(target: Application | None) -> str:
+        if target is not None and target.candidate is not None:
+            return str(
+                (target.candidate.funding_card or {}).get("holder")
+                or (target.candidate.details or {}).get("holder")
+                or ""
+            )
+        if candidate is not None:
+            return str((candidate.details or {}).get("holder") or "")
+        return ""
+
+    essay_targets = scholarship_apps if scholarship_apps else [application]
+    essay_bundles = [
+        {
+            "app": target_app if scholarship_apps else None,
+            "id": str(target_app.id),
+            "row": LetterRow(
+                application=target_app,
+                drafts=_essay_drafts(student, target_app if scholarship_apps else None),
+                note=LETTER_NOTES.get(target_app.letter_note, ""),
+                writable=False,
+            ),
+            "requirements": (
+                requirements_for(target_app)
+                if scholarship_apps
+                else Requirements((), (), (), ())
+            ),
+            "holder": _holder_for(target_app if scholarship_apps else None),
+        }
+        for target_app in essay_targets
+    ]
+    active_bundle = next(
+        (b for b in essay_bundles if scholarship_app and b["id"] == str(scholarship_app.id)),
+        essay_bundles[0],
     )
-    essay_requirements = (
-        requirements_for(scholarship_app)
-        if scholarship_app is not None
-        else Requirements((), (), (), ())
-    )
-    scholarship_holder = ""
-    if scholarship_app is not None and scholarship_app.candidate is not None:
-        scholarship_holder = str(
-            (scholarship_app.candidate.funding_card or {}).get("holder")
-            or (scholarship_app.candidate.details or {}).get("holder")
-            or ""
-        )
-    elif candidate is not None:
-        scholarship_holder = str((candidate.details or {}).get("holder") or "")
+    essay_row = active_bundle["row"]
+    essay_requirements = active_bundle["requirements"]
+    scholarship_holder = active_bundle["holder"]
+    existing_inputs: dict[str, str] = {}
+    for entry in NarrativeInput.objects.filter(
+        student=student,
+        kind__in=[kind for _k, _l, _p, kind in LETTER_QUESTIONS],
+    ).order_by("created_at"):
+        if entry.text and entry.text.strip():
+            existing_inputs[entry.kind] = entry.text.strip()
+    letter_questions = [
+        {
+            "key": key,
+            "label": label,
+            "placeholder": placeholder,
+            "value": existing_inputs.get(kind, ""),
+        }
+        for key, label, placeholder, kind in LETTER_QUESTIONS
+    ]
+    saved_notes_count = sum(1 for q in letter_questions if q["value"])
     return render(
         request,
         "student/letter_workspace.html",
@@ -243,21 +318,74 @@ def letter_workspace(request: HttpRequest, application_id: UUID) -> HttpResponse
             "scholarship_holder": scholarship_holder,
             "essay_row": essay_row,
             "essay_requirements": essay_requirements,
-            "questions": LETTER_QUESTIONS,
-            "identity_confirmed": generatable_facts(student)
-            .filter(category=VerifiedFact.Category.IDENTITY)
-            .exists(),
-            "referee_requests": list(
-                RefereeRequest.objects.filter(
-                    referee__student=student, application=application
-                )
-                .exclude(state=RefereeRequest.State.DECLINED)
-                .select_related("referee")
-                .order_by("created_at")
-            ),
+            "essay_bundles": essay_bundles,
+            "questions": [(q["key"], q["label"]) for q in letter_questions],
+            "letter_questions": letter_questions,
+            "saved_notes_count": saved_notes_count,
+            "identity_confirmed": has_full_name(generatable_facts(student)).exists(),
+            "referee_requests": [
+                q
+                for q in visible_referee_requests(student)
+                if q.application_id == application.id
+            ],
             "here": request.path,
         },
     )
+
+
+@login_required
+@require_POST
+def letter_notes_save(request: HttpRequest, application_id: UUID) -> HttpResponse:
+    student = current_membership(request, Membership.Role.STUDENT)
+    application = (
+        Application.objects.filter(id=application_id, student=student)
+        .exclude(outcome=Application.Outcome.WITHDRAWN)
+        .first()
+    )
+    if application is None:
+        raise Http404
+    now = timezone.now()
+    saved_kinds: list[str] = []
+    for key, _label, _placeholder, kind in LETTER_QUESTIONS:
+        if key not in request.POST:
+            continue
+        raw = str(request.POST.get(key) or "").strip()[:_MAX_NOTE_CHARS]
+        existing = (
+            NarrativeInput.objects.filter(
+                student=student,
+                kind=kind,
+                proposed_by=NarrativeInput.ProposedBy.STUDENT,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if raw:
+            if existing is not None:
+                existing.text = raw
+                existing.confirmed_at = now
+                existing.save(update_fields=["text", "confirmed_at"])
+            else:
+                NarrativeInput.objects.create(
+                    student=student,
+                    kind=kind,
+                    text=raw,
+                    proposed_by=NarrativeInput.ProposedBy.STUDENT,
+                    confirmed_at=now,
+                )
+            saved_kinds.append(kind)
+        elif existing is not None:
+            existing.delete()
+    record_event(
+        actor=student,
+        event="letter.notes_saved",
+        object_id=application.id,
+    )
+    messages.success(
+        request,
+        "Saved your letter notes. Click 'Write a new version' whenever you want "
+        "the letter updated with them.",
+    )
+    return redirect(f"/student/writing/letters/{application.id}/?doc=letter")
 
 
 @login_required

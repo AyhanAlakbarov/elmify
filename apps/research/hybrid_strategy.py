@@ -47,7 +47,10 @@ from apps.funding.models import (
 from apps.funding.pool import _word_or_substring_q, candidate_pool
 from apps.reference_data import ISO_3166_ALPHA2_CODES
 from apps.research.destinations import anywhere
+from apps.research.harness import run_richness_estimate
 from apps.research.hosts import registrable_domain
+from apps.research.mark_recapture import estimate_from_sightings
+from apps.research.models import OrganisationDomain, SweepRun
 from apps.research.national_databases import NationalDatabasesSource
 from apps.research.providers import SearchRequest
 from apps.research.seam_bindings import build_university_funding_queries
@@ -82,6 +85,8 @@ class CountryCellAssessment:
     unfunded_university_domains: tuple[str, ...]
     needs_exploration: bool = False
     cycle_refresh_only: bool = False
+    estimated_total: float = 0.0
+    estimated_coverage: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -187,6 +192,7 @@ def plan_hybrid_retrieval(
     min_affordable_per_country: int = 2,
     deep_saturation_count: int = 15,
     exploration_cooldown_days: int = 30,
+    min_coverage_ratio: float = 0.85,
 ) -> HybridRetrievalPlan:
     """Evaluate the shared PostgreSQL catalog across all 5 governing variables
     and classify each destination country into Tier 1, Tier 2, or Tier 3."""
@@ -476,6 +482,42 @@ def plan_hybrid_retrieval(
                 domains.append(dom)
         return tuple(domains)
 
+    def _country_richness(cc: str, progs: Sequence[Program]) -> tuple[float, float]:
+        latest_run = (
+            SweepRun.objects.filter(
+                country_code=cc, family=_PROGRAMME_FAMILY, finished_at__isnull=False
+            )
+            .order_by("-finished_at")
+            .first()
+        )
+        if latest_run is not None:
+            est = run_richness_estimate(latest_run)
+            if est.s_obs > 0 or (est.chapman_hat is not None and est.chapman_hat > 0):
+                total = est.chapman_hat if est.chapman_hat is not None else est.s_hat
+                return round(total, 2), round(est.effective_coverage, 4)
+        if not progs:
+            return 0.0, 0.0
+        prog_domains: list[str] = []
+        for p in progs:
+            dom = (
+                inst_domains.get(p.institution_id, "")
+                if p.institution_id is not None
+                else registrable_domain(p.origin_domain or p.evidence_domain)
+            )
+            prog_domains.append(dom)
+        route_counts: dict[str, int] = {}
+        non_empty_domains = {d for d in prog_domains if d}
+        if non_empty_domains:
+            for od in OrganisationDomain.objects.filter(
+                registrable_domain__in=non_empty_domains
+            ).select_related("organisation"):
+                route_counts[od.registrable_domain] = max(
+                    len(od.organisation.found_via or []), 1
+                )
+        sightings = [route_counts.get(d, 1) for d in prog_domains]
+        est = estimate_from_sightings(sightings)
+        return round(est.s_hat, 2), round(est.effective_coverage, 4)
+
     for cc in destinations:
         progs = programs_by_country.get(cc, [])
         prog_count = len(progs)
@@ -484,7 +526,12 @@ def plan_hybrid_retrieval(
         affordable_count = affordable_by_country.get(cc, 0)
         award_count = awards_by_country.get(cc, 0)
         due_ids = tuple(sorted(due_verifications_by_country.get(cc, [])))
-        past_stop = pass_states.state(cc, _PROGRAMME_FAMILY).past_economic_stop
+        pass_state = pass_states.state(cc, _PROGRAMME_FAMILY)
+        past_stop = pass_state.past_economic_stop or pass_state.stop_reason in (
+            "PLATEAU",
+            "ECONOMIC",
+            "EXHAUSTED",
+        )
         unfunded_domains = _unfunded_domains(progs)
 
         effective_prog_count = (
@@ -492,24 +539,27 @@ def plan_hybrid_retrieval(
             if (pack is not None and not pack.empty_reason)
             else prog_count
         )
+        est_total, est_cov = _country_richness(cc, progs)
+        coverage_complete = est_cov >= min_coverage_ratio and effective_prog_count >= 1
+        saturated = past_stop or coverage_complete
         depth_ok = effective_prog_count >= min_programs_per_country or (
-            past_stop and effective_prog_count >= min_warm_programs_per_country
+            saturated and effective_prog_count >= 1
         )
         subfield_ok = (
             not resolution.is_ambiguous_or_interdisciplinary
             or exact_count >= min_exact_subfield_programs
-            or (past_stop and exact_count >= 1)
+            or (saturated and exact_count >= 1)
         )
         interests_ok = not has_interests or interest_count >= min_interest_programs
         affordability_ok = (
             profile.funding_dependency == "OPTIONAL"
             or affordable_count >= min_affordable_per_country
-            or (past_stop and affordable_count >= 1)
+            or (saturated and affordable_count >= 1)
         )
         cycles_ok = len(due_ids) == 0
         latest_checked = latest_checked_by_country.get(cc)
         exploration_ok = (
-            past_stop
+            saturated
             or effective_prog_count >= deep_saturation_count
             or latest_checked is None
             or latest_checked >= exploration_cutoff
@@ -525,7 +575,7 @@ def plan_hybrid_retrieval(
         if static_gates_ok and cycles_ok:
             tier = DiscoveryTier.TIER_1_DB_COMPLETE
             hot.append(cc)
-        elif prog_count >= min_warm_programs_per_country:
+        elif prog_count >= min_warm_programs_per_country or (saturated and prog_count >= 1):
             tier = DiscoveryTier.TIER_2_TARGETED_DELTA
             delta.append(cc)
         else:
@@ -546,6 +596,8 @@ def plan_hybrid_retrieval(
                 unfunded_university_domains=unfunded_domains,
                 needs_exploration=needs_exploration,
                 cycle_refresh_only=is_cycle_refresh_only,
+                estimated_total=est_total,
+                estimated_coverage=est_cov,
             )
         )
 

@@ -37,6 +37,7 @@ from .domains import is_catalogue
 from .fetch import SweepBudget
 from .funding_reader import FAMILY_BY_HOLDER
 from .hosts import registrable_domain
+from .mark_recapture import RichnessEstimate, estimate_from_sightings
 from .models import (
     ANGLE_KINDS,
     ClosedList,
@@ -56,6 +57,8 @@ logger = logging.getLogger(__name__)
 #: The plateau rule's window, and the economic and decay rules' too -- one
 #: window so the three cannot disagree about what "recently" means.
 STOP_WINDOW = 3
+MIN_COVERAGE_BATCHES = 2
+SWEEP_COVERAGE_STOP_THRESHOLD = 0.90
 
 #: Decision 30: 10-15 per angle on Exa. Brave pages to its first empty page
 #: on its own; Tavily caps at 20.
@@ -82,9 +85,24 @@ class BatchResult:
     verified_by_provider: Mapping[str, int] = field(default_factory=dict)
 
 
-def _plateau(batches: Sequence[BatchResult]) -> bool:
+def _plateau(batches: Sequence[BatchResult], *, state: _PassState | None = None) -> bool:
     recent = batches[-STOP_WINDOW:]
-    return len(recent) == STOP_WINDOW and all(b.verified == 0 for b in recent)
+    if len(recent) == STOP_WINDOW and all(b.verified == 0 for b in recent):
+        return True
+    if (
+        state is not None
+        and len(batches) >= MIN_COVERAGE_BATCHES
+        and batches[-1].verified == 0
+        and batches[-1].novel == 0
+    ):
+        est = state.richness_estimate(len(batches))
+        if (
+            (est.s_obs >= 2 or (state.m_register > 0 and len(state.recaptured) >= 1))
+            and est.f1 == 0
+            and est.effective_coverage >= SWEEP_COVERAGE_STOP_THRESHOLD
+        ):
+            return True
+    return False
 
 
 def _economic(
@@ -101,9 +119,13 @@ def _economic(
 
 
 def stop_reason(
-    batches: Sequence[BatchResult], *, value_per_award_usd: float, awards_per_verified_host: float
+    batches: Sequence[BatchResult],
+    *,
+    value_per_award_usd: float,
+    awards_per_verified_host: float,
+    state: _PassState | None = None,
 ) -> str | None:
-    if _plateau(batches):
+    if _plateau(batches, state=state):
         return "PLATEAU"
     if _economic(
         batches,
@@ -219,9 +241,29 @@ class _PassState:
     #: This run's discovery per novel domain, so a later provider that
     #: returns the host is appended to its `returned_by`.
     discoveries: dict[str, SweepDiscovery] = field(default_factory=dict)
+    #: Per-domain query sighting counts across all provider calls in this run.
+    host_sightings: dict[str, int] = field(default_factory=dict)
+    #: Domains verified for this pass's family.
+    verified_hosts: set[str] = field(default_factory=set)
+    #: Size of the register (`M`) when `config.register` is set.
+    m_register: int = 0
+    #: Total queries executed so far (`T`).
+    queries_sent: int = 0
 
     def spent(self) -> float:
         return self.meter.total() + self.fetch_budget.usd()
+
+    def richness_estimate(self, n_batches: int) -> RichnessEstimate:
+        relevant_domains = self.verified_hosts | self.recaptured
+        counts = [
+            c for dom, c in self.host_sightings.items() if dom in relevant_domains and c > 0
+        ]
+        return estimate_from_sightings(
+            counts,
+            n_units=max(self.queries_sent, n_batches),
+            m_register=self.m_register,
+            r_recaptured=len(self.recaptured),
+        )
 
 
 def _ask(
@@ -246,7 +288,9 @@ def _ask(
     query = SweepQuery.objects.create(
         run=state.run, batch_number=batch_number, angle=angle, provider=provider.name,
     )
+    state.queries_sent += 1
     seen = denied = 0
+    seen_in_query: set[str] = set()
     novel: list[tuple[Organisation, SweepDiscovery]] = []
     for url in provider.search(request, meter=state.meter):
         seen += 1
@@ -261,6 +305,9 @@ def _ask(
         domain = registrable_domain(url)
         if not domain:
             continue
+        if domain not in seen_in_query:
+            seen_in_query.add(domain)
+            state.host_sightings[domain] = state.host_sightings.get(domain, 0) + 1
         held = domain in state.seen_this_run or OrganisationDomain.objects.filter(
             registrable_domain=domain
         ).exists()
@@ -325,6 +372,11 @@ def run_pass(
             f"angles for {config.country_code}/{config.family} name cycle {stale}, not "
             f"{config.cycle}: run generate_sweep_angles for this cycle first"
         )
+    m_register = (
+        RegisterEntry.objects.filter(register=config.register).count()
+        if config.register
+        else 0
+    )
     state = _PassState(
         run=SweepRun.objects.create(
             country_code=config.country_code, family=config.family,
@@ -334,6 +386,7 @@ def run_pass(
         ),
         meter=meter or SearchMeter(),
         fetch_budget=fetch_budget,
+        m_register=m_register,
     )
     live: dict[str, SearchProvider] = {p.name: p for p in providers}
     results: list[BatchResult] = []
@@ -377,6 +430,7 @@ def run_pass(
             if ok:
                 discovery.verified_in_pass = True
                 discovery.save(update_fields=["verified_in_pass"])
+                state.verified_hosts.add(org.primary_domain)
                 verified += 1
                 # Decay asks "is this provider still adding NEW hosts", so
                 # credit is scoped to `found` -- this batch's novel
@@ -400,6 +454,7 @@ def run_pass(
             results,
             value_per_award_usd=settings.SWEEP_VALUE_PER_AWARD_USD,
             awards_per_verified_host=settings.SWEEP_AWARDS_PER_VERIFIED_HOST,
+            state=state,
         )
         if stop:
             reason = stop
@@ -418,3 +473,35 @@ def run_pass(
     run.finished_at = timezone.now()
     run.save()
     return run
+
+
+def run_richness_estimate(run: SweepRun) -> RichnessEstimate:
+    """Recompute the Chao1/Good-Turing/Chapman richness estimate for a finished `SweepRun`."""
+    discoveries = list(
+        SweepDiscovery.objects.filter(run=run, verified_in_pass=True).select_related(
+            "organisation"
+        )
+    )
+    min_sightings = (
+        2 if (run.stop_reason == SweepRun.StopReason.PLATEAU and run.batches < STOP_WINDOW) else 1
+    )
+    sightings: list[int] = []
+    for d in discoveries:
+        n_routes = max(
+            len(d.returned_by),
+            sum(1 for r in (d.organisation.found_via or []) if r.startswith("R4_SEARCH:")),
+            min_sightings,
+        )
+        sightings.append(n_routes)
+    for _ in range(run.recaptured):
+        sightings.append(2)
+    m_register = (
+        RegisterEntry.objects.filter(register=run.register).count() if run.register else 0
+    )
+    n_queries = max(SweepQuery.objects.filter(run=run).count(), run.batches)
+    return estimate_from_sightings(
+        sightings,
+        n_units=n_queries,
+        m_register=m_register,
+        r_recaptured=run.recaptured,
+    )

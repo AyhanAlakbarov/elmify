@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from datetime import date
 from functools import cache
 
+from anyascii import anyascii
 from babel.core import get_global
 
 from .templatetags.cv_countries import country_name
@@ -286,6 +287,22 @@ def _keys(word: str) -> list[str]:
         keys = [key + option for key in keys for option in options]
     if keys == [""]:
         return []
+    if any(not k.isascii() for k in keys):
+        translit = "".join(
+            c for c in anyascii(word).upper() if "A" <= c <= "Z"
+        )
+        if translit:
+            extra = [translit]
+            for old_sub, new_sub in (
+                ("IE", "IYE"),
+                ("IYE", "IE"),
+                ("EVA", "YEVA"),
+                ("EV", "YEV"),
+                ("IO", "YO"),
+            ):
+                if old_sub in translit:
+                    extra.append(translit.replace(old_sub, new_sub))
+            keys.extend(extra)
     for old, new in _DIGRAPHS:
         keys = [key.replace(old, new) for key in keys]
     return list(dict.fromkeys(keys))

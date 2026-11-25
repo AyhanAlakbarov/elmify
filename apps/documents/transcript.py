@@ -27,7 +27,7 @@ from apps.research.decisions import Answer, Client, DecisionsUnavailable, ask, p
 from apps.tenancy.models import Membership
 
 from . import transcript_questions as questions
-from .credits import CreditUnit, to_ects
+from .credits import CreditUnit, infer_local_credits_per_year, to_ects
 from .ingestion import UnsupportedUpload
 from .models import VerifiedFact
 from .ocr import OcrPage
@@ -59,15 +59,66 @@ _PERSONAL_LABEL = re.compile(
     r"öğrenci no|öğrenci numara|atasının adı|baba adı|^\s*adı\s*:|"
     r"şəxsiyyət|fin kod|"
     r"фамилия|\bимя\b|отчество|\bф\.?\s?и\.?\s?о\b|дата рождения|место рождения|паспорт|"
-    r"зач[её]тной книжки",
+    r"зач[её]тной книжки|"
+    r"\bnom\s*:|\bpr[ée]nom\b|lieu de naissance|date de naissance|"
+    r"num[ée]ro\s+[ée]tudiant|\bn[°o]\s*ine\b|"
+    r"\bnachname\b|\bfamilienname\b|\bvorname\b|\bgeburtsdatum\b|\bgeburtsort\b|\bmatrikelnummer\b|"
+    r"\bnombre\b|\bapellidos\b|fecha de nacimiento|\bdni\b|"
+    r"\bcognome\b|\bnome\s*:|luogo di nascita|\bmatricola\b|codice fiscale|"
+    r"\bachternaam\b|\bvoornaam\b|\bgeboortedatum\b|\bstudentnummer\b",
     re.IGNORECASE,
 )
-#: Six digits or more: a student, diploma, passport or ID number. A line holding one is dropped;
-#: in a table cell it is masked, because a numeric course code (0301101) is one too.
+#: Six digits or more: a student, diploma, passport or ID number. On a header line it is masked in
+#: place; in a table cell it is masked unless the column holds distinct 6-7 digit course codes.
 _ID_NUMBER = re.compile(r"\d{6,}")
-#: ponytail: numeric dates only. "16 марта 2026 года" is no candidate, so a transcript printing
-#: its dates in words gets the graduation question (Task 5); add month names when one needs it.
-_DATE = re.compile(r"\b(\d{1,2})[./](\d{1,2})[./](\d{4})\b|\b(\d{4})-(\d{2})-(\d{2})\b")
+_LONG_ID_NUMBER = re.compile(r"\d{8,}")
+_COURSE_CODE_CELL = re.compile(r"^\s*\d{6,7}\s*$")
+_NON_LABEL_COLON_PREFIX = re.compile(
+    r"\b(?:university\s+of|universit(?:ät|at|é|e|à|a|eti|esi|et)|университет|"
+    r"master\s+of|bachelor\s+of|doctor\s+of|m\.?sc|b\.?sc|b\.?a|m\.?a|ll\.?m|m\.?b\.?a|"
+    r"diplom\w*\s+in|laurea\s+\w+)\b",
+    re.IGNORECASE,
+)
+
+
+def _build_written_month_map() -> dict[str, int]:
+    from apps.research.locale_names import month_forms
+
+    from .dates import _MONTHS as _DATE_MONTHS
+
+    mapping: dict[str, int] = dict(_DATE_MONTHS)
+    for name, _lang, month_num in month_forms(wide_only=False):
+        cleaned = name.casefold().replace("\u0307", "").strip(" .")
+        if len(cleaned) >= 3 and cleaned.isalpha():
+            mapping.setdefault(cleaned, month_num)
+    # Explicit inflected/accented forms that may appear on transcripts before folding
+    for m_num, extras in (
+        (2, ("février", "şubat")),
+        (3, ("märz",)),
+        (5, ("mayıs",)),
+        (6, ("iyun", "іюнь")),
+        (7, ("iyul", "іюль")),
+        (8, ("août", "ağustos")),
+        (9, ("eylül",)),
+        (11, ("kasım",)),
+        (12, ("décembre", "aralık")),
+    ):
+        for token in extras:
+            mapping.setdefault(token.casefold().replace("\u0307", ""), m_num)
+    return mapping
+
+
+_WRITTEN_MONTH_MAP: dict[str, int] = _build_written_month_map()
+_WRITTEN_MONTH_PATTERN = "|".join(
+    re.escape(k) for k in sorted(_WRITTEN_MONTH_MAP, key=len, reverse=True)
+)
+_DATE = re.compile(
+    rf"\b(\d{{1,2}})[./](\d{{1,2}})[./](\d{{4}})\b"
+    rf"|\b(\d{{4}})-(\d{{2}})-(\d{{2}})\b"
+    rf"|\b(\d{{1,2}})(?:st|nd|rd|th)?\.?\s+({_WRITTEN_MONTH_PATTERN})\.?,?\s+(\d{{4}})(?:\s+(?:года|г\.?|il|yıl))?\b"
+    rf"|\b({_WRITTEN_MONTH_PATTERN})\.?\s+(\d{{1,2}})(?:st|nd|rd|th)?,?\s+(\d{{4}})\b",
+    re.IGNORECASE,
+)
 _NUMBER = re.compile(r"\b\d{1,4}(?:[.,]\d{1,3})?\b")
 
 
@@ -252,7 +303,10 @@ def personal_names(student: Membership) -> frozenset[str]:
         student=student, category=VerifiedFact.Category.IDENTITY
     ):
         if isinstance(fact.payload, dict):
-            names.append(str(fact.payload.get("full_name", "")))
+            for key in ("full_name", "given_name", "given_names", "surname"):
+                val = fact.payload.get(key)
+                if isinstance(val, str) and val.strip():
+                    names.append(val.strip())
     return frozenset(
         _fold(word)
         for name in names
@@ -344,6 +398,22 @@ def _names_in(text: str, names: frozenset[str]) -> bool:
 _TableOrigin = tuple[int, int, list[int]]
 
 
+def _course_code_columns(rows: list[tuple[str, ...]]) -> set[int]:
+    """Columns 0 or 1 that hold >=2 distinct 6-7 digit course catalog codes of uniform length."""
+    if len(rows) < 2:
+        return set()
+    code_cols: set[int] = set()
+    for col_idx in (0, 1):
+        codes = [
+            row[col_idx].strip()
+            for row in rows
+            if col_idx < len(row) and _COURSE_CODE_CELL.match(row[col_idx])
+        ]
+        if len(set(codes)) >= 2 and len({len(c) for c in codes}) == 1:
+            code_cols.add(col_idx)
+    return code_cols
+
+
 def _minimised(pages: tuple[OcrPage, ...], names: frozenset[str]) -> tuple[
     list[str], list[list[list[str]]], list[list[list[float | None]]], list[_TableOrigin]
 ]:
@@ -356,8 +426,12 @@ def _minimised(pages: tuple[OcrPage, ...], names: frozenset[str]) -> tuple[
         skip_next = _label_ends(line)
         if consumed:
             continue
-        if _has_label(line) or _ID_NUMBER.search(line) or _names_in(line, names):
+        if _has_label(line) or _names_in(line, names):
             continue
+        if _ID_NUMBER.search(line):
+            line = _ID_NUMBER.sub("#", line)
+            if not re.search(r"[^\W\d_]", line):
+                continue
         lines.append(line)
     tables: list[list[list[str]]] = []
     confidences: list[list[list[float | None]]] = []
@@ -370,7 +444,7 @@ def _minimised(pages: tuple[OcrPage, ...], names: frozenset[str]) -> tuple[
         for table_index, (table, table_conf) in enumerate(
             zip(page.tables, page_conf, strict=True)
         ):
-            kept: list[list[str]] = []
+            kept_raw: list[tuple[str, ...]] = []
             kept_conf: list[list[float | None]] = []
             kept_rows: list[int] = []
             drop_next = False
@@ -389,10 +463,22 @@ def _minimised(pages: tuple[OcrPage, ...], names: frozenset[str]) -> tuple[
                 drop_next = row_of_labels
                 if should_drop:
                     continue
-                kept.append([_ID_NUMBER.sub("#", _DATE.sub("#", cell)) for cell in row])
+                kept_raw.append(row)
                 kept_conf.append(list(row_conf))
                 kept_rows.append(row_index)
-            if kept:
+            if kept_raw:
+                code_cols = _course_code_columns(kept_raw)
+                kept = [
+                    [
+                        (
+                            _LONG_ID_NUMBER.sub("#", _DATE.sub("#", cell))
+                            if col_idx in code_cols and _COURSE_CODE_CELL.match(cell)
+                            else _ID_NUMBER.sub("#", _DATE.sub("#", cell))
+                        )
+                        for col_idx, cell in enumerate(row)
+                    ]
+                    for row in kept_raw
+                ]
                 tables.append(kept)
                 confidences.append(kept_conf)
                 origins.append((page_index, table_index, kept_rows))
@@ -405,12 +491,20 @@ def _candidates(lines: list[str]) -> tuple[list[tuple[str, int]], list[tuple[dat
     dates: list[tuple[date, str, int]] = []
     for index, line in enumerate(lines):
         for match in _DATE.finditer(line):
-            if match[1]:
-                day, month, year = match[1], match[2], match[3]  # day first: AZ, TR, RU
+            if match[1]:  # day first: AZ, TR, RU
+                day, month, year = int(match[1]), int(match[2]), int(match[3])
+            elif match[4]:
+                day, month, year = int(match[6]), int(match[5]), int(match[4])
+            elif match[7]:
+                day = int(match[7])
+                month = _WRITTEN_MONTH_MAP.get(match[8].casefold().replace("\u0307", ""), 0)
+                year = int(match[9])
             else:
-                day, month, year = match[6], match[5], match[4]
+                month = _WRITTEN_MONTH_MAP.get(match[10].casefold().replace("\u0307", ""), 0)
+                day = int(match[11])
+                year = int(match[12])
             try:
-                dates.append((date(int(year), int(month), int(day)), match[0], index))
+                dates.append((date(year, month, day), match[0], index))
             except ValueError:
                 continue
         numbers += [(found, index) for found in _NUMBER.findall(_DATE.sub(" ", line))]
@@ -699,9 +793,17 @@ def read_from_pages(
         chosen = picked(qid)
         if chosen is None:
             return ""
-        text = lines[int(chosen[1:])]
-        label, _, value = text.partition(":")
-        return _clip((value if value.strip() else label).strip(), limit)
+        text = re.sub(r"^\s*#[,;\s-]*|[\s,;-]*#\s*$", "", lines[int(chosen[1:])]).strip()
+        normalized = text.replace("：", ":")
+        if ":" in normalized:
+            label, _, value = normalized.partition(":")
+            if (
+                value.strip()
+                and len(label.strip()) <= 25
+                and not _NON_LABEL_COLON_PREFIX.search(label)
+            ):
+                return _clip(value.strip(), limit)
+        return _clip(text, limit)
 
     def printed(qid: str) -> str | None:
         chosen = picked(qid)
@@ -740,11 +842,36 @@ def read_from_pages(
     )
 
 
-def _ects(content: TranscriptContent, course: TranscriptCourse) -> Decimal | None:
+def _effective_local_year_load(content: TranscriptContent) -> Decimal | None:
+    if content.local_credits_per_year is not None:
+        return content.local_credits_per_year
+    if content.credit_unit != "LOCAL":
+        return None
+    completed_credits = [
+        c.credits
+        for c in content.courses
+        if c.status == "COMPLETED" and c.credits is not None and c.credits > Decimal("0")
+    ]
+    return infer_local_credits_per_year(
+        completed_credits,
+        qualification=content.qualification,
+        country_code=content.country_code,
+    )
+
+
+def _ects(
+    content: TranscriptContent,
+    course: TranscriptCourse,
+    *,
+    local_year_load: Decimal | None = None,
+) -> Decimal | None:
     if course.credits is None:
         return None
+    eff_load = (
+        local_year_load if local_year_load is not None else _effective_local_year_load(content)
+    )
     ects = to_ects(
-        course.credits, content.credit_unit, local_credits_per_year=content.local_credits_per_year
+        course.credits, content.credit_unit, local_credits_per_year=eff_load
     )
     # The profile's CourseRecord holds at most 100. A larger figure has already failed the range
     # check the student sees; the record carries "unknown" rather than refusing the whole reading.
@@ -752,10 +879,13 @@ def _ects(content: TranscriptContent, course: TranscriptCourse) -> Decimal | Non
 
 
 def academic_record(content: TranscriptContent) -> dict[str, object]:
+    local_year_load = _effective_local_year_load(content)
     courses = [
         {
             "title": course.title,
-            "ects": None if (ects := _ects(content, course)) is None else str(ects),
+            "ects": None
+            if (ects := _ects(content, course, local_year_load=local_year_load)) is None
+            else str(ects),
             "grade": course.grade,
             "in_progress": course.status == "IN_PROGRESS",
         }

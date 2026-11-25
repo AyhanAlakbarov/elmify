@@ -78,6 +78,29 @@ def test_an_item_language_is_read_from_its_script():
     assert item_language("急救证书") == "other"
 
 
+@pytest.mark.parametrize(
+    "line, expected",
+    [
+        ("Summer Research Fellowship, ETH Zürich", "en"),
+        ("Exchange semester at École Polytechnique Fédérale de Lausanne", "en"),
+        ("Marie Skłodowska-Curie Actions (MSCA) Undergraduate Award", "en"),
+        ("São Paulo Research Foundation Grant", "en"),
+        ("Co-author with Prof. Nguyễn Văn A on Polymer Synthesis", "en"),
+        ("Certificate in α-Ketoglutarate & β-Lactamase Enzymology", "en"),
+        ("Research Internship at Ломоносов MGU (Moscow State University)", "en"),
+        ("E\u0301cole Polytechnique Summer School (NFD decomposed)", "en"),
+        ("Üniversite mezuniyet tezi", "tr_az"),
+        ("Yüksek lisans öğrencisi", "tr_az"),
+        ("Bakı Dövlət Universiteti təqaüdü", "tr_az"),
+        ("Диплом первой степени по химии (МГУ)", "ru"),
+    ],
+)
+def test_item_language_handles_european_diacritics_greek_symbols_and_turkic_lines(
+    line, expected
+):
+    assert item_language(line) == expected
+
+
 def test_switched_off_asks_nothing(agency_a, membership_a, programme, settings):
     settings.CV_RELEVANCE_LANGUAGES = frozenset()
     jev = _Jev()

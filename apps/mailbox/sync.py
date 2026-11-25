@@ -26,7 +26,7 @@ from django.db.models import F
 from django.utils import timezone
 
 from apps.concierge.models import Notification, RoadmapItem
-from apps.mailbox.actions import apply_verdict
+from apps.mailbox.actions import apply_verdict, resolve_ambiguous_application
 from apps.mailbox.classify import ClassificationFailure, ClassificationRateLimited, classify_message
 from apps.mailbox.decision_reader import keep_verified, mail_context, read_decision
 from apps.mailbox.filter import (
@@ -52,6 +52,7 @@ from apps.portals.models import Application, PortalAccount, PortalForm
 from apps.portals.tags import (
     awaits_registration_mail,
     plain_of,
+    promote_sender_domain_consensus,
     record_tag_outcome,
     restore_tag,
     tagged,
@@ -259,16 +260,39 @@ def _classify(
         # The subject came with the body (ruling F19), content tier only; it
         # is stripped like the body and stored nowhere.
         reading = None
+        context = None
+        originally_ambiguous = signal.application_id is None
         if signal.application_id is not None:
             with tenant_transaction(connection.tenant_id):
                 context = mail_context(signal)
-            if context is not None:
-                reading = read_decision(
-                    body, signal.sender_domain, context.programme, context.university,
-                    context.funding, student_id=connection.membership_id,
-                    subject=fetched.subject, names=context.names,
-                    addresses=context.addresses,
-                )
+        elif (
+            verdict.label
+            in (
+                "DECISION",
+                "RECEIVED",
+                "FEE",
+                "FEE_PAID",
+                "REFEREE_SUBMITTED",
+                "INTERVIEW",
+                "DOCUMENT_REQUEST",
+            )
+            and (signal.sender_domain in vouched or shared_portal is not None)
+        ):
+            with tenant_transaction(connection.tenant_id):
+                matched_app, context_app = resolve_ambiguous_application(signal, verdict)
+                if matched_app is not None:
+                    signal.application = matched_app
+                if context_app is not None and (
+                    verdict.label == "DECISION" or matched_app is not None
+                ):
+                    context = mail_context(signal, application=matched_app or context_app)
+        if context is not None:
+            reading = read_decision(
+                body, signal.sender_domain, context.programme, context.university,
+                context.funding, student_id=connection.membership_id,
+                subject=fetched.subject, names=context.names,
+                addresses=context.addresses,
+            )
         with tenant_transaction(connection.tenant_id):
             # Locked and re-checked (Task 15 minor): the verdict was read for an
             # unlabelled row at this attempt count. If the student labelled it,
@@ -282,14 +306,18 @@ def _classify(
             )
             if unchanged is None:
                 return True
+            verified_verdict = keep_verified(verdict, body)
+            if originally_ambiguous:
+                signal.application = None
             apply_verdict(
                 signal,
-                keep_verified(verdict, body),
+                verified_verdict,
                 reading=reading,
                 link_hosts=links,
                 authenticated=signal.trusted,
                 vouched=signal.sender_domain in vouched,
                 shared_portal=shared_portal,
+                body=f"{fetched.subject}\n{body}" if fetched.subject else body,
             )
     return True
 
@@ -521,14 +549,8 @@ def _resolve_header_target(
         application_id = on_portal[0] if len(on_portal) == 1 else None
         shared_portal = (account.portal_host, len(on_portal)) if len(on_portal) > 1 else None
         trusted = not header.junk
-        sender_authenticated = (
-            trusted
-            and domain in allowed
-            and allowed[domain] in (application_id, None)
-            and domain not in unconfirmed
-            and (header.authenticated or _verified(connection, client, token, header))
-        )
-        if domain not in allowed and learnable_domain(domain, own_domains=own_domains):
+        is_learnable = learnable_domain(domain, own_domains=own_domains)
+        if domain not in allowed and is_learnable:
             with tenant_transaction(connection.tenant_id):
                 LearnedSender.objects.get_or_create(
                     student=connection.membership,
@@ -541,6 +563,22 @@ def _resolve_header_target(
             logger.info("SenderLearned connection=%s domain=%s", connection.id, domain)
             allowed[domain] = application_id
             unconfirmed.add(domain)
+        if trusted and header.authenticated and is_learnable:
+            with tenant_transaction(connection.tenant_id):
+                promoted = promote_sender_domain_consensus(
+                    account.portal_host,
+                    domain,
+                    tenant_id=connection.tenant_id,
+                )
+            if promoted:
+                unconfirmed.discard(domain)
+        sender_authenticated = (
+            trusted
+            and domain in allowed
+            and allowed[domain] in (application_id, None)
+            and domain not in unconfirmed
+            and (header.authenticated or _verified(connection, client, token, header))
+        )
         return domain, application_id, trusted, sender_authenticated, shared_portal
 
     if header.junk:

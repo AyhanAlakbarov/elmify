@@ -103,7 +103,9 @@ export function buildLocaleJsonLd(locale: Locale) {
           },
           "Europe",
           "United Kingdom",
-          "Worldwide",
+          "North America",
+          "Asia",
+          "Worldwide (50+ countries)",
         ],
         foundingDate: "2025",
         logo: {

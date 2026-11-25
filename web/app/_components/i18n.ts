@@ -25,7 +25,7 @@ export function localizedAppLinks(locale: Locale) {
 /** The scholarships named on the page, each linked to its official site. Names stay
  *  in their own language in every locale: that is how students search for them. */
 export const SCHOLARSHIPS: ReadonlyArray<{ name: string; url: string }> = [
-  { name: "Dövlət Proqramı", url: "https://dp.edu.gov.az/" },
+  { name: "Dövlət Proqramı", url: "https://dp.edu.az/" },
   { name: "HTP / Stipendium Hungaricum", url: "https://htp.edu.az/" },
   { name: "Erasmus Mundus", url: "https://erasmus-plus.ec.europa.eu/opportunities/opportunities-for-individuals/students/erasmus-mundus-joint-masters" },
   { name: "DAAD", url: "https://www.daad.de/en/Studying-in-Germany/scholarships/" },
@@ -125,19 +125,19 @@ export const COPY: Record<Locale, LocaleCopy> = {
     locale: "en",
     ogLocale: "en_US",
     langLabel: "EN",
-    metaTitle: "Elmify — Funded Master's Programmes & Scholarships Abroad (Azerbaijan, Europe & UK)",
+    metaTitle: "Elmify — Funded Master's & Scholarships Across 50+ Countries (Tailored AI Applications)",
     metaDescription:
-      "Launching first in Azerbaijan: Elmify's AI reads official university and scholarship pages for master's degrees (MSc, MA, LLM, MRes — Bachelor's coming soon), checks your GPA, ECTS credits, and IELTS or TOEFL scores against State Program (Dövlət Proqramı), HTP, Erasmus Mundus, DAAD, and Chevening rules, and prepares your CV, motivation letters, and referee briefs.",
+      "Elmify reads official university and scholarship regulations across 50+ countries, checks your GPA, ECTS credits, and IELTS or TOEFL scores against State Program (Dövlət Proqramı), HTP, Erasmus Mundus, DAAD, Chevening, university tuition waivers, regional grants, and RA/TA assistantships, and builds tailored CVs, motivation letters, and referee briefs from your documents and profile (Master's live, Bachelor's coming soon).",
     keywords: [
       "study abroad scholarships Azerbaijan",
       "Dövlət Proqramı xaricdə təhsil magistratura",
       "HTP Stipendium Hungaricum Azerbaijan",
-      "funded master's programmes in Europe",
+      "funded master's programmes across 50+ countries",
       "Erasmus Mundus Joint Masters",
       "DAAD scholarship Azerbaijan",
       "Chevening scholarship Azerbaijan",
       "Swedish Institute SISGP Azerbaijan",
-      "master's eligibility checker and motivation letter",
+      "tailored academic CV and motivation letter generator",
     ],
     skipToMain: "Skip to main content",
     nav: {
@@ -214,7 +214,7 @@ export const COPY: Record<Locale, LocaleCopy> = {
         ],
         [
           "Which scholarships and countries?",
-          "Universities across Europe and the UK, with Azerbaijan’s State Program (dp.edu.gov.az), HTP / Stipendium Hungaricum (htp.edu.az), Erasmus Mundus, DAAD, Chevening, Swedish Institute and university awards.",
+          "Universities across Europe and the UK, with Azerbaijan’s State Program (dp.edu.az), HTP / Stipendium Hungaricum (htp.edu.az), Erasmus Mundus, DAAD, Chevening, Swedish Institute and university awards.",
         ],
         [
           "How does it know what fits me?",
@@ -249,8 +249,8 @@ export const COPY: Record<Locale, LocaleCopy> = {
       },
     },
     schema: {
-      articleName: "How Elmify Evaluates Funded Master's & Scholarship Eligibility for Applicants in Azerbaijan",
-      faqName: "Elmify Postgraduate & Scholarship Application FAQ (Azerbaijan, Europe & UK)",
+      articleName: "How Elmify Evaluates Funded Master's & Scholarship Eligibility Across 50+ Countries",
+      faqName: "Elmify Postgraduate & Scholarship Application FAQ (50+ Countries Worldwide)",
       educationalUse: "Postgraduate degree and scholarship application preparation",
       audienceType: "Master's degree applicants in Azerbaijan and worldwide",
       offerDescription: "Free during early access for postgraduate programme matching and document preparation.",
@@ -265,19 +265,19 @@ export const COPY: Record<Locale, LocaleCopy> = {
     locale: "az",
     ogLocale: "az_AZ",
     langLabel: "AZ",
-    metaTitle: "Elmify — Xaricdə Təqaüdlü Magistratura Proqramları (Azərbaycan, Avropa və Böyük Britaniya)",
+    metaTitle: "Elmify — 50+ Ölkədə Təqaüdlü Magistratura və Fərdiləşdirilmiş Sənəd Hazırlığı",
     metaDescription:
-      "Azərbaycanda ilk buraxılış: Elmify-ın süni intellekti magistratura dərəcələri (MSc, MA, LLM, MRes — bakalavr dəstəyi tezliklə) üçün rəsmi universitet və təqaüd səhifələrini oxuyur, GPA, AKTS (ECTS) kreditləri və IELTS/TOEFL ballarınızı Dövlət Proqramı, HTP, Erasmus Mundus, DAAD və Chevening qaydaları ilə yoxlayır, CV və motivasiya məktublarınızı hazırlayır.",
+      "Elmify 50+ ölkədə magistratura dərəcələri (MSc, MA, LLM, MRes — bakalavr dəstəyi tezliklə) üçün rəsmi universitet və təqaüd əsasnamələrini oxuyur, GPA, AKTS (ECTS) kreditləri və IELTS/TOEFL ballarınızı Dövlət Proqramı, HTP, Erasmus Mundus, DAAD, Chevening, universitet güzəştləri və RA/TA qaydaları ilə yoxlayır, hər proqrama fərdi uyğunlaşdırılmış CV və motivasiya məktublarınızı hazırlayır.",
     keywords: [
       "xaricdə təhsil təqaüd proqramları",
       "Dövlət Proqramı 2022-2028 magistratura",
       "HTP təqaüd proqramı Macarıstan",
-      "Avropada təqaüdlü magistratura",
+      "50+ ölkədə təqaüdlü magistratura",
       "Erasmus Mundus təqaüdü Azərbaycan",
       "DAAD təqaüdü Azərbaycan",
       "Chevening təqaüdü Azərbaycan",
       "Swedish Institute SISGP Azərbaycan",
-      "motivasiya məktubu və akademik CV hazırlanması",
+      "fərdiləşdirilmiş motivasiya məktubu və akademik CV hazırlanması",
     ],
     skipToMain: "Əsas məzmuna keç",
     nav: {
@@ -354,7 +354,7 @@ export const COPY: Record<Locale, LocaleCopy> = {
         ],
         [
           "Hansı təqaüdlər və ölkələr?",
-          "Avropa və Böyük Britaniya universitetləri: Dövlət Proqramı (dp.edu.gov.az), HTP / Stipendium Hungaricum (htp.edu.az), Erasmus Mundus, DAAD, Chevening, Swedish Institute və universitet təqaüdləri.",
+          "Avropa və Böyük Britaniya universitetləri: Dövlət Proqramı (dp.edu.az), HTP / Stipendium Hungaricum (htp.edu.az), Erasmus Mundus, DAAD, Chevening, Swedish Institute və universitet təqaüdləri.",
         ],
         [
           "Mənə nəyin uyğun olduğunu necə bilir?",
@@ -389,8 +389,8 @@ export const COPY: Record<Locale, LocaleCopy> = {
       },
     },
     schema: {
-      articleName: "Elmify Azərbaycandan olan namizədlər üçün təqaüdlü magistratura uyğunluğunu necə yoxlayır",
-      faqName: "Elmify Magistratura və Təqaüd Müraciətləri üzrə Tez-tez Verilən Suallar (Azərbaycan)",
+      articleName: "Elmify 50+ ölkə üzrə təqaüdlü magistratura uyğunluğunu necə yoxlayır",
+      faqName: "Elmify Magistratura və Təqaüd Müraciətləri üzrə Tez-tez Verilən Suallar (50+ Ölkə)",
       educationalUse: "Xaricdə magistratura və təqaüd müraciətlərinin hazırlanması",
       audienceType: "Azərbaycandan və dünyadan magistratura namizədləri",
       offerDescription: "Erkən giriş dövründə proqram seçimi və sənəd hazırlığı tələbələr üçün pulsuzdur.",
@@ -405,19 +405,19 @@ export const COPY: Record<Locale, LocaleCopy> = {
     locale: "ru",
     ogLocale: "ru_RU",
     langLabel: "RU",
-    metaTitle: "Elmify — Магистратура и стипендии за рубежом (Азербайджан, Европа и Великобритания)",
+    metaTitle: "Elmify — Магистратура и стипендии в 50+ странах мира (Персонализированные заявки с ИИ)",
     metaDescription:
-      "Первый запуск в Азербайджане: ИИ Elmify читает официальные страницы университетов и стипендий для магистратуры (MSc, MA, LLM, MRes — бакалавриат скоро), проверяет ваш GPA, кредиты ECTS и баллы IELTS/TOEFL по правилам Госпрограммы (Dövlət Proqramı), HTP, Erasmus Mundus, DAAD и Chevening, и готовит резюме (CV) и мотивационные письма.",
+      "Elmify читает официальные регламенты университетов и стипендий в 50+ странах для магистратуры (MSc, MA, LLM, MRes — бакалавриат скоро), сверяет GPA, кредиты ECTS и баллы IELTS/TOEFL с правилами Госпрограммы (Dövlət Proqramı), HTP, Erasmus Mundus, DAAD, Chevening, скидками вузов и позициями RA/TA, и готовит адаптированные под каждую программу CV и мотивационные письма.",
     keywords: [
       "стипендии на обучение за рубежом Азербайджан",
       "Госпрограмма обучения за рубежом Dövlət Proqramı магистратура",
       "стипендия HTP Stipendium Hungaricum Азербайджан",
-      "магистратура в Европе со стипендией",
+      "магистратура за рубежом со стипендией 50+ стран",
       "стипендия Erasmus Mundus Азербайджан",
       "стипендия DAAD Азербайджан",
       "стипендия Chevening Азербайджан",
       "Swedish Institute SISGP Азербайджан",
-      "мотивационное письмо и академическое резюме CV",
+      "персонализированное мотивационное письмо и академическое резюме CV",
     ],
     skipToMain: "Перейти к основному содержанию",
     nav: {
@@ -494,7 +494,7 @@ export const COPY: Record<Locale, LocaleCopy> = {
         ],
         [
           "Какие стипендии и страны?",
-          "Университеты Европы и Великобритании, а также Госпрограмма Азербайджана (dp.edu.gov.az), HTP / Stipendium Hungaricum (htp.edu.az), Erasmus Mundus, DAAD, Chevening, Swedish Institute и стипендии университетов.",
+          "Университеты Европы и Великобритании, а также Госпрограмма Азербайджана (dp.edu.az), HTP / Stipendium Hungaricum (htp.edu.az), Erasmus Mundus, DAAD, Chevening, Swedish Institute и стипендии университетов.",
         ],
         [
           "Как он понимает, что мне подходит?",
@@ -529,8 +529,8 @@ export const COPY: Record<Locale, LocaleCopy> = {
       },
     },
     schema: {
-      articleName: "Как Elmify проверяет соответствие требованиям магистратуры и стипендий для кандидатов из Азербайджана",
-      faqName: "Частые вопросы о поступлении в магистратуру и стипендиях с Elmify (Азербайджан, Европа и UK)",
+      articleName: "Как Elmify проверяет соответствие требованиям магистратуры и стипендий в 50+ странах мира",
+      faqName: "Частые вопросы о поступлении в магистратуру и стипендиях с Elmify (50+ стран мира)",
       educationalUse: "Подготовка заявок на программы магистратуры и международные стипендии",
       audienceType: "Кандидаты в магистратуру из Азербайджана и со всего мира",
       offerDescription: "Бесплатно в период раннего доступа для подбора программ и подготовки документов.",

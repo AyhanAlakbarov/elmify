@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% load dashboard %}
-{% block title %}CV & letters{% endblock %}
+{% block title %}CV & Motivation Letters{% endblock %}
 {% block content %}
 {% csrf_token %}
-<div class="page-head"><div><h1>CV &amp; letters</h1><p>Our AI writes your CV and motivation letters from details you confirmed. You read every word before anything is used.</p></div></div>
+<div class="page-head"><div><h1>CV &amp; Motivation Letters</h1><p>Tailored academic CVs, programme-tailored motivation letters, and scholarship essays built directly from your uploaded documents and profile — zero invented claims, with every word approved by you before use.</p></div></div>
 
 <ol class="write-steps" aria-label="How it works">
   <li class="{% if confirmed_count %}is-done{% else %}is-current{% endif %}"><a class="ws-step-link" href="#facts"><span class="ws-num" aria-hidden="true">1</span><span><strong>Confirm your details</strong><small>{% if confirmed_count %}{{ confirmed_count }} confirmed{% else %}Nothing confirmed yet{% endif %}</small></span></a></li>
@@ -14,7 +14,7 @@
 <section class="panel" aria-labelledby="facts-heading" id="facts">
   <div class="panel-head">
     <h2 id="facts-heading">Your details</h2>
-    <a class="text-link" href="{% url 'student-gap-interview' %}">Answer open questions</a>
+    <a class="text-link" href="{% url 'student-gap-interview' %}">Answer open questions{% if open_gap_questions %} ({{ open_gap_questions }}){% endif %}</a>
   </div>
   {% if facts %}
     <p class="muted">The AI read these from your uploads. Only details you confirm are ever used in your documents.</p>
@@ -28,6 +28,25 @@
     <p class="quiet-line">{% if confirmed_count == 1 %}1 detail is confirmed.{% else %}All {{ confirmed_count }} details are confirmed.{% endif %} Upload a new CV or transcript on <a href="{% url 'student-documents' %}">Documents</a> to add more.</p>
   {% else %}
     <p class="quiet-line">Nothing to confirm yet. Upload your current CV on <a href="{% url 'student-documents' %}">Documents</a> and the AI will read it.</p>
+  {% endif %}
+  {% if open_gap_questions or gap_notes %}
+    <div class="home-questions writing-questions" id="writing-gap-questions">
+      <div class="panel-head">
+        <div>
+          <h3>Questions for you{% if open_gap_questions %} ({{ open_gap_questions }} open){% endif %}</h3>
+          <p class="home-q-sub">Short details missing from your uploaded files that strengthen your CV and motivation letters.</p>
+        </div>
+        <a class="btn btn-secondary btn-small" href="{% url 'student-gap-interview' %}">Answer questions</a>
+      </div>
+      {% if gap_sections %}
+        <ul class="home-q-cats" aria-label="Question categories">
+          {% for sec in gap_sections %}
+            <li><span>{{ sec.title }}</span><strong>{{ sec.count }}</strong></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% for note in gap_notes %}<p class="home-q-note">{{ note.text }}</p>{% endfor %}
+    </div>
   {% endif %}
 </section>
 
@@ -60,7 +79,7 @@
   {% if latest_cv %}
     <nav class="version-row cv-version-grid" aria-label="Tailored CV versions">
       {% for draft in cv_drafts %}
-        <a href="?cv={{ draft.id }}" class="cv-version-tab{% if draft.id == latest_cv.id %} is-active{% endif %}"{% if draft.id == latest_cv.id %} aria-current="page"{% endif %}>
+        <a href="?cv={{ draft.id }}" data-cv-tab="{{ draft.id }}" data-programme-id="{{ draft.programme_id|default:'' }}" hx-boost="false" class="cv-version-tab{% if draft.id == latest_cv.id %} is-active{% endif %}"{% if draft.id == latest_cv.id %} aria-current="page"{% endif %}>
           <span class="cv-tab-title">{{ draft.target_title }}</span>
           <span class="cv-tab-meta">
             <span class="cv-variant-pill">{{ draft.variant_label }}</span>
@@ -69,11 +88,13 @@
         </a>
       {% endfor %}
     </nav>
-    <div class="writing-grid">
-      <article class="paper" aria-label="CV version {{ latest_cv.version }}">
+    {% for draft in cv_drafts %}
+    {% with cv=draft.content cv_checks=draft.cv_checks %}
+    <div class="writing-grid" data-cv-panel="{{ draft.id }}"{% if draft.id != latest_cv.id %} hidden{% endif %}>
+      <article class="paper" aria-label="CV version {{ draft.version }}">
         <div class="paper-cv-meta">
-          <span class="badge badge-brand">{{ latest_cv.variant_label }}</span>
-          <span class="muted small">Tailored for: <strong>{{ latest_cv.target_title }}</strong> &middot; Version {{ latest_cv.version }}</span>
+          <span class="badge badge-brand">{{ draft.variant_label }}</span>
+          <span class="muted small">Tailored for: <strong>{{ draft.target_title }}</strong> &middot; Version {{ draft.version }}</span>
         </div>
         {% with p=cv.personal_information %}
           <header class="paper-head">
@@ -94,9 +115,21 @@
           <h4>Research</h4>
           <ul>{% for r in cv.research %}<li><strong>{{ r.thesis_title }}</strong>{% if r.institution %}, {{ r.institution }}{% endif %}{% if r.supervisor %} <span class="paper-date">(Supervisor: {{ r.supervisor }})</span>{% endif %}{% if r.methods or r.outcomes %}<ul class="paper-bullets">{% if r.methods %}<li>{{ r.methods }}</li>{% endif %}{% if r.outcomes %}<li>{{ r.outcomes }}</li>{% endif %}</ul>{% endif %}</li>{% endfor %}</ul>
         {% endif %}
+        {% if cv.publications %}
+          <h4>Publications</h4>
+          <ul>{% for pub in cv.publications %}<li><strong>{{ pub.title }}</strong>{% if pub.venue %}, {{ pub.venue }}{% endif %}{% if pub.year %} ({{ pub.year }}){% endif %}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if cv.volunteering %}
+          <h4>Volunteering &amp; Leadership</h4>
+          <ul>{% for v in cv.volunteering %}<li><strong>{{ v.title }}</strong>, {{ v.employer }}{% if v.start_date or v.end_date %} <span class="paper-date">{{ v.start_date|month_year }}{% if v.end_date %} to {{ v.end_date|month_year }}{% endif %}</span>{% endif %}{% if v.bullets %}<ul class="paper-bullets">{% for b in v.bullets %}<li>{{ b }}</li>{% endfor %}</ul>{% endif %}</li>{% endfor %}</ul>
+        {% endif %}
         {% if cv.awards %}
           <h4>Awards</h4>
           <ul>{% for a in cv.awards %}<li>{{ a.title }}{% if a.awarding_body %}, {{ a.awarding_body }}{% endif %}</li>{% endfor %}</ul>
+        {% endif %}
+        {% if cv.certifications %}
+          <h4>Certifications &amp; Short Courses</h4>
+          <ul>{% for c in cv.certifications %}<li><strong>{{ c.title }}</strong>{% if c.issuer %}, {{ c.issuer }}{% endif %}{% if c.date %} <span class="paper-date">{{ c.date|month_year }}</span>{% endif %}</li>{% endfor %}</ul>
         {% endif %}
         {% if cv.skills %}
           <h4>Skills</h4>
@@ -114,20 +147,22 @@
           <ul class="check-list">{% for c in cv_checks %}<li><span class="badge {% if c.verdict == 'UNSUPPORTED' or c.verdict == 'CONFLICTING' %}badge-danger{% else %}badge-warn{% endif %}">{% if c.verdict == "UNSUPPORTED" %}Not in your details{% elif c.verdict == "CONFLICTING" %}Disagrees with your details{% else %}Not sure{% endif %}</span>{{ c.text }}</li>{% endfor %}</ul>
         {% else %}
           <h3>Every line checks out</h3>
-          <p class="muted">Each line matches a detail you confirmed.</p>
+          <p class="muted">Built directly from your uploaded documents and profile.</p>
         {% endif %}
-        {% if latest_cv.status == "DRAFT" %}
-          <p class="row-actions"><button type="button" data-api-post="/api/documents/drafts/{{ latest_cv.id }}/approve">Approve this CV</button> <span role="status" aria-live="polite"></span></p>
+        {% if draft.status == "DRAFT" %}
+          <p class="row-actions"><button type="button" data-api-post="/api/documents/drafts/{{ draft.id }}/approve">Approve this CV</button> <span role="status" aria-live="polite"></span></p>
           <p class="muted small">Approving makes the PDF. Lines that are not in your details stop the approval.</p>
-        {% elif latest_cv.status == "APPROVED" %}
-          {% if latest_cv.rendered_filename %}
-            <a class="btn" hx-boost="false" href="{% url 'documents-download' latest_cv.id latest_cv.rendered_filename %}">Download PDF</a>
+        {% elif draft.status == "APPROVED" %}
+          {% if draft.rendered_filename %}
+            <a class="btn" hx-boost="false" href="{% url 'documents-download' draft.id draft.rendered_filename %}">Download PDF</a>
           {% else %}
             <p class="muted">Approved. The PDF is being made.</p>
           {% endif %}
         {% endif %}
       </aside>
     </div>
+    {% endwith %}
+    {% endfor %}
   {% elif identity_confirmed and has_email %}
     <p class="quiet-line">No CV yet. Press “Write my CV” and it appears here in about a minute.</p>
   {% endif %}

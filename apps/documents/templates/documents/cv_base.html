@@ -145,7 +145,7 @@
      because a bare "C1" says little, not because a list was the wrong shape,
      so the fix is S-014's own "optionally + plain word".
   {% endcomment %}
-  {% if content.languages %}<h2>Languages</h2><ul>{% for entry in content.languages %}<li>{{ entry.language }}{% if entry.mother_tongue %} — Native{% if entry.cefr_level %} ({{ entry.cefr_level }}){% endif %}{% elif entry.cefr_level %} — {{ entry.level_word }}{% if entry.level_word != entry.cefr_level %} ({{ entry.cefr_level }}){% endif %}{% endif %}{% if entry.test_name %}, {{ entry.test_name }}{% if entry.test_score %} {{ entry.test_score }}{% endif %}{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if content.languages %}<h2>Languages</h2><ul>{% for entry in content.languages %}<li>{{ entry.language }}{% if entry.mother_tongue %} — Native{% if entry.cefr_level %} ({{ entry.cefr_level }}){% endif %}{% elif entry.cefr_level %} — {{ entry.level_word }}{% if entry.level_word != entry.cefr_level %} ({{ entry.cefr_level }}){% endif %}{% endif %}{% if entry.test_name %}, {{ entry.test_name }}{% if entry.test_score %} {{ entry.test_score }}{% endif %}{% elif entry.test_score %}, {{ entry.test_score }}{% endif %}</li>{% endfor %}</ul>{% endif %}
   {% endblock %}
   {% comment %}
      Referees go last, as every source has them -- and they now do. This

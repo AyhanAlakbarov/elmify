@@ -4,15 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="{% block meta_description %}Elmify matches students with funded master's programmes (MSc, MA, LLM, MRes) and scholarships abroad using official university and funder rules, and prepares tailored CVs, motivation letters, and referee briefs.{% endblock %}">
+  <meta name="description" content="{% block meta_description %}Elmify reads official university and funder rules across 50+ countries to match students with funded master's programmes (MSc, MA, LLM, MRes) and scholarships, builds tailored CVs, motivation letters, and referee briefs strictly from confirmed records, and autofills portals in your browser.{% endblock %}">
   <title>{% block title %}{% if request.tenant %}{{ request.tenant.name }}{% else %}Elmify{% endif %}{% endblock %}</title>
   <link rel="icon" href="{% static 'elmify/favicon.svg' %}" type="image/svg+xml">
   <link rel="preload" href="{% static 'elmify/fonts/Geist-Variable.woff2' %}" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="{% static 'elmify/app.css' %}">
+  <link rel="stylesheet" href="{% static 'elmify/app.css' %}?v=20261103m">
   {# htmx: forms inside <main> post in the background and swap the page in place #}
   <meta name="htmx-config" content='{"includeIndicatorStyles":false,"attributesToSettle":["class","width","height"],"scrollIntoViewOnBoost":false,"historyCacheSize":10,"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"4..","swap":true,"error":false},{"code":"...","swap":false,"error":true}]}'>
   <script src="{% static 'elmify/htmx.min.js' %}" defer></script>
-  <script src="{% static 'elmify/app.js' %}" defer></script>
+  <script src="{% static 'elmify/app.js' %}?v=20261103m" defer></script>
   {% if app_shell %}<script src="{% static 'dashboard/documents.js' %}" defer></script>{% endif %}
   {% block head %}{% endblock %}
 </head>
@@ -24,7 +24,7 @@
       <a class="brand" href="/" aria-label="Elmify home">
         <img src="{% static 'elmify/elmify-wordmark-light.svg' %}" alt="Elmify" width="94" height="29">
       </a>
-      {% if request.tenant %}<p class="agency" translate="no">{{ request.tenant.name }}</p>{% endif %}
+      {% if request.tenant and request.tenant.name|lower != "elmify" %}<p class="agency" translate="no">{{ request.tenant.name }}</p>{% endif %}
       {% with p=request.path %}
       {% if viewer_role == "STUDENT" %}
         <nav aria-label="Main" class="nav">
@@ -33,7 +33,7 @@
             <li><a href="/student/recommendation/"{% if p == "/student/recommendation/" %} aria-current="page"{% endif %}><span class="ico ico-compass" aria-hidden="true"></span>Programmes</a></li>
             <li><a href="/student/applications/"{% if "/student/applications/" in p or "/kit" in p %} aria-current="page"{% endif %}><span class="ico ico-board" aria-hidden="true"></span>My applications</a></li>
             <li><a href="/student/documents/"{% if "/student/documents/" in p or p == "/student/transcript/" %} aria-current="page"{% endif %}><span class="ico ico-doc" aria-hidden="true"></span>Documents</a></li>
-            <li><a href="/student/writing/"{% if "/student/writing/" in p %} aria-current="page"{% endif %}><span class="ico ico-pen" aria-hidden="true"></span>CV &amp; letters</a></li>
+            <li><a href="/student/writing/"{% if "/student/writing/" in p %} aria-current="page"{% endif %}><span class="ico ico-pen" aria-hidden="true"></span>CV &amp; Motivation Letters</a></li>
             <li><a href="/student/referees/"{% if "/student/referees/" in p %} aria-current="page"{% endif %}><span class="ico ico-people" aria-hidden="true"></span>Referees</a></li>
             <li><a href="/student/gap-interview/"{% if p == "/student/gap-interview/" %} aria-current="page"{% endif %}><span class="ico ico-question" aria-hidden="true"></span>Questions</a></li>
             <li><a href="/student/messages/"{% if p == "/student/messages/" %} aria-current="page"{% endif %}><span class="ico ico-chat" aria-hidden="true"></span>Messages</a></li>
@@ -97,9 +97,9 @@
     <div class="plain-aside-inner">
       <p class="plain-aside-title">Get into a funded master&rsquo;s abroad.</p>
       <ul>
-        <li><span>1</span>Tell us what you studied and where you want to go.</li>
-        <li><span>2</span>Our AI reads official pages and matches programmes and scholarships to you.</li>
-        <li><span>3</span>Prepare documents and track every deadline in one place.</li>
+        <li><span>1</span>Upload your transcript and CV or answer 14 profile questions once.</li>
+        <li><span>2</span>Elmify reads official rules in 40+ local languages across 50+ countries and matches every scholarship type to your exact GPA, ECTS credits, and test scores.</li>
+        <li><span>3</span>Generate programme-tailored CVs, motivation letters, and referee briefs from your verified record — then autofill portals in your browser.</li>
       </ul>
     </div>
   </aside>
@@ -140,7 +140,7 @@
           <li><a href="/student/recommendation/"><span class="ico ico-compass" aria-hidden="true"></span>Programmes &amp; scholarships</a></li>
           <li><a href="/student/applications/"><span class="ico ico-board" aria-hidden="true"></span>My applications</a></li>
           <li><a href="/student/documents/"><span class="ico ico-doc" aria-hidden="true"></span>Documents</a></li>
-          <li><a href="/student/writing/"><span class="ico ico-pen" aria-hidden="true"></span>CV &amp; letters</a></li>
+          <li><a href="/student/writing/"><span class="ico ico-pen" aria-hidden="true"></span>CV &amp; Motivation Letters</a></li>
           <li><a href="/student/referees/"><span class="ico ico-people" aria-hidden="true"></span>Referees</a></li>
           <li><a href="/student/gap-interview/"><span class="ico ico-question" aria-hidden="true"></span>Questions for you</a></li>
           <li><a href="/student/messages/"><span class="ico ico-chat" aria-hidden="true"></span>Messages</a></li>

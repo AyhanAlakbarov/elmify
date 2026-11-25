@@ -26,6 +26,16 @@ urlpatterns = [
         name="portals-ext-packet",
     ),
     path(
+        "ext/applications/<uuid:application_id>/bind-portal",
+        ext_api.bind_portal,
+        name="portals-ext-bind-portal",
+    ),
+    path(
+        "api/ext/applications/<uuid:application_id>/bind-portal",
+        ext_api.bind_portal,
+        name="portals-api-ext-bind-portal",
+    ),
+    path(
         "ext/portal-forms/<uuid:portal_form_id>/snapshot",
         ext_api.snapshot,
         name="portals-ext-snapshot",

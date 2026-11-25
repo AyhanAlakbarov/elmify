@@ -133,8 +133,18 @@ _LEVELS: tuple[tuple[Level, frozenset[str]], ...] = (
 
 
 def degree_level(text: str) -> Level:
+    if any(cjk in text for cjk in ("硕士", "修士", "석사")):
+        return "master"
+    if any(cjk in text for cjk in ("学士", "학사")):
+        return "bachelor"
+    if any(cjk in text for cjk in ("博士", "박사")):
+        return "doctorate"
     words = _words(text)
-    if "yuksek lisans" in " ".join(words):
+    joined = " ".join(words)
+    if any(
+        phrase in joined
+        for phrase in ("yuksek lisans", "laurea magistrale", "diplome d ingenieur")
+    ):
         return "master"
     for level, keys in _LEVELS:
         if keys & set(words):

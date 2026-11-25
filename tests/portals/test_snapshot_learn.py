@@ -887,3 +887,42 @@ def test_learning_a_second_wizard_step_preserves_earlier_steps_and_records_max_l
         ("#cv", "CV"),
         ("#letter-file", "MOTIVATION_LETTER"),
     ]
+
+
+@pytest.mark.django_db
+def test_cross_tenant_consensus_promotes_shared_verified_map_when_two_tenants_agree(
+    agency_a, agency_b
+) -> None:
+    from apps.portals.learn import learn_from_snapshot, promote_consensus_field_map
+    from apps.portals.models import FieldMap, PortalForm
+
+    form = PortalForm.objects.create(portal_host="apply.example.edu", form_key="consensus-1")
+    learn_from_snapshot(
+        form,
+        _snapshot(),
+        profile_fields=["identity.full_name", "personal.country"],
+        tenant_id=agency_a.id,
+        forbidden_values=[],
+        client=_client([("identity.full_name", "#name"), ("personal.country", "#country")]),
+    )
+    # Single tenant does not promote a shared map.
+    assert promote_consensus_field_map(form) is None
+    assert FieldMap.current_for(form, None) is None
+
+    learn_from_snapshot(
+        form,
+        _snapshot(),
+        profile_fields=["identity.full_name", "personal.country"],
+        tenant_id=agency_b.id,
+        forbidden_values=[],
+        client=_client([("identity.full_name", "#name")]),
+    )
+    promoted = promote_consensus_field_map(form)
+    assert promoted is not None
+    assert promoted.learned_by_tenant_id is None
+    assert promoted.verified_at is not None
+    assert [e["profile_field"] for e in promoted.entries] == ["identity.full_name"]
+    form.refresh_from_db()
+    assert form.review_required is False
+    assert form.needs_bench is False
+    assert FieldMap.current_for(form, None) == promoted

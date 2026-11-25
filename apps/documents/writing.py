@@ -29,6 +29,7 @@ from botocore.exceptions import BotoCoreError, ClientError  # type: ignore[impor
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
@@ -42,10 +43,14 @@ from apps.tenancy.models import Membership
 from apps.tenancy.services import current_membership
 
 from .approval import ApprovalBlocked, verdicts_for
+from .audit import record_event
 from .document_queue import DocumentWorkMessage, enqueue_document_work
+from .drafts import attach_source_facts
+from .gaps import gap_notes, gap_questions
 from .models import DocumentDraft, TranscriptPage, VerifiedFact
 from .templatetags.cv_countries import country_name
-from .verification import fact_label, generatable_facts
+from .verification import fact_label, generatable_facts, has_full_name
+from .views import summarize_gap_questions
 
 logger = logging.getLogger(__name__)
 
@@ -222,77 +227,97 @@ def _writable(application: Application) -> bool:
 
 def page_context(student: Membership, selected_cv_id: str = "") -> dict[str, object]:
     from . import reupload
-    from .verification import confirm_candidates, has_full_name
+    from .gaps.models import preload_gap_facts
+    from .verification import confirm_candidates, disowned_refs
 
-    pending_ids = {c.fact.id for c in reupload.pending_changes(student)}
-    facts = [
-        fact
-        for fact in confirm_candidates(student)
-        if not fact.source_ref.startswith("document:") and fact.id not in pending_ids
-    ]
-    confirmed = generatable_facts(student)
-    cv_drafts = list(
-        DocumentDraft.objects.filter(student=student, kind=DocumentDraft.Kind.CV).order_by(
-            "-version"
+    with preload_gap_facts(student) as cached_facts:
+        pending_ids = {c.fact.id for c in reupload.pending_changes(student)}
+        facts = [
+            fact
+            for fact in confirm_candidates(student)
+            if not fact.source_ref.startswith("document:") and fact.id not in pending_ids
+        ]
+        disowned = disowned_refs(student)
+        confirmed_list = [
+            f
+            for f in cached_facts
+            if f.confirmed_by_id is not None
+            and f.category != VerifiedFact.Category.ID_DOCUMENT
+            and f.source_ref not in disowned
+        ]
+        cv_drafts = list(
+            DocumentDraft.objects.filter(student=student, kind=DocumentDraft.Kind.CV).order_by(
+                "-version"
+            )
         )
-    )
-    for d in cv_drafts:
-        d.variant_label = CV_VARIANT_LABELS.get(  # type: ignore[attr-defined]
-            d.render_variant or "STANDARD", "Standard Academic CV"
+        for d in cv_drafts:
+            d.variant_label = CV_VARIANT_LABELS.get(  # type: ignore[attr-defined]
+                d.render_variant or "STANDARD", "Standard Academic CV"
+            )
+            fallback_title = (
+                "General Master CV"
+                if d.is_general or not d.programme_id
+                else "Tailored Programme CV"
+            )
+            d.target_title = (  # type: ignore[attr-defined]
+                d.destination_label.strip() if d.destination_label else fallback_title
+            )
+            d.cv_checks = _cv_verdicts(d)  # type: ignore[attr-defined]
+        latest_cv = (
+            next((d for d in cv_drafts if str(d.id) == selected_cv_id), None)
+            or (cv_drafts[0] if cv_drafts else None)
         )
-        fallback_title = (
-            "General Master CV"
-            if d.is_general or not d.programme_id
-            else "Tailored Programme CV"
-        )
-        d.target_title = (  # type: ignore[attr-defined]
-            d.destination_label.strip() if d.destination_label else fallback_title
-        )
-    latest_cv = (
-        next((d for d in cv_drafts if str(d.id) == selected_cv_id), None)
-        or (cv_drafts[0] if cv_drafts else None)
-    )
 
-    applications = list(
-        Application.objects.filter(student=student)
-        .exclude(outcome=Application.Outcome.WITHDRAWN)
-        .select_related("candidate", "portal_form")
-        .order_by("created_at")
-    )
-    letters: dict[UUID, list[DocumentDraft]] = {}
-    for draft in DocumentDraft.objects.filter(
-        student=student, kind=DocumentDraft.Kind.MOTIVATION_LETTER
-    ).order_by("-version"):
-        target_id = draft.programme_id or draft.funding_opportunity_id
-        if target_id is not None:
-            letters.setdefault(target_id, []).append(draft)
-    rows = [
-        LetterRow(
-            application=application,
-            drafts=letters.get(
-                application.program_id
-                or (application.candidate.opportunity_id if application.candidate else None),  # type: ignore[arg-type]
-                [],
-            ),
-            note=LETTER_NOTES.get(application.letter_note, ""),
-            writable=_writable(application),
+        applications = list(
+            Application.objects.filter(student=student)
+            .exclude(outcome=Application.Outcome.WITHDRAWN)
+            .select_related("candidate", "portal_form")
+            .order_by("created_at")
         )
-        for application in applications
-    ]
-    rows.sort(key=lambda r: (0 if r.writable else 1))
+        letters: dict[UUID, list[DocumentDraft]] = {}
+        for draft in DocumentDraft.objects.filter(
+            student=student, kind=DocumentDraft.Kind.MOTIVATION_LETTER
+        ).order_by("-version"):
+            target_id = draft.programme_id or draft.funding_opportunity_id
+            if target_id is not None:
+                letters.setdefault(target_id, []).append(draft)
+        rows = [
+            LetterRow(
+                application=application,
+                drafts=letters.get(
+                    application.program_id
+                    or (application.candidate.opportunity_id if application.candidate else None),  # type: ignore[arg-type]
+                    [],
+                ),
+                note=LETTER_NOTES.get(application.letter_note, ""),
+                writable=_writable(application),
+            )
+            for application in applications
+        ]
+        rows.sort(key=lambda r: (0 if r.writable else 1))
+        gap_summary = summarize_gap_questions(gap_questions(student))
+        notes = gap_notes(student)
+        cv_checks = getattr(latest_cv, "cv_checks", []) if latest_cv is not None else []
     return {
         "facts": facts,
         "fact_views": [_fact_view(fact) for fact in facts],
         "confirm_body": json.dumps({"fact_ids": [str(fact.id) for fact in facts]}),
-        "confirmed_count": confirmed.count(),
-        "identity_confirmed": has_full_name(confirmed).exists(),
+        "confirmed_count": len(confirmed_list),
+        "identity_confirmed": any(
+            f.category == VerifiedFact.Category.IDENTITY
+            and isinstance(f.payload, dict)
+            and bool(str(f.payload.get("full_name") or "").strip())
+            for f in confirmed_list
+        ),
         "has_email": bool(student.application_email),
         "cv_drafts": cv_drafts,
         "latest_cv": latest_cv,
         "cv": latest_cv.content if latest_cv is not None else None,
-        "cv_checks": _cv_verdicts(latest_cv),
+        "cv_checks": cv_checks,
         "letter_rows": rows,
         "transcript": _transcript(student),
+        **gap_summary,
+        "gap_notes": notes,
     }
 
 
@@ -335,7 +360,7 @@ def letter_write(request: HttpRequest, application_id: UUID) -> HttpResponse:
     if not _writable(application):
         messages.error(request, "Letters are written for programmes, not for scholarships.")
         return _back(request)
-    if not generatable_facts(student).filter(category=VerifiedFact.Category.IDENTITY).exists():
+    if not has_full_name(generatable_facts(student)).exists():
         messages.error(
             request, "Confirm your name and contact details first, at the top of this page."
         )
@@ -410,4 +435,107 @@ def letter_approve(request: HttpRequest, draft_id: UUID) -> HttpResponse:
     application.letter_note = ""
     application.save(update_fields=["letter_state", "letter_note"])
     messages.success(request, "Checking your letter. It will be ready to download in a minute.")
+    return _back(request)
+
+
+@login_required
+@require_POST
+def letter_refine(request: HttpRequest, draft_id: UUID) -> HttpResponse:
+    """Save the student's edited paragraphs as a new numbered DocumentDraft version."""
+    student = current_membership(request, Membership.Role.STUDENT)
+    draft = get_object_or_404(
+        DocumentDraft,
+        id=draft_id,
+        student=student,
+        kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+    )
+    if rate_limited(
+        "letter-refine", student.id, limit=_LETTER_REQUESTS_PER_HOUR, window_seconds=3600
+    ):
+        messages.error(request, LETTER_NOTES["rate_limited"])
+        return _back(request)
+    raw_text = (request.POST.get("refined_text") or "").strip()
+    paragraphs = [p.strip() for p in raw_text.replace("\r\n", "\n").split("\n\n") if p.strip()]
+    if not paragraphs or len(raw_text) > 12000:
+        messages.error(request, "Write at least one paragraph (up to 12,000 characters).")
+        return _back(request)
+    old_content = draft.content if isinstance(draft.content, dict) else {}
+    raw_units = old_content.get("units")
+    old_units: list[object] = list(raw_units) if isinstance(raw_units, list) else []
+    default_archetypes = (
+        "OPENING",
+        "ACADEMIC_PREPARATION",
+        "EXPERIENCE",
+        "WHY_PROGRAMME",
+        "CLOSING",
+    )
+    new_units = []
+    for idx, text in enumerate(paragraphs):
+        old_unit = old_units[idx] if idx < len(old_units) else None
+        if isinstance(old_unit, dict) and old_unit.get("archetype"):
+            archetype = str(old_unit["archetype"])
+        elif idx == len(paragraphs) - 1 and len(paragraphs) > 1:
+            archetype = "CLOSING"
+        else:
+            archetype = default_archetypes[min(idx, len(default_archetypes) - 1)]
+        unit_dict: dict[str, object] = {"archetype": archetype, "text": text}
+        if isinstance(old_unit, dict) and old_unit.get("answers_question") is not None:
+            unit_dict["answers_question"] = old_unit["answers_question"]
+        if isinstance(old_unit, dict) and isinstance(old_unit.get("claims"), list):
+            preserved_claims: list[dict[str, object]] = []
+            for raw_claim in old_unit["claims"]:
+                if not isinstance(raw_claim, dict):
+                    continue
+                claim_txt = str(raw_claim.get("text") or "")
+                if not claim_txt:
+                    continue
+                pos = text.find(claim_txt)
+                if pos >= 0:
+                    updated_claim = dict(raw_claim)
+                    updated_claim["span_start"] = pos
+                    updated_claim["span_end"] = pos + len(claim_txt)
+                    preserved_claims.append(updated_claim)
+            if preserved_claims:
+                unit_dict["claims"] = preserved_claims
+        new_units.append(unit_dict)
+    new_content_dict: dict[str, object] = {
+        "language": str(old_content.get("language") or "en"),
+        "units": new_units,
+    }
+    if old_content.get("header_block") is not None:
+        new_content_dict["header_block"] = old_content["header_block"]
+    if old_content.get("storyline") is not None:
+        new_content_dict["storyline"] = old_content["storyline"]
+    with transaction.atomic():
+        Membership.objects.select_for_update().get(id=student.id)
+        top = (
+            DocumentDraft.objects.filter(
+                student=student,
+                kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            )
+            .order_by("-version")
+            .first()
+        )
+        next_version = (top.version if top is not None else draft.version) + 1
+        new_draft = DocumentDraft.objects.create(
+            student=student,
+            kind=DocumentDraft.Kind.MOTIVATION_LETTER,
+            programme_id=draft.programme_id,
+            funding_opportunity_id=draft.funding_opportunity_id,
+            application_id=draft.application_id,
+            destination_label=draft.destination_label,
+            letter_cycle=draft.letter_cycle,
+            version=next_version,
+            status=DocumentDraft.Status.DRAFT,
+            content=new_content_dict,
+        )
+        attach_source_facts(document=new_draft, facts=draft.source_facts.all())
+        record_event(
+            actor=student, event="document.letter_refined", object_id=new_draft.id
+        )
+    messages.success(
+        request,
+        f"Saved your refined letter as version {new_draft.version}. "
+        "Review and approve it when ready.",
+    )
     return _back(request)

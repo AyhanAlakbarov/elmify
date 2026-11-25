@@ -1646,6 +1646,653 @@ def test_audit_pass4_blank_outcome_does_not_block_portal_and_card_template_prese
     assert '<option value="REJECTED" selected>' in rendered
 
 
+def test_scilit_econometric_upgrades_covariate_eb_log_odds_pqd_shrinkage_and_intervals() -> None:
+    """Verify the 5 literature-grounded econometric upgrades in `apps/funding/probability.py`:
+    1. Phase 2 covariate-adjusted Empirical Bayes & smooth two-level hierarchical pooling
+       (no selection-bias inflation when strong historical applicants win at their expected rate,
+       and no step-function cliff between `exact_count == 9` and `exact_count == 10`).
+    2. Phase 3 MAP-regularised logistic calibration on non-collinear margin features with
+       Bayesian log-odds pooling (no artificial `0.20 * cold_prob` floor on 60 losses).
+    3. `joint_admission_and_funding_chance_pct` with `funding_is_conditional=True` multiplies
+       $P(A) \\cdot P(F \\mid A)$ without falsely capping at $P(F \\mid A)$ when
+       $P(A) > P(F \\mid A)$, and `MARGINAL_MERIT_PQD_CORRELATION` satisfies PQD bounds.
+    4. `_winner_archetype_similarity` applies Empirical Bayes reliability shrinkage
+       $\\tau(n) = n / (n + 10)$ so a tiny cohort ($n=2$) is shrunk relative to $n=30$.
+    5. `ProbabilityEstimate` populates calibrated 90% epistemic prediction intervals
+       (`ci_low_pct <= chance_pct <= ci_high_pct`) that narrow as calibration sample size grows.
+    """
+    from apps.funding.probability import (
+        MARGINAL_MERIT_PQD_CORRELATION,
+        POST_ADMISSION_GOV_CORRELATION,
+        _calibrate_with_outcomes,
+        _winner_archetype_similarity,
+        estimate_named_program_chance,
+        joint_admission_and_funding_chance_pct,
+    )
+
+    prog = _make_program(country_code="DE", name="MSc Computational Science")
+    facts = _make_candidate_facts(prog)
+    profile = make_profile(
+        nationality="AZ",
+        target_field="Computer Science",
+        academic_history=(
+            AcademicRecord(
+                institution="ADA University",
+                country_code="AZ",
+                qualification="Bachelor of Science",
+                field="Computer Science",
+                grade="92",
+                grading_scale="100",
+                completed_on=dt.date(2025, 6, 1),
+            ),
+        ),
+        experience=(
+            ExperienceRecord(
+                kind="RESEARCH",
+                months=14,
+                summary="Published peer-reviewed journal paper in machine learning",
+            ),
+        ),
+    )
+
+    # 1. Covariate-adjusted Phase 2 EB:
+    # Historical rows with strong positive margins (`gpa_margin=1.0`, `coursework_alignment=1.0`,
+    # expected win prob ~0.88 on a 0.55 base prior) winning 88% of the time should NOT inflate
+    # a median applicant's probability above `cold_prob`.
+    avg_features = {
+        "base_prior": 0.55,
+        "gpa_margin": 0.0,
+        "coursework_alignment": 0.0,
+        "language_margin": 0.0,
+        "experience_alignment": 0.0,
+        "winner_similarity": 0.0,
+    }
+    strong_fv = {
+        "base_prior": 0.55,
+        "gpa_margin": 1.0,
+        "coursework_alignment": 1.0,
+        "language_margin": 0.5,
+        "experience_alignment": 0.8,
+        "winner_similarity": 0.5,
+    }
+    biased_rows = [
+        OutcomeCalibrationRecord(
+            application_id=uuid4(),
+            program_id=prog.id,
+            country_code="DE",
+            origin_country="AZ",
+            outcome_source="PORTAL",
+            intake_year=2026,
+            predicted_chance_pct=88,
+            feature_vector=strong_fv,
+            won=(i < 16),  # 16/18 = 88.9% win rate matching strong_fv's expected rate
+        )
+        for i in range(18)
+    ]
+    cal_avg = _calibrate_with_outcomes(
+        0.55,
+        avg_features,
+        biased_rows,
+        target_program_id=prog.id,
+        student_origin_country="AZ",
+        current_year=2026,
+    )
+    assert abs(cal_avg - 0.55) < 0.05
+
+    # Smooth hierarchical transition between 9 and 10 exact rows when 30 country-pool losses exist
+    other_prog_id = uuid4()
+    pool_losses = [
+        OutcomeCalibrationRecord(
+            application_id=uuid4(),
+            program_id=other_prog_id,
+            country_code="DE",
+            origin_country="AZ",
+            outcome_source="PORTAL",
+            intake_year=2026,
+            predicted_chance_pct=55,
+            feature_vector=avg_features,
+            won=False,
+        )
+        for _ in range(30)
+    ]
+    exact_wins = [
+        OutcomeCalibrationRecord(
+            application_id=uuid4(),
+            program_id=prog.id,
+            country_code="DE",
+            origin_country="AZ",
+            outcome_source="PORTAL",
+            intake_year=2026,
+            predicted_chance_pct=55,
+            feature_vector=avg_features,
+            won=True,
+        )
+        for _ in range(10)
+    ]
+    prob_9 = _calibrate_with_outcomes(
+        0.55,
+        avg_features,
+        [*exact_wins[:9], *pool_losses],
+        target_program_id=prog.id,
+        student_origin_country="AZ",
+        current_year=2026,
+    )
+    prob_10 = _calibrate_with_outcomes(
+        0.55,
+        avg_features,
+        [*exact_wins[:10], *pool_losses],
+        target_program_id=prog.id,
+        student_origin_country="AZ",
+        current_year=2026,
+    )
+    assert prob_10 > prob_9
+    assert (prob_10 - prob_9) < 0.04  # smooth step, no cliff
+
+    # 2. Phase 3 log-odds pooling: 60 consecutive exact rejections on a high cold-start prior
+    # must NOT be stuck above `0.20 * cold_prob = 0.16`.
+    sixty_losses = [
+        OutcomeCalibrationRecord(
+            application_id=uuid4(),
+            program_id=prog.id,
+            country_code="DE",
+            origin_country="AZ",
+            outcome_source="PORTAL",
+            intake_year=2026,
+            predicted_chance_pct=80,
+            feature_vector=strong_fv,
+            won=False,
+        )
+        for _ in range(60)
+    ]
+    prob_60_losses = _calibrate_with_outcomes(
+        0.80,
+        strong_fv,
+        sixty_losses,
+        target_program_id=prog.id,
+        student_origin_country="AZ",
+        current_year=2026,
+    )
+    assert prob_60_losses < 0.10
+
+    # 3. Conditional vs marginal joint probability semantics:
+    # When admit=80% and conditional gov scholarship P(F|A)=70%, pure conditional (rho=0)
+    # gives 0.80 * 0.70 = 56%, and post-admit gov correlation (rho=0.75) gives 42% on admit=45%,
+    # whereas marginal PQD with correlation=0.35 lies strictly between 15 and 25.
+    cond_zero = joint_admission_and_funding_chance_pct(
+        80, [70], correlation=0.0, funding_is_conditional=True
+    )
+    assert cond_zero == 56
+    cond_gov = joint_admission_and_funding_chance_pct(
+        45,
+        [75],
+        correlation=POST_ADMISSION_GOV_CORRELATION,
+        funding_is_conditional=True,
+    )
+    assert cond_gov == 42
+    pqd_merit = joint_admission_and_funding_chance_pct(
+        60, [25], correlation=MARGINAL_MERIT_PQD_CORRELATION
+    )
+    assert pqd_merit is not None and 15 < pqd_merit < 25
+
+    # 4. WinnerCohortProfile sample-size reliability shrinkage:
+    cohort_n2 = WinnerCohortProfile(
+        program_id=prog.id,
+        sample_size=2,
+        prior_degree_fields={"computer science": 2},
+        origin_country_counts={"AZ": 2},
+        work_experience_months_p25=6,
+        work_experience_months_median=12,
+        research_signal_rate=Decimal("0.80"),
+    )
+    cohort_n30 = WinnerCohortProfile(
+        program_id=prog.id,
+        sample_size=30,
+        prior_degree_fields={"computer science": 30},
+        origin_country_counts={"AZ": 30},
+        work_experience_months_p25=6,
+        work_experience_months_median=12,
+        research_signal_rate=Decimal("0.80"),
+    )
+    sim_n2 = _winner_archetype_similarity(profile, cohort_n2)
+    sim_n30 = _winner_archetype_similarity(profile, cohort_n30)
+    assert 0.0 < sim_n2 < sim_n30
+    assert sim_n2 < 0.25 and sim_n30 > 0.65
+
+    # 5. Epistemic 90% prediction intervals on ProbabilityEstimate across callers:
+    est_cold = estimate_program_admission_chance(
+        prog, facts, profile, calibration_rows=(), today=dt.date(2026, 10, 1)
+    )
+    est_eb = estimate_program_admission_chance(
+        prog,
+        facts,
+        profile,
+        calibration_rows=exact_wins,
+        today=dt.date(2026, 10, 1),
+    )
+    est_ml = estimate_program_admission_chance(
+        prog,
+        facts,
+        profile,
+        calibration_rows=sixty_losses,
+        today=dt.date(2026, 10, 1),
+    )
+    for est in (est_cold, est_eb, est_ml):
+        assert est.ci_low_pct is not None and est.ci_high_pct is not None
+        assert est.epistemic_se_logit is not None and est.epistemic_se_logit > 0.0
+        assert 1 <= est.ci_low_pct <= est.chance_pct <= est.ci_high_pct <= 95
+    # Epistemic logit SE shrinks monotonically as exact sample size grows (0 -> 10 -> 60)
+    assert est_cold.epistemic_se_logit is not None
+    assert est_eb.epistemic_se_logit is not None
+    assert est_ml.epistemic_se_logit is not None
+    assert est_cold.epistemic_se_logit > est_eb.epistemic_se_logit > est_ml.epistemic_se_logit
+
+    named_est = estimate_named_program_chance(
+        "MSc Data Science", "DE", profile, today=dt.date(2026, 10, 1)
+    )
+    assert named_est.ci_low_pct is not None and named_est.ci_high_pct is not None
+    assert 1 <= named_est.ci_low_pct <= named_est.chance_pct <= named_est.ci_high_pct <= 95
+
+    auto_award = FundingOpportunity(
+        id=uuid4(),
+        canonical_key=f"opp:{uuid4()}",
+        name="Automatic Waiver",
+        scope_type="PROGRAM",
+        country_code="DE",
+        family="TUITION_WAIVER",
+        route="AUTOMATIC_ON_ADMISSION",
+        tuition="FULL",
+        living="NONE",
+        served=True,
+    )
+    auto_facts = award_facts(
+        auto_award,
+        benefits=(),
+        rules=(),
+        country_code="DE",
+        evidence=Evidence(offered="YES", applies_to="2027-2028"),
+    )
+    auto_est = estimate_scholarship_chance(
+        auto_award,
+        auto_facts,
+        profile,
+        today=dt.date(2026, 10, 1),
+    )
+    assert auto_est.chance_pct == 100
+    assert auto_est.ci_low_pct == 100 and auto_est.ci_high_pct == 100
+    assert auto_est.epistemic_se_logit == 0.0
+    for est in (est_cold, est_eb, est_ml, named_est, auto_est):
+        assert est.features["ci_low_pct"] == float(est.ci_low_pct)
+        assert est.features["ci_high_pct"] == float(est.ci_high_pct)
+        assert est.features["epistemic_se_logit"] == round(float(est.epistemic_se_logit), 4)
+
+
+def test_extract_required_gpa_bar_accepts_grade_and_prior_degree_grade() -> None:
+    from apps.funding.evaluation import ApplicantConditionFact
+    from apps.funding.probability import _extract_required_gpa_bar
+
+    grade_cond = ApplicantConditionFact(
+        benefit_id="b1",
+        condition_type="WORK_EXPERIENCE",
+        key="GRADE",
+        operator="GTE",
+        value="3.6/4.0",
+        rule_text="Minimum GPA 3.6/4.0",
+    )
+    prior_cond = ApplicantConditionFact(
+        benefit_id="b2",
+        condition_type="WORK_EXPERIENCE",
+        key="PRIOR_DEGREE_GRADE",
+        operator="GTE",
+        value="85/100",
+        rule_text="Minimum 85/100",
+    )
+    assert _extract_required_gpa_bar((grade_cond,), ()) == (3.6, "gpa 4.0")
+    assert _extract_required_gpa_bar((prior_cond,), ()) == (85.0, "100")
+
+
+def test_ipw_winner_archetype_persistence_kish_neff_and_official_selectivity_pooling() -> None:
+    """Verify:
+    1. `sync_winner_cohort_for_program` persists `prior_degree_levels["__archetype__"]` into
+       PostgreSQL, and when reloaded fresh from DB (without in-memory `.archetype`),
+       `_winner_archetype_similarity` uses Hájek IPW shares, ignores `"__archetype__"` in
+       raw degree-level counts, and shrinks by Kish's effective sample size `n_eff`.
+    2. `_calibrate_with_outcomes_and_se` incorporates `n_eff` and `prior_kappa_boost`
+       ($\\Delta\\kappa_{\\text{pub}}$) into `epistemic_se_logit`.
+    3. `_pool_official_selectivity_prior` and `_extract_official_selectivity_from_claims`
+       pool $(K, N)$, $r_{\\text{pub}}$, and quota-only $K$ with regime baselines $p_{\\text{reg}}$.
+    """
+    from apps.funding.probability import (
+        _calibrate_with_outcomes_and_se,
+        _cohort_effective_sample_size,
+        _cohort_raw_degree_levels,
+        _pool_official_selectivity_prior,
+        _winner_archetype_similarity,
+    )
+    from apps.research.winner_scraper import sync_winner_cohort_for_program
+
+    class _BiasedLinkedInProvider:
+        provider_name = "stub_ipw_linkedin"
+
+        def search_winners(self, **kwargs):
+            # 3 high-propensity US/CS profiles vs 1 low-propensity UZ/Chemistry profile
+            return [
+                {
+                    "origin_country": "US",
+                    "prior_degree_fields": ["Computer Science"],
+                    "prior_degree_level": "BACHELOR",
+                    "work_experience_months": 6,
+                    "has_research_signal": False,
+                    "gpa": 3.2,
+                    "prior_universities": ["MIT"],
+                    "reporting_propensity": 0.90,
+                },
+                {
+                    "origin_country": "US",
+                    "prior_degree_fields": ["Computer Science"],
+                    "prior_degree_level": "BACHELOR",
+                    "work_experience_months": 6,
+                    "has_research_signal": False,
+                    "gpa": 3.2,
+                    "prior_universities": ["MIT"],
+                    "reporting_propensity": 0.90,
+                },
+                {
+                    "origin_country": "US",
+                    "prior_degree_fields": ["Computer Science"],
+                    "prior_degree_level": "BACHELOR",
+                    "work_experience_months": 6,
+                    "has_research_signal": False,
+                    "gpa": 3.2,
+                    "prior_universities": ["MIT"],
+                    "reporting_propensity": 0.90,
+                },
+                {
+                    "origin_country": "UZ",
+                    "prior_degree_fields": ["Chemistry"],
+                    "prior_degree_level": "MASTER",
+                    "work_experience_months": 36,
+                    "has_research_signal": True,
+                    "gpa": 3.9,
+                    "prior_universities": ["National University of Uzbekistan"],
+                    "reporting_propensity": 0.05,  # w = 20.0 vs 3 * 1.111 = 3.333
+                },
+            ]
+
+    prog = _make_program(country_code="DE", name="MSc Molecular Data Science")
+    synced = sync_winner_cohort_for_program(prog, provider=_BiasedLinkedInProvider())
+    assert synced is not None
+
+    # Reload from DB so ephemeral in-memory `.archetype` is gone
+    reloaded = WinnerCohortProfile.objects.get(pk=synced.pk)
+    assert not hasattr(reloaded, "archetype")
+    assert _cohort_raw_degree_levels(reloaded) == {"BACHELOR": 3, "MASTER": 1}
+    n_eff = _cohort_effective_sample_size(reloaded)
+    assert 1.0 < n_eff < float(reloaded.sample_size)
+
+    uz_chem_student = make_profile(
+        nationality="UZ",
+        target_field="Chemistry",
+        academic_history=(
+            AcademicRecord(
+                institution="National University of Uzbekistan",
+                country_code="UZ",
+                qualification="MSc",
+                field="Chemistry",
+                grade="3.9",
+                grading_scale="4.0",
+                completed_on=dt.date(2025, 6, 1),
+            ),
+        ),
+        experience=(
+            ExperienceRecord(
+                kind="RESEARCH",
+                months=36,
+                summary="Published journal article in computational chemistry",
+            ),
+        ),
+    )
+    sim_ipw = _winner_archetype_similarity(uz_chem_student, reloaded)
+    assert sim_ipw > 0.0
+
+    # Epistemic logit SE tightens with higher n_eff and higher prior_kappa_boost
+    base_features = {
+        "base_prior": 0.30,
+        "gpa_margin": 0.5,
+        "coursework_alignment": 0.4,
+        "language_margin": 0.35,
+        "experience_alignment": 0.45,
+        "winner_similarity": sim_ipw,
+    }
+    _, se_no_cohort = _calibrate_with_outcomes_and_se(
+        0.45, base_features, (), cohort_n_eff=0.0, prior_kappa_boost=0.0
+    )
+    _, se_with_neff = _calibrate_with_outcomes_and_se(
+        0.45, base_features, (), cohort_n_eff=25.0, prior_kappa_boost=0.0
+    )
+    _, se_with_pub = _calibrate_with_outcomes_and_se(
+        0.45, base_features, (), cohort_n_eff=25.0, prior_kappa_boost=25.0
+    )
+    assert se_no_cohort > se_with_neff > se_with_pub
+
+    # Official selectivity pooling modes: (K, N), r_pub, and K-only
+    p_kn, boost_kn = _pool_official_selectivity_prior(
+        0.40, awards_per_cycle=20, applicants_per_cycle=400
+    )
+    assert boost_kn == 25.0
+    assert 0.05 < p_kn < 0.40
+
+    p_rate, boost_rate = _pool_official_selectivity_prior(
+        0.40, published_selection_rate=0.05
+    )
+    assert boost_rate == 15.0
+    assert 0.05 < p_rate < 0.40
+
+    p_quota, boost_quota = _pool_official_selectivity_prior(0.40, awards_per_cycle=10)
+    assert boost_quota == 5.0
+    assert 0.04 < p_quota < 0.40
+
+
+def test_stage2_selectivity_and_min_grade_claims_and_provenance_calibration_merge(
+    agency_a,
+    membership_a,
+) -> None:
+    """Verify Stage 2 Items 3 & 9:
+    - `catalog.py::claim_rows` appends `awards per cycle [N]` on `FundingTrackClaim`s so
+      `_extract_official_selectivity_from_claims` parses it.
+    - `_extract_required_gpa_bar` and `is_selective_candidate` consume `evidence_claims`
+      (`GRADE: Minimum grade ... [3.5 / 4.0]`, `Selectivity signal: ...`).
+    - `facts.py::program_facts` populates `admission_baseline_pct = Decimal('25.00')` when
+      `statements` or `evidence_claims` indicate a selective bar, enabling
+      `evaluation.py::post_admission_gov_scheme_for_candidate` and `is_selective_candidate`.
+    - `provenance_job.py::check_named_program` and `auto_resolve_named_candidate` preserve
+      existing `calibration_features` keys and set `risk_tier`.
+    """
+    from apps.accounts.models import StudentProfileVersion
+    from apps.accounts.schemas import ProfileConstraint
+    from apps.funding.evaluation import post_admission_gov_scheme_for_candidate
+    from apps.funding.models import (
+        EvidenceClaim,
+        OfficialEvidenceClaim,
+        OfficialSource,
+        OfficialSourceSnapshot,
+        ProgramEvidenceClaim,
+        RecommendationCandidate,
+        RecommendationRun,
+    )
+    from apps.funding.probability import (
+        _extract_official_selectivity_from_claims,
+        _extract_required_gpa_bar,
+        is_selective_candidate,
+    )
+    from apps.research.catalog import ResolvedProgram, claim_rows
+    from apps.research.extraction import (
+        ExtractedClaims,
+        FundingTrackClaim,
+        GradeThresholdClaim,
+        TeachingLanguageClaim,
+    )
+    from apps.research.provenance_job import ResearchMessage, check_named_program
+
+    # 1. catalog.py::claim_rows emits awards_per_cycle on funding_tracks
+    resolved_prog = ResolvedProgram(
+        institution_name="ETH Zurich",
+        program_name="MSc Data Science",
+        degree_level="MASTER",
+        country_code="CH",
+        city="Zurich",
+        teaching_languages=("English",),
+        duration_months=24,
+    )
+    extracted = ExtractedClaims(
+        duration_months=24,
+        teaching_languages=(TeachingLanguageClaim(language="English", evidence="English"),),
+        funding_tracks=(
+            FundingTrackClaim(
+                name="Excellence Scholarship & Opportunity Programme",
+                initiation="STUDENT_APPLIES_SEPARATELY",
+                awards_per_cycle=60,
+                evidence="60 ESOP scholarships per year.",
+            ),
+        ),
+        published_minimum_grade=GradeThresholdClaim(
+            minimum="3.5",
+            scale="4.0",
+            evidence="Minimum GPA 3.5/4.0",
+        ),
+        selectivity_signals=("Highly selective admission with top 10% ranking",),
+        confidence=0.95,
+    )
+    emitted = claim_rows(resolved_prog, extracted, now=dt.datetime(2026, 10, 1, tzinfo=dt.UTC))
+    claim_texts = tuple(text for _, text in emitted)
+    assert any("awards per cycle [60]" in t for t in claim_texts)
+    _, awards_k, _, sel_sigs = _extract_official_selectivity_from_claims(extra_claims=claim_texts)
+    assert awards_k == 60
+    assert len(sel_sigs) == 1
+
+    # 2. _extract_required_gpa_bar & is_selective_candidate consume evidence_claims,
+    #    and program_facts sets admission_baseline_pct=Decimal("25.00")
+    assert _extract_required_gpa_bar((), (), evidence_claims=claim_texts) == (3.5, "gpa 4.0")
+    prog = _make_program(country_code="CH", name="MSc Computer Science")
+    pf_selective = program_facts(
+        prog,
+        costs=(),
+        benefits=(),
+        rules=(),
+        evidence_claims=claim_texts,
+    )
+    assert pf_selective.admission_baseline_pct == Decimal("25.00")
+    assert is_selective_candidate(pf_selective) is True
+
+    profile_gov = make_profile(
+        nationality="AZ",
+        target_field="Computer Science",
+        non_negotiables=(
+            ProfileConstraint(
+                kind="OTHER",
+                value="GOV_SCHOLARSHIP_AFTER_ADMISSION",
+            ),
+        ),
+    )
+    # Without high dimension_scores (default 50), post_admission_gov_scheme_for_candidate
+    # relies on is_selective_candidate(pf_selective) -> True via admission_baseline_pct!
+    assert (
+        post_admission_gov_scheme_for_candidate(
+            profile_gov,
+            pf_selective,
+            (),
+            today=dt.date(2026, 10, 1),
+        )
+        == "Post-Admission Government Scholarship"
+    )
+
+    # Also test DB-backed ProgramEvidenceClaim consumption in estimate_program_admission_chance
+    src = OfficialSource.objects.create(
+        canonical_url=f"https://ethz.ch/ds-{uuid4()}",
+        publisher="ethz.ch",
+        source_type="PROGRAM",
+    )
+    snap = OfficialSourceSnapshot.objects.create(
+        source=src,
+        s3_key=f"s3/{uuid4()}",
+        s3_version_id="1",
+        sha256=uuid4().hex + uuid4().hex,
+        final_url=src.canonical_url,
+        redirect_chain=[],
+        retrieved_at=dt.datetime(2026, 10, 1, tzinfo=dt.UTC),
+        admissions_cycle="2027",
+        content_type="text/html",
+        byte_size=100,
+    )
+    for cls_name, txt in emitted:
+        oc = OfficialEvidenceClaim.objects.create(
+            program=prog,
+            source=src,
+            snapshot=snap,
+            claim_class=cls_name,
+            claim=txt,
+            evidence_strength="DIRECT",
+            visibility="STUDENT_FACING",
+            last_checked_at=dt.datetime(2026, 10, 1, tzinfo=dt.UTC),
+        )
+        ProgramEvidenceClaim.objects.create(program=prog, evidence_claim=oc)
+
+    est_db = estimate_program_admission_chance(
+        prog,
+        _make_candidate_facts(prog),
+        profile_gov,
+        today=dt.date(2026, 10, 1),
+    )
+    assert est_db.features["base_prior"] < 0.30
+
+    # 3. provenance_job.py::check_named_program preserves existing calibration_features & risk_tier
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        pv = StudentProfileVersion.objects.create(
+            student=membership_a,
+            version=199,
+            schema_version=3,
+            snapshot=profile_gov.model_dump(mode="json"),
+        )
+        run = RecommendationRun.objects.create(profile_version=pv)
+        ev = EvidenceClaim.objects.create(
+            tenant=agency_a,
+            source_url="https://www.tum.de/msc-informatics",
+            claim="Named programme",
+            last_checked_at=dt.datetime(2026, 10, 1, tzinfo=dt.UTC),
+        )
+        named_cand = RecommendationCandidate.objects.create(
+            tenant=agency_a,
+            run=run,
+            program=None,
+            opportunity=None,
+            evidence=ev,
+            program_name="MSc Informatics",
+            country_code="DE",
+            funding_gap=Decimal("0"),
+            currency="EUR",
+            eligible=True,
+            state=RecommendationCandidate.State.VISIBLE,
+            calibration_features={"custom_marker": 1.0},
+        )
+
+    check_named_program(
+        ResearchMessage(
+            kind="check_named_program",
+            run_id=run.id,
+            tenant_id=agency_a.id,
+            candidate_id=named_cand.id,
+        ),
+        check=lambda _url, _name: (None, "RECOGNISED"),
+    )
+    with tenant_scope(agency_a.id), tenant_transaction(agency_a.id):
+        named_cand.refresh_from_db()
+        assert named_cand.estimated_chance_pct is not None
+        assert named_cand.calibration_features.get("custom_marker") == 1.0
+        assert named_cand.calibration_features.get("risk_tier") in ("REACH", "TARGET", "SAFETY")
+
+
+
+
+
 
 
 

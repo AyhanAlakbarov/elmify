@@ -65,8 +65,8 @@ def for_languages(role: str, languages: Iterable[str]) -> tuple[str, ...]:
 
 def _fold(term: str) -> str:
     """Transliterate, never drop: NFKD-then-ignore turned `müraciət` into
-    `muracit`, since ə, ı and ß do not decompose. Case is kept."""
-    return anyascii(term)
+    `muracit`, since ə, ı and ß do not decompose."""
+    return anyascii(term).casefold()
 
 
 def include_paths(languages: Iterable[str], *, today: dt.date) -> tuple[str, ...]:
@@ -103,7 +103,14 @@ def apply_links(body: bytes, *, base_url: str, languages: Iterable[str]) -> tupl
     """Anchors whose href or text carries an `apply` term, in page order."""
     from urllib.parse import urljoin
 
-    wanted = [term.casefold() for term in for_languages("apply", languages)]
+    wanted = list(
+        dict.fromkeys(
+            variant
+            for term in for_languages("apply", languages)
+            for variant in (term.casefold(), _fold(term), _fold(term).replace(" ", "-"))
+            if variant
+        )
+    )
     found: list[str] = []
     for anchor in anchors(body):
         absolute = urljoin(base_url, anchor.href)

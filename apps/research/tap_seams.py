@@ -178,9 +178,21 @@ def bound_pass_states() -> PassStates:
 def bound_host_reader(*, field: str = "") -> HostReader:
     """`CardHostReader`: reads one new host via `card_funding.entry.read_page`
     and persists its servable awards via `card_funding.store.write_card`."""
-    from .seam_bindings import CardHostReader
+    from uuid import uuid4
 
-    return CardHostReader(field=field)
+    from django.conf import settings
+
+    from .card_engine.readers import run_limit
+    from .card_engine.screen import screen as default_screen
+    from .seam_bindings import CardHostReader, _default_fetch_html, _default_site_search
+
+    return CardHostReader(
+        field=field,
+        fetch_html=_default_fetch_html,
+        site_search=_default_site_search if getattr(settings, "EXA_API_KEY", "") else None,
+        screen=default_screen,
+        limit=run_limit(uuid4()),
+    )
 
 
 def bound_sweeper() -> CellSweeper:

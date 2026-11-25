@@ -624,3 +624,50 @@ def test_profile_version_locks_dob_nationality_and_completed_degree_but_allows_g
         assert Notification.objects.filter(
             roadmap_item__student=membership_a, recipient=counselor_membership
         ).exists()
+
+
+@pytest.mark.django_db
+def test_identity_continuity_matches_same_degree_variants_and_rejects_unrelated_field_swap(
+    agency_a, membership_a, valid_phase1_profile_payload
+):
+    rejected, schema, create = _contracts()
+    with tenant_scope(agency_a.id):
+        base = deepcopy(valid_phase1_profile_payload)
+        base["academic_history"] = [
+            {
+                "institution": "BSU",
+                "country_code": "AZ",
+                "qualification": "BSc",
+                "field": "Informatics",
+                "grade": "90",
+                "grading_scale": "100",
+                "completed_on": "2025-06-30",
+            }
+        ]
+        v1 = create(student=membership_a, snapshot=schema.model_validate(base))
+        assert v1.version == 1
+
+        # Expanding institution acronym ("BSU" -> "Baku State University") and equivalent
+        # field synonym ("Informatics" -> "Computer Science") preserves continuity.
+        expanded = deepcopy(base)
+        expanded["academic_history"] = [
+            {
+                "institution": "Baku State University",
+                "country_code": "AZ",
+                "qualification": "Bachelor of Science",
+                "field": "Computer Science",
+                "grade": "90",
+                "grading_scale": "100",
+                "completed_on": "2025-06-30",
+            }
+        ]
+        v2 = create(student=membership_a, snapshot=schema.model_validate(expanded))
+        assert v2.version == 2
+
+        # Swapping the degree's field to an unrelated subject ("Computer Science" -> "History")
+        # at the same university is rejected without allow_identity_override.
+        unrelated_field = deepcopy(expanded)
+        unrelated_field["academic_history"][0]["field"] = "History"
+        with pytest.raises(rejected, match="identity continuity"):
+            create(student=membership_a, snapshot=schema.model_validate(unrelated_field))
+

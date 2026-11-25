@@ -100,8 +100,13 @@ def _match(category: str, payload: Mapping[str, object], open_chains: list[Chain
                 c
                 for c in open_chains
                 if c.tip.source_tier != VerifiedFact.SourceTier.AUTHORITATIVE_DOCUMENT
+                and not c.tip.source_ref.startswith("document:")
+                and (
+                    any("full_name" in _payload(r) for r in c.rows)
+                    or c.tip.source_ref.startswith((UPLOAD_REF_PREFIX, "cv-upload:"))
+                )
             ),
-            open_chains[0] if open_chains else None,
+            None,
         )
     identity = fact_identity(category, payload)
     if not any(identity):

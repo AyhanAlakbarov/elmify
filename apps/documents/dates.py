@@ -30,6 +30,8 @@ from datetime import date
 from enum import StrEnum
 from functools import partial
 
+from apps.research.locale_names import month_forms
+
 #: Same bounds as schemas.CVDate. A CV date outside them is a garbled token,
 #: not an unusual life.
 _MIN_YEAR, _MAX_YEAR = 1900, 2100
@@ -78,6 +80,10 @@ _register(9, "september", "sep", "sept", "septembre", "eylul", "eylül", "sentya
 _register(10, "october", "oct", "oktober", "octobre", "ekim", "oktyabr")
 _register(11, "november", "nov", "novembre", "kasim", "kasım", "noyabr")
 _register(12, "december", "dec", "dezember", "decembre", "décembre", "aralik", "aralık", "dekabr")
+for _month_name, _month_lang, _month_num in month_forms():
+    _folded_month = _fold(_month_name)
+    if _folded_month and _folded_month not in _MONTHS:
+        _MONTHS[_folded_month] = _month_num
 
 #: An end date the document leaves open. cv_dates.month_year already renders a
 #: null end_date as "present", so None is the representation, not a sentinel.
@@ -108,9 +114,13 @@ _ISO_MONTH = re.compile(r"^(\d{4})[-/](\d{1,2})$")
 _YEAR_ONLY = re.compile(r"^(\d{4})$")
 _MONTH_YEAR_NUMERIC = re.compile(r"^(\d{1,2})[/.](\d{4})$")
 _TRIPLE = re.compile(r"^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$")
-_SEASON = re.compile(r"^([a-z]+)\.?\s*(\d{4})(?:\s*/\s*\d{2,4})?$")
-_MONTH_FIRST_NAME = re.compile(r"^([a-z]+)\.?,?\s*(?:(\d{1,2})(?:st|nd|rd|th)?,?\s*)?(\d{4})$")
-_DAY_FIRST_NAME = re.compile(r"^(\d{1,2})(?:st|nd|rd|th)?\.?\s*([a-z]+)\.?,?\s*(\d{4})$")
+_SEASON = re.compile(r"^([^\W\d_]+)\.?\s*(\d{4})(?:\s*/\s*\d{2,4})?$")
+_MONTH_FIRST_NAME = re.compile(
+    r"^([^\W\d_]+)\.?,?\s*(?:(\d{1,2})(?:st|nd|rd|th)?,?\s*)?(\d{4})$"
+)
+_DAY_FIRST_NAME = re.compile(
+    r"^(\d{1,2})(?:st|nd|rd|th)?\.?\s*([^\W\d_]+)\.?,?\s*(\d{4})$"
+)
 #: Any all-numeric date in free text, for convention_from_text.
 _TRIPLE_IN_TEXT = re.compile(r"\b(\d{1,2})[/.](\d{1,2})[/.](\d{4})\b")
 

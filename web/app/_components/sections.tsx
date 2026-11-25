@@ -128,7 +128,10 @@ export function Extension({ locale = "en" }: { locale?: Locale }) {
           <div className="overflow-hidden rounded-2xl border border-border bg-slate-900 shadow-[0_30px_70px_-30px_rgba(15,23,42,0.45)]">
             <video
               key="tumonline-portal-demo"
-              className="block h-auto w-full"
+              width={1280}
+              height={720}
+              preload="auto"
+              className="-mb-px block h-auto w-full scale-[1.002]"
               autoPlay
               loop
               muted
@@ -136,8 +139,8 @@ export function Extension({ locale = "en" }: { locale?: Locale }) {
               poster="/screens/extension-poster.png?v=tumonline"
               aria-label={copy.h2}
             >
-              <source src="/screens/extension-demo.webm?v=tumonline" type="video/webm" />
               <source src="/screens/extension-demo.mp4?v=tumonline" type="video/mp4" />
+              <source src="/screens/extension-demo.webm?v=tumonline" type="video/webm" />
             </video>
           </div>
         </div>
@@ -162,22 +165,25 @@ const cellLayouts: readonly CellLayout[] = [
     shot: programmes,
     className: "md:col-span-2 md:row-span-2",
     tint: true,
+    minHeight: "min-h-80 md:min-h-[41rem]",
   },
   {
     shot: board,
     className: "",
-    zoom: "w-[230%]",
+    zoom: "w-[138%]",
+    minHeight: "min-h-64 md:min-h-[18rem]",
   },
   {
     shot: documents,
     className: "",
-    zoom: "w-[190%]",
+    zoom: "w-[138%]",
+    minHeight: "min-h-64 md:min-h-[18rem]",
   },
   {
     shot: messages,
     className: "md:col-span-3",
     tint: true,
-    minHeight: "min-h-80 md:min-h-[34rem]",
+    minHeight: "min-h-80 md:min-h-[40rem]",
   },
 ];
 
@@ -196,7 +202,7 @@ export function Product({ locale = "en" }: { locale?: Locale }) {
               <article
                 key={c.title}
                 className={[
-                  "flex flex-col overflow-hidden rounded-3xl border border-border",
+                  "flex flex-col overflow-hidden rounded-3xl border border-border shadow-[0_6px_20px_-12px_rgba(15,23,42,0.08)]",
                   layout.tint ? "bg-brand-soft" : "bg-surface",
                   layout.className,
                 ].join(" ")}
@@ -214,7 +220,7 @@ export function Product({ locale = "en" }: { locale?: Locale }) {
                     src={layout.shot}
                     alt={c.alt}
                     className={[
-                      "absolute left-6 top-0 max-w-none rounded-tl-xl border-l border-t border-border md:left-7",
+                      "absolute left-6 top-0 max-w-none rounded-tl-xl bg-surface md:left-7",
                       layout.zoom ?? "w-[calc(100%-1.5rem)] md:w-[calc(100%-1.75rem)]",
                     ].join(" ")}
                     sizes="(min-width: 768px) 1200px, 100vw"

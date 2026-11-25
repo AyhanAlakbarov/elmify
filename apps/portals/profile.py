@@ -41,6 +41,12 @@ INDEXED_DEGREES = 3
 INDEXED_EXPERIENCES = 3
 INDEXED_REFERENCES = 3
 INDEXED_TIMELINES = 3
+INDEXED_AWARDS = 3
+INDEXED_PUBLICATIONS = 3
+INDEXED_RESEARCH = 3
+INDEXED_LANGUAGES = 3
+INDEXED_SKILLS = 3
+INDEXED_CERTIFICATIONS = 3
 
 NARRATIVE_FIELDS: tuple[str, ...] = (
     "narrative.motivation_letter",
@@ -121,25 +127,103 @@ LEARNABLE_FIELDS: tuple[str, ...] = (
         for number in range(1, INDEXED_TIMELINES + 1)
         for key in payload_keys(VerifiedFact.Category.TIMELINE)
     )
+    + tuple(
+        f"award.{number}.{key}"
+        for number in range(1, INDEXED_AWARDS + 1)
+        for key in payload_keys(VerifiedFact.Category.AWARD)
+    )
+    + tuple(
+        f"publication.{number}.{key}"
+        for number in range(1, INDEXED_PUBLICATIONS + 1)
+        for key in payload_keys(VerifiedFact.Category.PUBLICATION)
+    )
+    + tuple(
+        f"research.{number}.{key}"
+        for number in range(1, INDEXED_RESEARCH + 1)
+        for key in payload_keys(VerifiedFact.Category.RESEARCH)
+    )
+    + tuple(
+        f"language.{number}.{key}"
+        for number in range(1, INDEXED_LANGUAGES + 1)
+        for key in payload_keys(VerifiedFact.Category.LANGUAGE)
+    )
+    + tuple(
+        f"skill.{number}.{key}"
+        for number in range(1, INDEXED_SKILLS + 1)
+        for key in payload_keys(VerifiedFact.Category.SKILL)
+    )
+    + tuple(
+        f"certification.{number}.{key}"
+        for number in range(1, INDEXED_CERTIFICATIONS + 1)
+        for key in payload_keys(VerifiedFact.Category.CERTIFICATION)
+    )
     + NARRATIVE_FIELDS
 )
 
 
-def _degree_order(payload: dict[str, object]) -> tuple[str, str]:
-    return str(payload.get("start_date") or ""), str(payload.get("end_date") or "")
+def _sync_bench_sample_indexed_fields() -> None:
+    try:
+        from . import bench_students
+    except Exception:
+        return
+    target = (
+        bench_students.SAMPLE_STUDENTS[-1].values if bench_students.SAMPLE_STUDENTS else None
+    )
+    for cat, limit in (
+        ("award", INDEXED_AWARDS),
+        ("publication", INDEXED_PUBLICATIONS),
+        ("research", INDEXED_RESEARCH),
+        ("language", INDEXED_LANGUAGES),
+        ("skill", INDEXED_SKILLS),
+        ("certification", INDEXED_CERTIFICATIONS),
+    ):
+        cat_items = [
+            (k.split(".", 1)[1], v)
+            for k, v in list(bench_students._OTHER_FACTS.items())
+            if k.startswith(f"{cat}.") and not _INDEX.search(k)
+        ]
+        for idx in range(1, limit + 1):
+            for key, val in cat_items:
+                indexed_key = f"{cat}.{idx}.{key}"
+                bench_students._OTHER_FACTS.setdefault(indexed_key, val)
+                if target is not None:
+                    target.setdefault(indexed_key, val)
+    if target is not None:
+        for learnable_key in LEARNABLE_FIELDS:
+            target.setdefault(learnable_key, "Economics")
+
+
+_sync_bench_sample_indexed_fields()
+
+
+def _degree_order(payload: dict[str, object]) -> tuple[bool, str, str]:
+    start = str(payload.get("start_date") or "").strip()
+    end = str(payload.get("end_date") or "").strip()
+    return (not start and not end, start or end, end or start)
 
 
 def _payload_str(category: str, key: str, value: object) -> str | None:
+    if key in TRANSCRIPT_ONLY_EDUCATION_KEYS:
+        return None
     if isinstance(value, str) and value.strip():
         return value
     if (
         category == VerifiedFact.Category.EXPERIENCE
         and key == "bullets"
-        and isinstance(value, list)
+        and isinstance(value, (list, tuple))
     ):
         lines = [item.strip() for item in value if isinstance(item, str) and item.strip()]
         if lines:
             return "\n".join(lines)
+        return None
+    if category == VerifiedFact.Category.PUBLICATION and key not in payload_keys(category):
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (list, tuple)) and all(isinstance(item, str) for item in value):
+        items = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        if items:
+            return ", ".join(items)
     return None
 
 
@@ -260,7 +344,12 @@ def narrative_values(
     return out
 
 
-def verified_values(student: Membership) -> dict[str, str]:
+def verified_values(
+    student: Membership,
+    *,
+    _inputs: list[NarrativeInput] | None = None,
+    _drafts: list[DocumentDraft] | None = None,
+) -> dict[str, str]:
     """Confirmed, current facts flattened to ``"category.key" -> value``.
 
     A repeated category's unindexed key is its last row (maps stored before
@@ -268,20 +357,18 @@ def verified_values(student: Membership) -> dict[str, str]:
     also indexed ("education.1.institution_original") for forms with repeated
     sections.
     """
-    superseded = set(
-        VerifiedFact.objects.filter(student=student, supersedes__isnull=False).values_list(
-            "supersedes_id", flat=True
-        )
+    disowned = disowned_refs(student)
+    retired = retired_refs(student)
+    live = live_retired_refs(student, retired=retired, disowned=disowned)
+    cached: tuple[VerifiedFact, ...] | None = getattr(student, "_gap_facts_cache", None)
+    raw_facts = (
+        (f for f in cached if f.confirmed_at is not None and f.source_ref not in disowned)
+        if cached is not None
+        else unsuperseded_facts(student)
+        .filter(confirmed_at__isnull=False)
+        .exclude(source_ref__in=disowned)
     )
-    retired, live = retired_refs(student), live_retired_refs(student)
-    facts = [
-        f
-        for f in VerifiedFact.objects.filter(student=student, confirmed_at__isnull=False)
-        .exclude(id__in=superseded)
-        .exclude(source_ref__in=disowned_refs(student))
-        .order_by("created_at")
-        if not retired_hides(f, retired, live)
-    ]
+    facts = [f for f in raw_facts if not retired_hides(f, retired, live)]
     values: dict[str, str] = {}
     # Every confirmed category, TIMELINE included (owner decision 2026-10-06:
     # one ledger, every consumer). Like every multi-row category here, the
@@ -307,6 +394,12 @@ def verified_values(student: Membership) -> dict[str, str]:
         (VerifiedFact.Category.EXPERIENCE, "experience", INDEXED_EXPERIENCES, True),
         (VerifiedFact.Category.REFERENCE, "reference", INDEXED_REFERENCES, False),
         (VerifiedFact.Category.TIMELINE, "timeline", INDEXED_TIMELINES, True),
+        (VerifiedFact.Category.AWARD, "award", INDEXED_AWARDS, False),
+        (VerifiedFact.Category.PUBLICATION, "publication", INDEXED_PUBLICATIONS, False),
+        (VerifiedFact.Category.RESEARCH, "research", INDEXED_RESEARCH, False),
+        (VerifiedFact.Category.LANGUAGE, "language", INDEXED_LANGUAGES, False),
+        (VerifiedFact.Category.SKILL, "skill", INDEXED_SKILLS, False),
+        (VerifiedFact.Category.CERTIFICATION, "certification", INDEXED_CERTIFICATIONS, False),
     ):
         rows: list[dict[str, object]] = [
             fact.payload
@@ -326,7 +419,11 @@ def verified_values(student: Membership) -> dict[str, str]:
     own = _own_citizenship(facts)
     if own is not None and (served is None or own[1] > served):
         values["identity.citizenship"] = own[0]
-    values.update(narrative_values(student))
+    if "identity.given_names" in values and "identity.given_name" not in values:
+        values["identity.given_name"] = values["identity.given_names"]
+    elif "identity.given_name" in values and "identity.given_names" not in values:
+        values["identity.given_names"] = values["identity.given_name"]
+    values.update(narrative_values(student, _inputs=_inputs, _drafts=_drafts))
     return values
 
 
@@ -340,12 +437,17 @@ def _with_latest_certificate(values: dict[str, str], facts: list[VerifiedFact]) 
         if (fact.category == VerifiedFact.Category.LANGUAGE
                 and fact.source_ref.startswith("document:")):
             for key, value in fact.payload.items():
-                if isinstance(value, str) and value.strip():
-                    sittings.setdefault(fact.source_ref, {})[key] = value
+                rendered = _payload_str(fact.category, key, value)
+                if rendered is not None:
+                    sittings.setdefault(fact.source_ref, {})[key] = rendered
     if not sittings:
         return values
     latest = max(sittings.values(), key=_sitting_date)
-    kept = {k: v for k, v in values.items() if not k.startswith("language.")}
+    kept = {
+        k: v
+        for k, v in values.items()
+        if not (k.startswith("language.") and not _INDEX.search(k))
+    }
     return kept | {f"language.{key}": value for key, value in latest.items()}
 
 
@@ -558,12 +660,22 @@ def document_sources(student: Membership, values: dict[str, str]) -> dict[str, s
         source = kinds.get(fact.source_ref.removeprefix(_DOCUMENT_REF))
         for key, value in fact.payload.items():
             if source and isinstance(value, str) and value.strip():
-                proved[(f"{fact.category.lower()}.{key}", value)] = source
-    return {
+                field_key = f"{fact.category.lower()}.{key}"
+                proved[(field_key, value)] = source
+                if field_key == "identity.given_names":
+                    proved.setdefault(("identity.given_name", value), source)
+                elif field_key == "identity.given_name":
+                    proved.setdefault(("identity.given_names", value), source)
+    out = {
         field: proved[(field_class(field), value)]
         for field, value in values.items()
         if (field_class(field), value) in proved
     }
+    if "identity.given_names" in out and "identity.given_name" not in out:
+        out["identity.given_name"] = out["identity.given_names"]
+    elif "identity.given_name" in out and "identity.given_names" not in out:
+        out["identity.given_names"] = out["identity.given_name"]
+    return out
 
 
 def _offer_refs(

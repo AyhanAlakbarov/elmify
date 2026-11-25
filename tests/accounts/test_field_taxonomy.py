@@ -664,3 +664,121 @@ def test_clear_field_taxonomy_cache_clears_keys_from_other_workers() -> None:
     assert _shared_cache_get(key) is None
     assert cache.get(key) is None
 
+
+def test_wp1_field_taxonomy_generalizations() -> None:
+    from apps.accounts.field_taxonomy import (
+        PRESERVED_SHORT_TOKENS,
+        _tokens,
+        localized_field_terms,
+        resolve_field_taxonomy,
+        scrub_taxonomy_phrase,
+    )
+
+    # 1. Short academic tokens & CJK 2-char tokens preserved
+    for tok in ("se", "ee", "me", "ce", "or", "ds", "pe", "ch", "bt"):
+        assert tok in PRESERVED_SHORT_TOKENS
+    assert "법학" in _tokens("법학")
+    assert "경제" in _tokens("경제")
+    assert "공학" in _tokens("공학")
+    assert "computer science" in resolve_field_taxonomy("CS").canonical_degree_titles
+    assert "software engineering" in resolve_field_taxonomy("SE").canonical_degree_titles
+    assert "electrical engineering" in resolve_field_taxonomy("EE").canonical_degree_titles
+    assert "economics" in resolve_field_taxonomy("경제").canonical_degree_titles
+    assert "mechanical engineering" in resolve_field_taxonomy("공학").canonical_degree_titles
+
+    # 2. Multi-word & non-ASCII morphological compound decomposition
+    app_geo = resolve_field_taxonomy("applied geoinformatics")
+    assert app_geo.is_ambiguous_or_interdisciplinary is True
+    assert "earth sciences" in app_geo.parent_fields
+    assert "geoinformatics" in app_geo.canonical_degree_titles
+
+    clin_pharm = resolve_field_taxonomy("clinical pharmacoinformatics")
+    assert clin_pharm.is_ambiguous_or_interdisciplinary is True
+    assert "pharmacology" in clin_pharm.parent_fields
+    assert "pharmacoinformatics" in clin_pharm.canonical_degree_titles
+
+    neuro_de = resolve_field_taxonomy("neuroinformatik")
+    assert neuro_de.is_ambiguous_or_interdisciplinary is True
+    assert "neuroscience" in neuro_de.parent_fields
+
+    # 3. Sustainable/Green & Known Synonyms not mislabeled as AI/Digital
+    sust_energy = resolve_field_taxonomy("Sustainable Energy")
+    assert "renewable energy" in sust_energy.canonical_degree_titles
+    assert not any(
+        "digital" in t or "informatics" in t for t in sust_energy.canonical_degree_titles
+    )
+
+    sust_urb = resolve_field_taxonomy("sustainable urban planning")
+    assert sust_urb.is_ambiguous_or_interdisciplinary is True
+    assert not any("informatics" in o.label for o in sust_urb.orientations)
+    assert any("sustainable" in o.label for o in sust_urb.orientations)
+
+    # 4. _drop_named_run preserves discipline adjacent to institution name
+    scrubbed = scrub_taxonomy_phrase("Technische Universität München Informatik")
+    assert scrubbed == "informatik"
+    scrubbed_lead = scrub_taxonomy_phrase("Computer Science Harvard University")
+    assert scrubbed_lead == "computer science"
+
+    # 5. Word-bounded localized_field_terms fallback ("dance" does not match inside "guidance",
+    # and "enology" does not match inside "phenology")
+    de_guidance = localized_field_terms("career guidance", "de")
+    assert all("tanz" not in t.casefold() for t in de_guidance)
+    fr_phenology = localized_field_terms("phenology", "fr")
+    assert all("œnologie" not in t.casefold() for t in fr_phenology)
+
+    # 6. Cross-process Redis cache read in resolve_field_taxonomy and localized_field_terms
+    from apps.accounts.field_taxonomy import (
+        _LLM_LOCALIZED_CACHE,
+        _LLM_RESOLUTION_CACHE,
+        FieldTaxonomyResolution,
+        _shared_cache_set,
+        clear_field_taxonomy_cache,
+    )
+
+    clear_field_taxonomy_cache()
+    try:
+        seeded_res = FieldTaxonomyResolution(
+            raw_field="precision agriculture",
+            is_ambiguous_or_interdisciplinary=True,
+            canonical_degree_titles=("smart farming", "agritech"),
+            parent_fields=("agriculture",),
+            orientations=(),
+            preferred_track_keywords=(),
+            secondary_track_keywords=(),
+            disambiguation_question="",
+        )
+        _shared_cache_set("ft:res:v1:precision agriculture:drones", seeded_res)
+        _LLM_RESOLUTION_CACHE.clear()
+        got_res = resolve_field_taxonomy("Precision Agriculture", ("drones",))
+        assert got_res == seeded_res
+
+        _shared_cache_set("ft:loc:v1:precision agriculture:de", ("Präzisionslandwirtschaft",))
+        _LLM_LOCALIZED_CACHE.clear()
+        got_loc = localized_field_terms("Precision Agriculture", "de")
+        assert got_loc == ("Präzisionslandwirtschaft",)
+    finally:
+        clear_field_taxonomy_cache()
+
+
+def test_parenthetical_degree_and_acronym_qualification_resolves_discipline_node() -> None:
+    law_res = resolve_field_taxonomy("Law (LL.M.)")
+    assert law_res.is_ambiguous_or_interdisciplinary is False
+    assert "law" in law_res.canonical_degree_titles
+    assert "legal studies" in law_res.canonical_degree_titles
+    assert "law" in law_res.parent_fields
+    assert "legal studies" in law_res.parent_fields
+
+    cs_res = resolve_field_taxonomy("Computer Science (CS)")
+    assert cs_res.is_ambiguous_or_interdisciplinary is False
+    assert "computer science" in cs_res.canonical_degree_titles
+    assert "informatics" in cs_res.canonical_degree_titles
+    assert "computer science" in cs_res.parent_fields
+
+    rc_res = resolve_field_taxonomy("Robotics and Control")
+    assert "robotics" in rc_res.parent_fields
+    assert "robotics" in rc_res.canonical_degree_titles
+
+
+
+
+

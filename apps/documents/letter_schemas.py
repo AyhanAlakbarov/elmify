@@ -93,13 +93,13 @@ class Storyline(BaseModel):
 
     model_config = _CONTENT_CONFIG
 
-    theme: str = Field(min_length=1, max_length=300)
-    theme_kind: str = Field(min_length=1, max_length=20)
+    theme: str = Field(min_length=1, max_length=1_000)
+    theme_kind: str = Field(min_length=1, max_length=80)
     anchors: tuple[UUID, ...] = Field(min_length=1, max_length=12)
     turn: UUID | None = None
-    gap: str | None = Field(default=None, max_length=500)
+    gap: str | None = Field(default=None, max_length=1_500)
     assumptions: tuple[str, ...] = Field(default=(), max_length=6)
-    future: str = Field(min_length=1, max_length=500)
+    future: str = Field(min_length=1, max_length=1_000)
 
 
 class LetterContent(BaseModel):
@@ -110,3 +110,89 @@ class LetterContent(BaseModel):
     header_block: str | None = Field(default=None, max_length=300)
     units: tuple[LetterUnit, ...] = Field(max_length=30)
     storyline: Storyline | None = None
+
+
+class SentenceClaimBinding(BaseModel):
+    """Sentence-level claim attribution without LLM character-offset arithmetic
+    (Slobodkin et al. 2024 ACL 'Attribute First, Then Generate')."""
+
+    model_config = _CONTENT_CONFIG
+
+    kind: ClaimKind
+    text: str | None = Field(default=None, max_length=2_000)
+    fact_id: UUID | None = None
+    input_id: UUID | None = None
+    source_url: str | None = Field(default=None, min_length=1, max_length=2048)
+
+
+class AttributedSentence(BaseModel):
+    model_config = _CONTENT_CONFIG
+
+    text: str = Field(min_length=1, max_length=2_000)
+    claims: tuple[SentenceClaimBinding, ...] = ()
+
+
+class SentenceAttributedUnit(BaseModel):
+    model_config = _CONTENT_CONFIG
+
+    archetype: str = Field(min_length=1, max_length=40)
+    answers_question: str | None = Field(default=None, max_length=50)
+    sentences: tuple[AttributedSentence, ...] = Field(min_length=1, max_length=30)
+
+
+class SentenceAttributedLetterContent(BaseModel):
+    model_config = _CONTENT_CONFIG
+
+    schema_version: int = Field(default=1, ge=1)
+    language: str = Field(min_length=2, max_length=10)
+    header_block: str | None = Field(default=None, max_length=300)
+    units: tuple[SentenceAttributedUnit, ...] = Field(max_length=30)
+    storyline: Storyline | None = None
+
+
+def compile_attributed_letter_content(
+    attributed: SentenceAttributedLetterContent,
+) -> LetterContent:
+    """Compile sentence-attributed units into `LetterContent` with exact
+    `[span_start, span_end)` sentence offsets by construction."""
+    compiled_units: list[LetterUnit] = []
+    for unit in attributed.units:
+        parts: list[str] = []
+        claims: list[LetterClaim] = []
+        cursor = 0
+        for idx, sent in enumerate(unit.sentences):
+            if idx > 0:
+                parts.append(" ")
+                cursor += 1
+            sent_text = sent.text.strip()
+            sent_start = cursor
+            sent_end = sent_start + len(sent_text)
+            parts.append(sent_text)
+            cursor = sent_end
+            for binding in sent.claims:
+                claims.append(
+                    LetterClaim(
+                        text=(binding.text or sent_text).strip() or sent_text,
+                        span_start=sent_start,
+                        span_end=sent_end,
+                        kind=binding.kind,
+                        fact_id=binding.fact_id,
+                        input_id=binding.input_id,
+                        source_url=binding.source_url,
+                    )
+                )
+        compiled_units.append(
+            LetterUnit(
+                archetype=unit.archetype,
+                answers_question=unit.answers_question,
+                text="".join(parts),
+                claims=tuple(claims),
+            )
+        )
+    return LetterContent(
+        schema_version=attributed.schema_version,
+        language=attributed.language,
+        header_block=attributed.header_block,
+        units=tuple(compiled_units),
+        storyline=attributed.storyline,
+    )

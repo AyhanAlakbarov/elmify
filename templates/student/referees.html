@@ -4,10 +4,14 @@
   <div class="page-head">
     <div>
       <h1>Referees</h1>
-      <p>Keep track of the professors and managers who agreed to write for you, and plan which application each referee covers.</p>
+      <p>Keep track of the professors and managers who agreed to write for you, plan which application each referee covers, and open each referee&rsquo;s package for a tailored, ready-to-refine recommendation letter draft and facts sheet.</p>
     </div>
-    <a class="btn btn-quiet" href="{% url 'student-referee-plan' %}">Who writes for which application</a>
+    <a class="btn btn-primary" href="{% url 'student-referee-plan' %}">Who writes for which application &rarr;</a>
   </div>
+  <nav class="doc-tabs" aria-label="Referees sections">
+    <a href="{% url 'student-referees' %}" aria-current="page">Your referees{% if rows %}<span class="count">{{ rows|length }}</span>{% endif %}</a>
+    <a href="{% url 'student-referee-plan' %}">Who writes for which application{% if app_count %}<span class="count">{{ app_count }}</span>{% endif %}</a>
+  </nav>
   <div class="ref-layout">
     {% include "student/_referees.html" %}
     <section class="panel" aria-labelledby="add-referee-heading">

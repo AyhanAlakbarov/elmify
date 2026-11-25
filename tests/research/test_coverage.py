@@ -264,3 +264,35 @@ def test_student_coverage_reads_both_seams(profile_snapshot) -> None:
 def test_an_award_counts_in_its_bodys_country(served_award) -> None:
     award = served_award(holder="PRIVATE_FOUNDATION", organisation_country="TR")
     assert eligible_by_area([award]) == {Area("TR", "PRIVATE_FOUNDATION"): 1}
+
+
+def test_student_coverage_includes_mark_recapture_estimated_total_and_coverage(
+    profile_snapshot,
+) -> None:
+    class Rungs:
+        def rungs(self, country: str) -> tuple[RungRow, ...]:
+            return (
+                (RungRow(country, "PRIVATE_FOUNDATION", 1, "vgm_tr", 10, 4, 2),)
+                if country == "TR"
+                else ()
+            )
+
+    class Passes(NullSeams):
+        def state(self, country: str, family: str) -> PassState:
+            return _swept("PLATEAU") if family == "PRIVATE_FOUNDATION" else PassState.never()
+
+    profile = profile_snapshot(nationality="TR", country_of_residence="TR")
+    coverage = student_coverage(
+        profile,
+        eligible={},
+        found=2,
+        verified=1,
+        verification_running=True,
+        rungs=Rungs(),
+        passes=Passes(),
+    )
+    areas = {(a["country"], a["family"]): a for a in coverage["areas"]}
+    tr_pf = areas[("TR", "PRIVATE_FOUNDATION")]
+    assert tr_pf["estimated_total"] == 10.0
+    assert tr_pf["estimated_coverage"] == 0.4
+

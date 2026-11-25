@@ -2080,10 +2080,578 @@ def test_pass8_degree_graduation_and_english_medium_waiver_rules() -> None:
     assert _infer_unstated_scale(Decimal("3.7"), "JP") == "4.0"
 
 
+def test_fm1_isced_f_and_knowledge_unit_taxonomy_matches_non_cs_disciplines() -> None:
+    """FM-1: ISCED-F 2013 + curricular Knowledge-Unit (KU) graph matches domain-specific
+    courses across Mechanical Engineering, Law, Civil Engineering, Chemical Engineering,
+    and Psychology without literal field-name substring overlap."""
+    # 1. Mechanical Engineering matched by Thermodynamics, Fluid Mechanics, Strength of Materials
+    prof_mech = _make_profile(
+        courses=(
+            CourseRecord(title="Thermodynamics I", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Fluid Mechanics and Heat Transfer", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Mukavemet (Strength of Materials)", ects=Decimal("6"), grade="AA"),
+        )
+    )
+    ev_mech = evaluate_program_statement(
+        "At least 18 ECTS in Mechanical Engineering.", prof_mech
+    )
+    assert ev_mech.outcome == "SATISFIED"
+    assert ev_mech.completed_definite_ects == Decimal("18")
+
+    # 2. Law (3-char subject token) matched by Constitutional Law, Criminal Law, Tort Law,
+    # while 'Laws of Thermodynamics' does NOT match Law
+    prof_law = _make_profile(
+        courses=(
+            CourseRecord(title="Constitutional Law", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Criminal Law and Procedure", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Public International Law", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Laws of Thermodynamics", ects=Decimal("6"), grade="A"),
+        )
+    )
+    ev_law = evaluate_program_statement("At least 18 ECTS in Law.", prof_law)
+    assert ev_law.outcome == "SATISFIED"
+    assert ev_law.completed_definite_ects == Decimal("18")
+    assert all("Thermodynamics" not in c.title for c in ev_law.counted_courses)
+
+    # 3. Civil Engineering, Chemical Engineering, and Psychology
+    prof_civil = _make_profile(
+        courses=(
+            CourseRecord(
+                title="Structural Analysis and Reinforced Concrete", ects=Decimal("6"), grade="A"
+            ),
+            CourseRecord(
+                title="Soil Mechanics and Geotechnical Engineering", ects=Decimal("6"), grade="A"
+            ),
+        )
+    )
+    assert (
+        evaluate_program_statement("At least 12 ECTS in Civil Engineering.", prof_civil).outcome
+        == "SATISFIED"
+    )
+
+    prof_chem_eng = _make_profile(
+        courses=(
+            CourseRecord(title="Unit Operations and Mass Transfer", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Chemical Reaction Engineering", ects=Decimal("6"), grade="A"),
+        )
+    )
+    assert (
+        evaluate_program_statement(
+            "At least 12 ECTS in Chemical Engineering.", prof_chem_eng
+        ).outcome
+        == "SATISFIED"
+    )
+
+    prof_psych = _make_profile(
+        courses=(
+            CourseRecord(
+                title="Cognitive Psychology and Neuropsychology", ects=Decimal("6"), grade="A"
+            ),
+            CourseRecord(
+                title="Psychometrics and Developmental Psychology", ects=Decimal("6"), grade="A"
+            ),
+        )
+    )
+    assert (
+        evaluate_program_statement("At least 12 ECTS in Psychology.", prof_psych).outcome
+        == "SATISFIED"
+    )
 
 
+def test_fm2_and_fm7_unicode_boundaries_inflections_and_non_major_meta_guards() -> None:
+    """FM-2 & FM-7: Unicode letter boundaries (ä, ß, İ), bounded TR/AZ/RU inflections,
+    and non-major/meta-historical level guards prevent false negatives and false positives."""
+    # 1. German ä/ß, Turkish İ, and inflected forms (Algoritmalar, Автоматы) match DEFINITE,
+    # while 'Автоматизация производственных процессов' does NOT match Theoretical CS.
+    prof_multi = _make_profile(
+        courses=(
+            CourseRecord(title="Aussagen- und Prädikatenlogik", ects=Decimal("6"), grade="1.3"),
+            CourseRecord(title="Algoritmalar ve Veri Yapıları", ects=Decimal("6"), grade="AA"),
+            CourseRecord(
+                title="Конечные автоматы и формальные языки", ects=Decimal("6"), grade="5"
+            ),
+            CourseRecord(
+                title="Автоматизация производственных процессов", ects=Decimal("6"), grade="5"
+            ),
+        )
+    )
+    ev_tcs = evaluate_program_statement(
+        "At least 18 ECTS in Theoretical Computer Science.", prof_multi
+    )
+    assert ev_tcs.outcome == "SATISFIED"
+    assert ev_tcs.completed_definite_ects == Decimal("18")
+    assert all("Автоматизация" not in c.title for c in ev_tcs.counted_courses)
+
+    # 2. Non-major computer literacy and meta-historical courses are blocked for STEM buckets,
+    # but 'History of Mathematics' still matches a History bucket!
+    prof_non_major = _make_profile(
+        courses=(
+            CourseRecord(
+                title="Computer Literacy and Office Applications", ects=Decimal("6"), grade="A"
+            ),
+            CourseRecord(title="History of Mathematics", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Physics for Non-Majors", ects=Decimal("6"), grade="A"),
+        )
+    )
+    assert (
+        evaluate_program_statement(
+            "At least 6 ECTS in Computer Science.", prof_non_major
+        ).outcome
+        == "FAILED"
+    )
+    assert (
+        evaluate_program_statement("At least 6 ECTS in Mathematics.", prof_non_major).outcome
+        == "FAILED"
+    )
+    assert (
+        evaluate_program_statement("At least 6 ECTS in Physics.", prof_non_major).outcome
+        == "FAILED"
+    )
+    assert (
+        evaluate_program_statement("At least 6 ECTS in History.", prof_non_major).outcome
+        == "SATISFIED"
+    )
 
 
+def test_fm3_and_fm4_international_credit_units_and_uncredited_undecidable() -> None:
+    """FM-3 & FM-4: Programme credit rules in SWS, CFU, AKTS, KP, FCE, and academic hours
+    convert accurately to ECTS, and uncredited transcripts return UNDECIDABLE rather than FAILED."""
+    r_sws = parse_subject_pool_rule("At least 8 SWS in Mathematics.")
+    assert r_sws is not None and r_sws.buckets[0].min_ects == Decimal("12.00")
+
+    r_cfu = parse_subject_pool_rule("Minimum of 18 CFU in Physics.")
+    assert r_cfu is not None and r_cfu.buckets[0].min_ects == Decimal("18.00")
+
+    r_akts = parse_subject_pool_rule("At least 12 AKTS in Computer Science.")
+    assert r_akts is not None and r_akts.buckets[0].min_ects == Decimal("12.00")
+
+    r_kp = parse_subject_pool_rule("At least 8 KP in Chemistry.")
+    assert r_kp is not None and r_kp.buckets[0].min_ects == Decimal("12.00")
+
+    r_fce = parse_subject_pool_rule("At least 1.5 FCE in Economics.")
+    assert r_fce is not None and r_fce.buckets[0].min_ects == Decimal("18.00")
+
+    r_hours = parse_subject_pool_rule("At least 360 academic hours in Mathematics.")
+    assert r_hours is not None and r_hours.buckets[0].min_ects == Decimal("10.00")
+
+    # Uncredited courses (`ects=None`) -> UNDECIDABLE on total degree credits and subject buckets
+    prof_uncredited = _make_profile(
+        courses=(
+            CourseRecord(title="Higher Mathematics I", ects=None, grade="5"),
+            CourseRecord(title="Higher Mathematics II", ects=None, grade="5"),
+        )
+    )
+    ev_deg = evaluate_program_statement(
+        "A Bachelor's degree worth at least 180 ECTS.", prof_uncredited
+    )
+    assert ev_deg.outcome == "UNDECIDABLE"
+    assert "without stated credits" in ev_deg.status_text
+
+    ev_math = evaluate_program_statement("At least 24 ECTS in Mathematics.", prof_uncredited)
+    assert ev_math.outcome == "UNDECIDABLE"
+    assert "without stated credits" in ev_math.status_text
+
+
+def test_fm5_bipartite_max_flow_allocator_and_min_courses_shared_buckets() -> None:
+    """FM-5: Edmonds-Karp max-flow finds globally feasible allocations across 3+ buckets
+    regardless of course/bucket order, and `min_courses` buckets share courses cleanly."""
+    # 'Discrete Mathematics' (listed first) matches Theoretical CS, CS, and Mathematics;
+    # 'Automata and Formal Languages' matches Theoretical CS and CS;
+    # 'Operating Systems' matches CS only.
+    # Greedy order previously gave Discrete Math to Theoretical CS and starved Mathematics!
+    prof_flow = _make_profile(
+        courses=(
+            CourseRecord(title="Discrete Mathematics", ects=Decimal("10"), grade="1.0"),
+            CourseRecord(title="Automata and Formal Languages", ects=Decimal("10"), grade="1.0"),
+            CourseRecord(title="Operating Systems", ects=Decimal("10"), grade="1.0"),
+        )
+    )
+    stmt_3buckets = (
+        "At least 10 ECTS in Theoretical Computer Science, "
+        "at least 10 ECTS in Computer Science, "
+        "and at least 10 ECTS in Mathematics."
+    )
+    ev_flow = evaluate_program_statement(stmt_3buckets, prof_flow)
+    assert ev_flow.outcome == "SATISFIED"
+    assert "Met (Theoretical Computer Science) — counted 10 / 10 ECTS" in ev_flow.status_text
+    assert "Met (Computer Science) — counted 10 / 10 ECTS" in ev_flow.status_text
+    assert "Met (Mathematics) — counted 10 / 10 ECTS" in ev_flow.status_text
+
+    # Multi-bucket `min_courses` rule where both courses match both buckets as DEFINITE
+    prof_shared_courses = _make_profile(
+        courses=(
+            CourseRecord(title="Discrete Mathematics", ects=Decimal("6"), grade="A"),
+            CourseRecord(
+                title="Numerical Analysis and Scientific Computing", ects=Decimal("6"), grade="A"
+            ),
+        )
+    )
+    ev_courses = evaluate_program_statement(
+        "At least 1 course in Mathematics, and at least 1 course in Computer Science.",
+        prof_shared_courses,
+    )
+    assert ev_courses.outcome == "SATISFIED"
+    assert "Met (Mathematics) — counted 1 / 1 courses" in ev_courses.status_text
+    assert "Met (Computer Science) — counted 1 / 1 courses" in ev_courses.status_text
+
+
+def test_fm6_disjunctive_or_and_illustrative_such_as_topic_checklists() -> None:
+    """FM-6: Disjunctive ('or') and illustrative ('such as', 'e.g.') topic lists require
+    any one of the listed alternatives rather than all of them."""
+    prof = _make_profile(
+        courses=(
+            CourseRecord(title="Linear Algebra I", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Linear Algebra II", ects=Decimal("6"), grade="A"),
+        )
+    )
+    # 1. Disjunctive 'or' list
+    ev_or = evaluate_program_statement(
+        "At least 12 ECTS in Mathematics "
+        "(covering Linear Algebra, Calculus, or Differential Equations).",
+        prof,
+    )
+    assert ev_or.outcome == "SATISFIED"
+    assert ev_or.missing_topics == ()
+
+    # 2. Illustrative 'such as' list
+    ev_such_as = evaluate_program_statement(
+        "At least 12 ECTS in Mathematics (such as Linear Algebra, Calculus, and Probability).",
+        prof,
+    )
+    assert ev_such_as.outcome == "SATISFIED"
+    assert ev_such_as.missing_topics == ()
+
+    # 3. Mixed CNF ('Linear Algebra or Matrix Theory, and Probability')
+    ev_mixed_missing = evaluate_program_statement(
+        "At least 12 ECTS in Mathematics "
+        "(covering Linear Algebra or Matrix Theory, and Probability).",
+        prof,
+    )
+    assert ev_mixed_missing.outcome == "BORDERLINE"
+    assert ev_mixed_missing.missing_topics == ("Probability",)
+
+    prof_mixed_ok = _make_profile(
+        courses=(
+            CourseRecord(title="Matrix Theory", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Probability Theory", ects=Decimal("6"), grade="A"),
+        )
+    )
+    ev_mixed_ok = evaluate_program_statement(
+        "At least 12 ECTS in Mathematics "
+        "(covering Linear Algebra or Matrix Theory, and Probability).",
+        prof_mixed_ok,
+    )
+    assert ev_mixed_ok.outcome == "SATISFIED"
+    assert ev_mixed_ok.missing_topics == ()
+
+
+def test_universal_6_layer_course_and_topic_generalization() -> None:
+    """Verify the 6 structural generalization layers across all 65 ISCED-F disciplines:
+    1. Course-code prefix & metadata extraction ('PHIL 405', 'HIST 304', 'MECH 420').
+    2. Morphological root stems & compound decomposition ('Epistemology', 'Pharmacovigilance').
+    3. All-faculty Knowledge Units (Philosophy, History, Education, Agriculture, Music, Medicine).
+    4. Dynamic ISCED-F STEM ancestor guard on meta-history/philosophy courses.
+    5. Universal multilingual topic matching via localized_field_terms.
+    6. Degree-contextual capstone/thesis classification across non-CS fields.
+    """
+    from apps.funding.transcript_eligibility import (
+        NormalizedCourse,
+        classify_course_for_subject,
+        course_matches_topic,
+    )
+
+    # Layer 1 + 2 + 3: Course-code prefixes, morphological roots, and KUs across faculties
+    prof_humanities_and_applied = _make_profile(
+        field="Philosophy",
+        courses=(
+            CourseRecord(title="PHIL 405: Quine and Sellars", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Epistemology and Metaphysics", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Phenomenology and Hermeneutics", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="HIST 304: The Silk Road", ects=Decimal("6"), grade="A"),
+            CourseRecord(
+                title="Ottoman Historiography and Paleography", ects=Decimal("6"), grade="A"
+            ),
+            CourseRecord(
+                title="Pedagogical Didactics and Curriculum Development",
+                ects=Decimal("12"),
+                grade="A",
+            ),
+            CourseRecord(title="Agronomy and Soil Science", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Phytopathology and Horticulture", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="MUSC 110: Counterpoint and Harmony", ects=Decimal("12"), grade="A"),
+            CourseRecord(title="Periodontology and Endodontics", ects=Decimal("12"), grade="A"),
+            CourseRecord(
+                title="Pharmacovigilance and Pharmacokinetics", ects=Decimal("12"), grade="A"
+            ),
+        ),
+    )
+
+    assert (
+        evaluate_program_statement(
+            "At least 18 ECTS in Philosophy.", prof_humanities_and_applied
+        ).outcome
+        == "SATISFIED"
+    )
+    assert (
+        evaluate_program_statement(
+            "At least 12 ECTS in History.", prof_humanities_and_applied
+        ).outcome
+        == "SATISFIED"
+    )
+    assert (
+        evaluate_program_statement(
+            "At least 12 ECTS in Education.", prof_humanities_and_applied
+        ).outcome
+        == "SATISFIED"
+    )
+    assert (
+        evaluate_program_statement(
+            "At least 12 ECTS in Agriculture.", prof_humanities_and_applied
+        ).outcome
+        == "SATISFIED"
+    )
+    assert (
+        evaluate_program_statement(
+            "At least 12 ECTS in Music.", prof_humanities_and_applied
+        ).outcome
+        == "SATISFIED"
+    )
+    assert (
+        evaluate_program_statement(
+            "At least 12 ECTS in Dentistry.", prof_humanities_and_applied
+        ).outcome
+        == "SATISFIED"
+    )
+    assert (
+        evaluate_program_statement(
+            "At least 12 ECTS in Pharmacy.", prof_humanities_and_applied
+        ).outcome
+        == "SATISFIED"
+    )
+
+    # Layer 4: Dynamic STEM ancestor check rejects meta-courses for Astronomy / Biology
+    meta_astro = NormalizedCourse(
+        title="History of Astronomy", ects=Decimal("6"), grade="A", in_progress=False
+    )
+    assert classify_course_for_subject(meta_astro, ("astronomy",)) == "UNRELATED"
+    assert classify_course_for_subject(meta_astro, ("history",)) == "DEFINITE"
+
+    meta_bio = NormalizedCourse(
+        title="Philosophy of Biology", ects=Decimal("6"), grade="A", in_progress=False
+    )
+    assert classify_course_for_subject(meta_bio, ("biology",)) == "UNRELATED"
+    assert classify_course_for_subject(meta_bio, ("philosophy",)) == "DEFINITE"
+
+    # Layer 5: Universal multilingual topic matching via localized_field_terms / discipline nodes
+    de_phil_course = NormalizedCourse(
+        title="Erkenntnistheorie und Logik", ects=Decimal("6"), grade="A", in_progress=False
+    )
+    assert course_matches_topic(de_phil_course, "Philosophy")
+    de_soc_course = NormalizedCourse(
+        title="Soziologie der Moderne", ects=Decimal("6"), grade="A", in_progress=False
+    )
+    assert course_matches_topic(de_soc_course, "Sociology")
+    ru_rob_course = NormalizedCourse(
+        title="Робототехника и мехатроника", ects=Decimal("6"), grade="A", in_progress=False
+    )
+    assert course_matches_topic(ru_rob_course, "Robotics")
+
+    # Layer 6: Degree-contextual capstone/thesis works for Mechanical Engineering, not CS
+    prof_mech = _make_profile(
+        field="Mechanical Engineering",
+        courses=(
+            CourseRecord(title="MECH 420: Tribology", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Thermodynamics and Heat Transfer", ects=Decimal("6"), grade="A"),
+            CourseRecord(title="Bachelor Thesis", ects=Decimal("12"), grade="A"),
+        ),
+    )
+    ev_mech = evaluate_program_statement(
+        "At least 24 ECTS in Mechanical Engineering.", prof_mech
+    )
+    assert ev_mech.outcome == "BORDERLINE"
+    assert ev_mech.completed_definite_ects == Decimal("12")
+    assert ev_mech.completed_possible_ects == Decimal("24")
+
+    # And the Mechanical Engineering student's generic "Bachelor Thesis" does NOT count for CS
+    ev_cs_on_mech = evaluate_program_statement(
+        "At least 12 ECTS in Computer Science.", prof_mech
+    )
+    assert ev_cs_on_mech.outcome == "FAILED"
+    assert ev_cs_on_mech.completed_definite_ects == Decimal("0")
+    assert ev_cs_on_mech.completed_possible_ects == Decimal("0")
+
+
+def test_wp3_ects_semester_credits_gmat_focus_scales_moi_and_differential_subscores() -> None:
+    # 1. "30 ECTS semester credits" must NOT be doubled by the US semester-hour multiplier
+    prof_math_30 = _make_profile(
+        courses=(
+            CourseRecord(title="Linear Algebra", ects=Decimal("15"), grade="A"),
+            CourseRecord(title="Multivariable Calculus", ects=Decimal("15"), grade="A"),
+        )
+    )
+    ev_ects_sem = evaluate_program_statement(
+        "Applicants must have completed at least 30 ECTS semester credits in Mathematics.",
+        prof_math_30,
+    )
+    assert ev_ects_sem.outcome == "SATISFIED"
+    assert ev_ects_sem.required_ects == Decimal("30.00")
+
+    # 2. GMAT Focus Edition score ending in 5 (e.g. 645)
+    ev_gmat_focus = evaluate_program_statement(
+        "Minimum GMAT Focus Edition score of 645 is required.",
+        prof_math_30,
+    )
+    assert ev_gmat_focus.outcome == "UNDECIDABLE"
+    assert "GMAT" in ev_gmat_focus.status_text
+
+    # 3. Indian "First Class" (60% -> 2:1 equivalent) vs "First Class with Distinction" (1st)
+    prof_in_fc = _make_profile(
+        grade="First Class", grading_scale="Indian Class", country_code="IN"
+    )
+    assert (
+        evaluate_program_statement(
+            "Minimum of an Upper Second-Class (2:1) Honours degree.", prof_in_fc
+        ).outcome
+        == "SATISFIED"
+    )
+    assert (
+        evaluate_program_statement(
+            "Applicants must hold a First-Class Honours degree.", prof_in_fc
+        ).outcome
+        == "FAILED"
+    )
+    prof_in_dist = _make_profile(
+        grade="First Class with Distinction", grading_scale="Indian Class", country_code="IN"
+    )
+    assert (
+        evaluate_program_statement(
+            "Applicants must hold a First-Class Honours degree.", prof_in_dist
+        ).outcome
+        == "SATISFIED"
+    )
+
+    # 4. International grading scales: Czech (1-4), Philippine (1-5), Danish (02-12),
+    # Polish (2-5), and French (0-20 non-linear: 12/20 -> 2.3 Bavarian, 14/20 -> 1.5 Bavarian)
+    assert convert_grade_to_bavarian("1.5", "1-4", country_code="CZ") == Decimal("1.8")
+    assert convert_grade_to_bavarian("3.5", "1-4", country_code="CZ") == Decimal("5.0")
+    assert convert_grade_to_bavarian("1.5", "1-5", country_code="PH") == Decimal("1.8")
+    assert convert_grade_to_bavarian("10", "02-12", country_code="DK") == Decimal("1.6")
+    assert convert_grade_to_bavarian("4.0", "2-5", country_code="PL") == Decimal("2.5")
+    assert convert_grade_to_bavarian("14", "0-20", country_code="FR") == Decimal("1.5")
+    assert convert_grade_to_bavarian("12", "0-20", country_code="FR") == Decimal("2.3")
+
+    # 5. Off-by-0.2 Bavarian penalty removed: 80% on 0-100 (2.2 Bavarian) satisfies 2.3 bar
+    prof_80 = _make_profile(grade="80", grading_scale="0-100", country_code="DE")
+    ev_de_23 = evaluate_program_statement("German grade of 2.3 or better.", prof_80)
+    assert ev_de_23.outcome == "SATISFIED"
+
+    # 6. Expanded Anglophone MOI countries (e.g., Singapore "SG", Malta "MT")
+    prof_sg = _make_profile(grade="3.6", grading_scale="4.0", country_code="SG")
+    ev_moi_sg = evaluate_program_statement(
+        "IELTS 6.5 overall (waived if prior degree was taught in English).",
+        prof_sg,
+        kind="LANGUAGE",
+    )
+    assert ev_moi_sg.outcome in ("SATISFIED", "IN_PROGRESS")
+    assert "SG" in ev_moi_sg.status_text
+
+    # 7. Differential IELTS & TOEFL per-skill subscore requirements
+    prof_ielts_ok = _make_profile(
+        language_evidence=(
+            _lang("English", "IELTS 6.5 (L:6.0, R:6.5, W:6.5, S:6.5)"),
+        )
+    )
+    prof_ielts_low_w = _make_profile(
+        language_evidence=(
+            _lang("English", "IELTS 6.5 (L:6.5, R:6.5, W:6.0, S:6.5)"),
+        )
+    )
+    diff_stmt = (
+        "IELTS 6.5 overall with a minimum of 6.5 in Writing and 6.0 in all other components."
+    )
+    ev_ok_w = evaluate_program_statement(diff_stmt, prof_ielts_ok, kind="LANGUAGE")
+    assert ev_ok_w.outcome == "SATISFIED"
+    ev_low_w = evaluate_program_statement(diff_stmt, prof_ielts_low_w, kind="LANGUAGE")
+    assert ev_low_w.outcome == "FAILED"
+    assert "Writing subscore 6.0 is below required 6.5" in ev_low_w.status_text
+
+
+def test_impl_b_equipercentile_bavarian_bg_hu_au_nz_and_pte_duolingo_subscores() -> None:
+    # 1. Bulgarian 2-6 scale (min_pass=3.0) vs Swiss 1-6 scale (min_pass=4.0)
+    assert is_failing_or_withdrawn_grade("3.0", "6.0", country_code="BG") is False
+    assert is_failing_or_withdrawn_grade("2.0", "6.0", country_code="BG") is True
+    assert convert_grade_to_bavarian("4.5", "6.0", country_code="BG") == Decimal("2.5")
+    assert convert_grade_to_bavarian("4.5", "2-6", country_code="BG") == Decimal("2.5")
+    assert convert_grade_to_bavarian("4.5", "1.0-6.0", country_code="CH") == Decimal("3.3")
+
+    # 2. Hungarian 1-5 scale (min_pass=2.0, ascending) vs Polish/CIS 2-5 scale (min_pass=3.0)
+    assert is_failing_or_withdrawn_grade("2.0", "1-5", country_code="HU") is False
+    assert is_failing_or_withdrawn_grade("1.0", "1-5", country_code="HU") is True
+    assert convert_grade_to_bavarian("3.5", "1-5", country_code="HU") == Decimal("2.5")
+    assert convert_grade_to_bavarian("3.5", "5.0", country_code="HU") == Decimal("2.5")
+
+    # 3. Australian 7.0 (min_pass=4.0) and New Zealand 9.0 (min_pass=2.0) scales
+    assert convert_grade_to_bavarian("5.5", "7.0", country_code="AU") == Decimal("2.5")
+    assert convert_grade_to_bavarian("6.5", "9.0", country_code="NZ") == Decimal("2.1")
+
+    # 4. Piecewise Bavarian continuity on UK/CW 100%, French 0-20, Dutch 1-10, Danish 02-12
+    assert convert_grade_to_bavarian("70", "0-100", country_code="GB") == Decimal("1.6")
+    assert convert_grade_to_bavarian("60", "0-100", country_code="GB") == Decimal("2.3")
+    assert convert_grade_to_bavarian("50", "0-100", country_code="GB") == Decimal("3.0")
+    assert convert_grade_to_bavarian("40", "0-100", country_code="GB") == Decimal("4.0")
+    assert convert_grade_to_bavarian("7", "02-12", country_code="DK") == Decimal("2.5")
+
+    # 5. PTE Academic and Duolingo English Test subscore floor enforcement
+    prof_pte_low_w = _make_profile(
+        language_evidence=(
+            _lang("English", "PTE Academic 68 (L:65, R:64, W:55, S:70)"),
+        )
+    )
+    ev_pte_fail = evaluate_program_statement(
+        "PTE Academic 65 overall with no communicative skill below 59.",
+        prof_pte_low_w,
+        kind="LANGUAGE",
+    )
+    assert ev_pte_fail.outcome == "FAILED"
+    assert "lowest subscore 55 is below required 59" in ev_pte_fail.status_text
+
+    prof_pte_ok = _make_profile(
+        language_evidence=(
+            _lang("English", "PTE Academic 68 (L:65, R:64, W:62, S:70)"),
+        )
+    )
+    assert (
+        evaluate_program_statement(
+            "PTE Academic 65 overall with no communicative skill below 59.",
+            prof_pte_ok,
+            kind="LANGUAGE",
+        ).outcome
+        == "SATISFIED"
+    )
+
+    prof_duo_low = _make_profile(
+        language_evidence=(
+            _lang("English", "Duolingo 125 (L:130, R:125, W:95, S:120)"),
+        )
+    )
+    ev_duo_fail = evaluate_program_statement(
+        "Duolingo English Test 120 with no subscore below 105.",
+        prof_duo_low,
+        kind="LANGUAGE",
+    )
+    assert ev_duo_fail.outcome == "FAILED"
+    assert "lowest subscore 95 is below required 105" in ev_duo_fail.status_text
+
+    # 6. Numeric Cambridge English Scale cross-test equivalence in evaluate_program_statement
+    prof_cam_188 = _make_profile(
+        language_evidence=(_lang("English", "Cambridge C1 Advanced 188"),)
+    )
+    assert (
+        evaluate_program_statement(
+            "Minimum IELTS 7.0 required.", prof_cam_188, kind="LANGUAGE"
+        ).outcome
+        == "SATISFIED"
+    )
 
 
 

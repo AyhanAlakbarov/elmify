@@ -196,3 +196,55 @@ def test_uk_cats_sixty_credit_dissertation_is_within_range_while_120_is_flagged(
         Highlight(kind="credit_out_of_range", scope="row", ref="0"),
     )
 
+
+def test_range_formatted_grading_scales_check_grade_above_scale_ceiling():
+    rows = (_course(0, "Mathematical Analysis", "6"), _row(1, "overall_total", "6"))
+    # "22" on "0-20" is above the 20 ceiling and must be flagged
+    reading_fr_bad = Reading(
+        content=TranscriptContent(
+            institution="Sorbonne Université",
+            overall_grade="22",
+            grading_scale="0-20",
+            credit_unit="ECTS",
+            expected_completion=date(2027, 6, 30),
+        ),
+        rows=rows,
+        total_credits_line=None,
+        doubts=(),
+    )
+    assert highlights(reading_fr_bad) == (
+        Highlight(kind="grade_above_scale", scope="field", ref="overall_grade"),
+    )
+
+    # "15.5" on "0-20" and "28" on "18-30" are within range
+    reading_fr_ok = Reading(
+        content=TranscriptContent(
+            institution="Sorbonne Université",
+            overall_grade="15.5",
+            grading_scale="0-20",
+            credit_unit="ECTS",
+            expected_completion=date(2027, 6, 30),
+        ),
+        rows=rows,
+        total_credits_line=None,
+        doubts=(),
+    )
+    assert highlights(reading_fr_ok) == ()
+
+    reading_it_bad = Reading(
+        content=TranscriptContent(
+            institution="Politecnico di Milano",
+            overall_grade="32",
+            grading_scale="18-30",
+            credit_unit="ECTS",
+            expected_completion=date(2027, 6, 30),
+        ),
+        rows=rows,
+        total_credits_line=None,
+        doubts=(),
+    )
+    assert highlights(reading_it_bad) == (
+        Highlight(kind="grade_above_scale", scope="field", ref="overall_grade"),
+    )
+
+

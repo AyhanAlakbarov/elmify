@@ -72,15 +72,28 @@ _HEIC_BRANDS = frozenset(
     {b"ftypheic", b"ftypheix", b"ftypheim", b"ftypheis", b"ftyphevc", b"ftypmif1", b"ftypmsf1"}
 )
 _CYRILLIC = re.compile(r"[Ѐ-ӿ]")
+_NON_LATIN_SCRIPT = re.compile(
+    r"[\u0370-\u03ff\u0400-\u052f\u0530-\u058f\u0590-\u05ff\u0600-\u06ff"
+    r"\u0750-\u077f\u0900-\u097f\u0e00-\u0e7f\u10a0-\u10ff\u1100-\u11ff"
+    r"\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]"
+)
 _WORD = re.compile(r"[^\W\d_]+")
-#: Words of a Turkish or Azerbaijani transcript. "not" and "akts" are left out on purpose: the
+#: Words of a non-English transcript. "not" and "akts" are left out on purpose: the
 #: first is English, the second is often left untranslated in an English transcript.
 #: Words that are often part of a proper name an English translation keeps ("Orta Doğu Teknik
 #: Üniversitesi", "Fen Edebiyat Fakültesi", "Kimya Bölümü") are left out too.
 _ORIGINAL_WORDS_RAW = (
     "ders dersin kredi kredisi notu dönem dönemi yarıyıl yariyil toplam ortalama ve ile için "
     "öğrenci ogrenci adı soyadı fənn fənnin fənlər kredit qiymət "
-    "semestr və üzrə cəmi tələbə ixtisas balı"
+    "semestr və üzrə cəmi tələbə ixtisas balı "
+    "relevé notes matière matières crédits moyenne session admis ajourné intitulé "
+    "leistungsnachweis prüfung prüfungen fach noten semesterwochenstunden "
+    "leistungspunkte bestanden gesamtnote "
+    "calificaciones asignatura asignaturas créditos convocatoria sobresaliente aprobado expediente "
+    "esami insegnamento crediti voto lode sostenuto carriera "
+    "histórico escolar disciplina disciplinas frequência aprovado horária "
+    "cijferlijst vak studiepunten resultaat behaald tentamen gemiddelde "
+    "przedmiot ocena punkty zaliczenie średnia"
 )
 
 
@@ -136,7 +149,17 @@ def replace_pending(cycle: StudentCycle) -> bool:
 
 _ROLES = frozenset({"ORIGINAL", "TRANSLATION"})
 _MODES = frozenset({"ADD", "RETAKE", "REPLACE"})
-_LANGUAGES = frozenset({"az", "tr", "ru"})
+_LANGUAGES = frozenset(
+    (
+        "aa ab ae af ak am an ar as av ay az ba be bg bh bi bm bn bo br bs ca ce ch co cr cs cu "
+        "cv cy da de dv dz ee el eo es et eu fa ff fi fj fo fr fy ga gd gl gn gu gv ha he hi ho "
+        "hr ht hu hy hz ia id ie ig ii ik io is it iu ja jv ka kg ki kj kk kl km kn ko kr ks ku "
+        "kv kw ky la lb lg li ln lo lt lu lv mg mh mi mk ml mn mr ms mt my na nb nd ne ng nl nn "
+        "no nr nv ny oc oj om or os pa pi pl ps pt qu rm rn ro ru rw sa sc sd se sg si sk sl sm "
+        "sn so sq sr ss st su sv sw ta te tg th ti tk tl tn to tr ts tt tw ty ug uk ur uz ve vi "
+        "vo wa wo xh yi yo za zh zu"
+    ).split()
+)
 
 
 class TranscriptRegistrationRefused(Exception):
@@ -225,15 +248,13 @@ def _erasing(student: Membership) -> bool:
 def is_english(page: OcrPage) -> bool:
     """A translation office's PDF often binds the English translation with a copy of the
     original (R5), whose pages are skipped -- on evidence only, since a translation upload is
-    expected to be English. The evidence is Cyrillic over 20% of the letters, or three distinct
-    words of the Turkish/Azerbaijani transcript vocabulary -- distinct, so one name repeated down
-    the page cannot reach three. A share of non-ASCII letters cannot do this:
-    a Turkish page with ASCII course names ("Genel Kimya") has few, and an English page naming
-    Azerbaijani people and universities has many (measured by the reviewer)."""
+    expected to be English. The evidence is non-Latin script over 20% of the letters, or three
+    distinct words of the non-English transcript vocabulary -- distinct, so one name repeated down
+    the page cannot reach three."""
     cells = (cell for table in page.tables for row in table for cell in row)
     text = unicodedata.normalize("NFC", " ".join([*page.lines, *cells]))
     letters = len(_LETTER.findall(text))
-    if len(_CYRILLIC.findall(text)) > 0.2 * letters:
+    if len(_NON_LATIN_SCRIPT.findall(text)) > 0.2 * letters:
         return False
     words = {_fold(word) for word in _WORD.findall(text)}
     return len(words & _ORIGINAL_WORDS) < 3

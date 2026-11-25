@@ -1,5 +1,8 @@
 <section class="panel needs" aria-labelledby="needs-heading">
-  <h2 id="needs-heading">Needs you now</h2>
+  <div class="panel-head">
+    <h2 id="needs-heading">Needs you now</h2>
+    {% if needs %}<span class="badge badge-warn">{{ needs|length }}</span>{% endif %}
+  </div>
   {% if needs %}
     {% include "student/_needs_list.html" %}
   {% else %}

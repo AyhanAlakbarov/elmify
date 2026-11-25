@@ -844,4 +844,31 @@ def test_holder_decision_undated_yes_never_erases_cohort_specific_suspension(
     assert second.suspended_for == "2027-2028"
 
 
+def test_older_intake_yes_never_overwrites_newer_intake_suspension_on_same_page(
+    program, snapshot
+):
+    no_quote = "No scholarships are offered for the 2026-2027 intake."
+    newer_no = _decision(
+        offered="NO",
+        applies_to="2026-2027",
+        quotes=(no_quote,),
+        suspension_quote=no_quote,
+    )
+    first = _write(newer_no, program, snapshot)
+    assert first is not None and first.served is False
+    assert first.suspended_for == "2026-2027"
+
+    older_yes = _decision(
+        offered="YES",
+        applies_to="2025-2026",
+    )
+    second = _write(older_yes, program, snapshot)
+    assert second is not None
+    second.refresh_from_db()
+    assert second.id == first.id
+    assert second.served is False
+    assert second.suspended_for == "2026-2027"
+    assert second.suspension_quote == no_quote
+
+
 

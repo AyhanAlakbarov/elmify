@@ -44,6 +44,7 @@ from apps.mailbox.oauth import (
     is_configured,
 )
 from apps.mailbox.secrets import delete_student_mailbox_tokens, store_refresh_token
+from apps.portals.tags import promote_sender_domain_consensus
 from apps.tenancy.db import tenant_transaction
 from apps.tenancy.models import Membership
 from apps.tenancy.services import current_membership
@@ -318,9 +319,18 @@ def tier(request: HttpRequest, connection_id: UUID) -> HttpResponse:
 def confirm_sender(request: HttpRequest, sender_id: UUID) -> HttpResponse:
     membership = current_membership(request, Membership.Role.STUDENT)
     with tenant_transaction(membership.tenant_id):
+        sender = LearnedSender.objects.filter(
+            id=sender_id, student=membership, confirmed_at__isnull=True
+        ).first()
+        if sender is None:
+            return _answer(request, {"reason": "not_found"}, status=404)
         updated = LearnedSender.objects.filter(
             id=sender_id, student=membership, confirmed_at__isnull=True
         ).update(confirmed_at=timezone.now())
+        if updated and sender.portal_host and sender.domain:
+            promote_sender_domain_consensus(
+                sender.portal_host, sender.domain, tenant_id=membership.tenant_id
+            )
     if not updated:
         return _answer(request, {"reason": "not_found"}, status=404)
     return _answer(request, {"confirmed": True}, message="Confirmed.")

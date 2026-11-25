@@ -12,11 +12,12 @@
   <div>
     <h1>{% if lane.lead.country %}{{ lane.lead.country|flag }}{% endif %}{{ lane.title }}</h1>
     <p>
+      <span class="option-kind kind-{% if lane.lead.is_award %}award{% else %}programme{% endif %}">{% if lane.lead.is_award %}Scholarship{% else %}Programme{% endif %}</span>
       <span class="badge badge-brand">{{ lane.status }}</span>
       {% if lane.lead.chance_line %} · {{ lane.lead.chance_line }}{% endif %}
-      {% if lane.programmes %} · For: {{ lane.programmes|join:", " }}{% endif %}
+      {% if lane.programmes %}<span class="sr-only"> · For: {{ lane.programmes|join:", " }}</span>{% endif %}
     </p>
-    {% for line in lane.also_funded %}<p class="muted small">{{ line }}</p>{% endfor %}
+    {% if lane.also_funded %}<span class="sr-only">{% for line in lane.also_funded %}{{ line }} {% endfor %}</span>{% endif %}
   </div>
 </div>
 {% if read_only %}<p class="note note-warn" role="status">{{ read_only }}</p>{% endif %}
@@ -27,10 +28,10 @@
       <section class="panel fit-panel" aria-labelledby="fit-heading">
         <div class="panel-head">
           <h2 id="fit-heading">Why you fit</h2>
-          {% if page.risk_tier or page.rank %}
+          {% if page.risk_tier or page.rank and not page.is_award %}
             <div class="fit-badges">
               {% if page.risk_tier %}<span class="badge badge-tier tier-{{ page.risk_tier|lower }}">{{ page.risk_tier }} match</span>{% endif %}
-              {% if page.rank %}<span class="badge">Shortlist #{{ page.rank }}</span>{% endif %}
+              {% if page.rank and not page.is_award %}<span class="badge">Shortlist #{{ page.rank }}</span>{% endif %}
             </div>
           {% endif %}
         </div>
@@ -117,6 +118,40 @@
             </div>
           {% endif %}
         {% endif %}
+        {% if referee_requests %}
+          <div class="sub-section referee-assigned-box">
+            <div class="panel-head">
+              <h3>Your referees for this application</h3>
+              <a class="kit-link" href="{% url 'student-referee-plan' %}#app-{{ card.application_id }}">Update status in referee plan &rarr;</a>
+            </div>
+            <ul class="item-list ref-plan-list">
+              {% for req in referee_requests %}
+                <li class="ref-plan-row ref-plan-row--{{ req.state|lower }}">
+                  <div class="ref-plan-who">
+                    <div class="ref-plan-who-top">
+                      <strong class="ref-plan-name">{{ req.referee.label }}</strong>
+                      {% if req.state == "AGREED" %}
+                        <span class="ref-status-badge ref-status-badge--agreed">&#10003; Agreed to write</span>
+                      {% elif req.state == "SUBMITTED" %}
+                        <span class="ref-status-badge ref-status-badge--submitted">&#10003; Letter submitted</span>
+                      {% elif req.state == "ASKED" %}
+                        <span class="ref-status-badge ref-status-badge--asked">&#9203; Asked — awaiting reply</span>
+                      {% elif req.state == "DECLINED" %}
+                        <span class="ref-status-badge ref-status-badge--declined">&#10005; Not agreed (declined)</span>
+                      {% else %}
+                        <span class="ref-status-badge ref-status-badge--proposed">Proposed — not asked yet</span>
+                      {% endif %}
+                    </div>
+                    <span class="ref-plan-meta">{{ req.referee.get_kind_display }}{% if req.referee.institution %} · {{ req.referee.institution }}{% endif %}</span>
+                  </div>
+                  <div class="row-actions">
+                    <a class="btn btn-quiet btn-small" href="{% url 'student-referee-package' req.referee.id %}">What to send</a>
+                  </div>
+                </li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
       </section>
 
       <section class="panel" aria-labelledby="money">
@@ -152,16 +187,25 @@
         <div id="funding">
           {% include "student/_award_lines.html" %}
           {% for line in lead.funding %}
-            <div class="sub-section">
-              <h3>{{ line.name }}</h3>
+            {% if not lead.is_award %}
+              <div class="sub-section">
+                <h3>{{ line.name }}</h3>
+                <dl class="kv">
+                  {% if line.covers %}<div><dt>Covers</dt><dd>{{ line.covers }}</dd></div>{% endif %}
+                  {% if line.amounts %}<div><dt>Amount</dt><dd>{{ line.amounts }}</dd></div>{% endif %}
+                  {% if line.duration %}<div><dt>Pays for</dt><dd>{{ line.duration }}</dd></div>{% endif %}
+                  {% if line.deadline %}<div><dt>Deadline</dt><dd>{{ line.deadline }}</dd></div>{% endif %}
+                </dl>
+                {% with url=line.source_url|https_only %}{% if url %}<p class="source"><a href="{{ url }}" target="_blank" rel="noopener">Official source</a> · {{ line.source_domain }}{% if line.last_checked %} · last checked {{ line.last_checked|date:"j M Y" }}{% endif %}</p>{% elif line.source_domain %}<p class="source">Official source: {{ line.source_domain }}{% if line.last_checked %} · last checked {{ line.last_checked|date:"j M Y" }}{% endif %}</p>{% endif %}{% endwith %}
+              </div>
+            {% else %}
               <dl class="kv">
-                {% if line.covers %}<div><dt>Covers</dt><dd>{{ line.covers }}</dd></div>{% endif %}
-                {% if line.amounts %}<div><dt>Amount</dt><dd>{{ line.amounts }}</dd></div>{% endif %}
-                {% if line.duration %}<div><dt>Pays for</dt><dd>{{ line.duration }}</dd></div>{% endif %}
-                {% if line.deadline %}<div><dt>Deadline</dt><dd>{{ line.deadline }}</dd></div>{% endif %}
+                {% if line.covers %}<div><dt>Coverage</dt><dd>{{ line.covers }}</dd></div>{% endif %}
+                {% if line.amounts %}<div><dt>Grant amount</dt><dd>{{ line.amounts }}</dd></div>{% endif %}
+                {% if line.duration %}<div><dt>Duration</dt><dd>{{ line.duration }}</dd></div>{% endif %}
+                {% if line.deadline %}<div><dt>Scholarship deadline</dt><dd>{{ line.deadline }}</dd></div>{% endif %}
               </dl>
-              {% with url=line.source_url|https_only %}{% if url %}<p class="source"><a href="{{ url }}" target="_blank" rel="noopener">Official source</a> · {{ line.source_domain }}{% if line.last_checked %} · last checked {{ line.last_checked|date:"j M Y" }}{% endif %}</p>{% elif line.source_domain %}<p class="source">Official source: {{ line.source_domain }}{% if line.last_checked %} · last checked {{ line.last_checked|date:"j M Y" }}{% endif %}</p>{% endif %}{% endwith %}
-            </div>
+            {% endif %}
           {% empty %}
             {% if not lane.award_lines and not lead.is_award %}<p class="quiet-line">No scholarship found for this programme yet.</p>{% endif %}
           {% endfor %}
@@ -197,9 +241,9 @@
           <ul class="option-missing">{% for item in missing %}<li><a href="{{ item.url }}">{{ item.label }}</a></li>{% endfor %}</ul>
         {% endif %}
         <div class="status-actions">
-          {% if not counselor_view %}<a class="btn btn-quiet" href="{% url 'student-letter-workspace' card.application_id %}">Letters and essays</a>{% endif %}
+          {% if not counselor_view %}<a class="btn btn-quiet" href="{% url 'student-letter-workspace' card.application_id %}{% if card.is_award %}?doc=essay{% endif %}">{% if card.is_award %}Scholarship essay{% else %}Letters and essays{% endif %}</a>{% endif %}
           {% if card.kit_url %}<a class="btn btn-quiet" href="{{ card.kit_url }}">Application kit</a>{% endif %}
-          {% if not counselor_view %}<a class="btn btn-quiet" href="/student/referees/">Referees</a>{% endif %}
+          {% if not counselor_view and not card.is_award or not counselor_view and page.referee_rules %}<a class="btn btn-quiet" href="/student/referees/">Referees</a>{% endif %}
         </div>
       </section>
     {% endif %}

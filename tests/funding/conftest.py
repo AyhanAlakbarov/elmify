@@ -280,3 +280,12 @@ def make_published_pack(
 # institution_factory / program_factory moved to tests/conftest.py: Institution
 # and Program are shared-catalog models, not funding-app-internal scaffolding,
 # and other test directories (tests/documents) need them too.
+
+
+def pytest_collectreport(report: object) -> None:
+    import sys
+
+    nodeid = getattr(report, "nodeid", "")
+    if nodeid.endswith("tests/funding/test_spine.py") and "test_spine" in sys.modules:
+        sys.modules["tests_funding_test_spine"] = sys.modules.pop("test_spine")
+

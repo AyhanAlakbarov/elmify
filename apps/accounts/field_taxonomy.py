@@ -190,7 +190,31 @@ _WORD_RE = re.compile(r"[^\W_]+(?:[+#]+)?", re.UNICODE)
 #: Two-letter domain/method acronyms that must never be dropped by token length
 #: filters in `pool.py` or `facts.py`.
 PRESERVED_SHORT_TOKENS: frozenset[str] = frozenset(
-    {"ai", "ml", "dl", "cs", "it", "ir", "eu", "ip", "hr", "ui", "ux", "vr", "ar", "qc"}
+    {
+        "ai",
+        "ml",
+        "dl",
+        "cs",
+        "it",
+        "ir",
+        "eu",
+        "ip",
+        "hr",
+        "ui",
+        "ux",
+        "vr",
+        "ar",
+        "qc",
+        "se",
+        "ee",
+        "me",
+        "ce",
+        "or",
+        "ds",
+        "pe",
+        "ch",
+        "bt",
+    }
 )
 
 _INTERDISCIPLINARY_CONNECTORS: frozenset[str] = frozenset(
@@ -329,7 +353,81 @@ _COMPOUND_PREFIXES: dict[str, str] = {
     "marine": "marine science",
     "materio": "materials science",
     "archaeo": "archaeology",
+    "papyro": "archaeology",
+    "paleo": "archaeology",
+    "palaeo": "archaeology",
     "clio": "history",
+    "historio": "history",
+    "epigraph": "history",
+    "epi": "history",
+    "genea": "history",
+    "chrono": "history",
+    "sino": "area studies",
+    "indo": "area studies",
+    "japano": "area studies",
+    "egypto": "area studies",
+    "assyrio": "area studies",
+    "turko": "area studies",
+    "irano": "area studies",
+    "slavo": "area studies",
+    "byzantino": "area studies",
+    "museo": "cultural studies",
+    "lexico": "linguistics",
+    "glotto": "linguistics",
+    "phono": "linguistics",
+    "semanto": "linguistics",
+    "dialecto": "linguistics",
+    "philo": "philology",
+    "narrato": "literature",
+    "epistemo": "philosophy",
+    "phenomeno": "philosophy",
+    "ontolo": "philosophy",
+    "theo": "theology",
+    "ecclesio": "theology",
+    "juris": "law",
+    "peno": "law",
+    "victimo": "criminology",
+    "crimino": "criminology",
+    "ethno": "anthropology",
+    "demo": "demography",
+    "peda": "education",
+    "andra": "education",
+    "peace": "international relations",
+    "musico": "music",
+    "ethnomusico": "music",
+    "drama": "performing arts",
+    "choreo": "performing arts",
+    "sceno": "performing arts",
+    "eno": "horticulture",
+    "oeno": "horticulture",
+    "pomo": "horticulture",
+    "viti": "horticulture",
+    "silvi": "agriculture",
+    "seismo": "geology",
+    "volcano": "geology",
+    "glacio": "geology",
+    "petro": "geology",
+    "mineralo": "geology",
+    "strati": "geology",
+    "geomorpho": "geology",
+    "paleonto": "geology",
+    "palaeonto": "geology",
+    "oceano": "marine science",
+    "limno": "marine science",
+    "onco": "medicine",
+    "cardio": "medicine",
+    "endocrino": "medicine",
+    "hepato": "medicine",
+    "nephro": "medicine",
+    "dermato": "medicine",
+    "ophthalmo": "medicine",
+    "patho": "medicine",
+    "hemato": "medicine",
+    "haemato": "medicine",
+    "viro": "medicine",
+    "bacterio": "biology",
+    "myco": "biology",
+    "parasito": "biology",
     "sciento": "information science",
     "biblio": "information science",
     "morpho": "biology",
@@ -340,21 +438,27 @@ _COMPOUND_PREFIXES: dict[str, str] = {
 _COMPOUND_SUFFIXES: dict[str, tuple[str, str]] = {
     "informatics": ("informatics", "method"),
     "informatik": ("informatics", "method"),
+    "informatique": ("informatics", "method"),
     "metrics": ("quantitative methods", "method"),
     "metry": ("quantitative methods", "method"),
+    "metrie": ("quantitative methods", "method"),
     "omics": ("genomics and data science", "method"),
     "tech": ("technology and artificial intelligence", "method"),
     "technology": ("technology", "method"),
     "analytics": ("data analytics", "method"),
     "robotics": ("robotics", "domain"),
     "physics": ("physics", "domain"),
+    "physik": ("physics", "domain"),
     "chemistry": ("chemistry", "domain"),
+    "chemie": ("chemistry", "domain"),
     "biology": ("biology", "domain"),
+    "biologie": ("biology", "domain"),
     "mechanics": ("mechanical engineering", "domain"),
     "mathematics": ("mathematics", "domain"),
     "statistics": ("statistics", "domain"),
     "engineering": ("engineering", "domain"),
     "economics": ("economics", "domain"),
+    "ökonomie": ("economics", "domain"),
     "linguistics": ("linguistics", "domain"),
     "psychology": ("psychology", "domain"),
     "ethics": ("philosophy and ethics", "domain"),
@@ -362,6 +466,23 @@ _COMPOUND_SUFFIXES: dict[str, tuple[str, str]] = {
     "pharmacology": ("pharmacology", "domain"),
     "materials": ("materials science", "domain"),
     "photonics": ("photonics and optics", "domain"),
+    "logy": ("__self__", "domain"),
+    "logie": ("__self__", "domain"),
+    "logia": ("__self__", "domain"),
+    "logiya": ("__self__", "domain"),
+    "graphy": ("__self__", "domain"),
+    "graphie": ("__self__", "domain"),
+    "grafia": ("__self__", "domain"),
+    "grafiya": ("__self__", "domain"),
+    "nomy": ("__self__", "domain"),
+    "nomie": ("__self__", "domain"),
+    "prudence": ("__self__", "domain"),
+    "gogy": ("__self__", "domain"),
+    "turgy": ("__self__", "domain"),
+    "culture": ("__self__", "domain"),
+    "building": ("__self__", "domain"),
+    "keeping": ("__self__", "domain"),
+    "craft": ("__self__", "domain"),
 }
 
 
@@ -425,6 +546,8 @@ _DISCIPLINE_NODES: tuple[DisciplineNode, ...] = (
             "organic chemistry",
             "inorganic chemistry",
             "analytical chemistry",
+            "quantum chemistry",
+            "catalysis",
         ),
         parent_fields=("natural sciences", "physical sciences"),
         translations={
@@ -1329,6 +1452,7 @@ _DISCIPLINE_NODES: tuple[DisciplineNode, ...] = (
             "comparative politics",
             "government",
             "governance",
+            "statecraft",
         ),
         parent_fields=("social sciences",),
         translations={
@@ -4084,21 +4208,57 @@ _FAMILIES: tuple[FieldFamily, ...] = (
 )
 
 
+_CJK_TOKEN_RE = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]")
+
+_SHORT_ACRONYM_DISCIPLINES: dict[str, str] = {
+    "cs": "computer science",
+    "it": "information technology",
+    "se": "software engineering",
+    "ee": "electrical engineering",
+    "me": "mechanical engineering",
+    "ce": "civil engineering",
+    "ds": "data science",
+    "ai": "artificial intelligence",
+    "ml": "machine learning",
+    "dl": "deep learning",
+    "ir": "international relations",
+    "hr": "human resource management",
+    "or": "operations research",
+    "qc": "quantum computing",
+    "pe": "petroleum engineering",
+    "bt": "biotechnology",
+    "경제": "economics",
+    "공학": "mechanical engineering",
+}
+
+
+_DOTTED_ACRONYM_RE = re.compile(
+    r"\b([a-z]{1,2})\.([a-z]{1,2})(?:\.([a-z]{1,2}))?\.?", re.IGNORECASE
+)
+
+
 def _tokens(text: str) -> list[str]:
+    collapsed = _DOTTED_ACRONYM_RE.sub(
+        lambda m: "".join(g for g in m.groups() if g),
+        text.casefold(),
+    )
     return [
         tok
-        for tok in _WORD_RE.findall(text.casefold())
-        if len(tok) >= 3 or tok in PRESERVED_SHORT_TOKENS
+        for tok in _WORD_RE.findall(collapsed)
+        if len(tok) >= 3 or tok in PRESERVED_SHORT_TOKENS or _CJK_TOKEN_RE.search(tok)
     ]
 
 
 _FAMILY_METHOD_TERMS: frozenset[str] = frozenset(_METHOD_TERMS - {"sustainable", "smart"})
+_COMPOSITIONAL_METHOD_TERMS: frozenset[str] = frozenset(
+    _METHOD_TERMS - {"robotics", "robotic", "automation", "autonomous"}
+)
 
 
 def _has_method_term(folded: str, tokens: set[str]) -> bool:
-    if tokens & _METHOD_TERMS:
+    if tokens & _COMPOSITIONAL_METHOD_TERMS:
         return True
-    return any(phrase in folded for phrase in _METHOD_TERMS if " " in phrase)
+    return any(phrase in folded for phrase in _COMPOSITIONAL_METHOD_TERMS if " " in phrase)
 
 
 def _has_family_method_term(folded: str, tokens: set[str]) -> bool:
@@ -4141,18 +4301,24 @@ def _match_curated_family(folded: str, token_set: set[str]) -> FieldFamily | Non
 
 
 def _decompose_morphological_compound(folded: str) -> tuple[str, str, str] | None:
-    """Decompose single-word or hyphenated scientific/tech compounds (`neuroinformatics`,
-    `geoinformatics`, `pharmacoinformatics`, `econometrics`, `agritech`, `legaltech`,
+    """Decompose single-word, modified, or hyphenated scientific/tech compounds (`neuroinformatics`,
+    `applied geoinformatics`, `clinical pharmacoinformatics`, `econometrics`, `agritech`,
     `biophysics`, `neuroeconomics`, `astrophysics`, `proteomics`, etc.) into
     `(domain, partner_or_method, suffix_kind)`."""
-    words = re.findall(r"[a-z]+(?:-[a-z]+)?", folded)
-    if len(words) > 1:
+    if folded in _DISCIPLINE_BY_SYNONYM and not folded.endswith(
+        ("informatics", "informatik", "informatique", "metrics", "metry", "metrie", "tech")
+    ):
+        return None
+    words = re.findall(r"[^\W\d_]+(?:-[^\W\d_]+)?", folded, re.UNICODE)
+    if len(words) > 1 and _match_connector_pair(folded, _tokens(folded)) is not None:
         return None
     for word in words:
         unhyphenated = word.replace("-", "")
         if (
             word in _DISCIPLINE_BY_SYNONYM or unhyphenated in _DISCIPLINE_BY_SYNONYM
-        ) and not unhyphenated.endswith(("informatics", "informatik", "metrics", "metry", "tech")):
+        ) and not unhyphenated.endswith(
+            ("informatics", "informatik", "informatique", "metrics", "metry", "metrie", "tech")
+        ):
             continue
         for prefix, domain in sorted(
             _COMPOUND_PREFIXES.items(), key=lambda item: len(item[0]), reverse=True
@@ -4164,7 +4330,8 @@ def _decompose_morphological_compound(folded: str) -> tuple[str, str, str] | Non
                 _COMPOUND_SUFFIXES.items(), key=lambda item: len(item[0]), reverse=True
             ):
                 if rest == suffix:
-                    return domain, partner, kind
+                    resolved_partner = domain if partner == "__self__" else partner
+                    return domain, resolved_partner, kind
     return None
 
 
@@ -4172,9 +4339,11 @@ def _extract_compositional_domain(folded: str) -> str:
     """Extract the domain noun phrase when a student writes `<Method> with/in/for/and <Domain>`
     or `<Domain> with/and <Method>` or juxtaposed `<Method> <Domain>` for ANY discipline."""
     scrubbed = folded
-    for phrase in sorted((p for p in _METHOD_TERMS if " " in p), key=len, reverse=True):
+    for phrase in sorted(
+        (p for p in _COMPOSITIONAL_METHOD_TERMS if " " in p), key=len, reverse=True
+    ):
         scrubbed = re.sub(rf"(?<!\w){re.escape(phrase)}(?!\w)", " ", scrubbed)
-    single_method_words = {w for w in _METHOD_TERMS if " " not in w}
+    single_method_words = {w for w in _COMPOSITIONAL_METHOD_TERMS if " " not in w}
     domain_words = [
         tok
         for tok in _tokens(scrubbed)
@@ -4213,11 +4382,39 @@ _ADJECTIVAL_DOMAIN_MAP: dict[str, str] = {
     "marine": "marine science",
     "pharmaceutical": "pharmacology",
     "industrial": "business administration",
+    "energy": "renewable energy",
 }
+
+
+_SUSTAINABILITY_MODIFIERS: frozenset[str] = frozenset(
+    {"sustainable", "sustainability", "green", "renewable", "circular", "climate", "clean"}
+)
+_QUANTUM_MODIFIERS: frozenset[str] = frozenset({"quantum"})
+_AI_DIGITAL_MODIFIERS: frozenset[str] = frozenset(
+    {
+        "ai",
+        "digital",
+        "computational",
+        "informatics",
+        "informatik",
+        "data",
+        "analytics",
+        "machine",
+        "learning",
+        "smart",
+        "intelligent",
+        "cyber",
+        "robotics",
+        "robotic",
+        "automation",
+    }
+)
 
 
 def _lookup_discipline_node(term: str) -> DisciplineNode | None:
     key = term.strip().casefold()
+    if key in _SHORT_ACRONYM_DISCIPLINES and key not in {"or", "me", "it"}:
+        key = _SHORT_ACRONYM_DISCIPLINES[key]
     mapped = _ADJECTIVAL_DOMAIN_MAP.get(key, _COMPOUND_PREFIXES.get(key, key))
     direct = _DISCIPLINE_BY_SYNONYM.get(mapped) or _DISCIPLINE_BY_SYNONYM.get(key)
     if direct is not None:
@@ -4237,11 +4434,182 @@ def _build_compositional_family(
 ) -> FieldFamily:
     node = _lookup_discipline_node(domain)
     canon_domain = node.canonical if node is not None else domain
+    slug_domain = canon_domain.replace(" ", "_")
+    folded_raw = raw_field.strip().casefold()
+    raw_words = set(_WORD_RE.findall(folded_raw))
+
+    if raw_words & _SUSTAINABILITY_MODIFIERS and not (raw_words & _AI_DIGITAL_MODIFIERS):
+        sust_titles = tuple(
+            dict.fromkeys(
+                (
+                    *extra_titles,
+                    folded_raw,
+                    f"sustainable {canon_domain}",
+                    f"green {canon_domain}",
+                    canon_domain,
+                    *(node.synonyms[:3] if node is not None else ()),
+                )
+            )
+        )
+        parent_fields = tuple(
+            dict.fromkeys(
+                (
+                    canon_domain,
+                    *(node.parent_fields if node is not None else ()),
+                    "environmental science",
+                )
+            )
+        )
+        return FieldFamily(
+            slug=f"sustainable_{slug_domain}",
+            display_name=f"Sustainable & Green {canon_domain.title()}",
+            trigger_phrases=(folded_raw,),
+            domain_tokens=frozenset(canon_domain.split()),
+            requires_method_with_domain=True,
+            orientations=(
+                FieldOrientation(
+                    slug=f"sustainable_green_{slug_domain}",
+                    label=(
+                        f"sustainable, green and low-carbon {canon_domain} "
+                        f"(sustainable {canon_domain}, green {canon_domain})"
+                    ),
+                    trigger_keywords=(
+                        "sustainable",
+                        "sustainability",
+                        "green",
+                        "renewable",
+                        "clean",
+                        "circular",
+                    ),
+                    degree_titles=sust_titles,
+                    track_keywords=(
+                        "sustainable",
+                        "sustainability",
+                        "green",
+                        "renewable",
+                        canon_domain,
+                    ),
+                ),
+                FieldOrientation(
+                    slug=f"environmental_systems_{slug_domain}",
+                    label=f"environmental systems and climate-resilient {canon_domain}",
+                    trigger_keywords=("environmental", "climate", "ecology", "conservation"),
+                    degree_titles=tuple(
+                        dict.fromkeys(
+                            (
+                                f"environmental {canon_domain}",
+                                f"sustainable {canon_domain}",
+                                f"{canon_domain} and sustainability",
+                                canon_domain,
+                            )
+                        )
+                    ),
+                    track_keywords=("environmental", "climate", "sustainability"),
+                ),
+                FieldOrientation(
+                    slug=f"sustainability_policy_{slug_domain}",
+                    label=f"sustainability policy, planning and management in {canon_domain}",
+                    trigger_keywords=(
+                        "policy",
+                        "management",
+                        "planning",
+                        "governance",
+                        "economics",
+                    ),
+                    degree_titles=tuple(
+                        dict.fromkeys(
+                            (
+                                f"sustainable {canon_domain} management",
+                                f"sustainable {canon_domain}",
+                                canon_domain,
+                            )
+                        )
+                    ),
+                    track_keywords=("policy", "management", "planning", "sustainable"),
+                ),
+            ),
+            parent_fields=parent_fields,
+        )
+
+    if raw_words & _QUANTUM_MODIFIERS and not (
+        raw_words & (_AI_DIGITAL_MODIFIERS - {"computational"})
+    ):
+        q_titles = tuple(
+            dict.fromkeys(
+                (
+                    *extra_titles,
+                    folded_raw,
+                    f"quantum {canon_domain}",
+                    f"theoretical {canon_domain}",
+                    canon_domain,
+                    *(node.synonyms[:2] if node is not None else ()),
+                )
+            )
+        )
+        q_parents = tuple(
+            dict.fromkeys(
+                (
+                    canon_domain,
+                    *(node.parent_fields if node is not None else ()),
+                    "physics",
+                )
+            )
+        )
+        return FieldFamily(
+            slug=f"quantum_{slug_domain}",
+            display_name=f"Quantum & Theoretical {canon_domain.title()}",
+            trigger_phrases=(folded_raw,),
+            domain_tokens=frozenset(canon_domain.split()),
+            requires_method_with_domain=True,
+            orientations=(
+                FieldOrientation(
+                    slug=f"quantum_theoretical_{slug_domain}",
+                    label=(
+                        f"quantum and theoretical {canon_domain} "
+                        f"(quantum {canon_domain}, theoretical {canon_domain})"
+                    ),
+                    trigger_keywords=("quantum", "theoretical", "electronic", "molecular"),
+                    degree_titles=q_titles,
+                    track_keywords=("quantum", "theoretical", canon_domain),
+                ),
+                FieldOrientation(
+                    slug=f"computational_quantum_{slug_domain}",
+                    label=f"computational modeling and simulation in {canon_domain}",
+                    trigger_keywords=("computational", "modeling", "modelling", "simulation"),
+                    degree_titles=tuple(
+                        dict.fromkeys(
+                            (
+                                f"computational {canon_domain}",
+                                f"theoretical and computational {canon_domain}",
+                                f"quantum {canon_domain}",
+                            )
+                        )
+                    ),
+                    track_keywords=("computational", "simulation", "modeling", "quantum"),
+                ),
+                FieldOrientation(
+                    slug=f"experimental_quantum_{slug_domain}",
+                    label=f"experimental and physical {canon_domain} (spectroscopy, materials)",
+                    trigger_keywords=("experimental", "spectroscopy", "materials", "physical"),
+                    degree_titles=tuple(
+                        dict.fromkeys(
+                            (
+                                f"physical {canon_domain}",
+                                f"quantum {canon_domain}",
+                                canon_domain,
+                            )
+                        )
+                    ),
+                    track_keywords=("experimental", "spectroscopy", "physical", "quantum"),
+                ),
+            ),
+            parent_fields=q_parents,
+        )
+
     informatics = _INFORMATICS_STEMS.get(
         canon_domain,
         _INFORMATICS_STEMS.get(domain, (f"{canon_domain} informatics",)),
     )
-    folded_raw = raw_field.strip().casefold()
     base_ai_titles = tuple(
         dict.fromkeys(
             (
@@ -4309,6 +4677,13 @@ def _build_compositional_family(
                     "quantitative",
                     "mathematical",
                     "statistical",
+                    *(
+                        tuple(
+                            w
+                            for w in sorted(raw_words)
+                            if w.endswith(("metrics", "metry", "metrie"))
+                        )
+                    ),
                 ),
                 degree_titles=tuple(
                     dict.fromkeys(
@@ -4316,6 +4691,7 @@ def _build_compositional_family(
                             f"computational {canon_domain}",
                             f"quantitative {canon_domain}",
                             f"modeling and simulation in {canon_domain}",
+                            *extra_titles,
                             *informatics,
                         )
                     )
@@ -4520,24 +4896,37 @@ def _shared_cache_key(prefix: str, parts: Sequence[object]) -> str:
     return f"elmify:taxonomy:{prefix}:{digest}"
 
 
+def _normalize_cache_key(key: str) -> str:
+    if len(key) <= 200 and not any(ord(c) <= 32 or ord(c) == 127 for c in key):
+        return key
+    digest = hashlib.sha256(key.encode()).hexdigest()[:24]
+    return f"elmify:taxonomy:k:{digest}"
+
+
 def _shared_cache_get(key: str) -> Any:
+    if not key:
+        return None
+    safe_key = _normalize_cache_key(key)
     try:
-        return cache.get(key)
+        return cache.get(safe_key)
     except Exception as exc:
         logger.debug("shared taxonomy cache get skipped for %s: %s", key, exc)
         return None
 
 
 def _shared_cache_set(key: str, value: object) -> None:
+    if not key:
+        return
+    safe_key = _normalize_cache_key(key)
     try:
-        cache.set(key, value, timeout=_SHARED_CACHE_TTL_SECONDS)
-        _SHARED_CACHE_KEYS.add(key)
+        cache.set(safe_key, value, timeout=_SHARED_CACHE_TTL_SECONDS)
+        _SHARED_CACHE_KEYS.add(safe_key)
         stored = cache.get(_SHARED_REGISTRY_KEY)
         current_keys: set[str] = (
             set(stored) if isinstance(stored, (set, list, tuple)) else set()
         )
-        if key not in current_keys:
-            current_keys.add(key)
+        if safe_key not in current_keys:
+            current_keys.add(safe_key)
             cache.set(
                 _SHARED_REGISTRY_KEY,
                 list(current_keys),
@@ -4671,10 +5060,74 @@ def scrub_taxonomy_phrase(
         return ""
 
     def _drop_named_run(match: re.Match[str]) -> str:
-        words = [w.strip(".").casefold() for w in match.group(0).split()]
-        if set(words) & _NAME_MARKERS:
-            return " "
-        return match.group(0)
+        raw_words = match.group(0).split()
+        words = [w.strip(".").casefold() for w in raw_words]
+        marker_hits = set(words) & _NAME_MARKERS
+        if not marker_hits:
+            return match.group(0)
+        field_head_nouns = {
+            "administration",
+            "management",
+            "leadership",
+            "engineering",
+            "operations",
+            "architecture",
+            "systems",
+            "technology",
+            "design",
+            "policy",
+            "education",
+            "studies",
+            "counseling",
+            "advising",
+            "affairs",
+            "infrastructure",
+            "networks",
+            "security",
+        }
+        followed_by_of = text[match.end() :].lstrip().casefold().startswith(("of ", "for "))
+        if (
+            marker_hits <= {"center", "centre", "college"}
+            and words[-1] not in _NAME_MARKERS
+            and not followed_by_of
+            and (words[-1] in field_head_nouns or words[-1] in _DISCIPLINE_BY_SYNONYM)
+        ):
+            return match.group(0)
+        inst_adjectives = {
+            "state",
+            "national",
+            "technical",
+            "technische",
+            "technological",
+            "medical",
+            "open",
+            "free",
+            "islamic",
+            "catholic",
+            "american",
+            "european",
+            "central",
+            "imperial",
+            "royal",
+            "federal",
+        }
+        kept: list[str] = []
+        marker_indices = [i for i, w in enumerate(words) if w in _NAME_MARKERS]
+        first_marker = marker_indices[0]
+        last_marker = marker_indices[-1]
+        for end_idx in range(min(first_marker, 3), 0, -1):
+            cand = " ".join(words[:end_idx])
+            if cand in _DISCIPLINE_BY_SYNONYM and not (
+                end_idx == first_marker and cand in inst_adjectives
+            ):
+                kept.extend(raw_words[:end_idx])
+                break
+        for start_idx in range(max(last_marker + 1, len(words) - 3), len(words)):
+            cand = " ".join(words[start_idx:])
+            if cand in _DISCIPLINE_BY_SYNONYM and cand not in inst_adjectives:
+                kept.extend(raw_words[start_idx:])
+                break
+        return (" " + " ".join(kept) + " ") if kept else " "
 
     held = _SYMBOL_STANDIN_RE.sub(
         lambda m: f" {_SYMBOL_STANDINS[m.group(1).lower()]} ",
@@ -4713,6 +5166,8 @@ def _cache_key(
 
 
 def _is_known_connector_part(part: str, node: DisciplineNode | None) -> bool:
+    if node is None and part in _DEGREE_QUALIFICATION_TOKENS:
+        return False
     return (
         node is not None
         or part in _METHOD_TERMS
@@ -4757,6 +5212,72 @@ def _candidate_terms_for_interest(item: str) -> list[str]:
     return candidates
 
 
+_DEGREE_QUALIFICATION_TOKENS: frozenset[str] = frozenset(
+    {
+        "llm",
+        "msc",
+        "ma",
+        "bsc",
+        "ba",
+        "phd",
+        "mba",
+        "mpa",
+        "mpp",
+        "mph",
+        "mphil",
+        "mres",
+        "meng",
+        "beng",
+        "med",
+        "jd",
+        "md",
+    }
+)
+
+
+def _resolve_single_node_from_tokens(folded: str) -> DisciplineNode | None:
+    no_parens = " ".join(re.sub(r"\([^)]*\)", " ", folded).split())
+    if no_parens and no_parens != folded:
+        direct = _DISCIPLINE_BY_SYNONYM.get(no_parens) or _DISCIPLINE_BY_SYNONYM.get(
+            _SHORT_ACRONYM_DISCIPLINES.get(no_parens, "")
+        )
+        if direct is not None:
+            return direct
+    tokens = _tokens(folded)
+    if not tokens:
+        return None
+    matched_nodes: list[DisciplineNode] = []
+    i = 0
+    while i < len(tokens):
+        matched_span = False
+        for span_len in (3, 2):
+            if i + span_len <= len(tokens):
+                span = " ".join(tokens[i : i + span_len])
+                span_node = _DISCIPLINE_BY_SYNONYM.get(span)
+                if span_node is not None:
+                    matched_nodes.append(span_node)
+                    i += span_len
+                    matched_span = True
+                    break
+        if matched_span:
+            continue
+        tok = tokens[i]
+        tok_node = _DISCIPLINE_BY_SYNONYM.get(tok) or _DISCIPLINE_BY_SYNONYM.get(
+            _SHORT_ACRONYM_DISCIPLINES.get(tok, "")
+        )
+        if tok_node is not None:
+            matched_nodes.append(tok_node)
+            i += 1
+        elif tok in _DEGREE_QUALIFICATION_TOKENS:
+            i += 1
+        else:
+            return None
+    unique_canonicals = {n.canonical for n in matched_nodes}
+    if len(unique_canonicals) == 1:
+        return matched_nodes[0]
+    return None
+
+
 def _resolve_unambiguous_discipline(
     cleaned: str,
     folded: str,
@@ -4767,7 +5288,11 @@ def _resolve_unambiguous_discipline(
         for item in research_interests
         if item and item.strip()
     )
-    node = _DISCIPLINE_BY_SYNONYM.get(folded)
+    node = (
+        _DISCIPLINE_BY_SYNONYM.get(folded)
+        or _DISCIPLINE_BY_SYNONYM.get(_SHORT_ACRONYM_DISCIPLINES.get(folded, ""))
+        or _resolve_single_node_from_tokens(folded)
+    )
     if node is not None:
         expanded_titles = tuple(
             dict.fromkeys((folded, node.canonical, *interest_titles, *node.synonyms))
@@ -4868,6 +5393,12 @@ def resolve_field_taxonomy(
     cached = _LLM_RESOLUTION_CACHE.get(key)
     if cached is not None:
         return cached
+    shared_cached = _shared_cache_get(
+        f"ft:res:v1:{key[0]}:{'|'.join(key[1])}"
+    ) or _shared_cache_get(_shared_cache_key("res", key))
+    if isinstance(shared_cached, FieldTaxonomyResolution):
+        _LLM_RESOLUTION_CACHE[key] = shared_cached
+        return shared_cached
     if not research_interests:
         cached_base = _LLM_RESOLUTION_CACHE.get((folded, ()))
         if cached_base is not None:
@@ -4895,7 +5426,12 @@ def resolve_field_taxonomy(
     has_pure_method = bool(token_set & _PURE_AI_COMPUTATIONAL_MODIFIERS) or any(
         phrase in folded for phrase in _PURE_AI_COMPUTATIONAL_MODIFIERS if " " in phrase
     )
-    if family is None and not has_pure_method and not _CONNECTOR_SPLIT_RE.search(folded):
+    if (
+        family is None
+        and folded not in _DISCIPLINE_BY_SYNONYM
+        and not has_pure_method
+        and not _CONNECTOR_SPLIT_RE.search(folded)
+    ):
         juxtaposed = _detect_juxtaposed_domains(folded, tokens)
         if juxtaposed is not None:
             return _build_dual_domain_resolution(
@@ -4903,7 +5439,11 @@ def resolve_field_taxonomy(
             )
 
     # 3. Compositional `<Method/AI/Computational/Digital> + <Domain>` match for ANY domain
-    if family is None and _has_method_term(folded, token_set):
+    if (
+        family is None
+        and folded not in _DISCIPLINE_BY_SYNONYM
+        and _has_method_term(folded, token_set)
+    ):
         domain = _extract_compositional_domain(folded)
         if domain and (_lookup_discipline_node(domain) is not None or len(domain.split()) <= 2):
             family = _build_compositional_family(cleaned, domain)
@@ -4933,7 +5473,7 @@ def resolve_field_taxonomy(
             )
 
     # 6. Juxtaposed fallback if still unmatched
-    if family is None:
+    if family is None and folded not in _DISCIPLINE_BY_SYNONYM:
         juxtaposed = _detect_juxtaposed_domains(folded, tokens)
         if juxtaposed is not None:
             return _build_dual_domain_resolution(
@@ -5013,7 +5553,9 @@ def resolve_field_taxonomy_with_llm(
     if key in _LLM_RESOLUTION_CACHE:
         return _LLM_RESOLUTION_CACHE[key]
     shared_res_key = _shared_cache_key("res", key)
-    shared_cached = _shared_cache_get(shared_res_key)
+    shared_cached = _shared_cache_get(shared_res_key) or _shared_cache_get(
+        f"ft:res:v1:{key[0]}:{'|'.join(key[1])}"
+    )
     if isinstance(shared_cached, FieldTaxonomyResolution):
         _LLM_RESOLUTION_CACHE[key] = shared_cached
         return shared_cached
@@ -5173,6 +5715,10 @@ def resolve_field_taxonomy_with_llm(
     raw_key = _cache_key(target_field, research_interests)
     _LLM_RESOLUTION_CACHE[raw_key] = enriched
     _shared_cache_set(shared_res_key, enriched)
+    _shared_cache_set(f"ft:res:v1:{key[0]}:{'|'.join(key[1])}", enriched)
+    if raw_key != key:
+        _shared_cache_set(_shared_cache_key("res", raw_key), enriched)
+        _shared_cache_set(f"ft:res:v1:{raw_key[0]}:{'|'.join(raw_key[1])}", enriched)
     return enriched
 
 
@@ -5694,6 +6240,12 @@ def localized_field_terms(
         return _LLM_LOCALIZED_CACHE[loc_key]
     if not research_interests and (folded_field, lang, ()) in _LLM_LOCALIZED_CACHE:
         return _LLM_LOCALIZED_CACHE[(folded_field, lang, ())]
+    shared_loc = _shared_cache_get(
+        f"ft:loc:v1:{loc_key[0]}:{loc_key[1]}"
+    ) or _shared_cache_get(_shared_cache_key("loc", loc_key))
+    if isinstance(shared_loc, tuple) and shared_loc:
+        _LLM_LOCALIZED_CACHE[loc_key] = shared_loc
+        return shared_loc
 
     resolution = resolve_field_taxonomy(target_field, research_interests=research_interests)
     candidates = (
@@ -5728,9 +6280,14 @@ def localized_field_terms(
                     for term in dom_entry[lang]:
                         _add(term)
 
-        # Substring fallback against any known discipline in `_LOCALIZED_PHRASES`
+        # Word-bounded fallback against any known discipline in `_LOCALIZED_PHRASES`
         for known_en, lang_map in _LOCALIZED_PHRASES.items():
-            if len(known_en) >= 4 and known_en in candidate and lang in lang_map:
+            if (
+                len(known_en) >= 4
+                and known_en in candidate
+                and lang in lang_map
+                and re.search(rf"(?<!\w){re.escape(known_en)}(?!\w)", candidate)
+            ):
                 for term in lang_map[lang]:
                     _add(term)
 
@@ -5763,7 +6320,9 @@ def localized_field_terms_with_llm(
     if loc_key in _LLM_LOCALIZED_CACHE:
         return _LLM_LOCALIZED_CACHE[loc_key]
     shared_loc_key = _shared_cache_key("loc", loc_key)
-    shared_loc = _shared_cache_get(shared_loc_key)
+    shared_loc = _shared_cache_get(shared_loc_key) or _shared_cache_get(
+        f"ft:loc:v1:{loc_key[0]}:{loc_key[1]}"
+    )
     if isinstance(shared_loc, tuple):
         _LLM_LOCALIZED_CACHE[loc_key] = shared_loc
         return shared_loc
@@ -5845,6 +6404,11 @@ def localized_field_terms_with_llm(
     result = tuple(merged)
     _LLM_LOCALIZED_CACHE[loc_key] = result
     raw_folded, raw_interests = _cache_key(target_field, research_interests)
-    _LLM_LOCALIZED_CACHE[(raw_folded, lang, raw_interests)] = result
+    raw_loc_key = (raw_folded, lang, raw_interests)
+    _LLM_LOCALIZED_CACHE[raw_loc_key] = result
     _shared_cache_set(shared_loc_key, result)
+    _shared_cache_set(f"ft:loc:v1:{loc_key[0]}:{loc_key[1]}", result)
+    if raw_loc_key != loc_key:
+        _shared_cache_set(_shared_cache_key("loc", raw_loc_key), result)
+        _shared_cache_set(f"ft:loc:v1:{raw_loc_key[0]}:{raw_loc_key[1]}", result)
     return result

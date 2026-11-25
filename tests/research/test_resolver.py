@@ -152,3 +152,37 @@ def test_a_budget_stop_verifying_diffbot_s_answer_says_diffbot_was_asked() -> No
     with pytest.raises(FetchBudgetSpent) as stopped:
         r.resolve(NameQuery((name,), "TR"))
     assert stopped.value.diffbot_asked
+
+
+def test_resolver_resolves_uncommitted_countries_via_universal_vocabulary() -> None:
+    fetched: list[str] = []
+    titles = {
+        "https://www.leverhulme.ac.uk/": "The Leverhulme Trust - Leverhulme Foundation",
+        "https://www.boekman.nl/": "Boekmanstichting - Kenniscentrum voor kunst en cultuur",
+        "https://www.fundacioncarolina.es/": "Fundación Carolina",
+    }
+
+    def fetch(url: str, **_):
+        fetched.append(url)
+        return page(url, titles.get(url, ""))
+
+    lists = {
+        "Leverhulme Foundation": ["https://www.leverhulme.ac.uk/"],
+        "Stichting Boekman": ["https://www.boekman.nl/"],
+        "Fundación Puerto Carolina": ["https://www.fundacioncarolina.es/"],
+    }
+    r = Resolver(
+        vocabulary=None,
+        candidates=lambda name: lists.get(name, []),
+        tavily=CallBudget(10),
+        fetch=fetch,
+    )
+
+    gb_res = r.resolve(NameQuery(("Leverhulme Foundation",), "GB"))
+    assert (gb_res.domain, gb_res.via) == ("leverhulme.ac.uk", "SEARCH_TITLE")
+
+    nl_res = r.resolve(NameQuery(("Stichting Boekman",), "NL"))
+    assert (nl_res.domain, nl_res.via) == ("boekman.nl", "SEARCH_TITLE")
+
+    es_res = r.resolve(NameQuery(("Fundación Puerto Carolina",), "ES"))
+    assert (es_res.domain, es_res.via) == ("fundacioncarolina.es", "SEARCH_TITLE")

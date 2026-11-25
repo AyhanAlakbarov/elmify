@@ -408,5 +408,148 @@ def test_score_program_fit_post_study_work_covers_all_eea_and_global_destination
         assert scores["MOBILITY_FIT"] == Decimal("90")
 
 
+def test_country_scoped_benefits_apply_only_to_matching_country_and_override_global_fallback(
+    program, award, profile
+):
+    from datetime import date
+
+    from apps.funding.affordability import calculate_affordability
+    from apps.funding.fx import RateTable
+    from apps.funding.models import CostComponent
+    from apps.funding.pack import PackedAward
+    from apps.research.candidate_details import award_details, program_details
+    from apps.research.services import _award_copy
+
+    cost = CostComponent.objects.create(
+        program=program,
+        kind="HOUSING",
+        amount=Decimal("1000"),
+        currency="EUR",
+        period="MONTHLY",
+    )
+    b_de = FundingBenefit.objects.create(
+        opportunity=award,
+        kind="STIPEND",
+        amount=Decimal("934"),
+        currency="EUR",
+        period="MONTHLY",
+        description="934 EUR a month in Germany.",
+        amount_text="934 EUR/month",
+        amount_bound="EXACT",
+        amount_quote="934 EUR a month in Germany.",
+    )
+    r_de = BenefitRule.objects.create(
+        benefit=b_de,
+        kind="GEOGRAPHIC_SCOPE",
+        scope_type="COUNTRY",
+        country_code="DE",
+        rule_text="Germany stipend rate.",
+    )
+    b_gb = FundingBenefit.objects.create(
+        opportunity=award,
+        kind="STIPEND",
+        amount=Decimal("1350"),
+        currency="GBP",
+        period="MONTHLY",
+        description="1,350 GBP a month in the UK.",
+        amount_text="1350 GBP/month",
+        amount_bound="EXACT",
+        amount_quote="1,350 GBP a month in the UK.",
+    )
+    r_gb = BenefitRule.objects.create(
+        benefit=b_gb,
+        kind="GEOGRAPHIC_SCOPE",
+        scope_type="COUNTRY",
+        country_code="GB",
+        rule_text="UK stipend rate.",
+    )
+    b_fallback = FundingBenefit.objects.create(
+        opportunity=award,
+        kind="STIPEND",
+        amount=Decimal("700"),
+        currency="EUR",
+        period="MONTHLY",
+        description="700 EUR a month in other countries.",
+        amount_text="700 EUR/month",
+        amount_bound="EXACT",
+        amount_quote="700 EUR a month in other countries.",
+    )
+    benefits = (b_de, b_gb, b_fallback)
+    rules = (r_de, r_gb)
+    routes = {award.id: "AUTOMATIC_ON_ADMISSION"}
+    durations = {award.id: 24}
+    rates = RateTable(
+        base="EUR",
+        rates={"EUR": Decimal("1"), "GBP": Decimal("0.85")},
+        source="TEST",
+        retrieved_on=date(2026, 10, 1),
+    )
+
+    # 1. Programme in Germany (DE): gets ONLY the 934 EUR/month DE stipend
+    program.country_code = "DE"
+    facts_de = program_facts(
+        program,
+        costs=(cost,),
+        benefits=benefits,
+        rules=rules,
+        routes=routes,
+        durations=durations,
+        profile=profile,
+    )
+    aff_de = calculate_affordability(profile, facts_de, rates)
+    # 24 months * (1000 - 934) = 24 * 66 = 1584 EUR
+    assert aff_de.covered == Decimal("22416.00")
+    assert aff_de.gap == Decimal("1584.00")
+    p_details_de = program_details(facts_de)
+    assert p_details_de["covers"] == [
+        {"kind": "STIPEND", "amount": "22416.00 EUR", "period": "FULL_PROGRAM"}
+    ]
+
+    # 2. Programme in France (FR, no country tier): falls back to 700 EUR/month GLOBAL tier
+    program.country_code = "FR"
+    facts_fr = program_facts(
+        program,
+        costs=(cost,),
+        benefits=benefits,
+        rules=rules,
+        routes=routes,
+        durations=durations,
+        profile=profile,
+    )
+    aff_fr = calculate_affordability(profile, facts_fr, rates)
+    # 24 months * (1000 - 700) = 24 * 300 = 7200 EUR
+    assert aff_fr.covered == Decimal("16800.00")
+    assert aff_fr.gap == Decimal("7200.00")
+
+    # 3. AwardCandidateFacts & _award_copy carry country-resolved amounts and amounts_by_country
+    aw_facts = award_facts(award, benefits=benefits, rules=rules, country_code="AZ")
+    assert aw_facts.card is not None
+    packed = PackedAward(
+        award_id=str(award.id),
+        name=award.name,
+        holder_name=award.holder_name,
+        deadline=None,
+        ordering="SCHOLARSHIP_FIRST",
+        ordering_reason="",
+        unconfirmed=(),
+        card=aw_facts.card,
+    )
+    copy_dict = _award_copy(award, packed)
+    fcard = copy_dict["funding_card"]
+    assert fcard["amounts_by_country"] == {
+        "DE": ["934 EUR/month"],
+        "GB": ["1350 GBP/month"],
+    }
+    assert fcard["default_amounts"] == ["700 EUR/month"]
+    assert "Germany: 934 EUR/month" in fcard["amounts"]
+    assert "United Kingdom: 1350 GBP/month" in fcard["amounts"]
+    assert "Other countries: 700 EUR/month" in fcard["amounts"]
+
+    aw_det = award_details(aw_facts)
+    country_codes_in_covers = [c.get("country_code") for c in aw_det["covers"]]
+    assert country_codes_in_covers == ["DE", "GB", None]
+
+
+
 
 

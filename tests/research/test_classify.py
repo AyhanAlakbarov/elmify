@@ -86,6 +86,10 @@ def test_suffix_class_maps_the_uk_tld_to_gb() -> None:
     got = suffix_class("gov.uk")
     assert got is not None
     assert (got.kind, got.country_code) == ("NATIONAL_GOVERNMENT", "GB")
+    assert suffix_class("mit.edu") is not None and suffix_class("mit.edu").country_code == "US"
+    assert suffix_class("ed.gov") is not None and suffix_class("ed.gov").country_code == "US"
+    assert suffix_class("gov.scot") is not None and suffix_class("gov.scot").country_code == "GB"
+    assert suffix_class("gov.wales") is not None and suffix_class("gov.wales").country_code == "GB"
 
 
 def test_a_suffix_host_still_needs_the_page_for_funds_students() -> None:
